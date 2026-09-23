@@ -8,26 +8,29 @@ See [validation](VALIDATION.md) for tested capabilities and remaining channel ac
 
 ## Default installation: GitHub through Skills CLI
 
-Run inside your app repository:
+We recommend global installation so GoLive is available across projects. Run from any directory:
 
 ```bash
-npx skills add https://github.com/mikehasa/golive-skill --skill golive
+npx skills add https://github.com/mikehasa/golive-skill --skill golive --global
 ```
 
-Project scope is the default. Use `--global` for all projects. Noninteractive agent flags are
-`--agent codex --yes` or `--agent claude-code --yes`. Users need Node 20+, npm/npx and Git, but do
-not need the source checkout or TypeScript dependencies after installation. Reload skills or start
+The explicit `--global` selects user-wide installation. To install only in one project, run from
+that project's repository and omit `--global`; project scope is the Skills CLI default when the
+flag is absent. Add `--agent codex --yes` or `--agent claude-code --yes` to skip the agent picker.
+Without those flags, select your agent with the arrow keys and Space, then press Enter to continue.
+Users need Node 20+, npm/npx and Git, but do not need the source checkout or TypeScript dependencies
+after installation. Reload skills or start
 another agent session, then verify `node <installed-skill>/scripts/golive.mjs version --json`.
 
 Update between deployment runs:
 
 ```bash
-npx skills update golive -p
 npx skills update golive -g
 ```
 
-The first command is project scope; the second is global. A pinned tag is changed explicitly,
-not silently advanced. A clone alone is not installation: use Skills CLI on the clone or copy
+For a project-only installation, run `npx skills update golive -p` inside that project instead.
+A pinned tag is changed explicitly, not silently advanced. A clone alone is not installation:
+use Skills CLI on the clone or copy
 its complete `skills/golive` folder into the appropriate agent skill directory and verify it.
 Skills CLI has its own telemetry policy; GoLive has no product telemetry.
 
@@ -78,9 +81,9 @@ wrapper, standalone installer and complete
 skill with licenses. The own installer's Claude flag is `claude`, unlike Skills CLI's `claude-code`.
 
 ```bash
-node bin/golive.mjs install --agent codex
+node bin/golive.mjs install --agent codex --global
 node bin/golive.mjs install --agent claude --global
-node bin/golive.mjs install-status --agent codex --json
+node bin/golive.mjs install-status --agent codex --global --json
 ```
 
 An own installation has a receipt-backed immutable bundle in an adjacent private store and an

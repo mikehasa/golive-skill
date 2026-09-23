@@ -22,24 +22,37 @@ can be observed, and make unfinished work clear. No GoLive account, hosted backe
 ## Install
 
 You need **Node.js 20+**, npm/npx, Git, and a coding agent that can load skills and run commands.
-Local installation has been checked for Codex and Claude Code; other clients are unverified.
+Installation has been checked for Codex and Claude Code; other clients are unverified.
 
-Run this **inside your app repository**:
+**Install once for all your projects.** Run this from any directory:
 
 ```bash
-npx skills add https://github.com/mikehasa/golive-skill --skill golive
+npx skills add https://github.com/mikehasa/golive-skill --skill golive --global
 ```
 
-Select your agent. Add `--global` for installation across projects.
+Select your agent when prompted: use the arrow keys to move, Space to select, and Enter to
+confirm. That screen is waiting for input; installation continues after you confirm.
+
+To skip the agent picker, use the command for your agent:
+
+```bash
+# Codex
+npx skills add https://github.com/mikehasa/golive-skill --skill golive --global --agent codex --yes
+
+# Claude Code
+npx skills add https://github.com/mikehasa/golive-skill --skill golive --global --agent claude-code --yes
+```
+
+For installation in just one project, run from that project's repository and omit `--global`.
 
 **Or paste this into your coding agent:**
 
 ```text
-Install the GoLive skill for this project:
-npx skills add https://github.com/mikehasa/golive-skill --skill golive
+Install the GoLive skill globally so I can use it across projects:
+npx skills add https://github.com/mikehasa/golive-skill --skill golive --global
 
 Target the agent I'm using: add --agent codex --yes for Codex, or
---agent claude-code --yes for Claude Code. Keep project scope.
+--agent claude-code --yes for Claude Code. Keep --global.
 If the agent isn't clear, ask me which one.
 
 Verify the installation with:
