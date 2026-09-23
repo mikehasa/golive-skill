@@ -1,0 +1,42 @@
+{
+  "name": "golive",
+  "version": "0.1.0-alpha.1",
+  "description": "Agent skill: take an app from repo to live production on your own accounts, with the providers you choose.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "golive": "bin/golive.mjs"
+  },
+  "files": [
+    "bin/golive.mjs",
+    "scripts/install-cli.mjs",
+    "scripts/install-lib.mjs",
+    "skills/golive/**",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9",
+    "vitest": "^5.0.1",
+    "yaml": "^2.9.1"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mikehasa/golive-skill.git"
+  }
+}

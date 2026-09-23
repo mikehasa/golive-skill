@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Tests and committed bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 9.12.2
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm vitest run
+      - run: pnpm tsc --noEmit
+      - name: Build the public tagged release from the package version
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          process.env.GOLIVE_RELEASE_REF = `v${pkg.version}`;
+          await import('./build.mjs');
+          JS
+      - name: Require the committed bundle to match its source
+        run: |
+          git ls-files --error-unmatch skills/golive/scripts/golive.mjs skills/golive/release.json > /dev/null
+          git diff --exit-code -- skills/golive/scripts/golive.mjs skills/golive/release.json
+
+  runtime:
+    name: GoLive Node 20 runtime smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 9.12.2
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          # Vitest 5 requires Node 22.12+, 24, or 26+; the bundle supports Node 20.
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Reject residual development names in runtime and skill files
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          roots = [Path('src'), Path('skills/golive')]
+          assert all(root.is_dir() for root in roots), 'Missing renamed source or skill'
+          matches = []
+          for root in roots:
+              for path in root.rglob('*'):
+                  if path.is_symlink():
+                      raise SystemExit(f'Unexpected symlink in release source: {path}')
+                  if path.is_file() and ('xship' in str(path).lower() or b'xship' in path.read_bytes().lower()):
+                      matches.append(str(path))
+          if matches:
+              raise SystemExit('Residual development names in:\n' + '\n'.join(matches))
+          assert not Path('skills/xship').exists(), 'Old skill directory remains'
+          print('Runtime and GoLive skill contain no residual development names.')
+          PY
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '20'
+      - name: Smoke the copied GoLive skill without source dependencies or provider accounts
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { execFileSync } from 'node:child_process';
+          import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+          import { tmpdir } from 'node:os';
+          import { join } from 'node:path';
+
+          assert.equal(process.versions.node.split('.')[0], '20');
+          const scratch = mkdtempSync(join(tmpdir(), 'golive-ci-'));
+          try {
+            const installed = join(scratch, 'installed', 'golive');
+            const app = join(scratch, 'empty-app');
+            cpSync('skills/golive', installed, { recursive: true });
+            mkdirSync(app);
+            assert.match(readFileSync(join(installed, 'SKILL.md'), 'utf8'), /^name: golive$/m);
+            assert.ok(existsSync(join(installed, 'references')));
+            const cli = join(installed, 'scripts', 'golive.mjs');
+            const run = (...args) => execFileSync(process.execPath, [cli, ...args], {
+              cwd: app,
+              encoding: 'utf8',
+              timeout: 30_000,
+              env: { PATH: process.env.PATH },
+            });
+            assert.match(run('help'), /^golive /);
+            assert.equal(typeof JSON.parse(run('version', '--json')).version, 'string');
+            const menu = JSON.parse(run('menu', '--json', '--cwd', app));
+            assert.equal(menu.ok, true);
+            assert.ok(menu.menu);
+            const detection = JSON.parse(run('detect', '--json', '--cwd', app));
+            assert.equal(detection.ok, true);
+            assert.ok(detection.detect);
+            assert.ok(Array.isArray(detection.findings));
+            console.log('Copied GoLive skill: help, version, menu and detect passed on Node 20.');
+          } finally {
+            rmSync(scratch, { recursive: true, force: true });
+          }
+          JS

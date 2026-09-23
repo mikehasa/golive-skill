@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "name": "golive",
+  "version": "0.1.0-alpha.1",
+  "source": {
+    "repository": "https://github.com/mikehasa/golive-skill",
+    "ref": "v0.1.0-alpha.1"
+  },
+  "node": ">=20",
+  "schemas": {
+    "config": 1,
+    "state": 1,
+    "approval": 1
+  },
+  "files": {
+    "SKILL.md": "10de7675dd22867b1d3506ca863ae4ecf85ccf0db1ef3706a169faf51c130536",
+    "LICENSE": "b1546216882fd37b1602f3a004e8548b5f6c38ada73117308d4c3ac6968235e9",
+    "THIRD_PARTY_NOTICES.md": "ad33f954a31c411cc667c07460859c77a014d6720e581a5ce5edd48c9c962781",
+    "references/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "references/cloudflare-dns.md": "187016365572a33a7094e1c6c319f702a8777b6b5859b5d08302b9cdeafbebcb",
+    "references/godaddy.md": "79f0fc450f939a258eff829d02208ffcf08f3490b88c142580d2369fce8b63d4",
+    "references/guided.md": "43081b870baec23f67b5523c786ee109d647d3e36ef57d86cec7fe961e98662e",
+    "references/neon.md": "221bc3134a22241fc6d61780ab4be3f1094a229175b7137c841375260819b4e5",
+    "references/netlify.md": "7c1705f0bea0987d0a19c3be8f370e64c66f0d205f9fb963bbf923744f846f0a",
+    "references/plan-and-verify.md": "9d342ea6880a922e82bddff5916e5defe0900a7d0f0da7436887ec5367b16e6b",
+    "references/porkbun.md": "cab7f817fb960325ff957ec405ca1affd632d8b1559321dd04a246a77075db75",
+    "references/resend.md": "55a2d863a9bd4295303c1e06f72b200292f609f03dee46bcc2a541a6fde50e0e",
+    "references/stripe.md": "f2bf125ac8b4f7b47d93e4921b824195e9a338ca4f7d1c85177eea0e63e67343",
+    "references/supabase.md": "cdfd5793aa248f61afeed13bd5d64d2fd1a40cd3e1d359a4cc717b528019dcfd",
+    "references/troubleshooting.md": "8a9a8bd3a4c79e5fac00edbec3db0d6c47eaf36f4f6e7a5b92a46a92b21e50fd",
+    "references/updates.md": "f7e162ed69a3935ab6bd87896d54876345c39e59d305afdd9fae1950fe56fd37",
+    "references/vercel.md": "83e98b61a1f16ba0e76327ccf01268a3a4c42be3ffecc0ab12bc8c6f061c18df",
+    "scripts/golive.mjs": "655da7dc42b6c916e9a182e62d272cbb8fdfe4c326e69fda6af41f197e721941",
+    "scripts/install-cli.mjs": "55e2a776892a9d34fa62d7ebf70bb101a0f54a3592ba9f87b77a1d43043e108a",
+    "scripts/install-lib.mjs": "9d3de597acc711178e588247f3cc9b5b5445f90d492cd464018065f2cd25caec"
+  },
+  "bundleDigest": "a527dd3d36f7969c8d597ec30432a1b949fc12acad4e98b309b34ec204e8382b"
+}

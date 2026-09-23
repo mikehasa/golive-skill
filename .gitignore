@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.DS_Store
+# local test fixtures that may hold real credentials
+.fixtures-local/

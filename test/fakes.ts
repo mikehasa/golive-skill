@@ -1,0 +1,394 @@
+/**
+ * In-memory FAKE adapters implementing every capability, for testing links (cross-provider glue)
+ * without any provider, network or CLI. Each fake exposes its mutable state so tests can arrange
+ * "what already exists" and inspect "what was written".
+ */
+import { Secret } from '../src/core/secret.js';
+import { modeFor } from '../src/core/config.js';
+import type { Adapter, AuthSettings, DnsRecord, EnvTarget, Mode, OutputKey, Outputs, ProjectRef, Value } from '../src/core/types.js';
+
+export interface Call {
+  adapter: string;
+  method: string;
+  args: unknown[];
+}
+
+// Raw values the fakes hand out. Tests assert these never show up anywhere printable.
+export const RAW = {
+  supabaseSecret: 'sb_secret_FAKEsupabaseSECRETvalue0123456789',
+  dbUrl: 'postgres://postgres:FAKEdbPASSWORD9876@db.fake.local:5432/postgres',
+  stripeLive: 'sk_' + 'live_FAKEliveSECRETkey0123456789abcdef',
+  stripeTest: 'sk_' + 'test_FAKEtestSECRETkey0123456789abcdef',
+  resendKey: 're' + '_FAKEresend_KEYvalue0123456789',
+  whsecPrefix: 'whsec' + '_FAKEwebhookSIGNINGsecret',
+} as const;
+
+export const PUBLIC = {
+  supabaseUrl: 'https://abcd.fakedb.co',
+  supabasePublishable: 'sb_publishable_FAKEpublic123',
+  pkLive: 'pk_live_FAKEpublishable123',
+  pkTest: 'pk_test_FAKEpublishable123',
+} as const;
+
+export const ALL_RAW_SECRETS = (): string[] => [RAW.supabaseSecret, RAW.dbUrl, 'FAKEdbPASSWORD9876', RAW.stripeLive, RAW.stripeTest, RAW.resendKey, RAW.whsecPrefix];
+
+type EnvMap = Record<EnvTarget, Map<string, Value>>;
+
+export function fakeWorld() {
+  const calls: Call[] = [];
+  const rec = (adapter: string, method: string, ...args: unknown[]) => calls.push({ adapter, method, args });
+
+  // ── Host ────────────────────────────────────────────────────────────────────────────────────────
+  const host = {
+    authed: true,
+    current: { id: 'prj_1', name: 'shop' } as ProjectRef | null,
+    candidates: [] as ProjectRef[],
+    canCreate: true,
+    createError: null as string | null,
+    env: { development: new Map(), preview: new Map(), production: new Map() } as EnvMap,
+    urls: { development: null, preview: 'https://shop-git-main.fakehost.app', production: 'https://shop.fakehost.app' } as Record<EnvTarget, string | null>,
+    previewPatterns: ['https://shop-*.fakehost.app/**'],
+    domainStatus: 'pending' as 'ok' | 'pending' | 'misconfigured',
+    attached: [] as string[],
+    records: [{ type: 'A', name: 'example.com', content: '76.76.21.21' }] as DnsRecord[],
+    deploys: 0,
+    /** When set, the next deploy throws this (then clears it), like a failing build. */
+    deployError: null as string | null,
+    /** Whether the fake host exposes DomainAttach.verify, and what it returns. */
+    withDomainVerify: true,
+    verifyResult: 'pending' as 'verified' | 'pending',
+    /** name -> why the host refuses to write it (like a Vercel var shared by several targets); canSet reports it, set throws it. */
+    envRefuse: {} as Record<string, string>,
+    /** When false, the fake EnvStore has no canSet() preflight. */
+    withCanSet: true,
+  };
+  const hostAdapter: Adapter = {
+    id: 'fakehost',
+    title: 'FakeHost',
+    axes: ['hosting'],
+    automated: true,
+    auth: async () => (host.authed ? { ok: true, via: 'fakehost CLI' } : { ok: false, howToFix: 'run `fakehost login` in your terminal' }),
+    capabilities: {
+      project: {
+        current: async () => host.current,
+        candidates: async () => host.candidates,
+        select: async (_c, idOrName) => {
+          rec('fakehost', 'project.select', idOrName);
+          const known = [...(host.current ? [host.current] : []), ...host.candidates];
+          const p = known.find((x) => x.id === idOrName || x.name === idOrName) ?? { id: `prj_${idOrName}`, name: idOrName };
+          host.current = p;
+          return p;
+        },
+        get create() {
+          return host.canCreate
+            ? async (_c: unknown, name: string) => {
+                rec('fakehost', 'project.create', name);
+                if (host.createError) throw new Error(host.createError);
+                host.current = { id: `prj_new_${name}`, name };
+                return host.current;
+              }
+            : undefined;
+        },
+      },
+      env: {
+        listNames: async (_c, t) => [...host.env[t].keys()].sort(),
+        set: async (_c, name, value, targets, opts) => {
+          rec('fakehost', 'env.set', name, value, targets, opts);
+          if (host.envRefuse[name]) throw new Error(`${name} ${host.envRefuse[name]}`);
+          for (const t of targets) host.env[t].set(name, value);
+        },
+        get canSet() {
+          return host.withCanSet ? async (_c: unknown, name: string) => host.envRefuse[name] ?? null : undefined;
+        },
+      },
+      url: {
+        get: async (_c, t) => host.urls[t],
+        previewPatterns: async () => host.previewPatterns,
+      },
+      deploy: {
+        deploy: async (_c, t) => {
+          rec('fakehost', 'deploy', t);
+          if (host.deployError) {
+            const msg = host.deployError;
+            host.deployError = null;
+            throw new Error(msg);
+          }
+          host.deploys++;
+          host.urls[t] ??= 'https://shop.fakehost.app';
+          return { url: 'https://shop-abc123.fakehost.app' };
+        },
+      },
+      domain: {
+        add: async (_c, d) => {
+          rec('fakehost', 'domain.add', d);
+          if (!host.attached.includes(d)) host.attached.push(d);
+        },
+        requiredRecords: async () => host.records,
+        status: async () => host.domainStatus,
+        get verify() {
+          return host.withDomainVerify
+            ? async (_c: unknown, d: string) => {
+                rec('fakehost', 'domain.verify', d);
+                return host.verifyResult;
+              }
+            : undefined;
+        },
+      },
+    },
+  };
+
+  // ── Database + auth (one provider, two axes, like Supabase) ─────────────────────────────────────
+  const db = {
+    authed: true,
+    current: { id: 'db_1', name: 'shop' } as ProjectRef | null,
+    candidates: [] as ProjectRef[],
+    /** Which outputs the provider can supply (db.url only when the password is known). */
+    provides: ['supabase.url', 'supabase.publishableKey', 'supabase.secretKey', 'db.url'] as OutputKey[],
+    /** When false, the fake has no provides() and links fall back to outputs() keys. */
+    declaresProvides: true,
+    auth: { siteUrl: 'http://localhost:3000', redirectUrls: ['http://localhost:3000/**'] } as AuthSettings,
+    outputsCalls: 0,
+  };
+  const dbOutputs = (): Outputs => {
+    const all: Outputs = {
+      'supabase.url': PUBLIC.supabaseUrl,
+      'supabase.publishableKey': PUBLIC.supabasePublishable,
+      'supabase.secretKey': new Secret('SUPABASE_SECRET_KEY', RAW.supabaseSecret),
+      'db.url': new Secret('DATABASE_URL', RAW.dbUrl),
+    };
+    return Object.fromEntries(Object.entries(all).filter(([k]) => db.provides.includes(k as OutputKey)));
+  };
+  const outputsCap = {
+    outputs: async () => {
+      db.outputsCalls++;
+      return dbOutputs();
+    },
+  };
+  const dbAdapter: Adapter = {
+    id: 'fakedb',
+    title: 'FakeDB',
+    axes: ['db', 'auth'],
+    automated: true,
+    auth: async () => (db.authed ? { ok: true } : { ok: false, howToFix: 'export FAKEDB_ACCESS_TOKEN in your shell' }),
+    capabilities: {
+      project: {
+        current: async () => db.current,
+        candidates: async () => db.candidates,
+        select: async (_c, idOrName) => {
+          rec('fakedb', 'project.select', idOrName);
+          const known = [...(db.current ? [db.current] : []), ...db.candidates];
+          db.current = known.find((x) => x.id === idOrName || x.name === idOrName) ?? { id: idOrName, name: idOrName };
+          return db.current;
+        },
+      },
+      // provides() is an optional extension the links understand; exposed via a getter so tests can toggle it.
+      get outputs() {
+        return db.declaresProvides ? { ...outputsCap, provides: async () => db.provides } : outputsCap;
+      },
+      authConfig: {
+        get: async () => structuredClone(db.auth),
+        set: async (_c, patch) => {
+          rec('fakedb', 'authConfig.set', patch);
+          db.auth = { ...db.auth, ...patch };
+        },
+      },
+      dbAdmin: { tables: async () => [] },
+    },
+  };
+
+  // ── Payments ────────────────────────────────────────────────────────────────────────────────────
+  const pay = {
+    authed: true,
+    secretKeys: { live: RAW.stripeLive, test: RAW.stripeTest } as Partial<Record<Mode, string>>,
+    publishableKeys: { live: PUBLIC.pkLive, test: PUBLIC.pkTest } as Partial<Record<Mode, string>>,
+    /** owned: false = created by the human, not golive (default: owned). */
+    endpoints: [] as Array<{ id: string; url: string; events: string[]; enabled: boolean; mode: Mode; owned?: boolean }>,
+    deleted: [] as string[],
+    n: 0,
+    withReplace: true,
+    /** When false, the fake has no find() (links fall back to list()). */
+    withFind: true,
+  };
+  // Same rule as the stripe adapter: owned by golive first, else any endpoint at that URL.
+  const matchEndpoint = (url: string, mode: Mode) => {
+    const same = pay.endpoints.filter((x) => x.url === url && x.mode === mode);
+    return same.find((x) => x.owned !== false) ?? same[0];
+  };
+  const newEndpoint = (url: string, events: string[], mode: Mode) => {
+    const id = `we_${++pay.n}`;
+    pay.endpoints.push({ id, url, events, enabled: true, mode });
+    return { id, created: true, secret: new Secret('STRIPE_WEBHOOK_SECRET', `${RAW.whsecPrefix}${pay.n}xyz`) };
+  };
+  const payAdapter: Adapter = {
+    id: 'fakepay',
+    title: 'FakePay',
+    axes: ['payments'],
+    automated: true,
+    auth: async () => (pay.authed ? { ok: true } : { ok: false, howToFix: 'run `fakepay login` in your terminal' }),
+    capabilities: {
+      paymentAccount: {
+        identify: async (_ctx, mode) => ({ mode, accountId: 'acct_FakePay', operatorFingerprint: `fake-operator-${mode}` }),
+        bind: async (ctx) => ctx,
+      },
+      outputs: {
+        outputs: async (c, t) => {
+          const mode = modeFor(c.config, t === 'development' ? 'preview' : t);
+          const out: Outputs = {};
+          const sk = pay.secretKeys[mode];
+          if (sk) out['stripe.secretKey'] = new Secret('STRIPE_SECRET_KEY', sk);
+          const pk = pay.publishableKeys[mode];
+          if (pk) out['stripe.publishableKey'] = pk;
+          return out;
+        },
+      },
+      webhooks: {
+        // Like Stripe's list(): only endpoints golive owns (a human's endpoint is invisible here).
+        list: async (_c, mode) => pay.endpoints.filter((e) => e.mode === mode && e.owned !== false).map(({ mode: _m, owned, ...e }) => ({ ...e, owned: owned !== false })),
+        get find() {
+          return pay.withFind
+            ? async (_c: unknown, url: string, mode: Mode) => {
+                const e = matchEndpoint(url, mode);
+                return e ? { id: e.id, url: e.url, events: e.events, enabled: e.enabled, owned: e.owned !== false } : null;
+              }
+            : undefined;
+        },
+        ensure: async (_c, spec) => {
+          rec('fakepay', 'webhooks.ensure', spec);
+          const e = matchEndpoint(spec.url, spec.mode);
+          if (e) {
+            e.events = e.owned === false ? [...new Set([...e.events, ...spec.events])] : spec.events;
+            e.enabled = true;
+            return { id: e.id, created: false };
+          }
+          return newEndpoint(spec.url, spec.events, spec.mode);
+        },
+        get replace() {
+          return pay.withReplace
+            ? async (_c: unknown, id: string, mode: Mode, opts: { deleteOld?: boolean } = {}) => {
+                rec('fakepay', 'webhooks.replace', id, mode);
+                const old = pay.endpoints.find((x) => x.id === id)!;
+                const created = newEndpoint(old.url, old.events, mode);
+                if (opts.deleteOld === false) return { ...created, oldDeleted: false, oldLeft: 'kept until the new signing secret is stored' };
+                if (old.owned === false) return { ...created, oldDeleted: false, oldLeft: 'not created by golive' };
+                pay.endpoints = pay.endpoints.filter((x) => x.id !== id);
+                pay.deleted.push(id);
+                return { ...created, oldDeleted: true };
+              }
+            : undefined;
+        },
+        get remove() {
+          return pay.withReplace
+            ? async (_c: unknown, id: string) => {
+                rec('fakepay', 'webhooks.remove', id);
+                const old = pay.endpoints.find((x) => x.id === id);
+                if (!old) return { deleted: false, reason: 'endpoint not found' };
+                if (old.owned === false) return { deleted: false, reason: 'not created by golive' };
+                pay.endpoints = pay.endpoints.filter((x) => x.id !== id);
+                pay.deleted.push(id);
+                return { deleted: true };
+              }
+            : undefined;
+        },
+      },
+    },
+  };
+
+  // ── Email ───────────────────────────────────────────────────────────────────────────────────────
+  const mail = {
+    authed: true,
+    domains: new Map<string, { id: string; status: 'verified' | 'pending' | 'failed' | 'not_started' }>(),
+    verifyError: null as string | null,
+    keys: 0,
+  };
+  const mailRecords = (d: string): DnsRecord[] => [
+    { type: 'MX', name: `send.${d}`, content: 'feedback-smtp.fakemail.com', priority: 10 },
+    { type: 'TXT', name: `send.${d}`, content: 'v=spf1 include:fakemail.com ~all' },
+    { type: 'TXT', name: `fm._domainkey.${d}`, content: 'p=MIGfMA0GFAKEdkim' },
+  ];
+  const mailAdapter: Adapter = {
+    id: 'fakemail',
+    title: 'FakeMail',
+    axes: ['email'],
+    automated: true,
+    auth: async () => (mail.authed ? { ok: true } : { ok: false, howToFix: 'export FAKEMAIL_API_KEY in your shell' }),
+    capabilities: {
+      sendingDomain: {
+        ensure: async (_c, d) => {
+          rec('fakemail', 'sendingDomain.ensure', d);
+          let e = mail.domains.get(d);
+          if (!e) mail.domains.set(d, (e = { id: `dom_${d}`, status: 'not_started' }));
+          return { id: e.id, records: mailRecords(d) };
+        },
+        status: async (_c, id) => [...mail.domains.values()].find((x) => x.id === id)?.status ?? 'not_started',
+        verify: async (_c, id) => {
+          rec('fakemail', 'sendingDomain.verify', id);
+          if (mail.verifyError) throw new Error(mail.verifyError);
+          const e = [...mail.domains.values()].find((x) => x.id === id);
+          if (e) e.status = 'pending';
+        },
+      },
+      keys: {
+        issue: async (_c, target, scope) => {
+          rec('fakemail', 'keys.issue', target, scope);
+          return { key: 'resend.apiKey', id: `key_${++mail.keys}`, secret: new Secret('RESEND_API_KEY', `${RAW.resendKey}${mail.keys}`) };
+        },
+      },
+      testSend: { send: async () => ({ id: 'msg_1' }), status: async () => 'delivered' },
+    },
+  };
+
+  // ── DNS ─────────────────────────────────────────────────────────────────────────────────────────
+  const dns = {
+    authed: true,
+    zones: new Set<string>(['example.com']),
+    records: [] as DnsRecord[],
+    /** When set, hosts() throws this (e.g. a token without Zone:Read, or a rate limit). */
+    lookupError: null as string | null,
+    /** When true, list() returns nothing (simulates a write that didn't stick). */
+    hideRecords: false,
+  };
+  const dnsAdapter: Adapter = {
+    id: 'fakedns',
+    title: 'FakeDNS',
+    axes: ['dns'],
+    automated: true,
+    auth: async () => (dns.authed ? { ok: true } : { ok: false, howToFix: 'export FAKEDNS_TOKEN in your shell' }),
+    capabilities: {
+      dns: {
+        hosts: async (_c, d) => {
+          if (dns.lookupError) throw new Error(dns.lookupError);
+          return [...dns.zones].some((z) => d === z || d.endsWith(`.${z}`));
+        },
+        list: async () => (dns.hideRecords ? [] : dns.records),
+        upsert: async (_c, _d, r) => {
+          rec('fakedns', 'dns.upsert', r);
+          const i = dns.records.findIndex((x) => x.type === r.type && x.name === r.name && (r.type !== 'TXT' || x.content === r.content));
+          if (i < 0) {
+            dns.records.push(r);
+            return 'created';
+          }
+          if (dns.records[i]!.content === r.content) return 'unchanged';
+          dns.records[i] = r;
+          return 'updated';
+        },
+      },
+    },
+  };
+
+  const guidedAdapter: Adapter = { id: 'fakeguided', title: 'FakeGuided', axes: ['hosting', 'auth', 'dns'], automated: false, auth: async () => ({ ok: true }), capabilities: {} };
+
+  return {
+    calls,
+    host,
+    db,
+    pay,
+    mail,
+    dns,
+    adapters: [hostAdapter, dbAdapter, payAdapter, mailAdapter, dnsAdapter, guidedAdapter],
+  };
+}
+
+export type FakeWorld = ReturnType<typeof fakeWorld>;
+
+/** The full stack wired to the fakes. */
+export const FAKE_STACK = { hosting: 'fakehost', db: 'fakedb', auth: 'fakedb', payments: 'fakepay', email: 'fakemail', dns: 'fakedns' } as const;
