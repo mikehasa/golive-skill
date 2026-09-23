@@ -4,6 +4,8 @@ Pre-publication validation snapshot, 2026-09-23, for GoLive `0.1.0-alpha.1`. Thi
 no credentials, account inventories, real resource identifiers or private workspace paths.
 The live tests exercised the implementation during development; this is not a claim that every
 provider combination, first-time account setup or renamed package has had a live deployment.
+Public-channel installation acceptance was recorded later the same day; see
+[Post-publication acceptance](#post-publication-acceptance).
 
 ## Observed live results
 
@@ -65,7 +67,8 @@ identifiers. These checks reduce accidental disclosure risk; they are not a secu
 These checks prove local installation and runtime behavior; they do not prove native discovery in
 a new agent session. Publication is not implied by local acceptance. At the time of this snapshot,
 anonymous clone, public Skills CLI installation, hosted CI and public release downloads had not
-yet been tested; those checks require the published endpoints.
+yet been tested; those checks required the published endpoints. They were run after publication
+and passed — see [Post-publication acceptance](#post-publication-acceptance).
 
 ## Native credential entry and guided-provider follow-up
 
@@ -88,7 +91,8 @@ Skills CLI installs for Codex and Claude Code and the npm package's own installe
 subprocesses blocked. All 28 npm package files passed a case-insensitive naming audit: no development
 codename remains in their paths or contents. Source-only references are confined to the rename
 helper, its regression fixtures and the CI guard that rejects old runtime names. This remains
-local artifact acceptance; public installation still requires publication and a separate check.
+local artifact acceptance; the separate public-installation check was run after publication and
+passed (see [Post-publication acceptance](#post-publication-acceptance)).
 
 ## Still unverified
 
@@ -129,3 +133,27 @@ fixed-name lock records. A later updater keeps its lock when an earlier recovery
 automatic-update opt-out cannot succeed concurrently and then be overwritten by that updater.
 Each operation removes only its unique owner record, followed by nonrecursive empty-directory
 cleanup. These are offline filesystem and mocked-update checks, not additional provider coverage.
+
+## Post-publication acceptance
+
+Recorded 2026-09-23 after the repository became public, against tag `v0.1.0-alpha.1`
+(commit `cfd5ac79443e95027f4cbbfe68d7fe30ef43fec0`, bundle digest
+`a527dd3d36f7969c8d597ec30432a1b949fc12acad4e98b309b34ec204e8382b`). Every run used isolated
+temporary homes; no real user skill directory, provider account or credential was touched, and
+no cloud writes were made.
+
+| Public channel | Observed result |
+| --- | --- |
+| Anonymous clone | Exact 20-file inventory and all 20 manifest hashes matched; `help`, `version --json`, `menu --json`, `detect --json` and offline `update-check` passed on Node 20 with network and provider subprocesses blocked |
+| Skills CLI install (Codex) | Same inventory, hashes and runtime checks passed |
+| Skills CLI install (Claude Code) | Same inventory, hashes and runtime checks passed |
+| Own installer, tagged download | Same inventory, hashes and runtime checks passed |
+| Online update check | One fixed metadata request; the installed release was reported current; no provider subprocesses |
+| Global Skills CLI 1.7.0 installs | Codex and Claude Code installs run from outside any Git repository matched the version, all 20 files and the bundle digest; installed copies are real directories, not symlinks |
+
+Hosted CI on the public repository passed for the [initial commit](https://github.com/mikehasa/golive-skill/actions/runs/35868380318)
+and the [latest documentation commit](https://github.com/mikehasa/golive-skill/actions/runs/35928911426).
+
+These results cover public installation and runtime identity only. Everything in
+[Still unverified](#still-unverified) remains unverified, skill discovery inside a new agent
+session has not been tested, and no end user's own global installation has been confirmed.
