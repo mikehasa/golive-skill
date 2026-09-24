@@ -139,11 +139,14 @@ golive automates (after plan approval):
   `smtp_sender_name` from the sender `email.from` already uses, and the write-only `smtp_pass` from a
   sending key golive issued — the one the email journey issued in this run, otherwise one it issues for
   SMTP alone (`golive-…-smtp`, recorded as `<provider>.keyId@smtp` so teardown can revoke it); never a
-  paste and never a chat prompt. The step re-reads the non-secret fields (`auth:smtp:applied`) and the
-  `auth-policy` check reports `custom SMTP via Resend` instead of the built-in-mailer warning, and the
-  journeys that send real mail run after it. The password is never compared, because the API never
-  returns it: the read-back confirms the settings, and a real auth email arriving is the only full
-  proof.
+  paste and never a chat prompt. `smtp_port` is the one field this API documents and validates as a
+  string: golive sends `"465"`, because a number is the live 400 `smtp_port: Invalid input: expected
+  string, received number` (the port stays a number in the plan, the changes and everything golive
+  reads back — the read accepts either type). The step re-reads the non-secret fields
+  (`auth:smtp:applied`) and the `auth-policy` check reports `custom SMTP via Resend` instead of the
+  built-in-mailer warning, and the journeys that send real mail run after it. The password is never
+  compared, because the API never returns it: the read-back confirms the settings, and a real auth
+  email arriving is the only full proof.
 - **Runs the signup journey** when the human opted in with `auth.e2e: true` (see below): the
   `auth:test-user` step seeds one test account through the project's own `/auth/v1` signup endpoint,
   `auth:confirm-email` hands the inbox click over, and the `auth-signup`/`auth-session` checks prove
@@ -459,11 +462,14 @@ account isolation as proven on a human's project until a live report says `pass`
 
 - Whether publishable keys are blocked from `/rest/v1/` exactly like anon keys (assumed yes).
 - The exact enforcement date for removing legacy keys ("late 2026", not final).
-- Custom SMTP writes: implemented and mock-covered, not exercised live. `smtp_pass` is write-only (the
-  API answers a hash), so even after a real run the read-back confirms only host/port/user/sender —
-  never that the key in effect is the recorded one, or that mail leaves the project. The auth email
-  throttle's exact behaviour is also unconfirmed — the live project's `rate_limit_email_sent: 2`
-  accepted one send and refused the next 25 seconds later rather than allowing a clean two per window.
+- Custom SMTP writes: mock-covered, and the 2026-09-24 live run reached the write — the provider's
+  validation rejected the port's number (`smtp_port: Invalid input: expected string, received
+  number`, fixed by sending the string), so an accepted write and its read-back are still unobserved
+  live. `smtp_pass` is write-only (the API answers a hash), so even after a real run the read-back
+  confirms only host/port/user/sender — never that the key in effect is the recorded one, or that
+  mail leaves the project. The auth email throttle's exact behaviour is also unconfirmed — the live
+  project's `rate_limit_email_sent: 2` accepted one send and refused the next 25 seconds later
+  rather than allowing a clean two per window.
 - GoTrue answer shapes still modelled from its documented behaviour: an obfuscated duplicate signup
   and a captcha refusal. The disposable live run (2026-09-23) exercised an accepted signup, the
   confirmation email request, the `email_not_confirmed` login refusal and the 429 rate-limit refusal.

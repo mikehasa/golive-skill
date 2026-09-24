@@ -1102,6 +1102,16 @@ describe('supabase authConfig', () => {
     expect(a.smtp).toEqual({ configured: false });
   });
 
+  it('get(): reads the SMTP port from either type the API answers it with', async () => {
+    const answering = (port: unknown) => mockHttp([['GET', `${API}/projects/${REF}/config/auth`, () => ({ json: { site_url: '', uri_allow_list: '', smtp_host: 'smtp.resend.com', smtp_port: port, smtp_user: 'resend' } })]]);
+    // The documented type is a string, and this API has also answered the port as a number: golive
+    // reads both as the number its own settings use.
+    const asWritten = await caps.authConfig.get(testCtx({ http: answering('465').http, tokens, state: withRef() }));
+    expect(asWritten.smtp).toEqual({ configured: true, host: 'smtp.resend.com', port: 465, user: 'resend' });
+    const asNumber = await caps.authConfig.get(testCtx({ http: answering(465).http, tokens, state: withRef() }));
+    expect(asNumber.smtp).toEqual({ configured: true, host: 'smtp.resend.com', port: 465, user: 'resend' });
+  });
+
   it('set(): writes policy fields and confirms them from the provider\'s own settings', async () => {
     let live: Record<string, unknown> = { site_url: 'https://app.example.com', uri_allow_list: 'https://app.example.com/**', disable_signup: false, mailer_autoconfirm: false, password_min_length: 6, smtp_host: '' };
     const { http, calls } = mockHttp([
@@ -1114,6 +1124,27 @@ describe('supabase authConfig', () => {
     expect(out.skipped).toEqual([]);
     expect(calls.map((c) => c.method)).toEqual(['PATCH', 'GET']); // the write is followed by the provider's own settings
     expect(out.after).toMatchObject({ signupEnabled: false, emailConfirmRequired: true, minPasswordLength: 12, smtp: { configured: true, host: 'smtp.resend.com' } });
+  });
+
+  it('set(): sends smtp_port as a string (a number is the provider\'s live 400), and keeps golive\'s number', async () => {
+    let live: Record<string, unknown> = { site_url: '', uri_allow_list: '' };
+    const { http, calls } = mockHttp([
+      ['GET', `${API}/projects/${REF}/config/auth`, () => ({ json: live })],
+      // The provider's own rule, verbatim: a numeric smtp_port is the 400 the live run recorded, so
+      // sending the number again fails this test the way that run failed.
+      ['PATCH', `${API}/projects/${REF}/config/auth`, (c) => {
+        if (typeof (c.body as Record<string, unknown>).smtp_port !== 'string') return { status: 400, json: { message: 'smtp_port: Invalid input: expected string, received number' } };
+        live = { ...live, ...(c.body as Record<string, unknown>) };
+        return { json: {} };
+      }],
+    ]);
+    const out = await caps.authConfig.set(testCtx({ http, tokens, state: withRef() }), {
+      smtp: { configured: true, host: 'smtp.resend.com', port: 465, user: 'resend', senderEmail: 'noreply@example.com', senderName: 'Shop' },
+    });
+    expect(patches(calls)[0]).toEqual({ smtp_host: 'smtp.resend.com', smtp_port: '465', smtp_user: 'resend', smtp_admin_email: 'noreply@example.com', smtp_sender_name: 'Shop' });
+    expect([out.applied, out.skipped]).toEqual([['smtp.host', 'smtp.port', 'smtp.user', 'smtp.senderEmail', 'smtp.senderName'], []]);
+    // The string is the wire type only: the settings golive works with keep the port a number.
+    expect(out.after?.smtp).toEqual({ configured: true, host: 'smtp.resend.com', port: 465, user: 'resend', senderEmail: 'noreply@example.com', senderName: 'Shop' });
   });
 
   it('set(): names a setting the provider does not report back instead of calling it applied', async () => {
