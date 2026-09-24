@@ -2,7 +2,7 @@
 
 Automated hosting: exact site select/create, site environment writes, official CLI build/deploy, and provider-confirmed URLs. Custom domain attachment, DNS and project visibility remain guided. The approved Netlify + Neon throwaway run on 2026-09-23 passed creation, env writes and deployment. After separately approved visibility UI changes, anonymous access and bundle scanning passed; API and browser CRUD/refresh supplied separate application acceptance evidence.
 
-Exact-site cleanup later passed under its own approval, including an absent site and anonymous default-origin 404. Account logins, credential configuration and local evidence were retained. This used a supervised fixture helper (predating the built-in `golive teardown` flow, which now removes golive-created sites); the live result covers this tested app and account scope.
+Exact-site cleanup later passed under its own approval, including an absent site and anonymous default-origin 404. Account logins, credential configuration and local evidence were retained. That cleanup used a supervised fixture helper, predating the built-in `golive teardown` flow. The built-in flow's own Netlify removal has since passed a disposable run: it deleted only the project golive had created and deployed in that same run, the account's site list counted 0 before the run, 1 during it and 0 after, and a second `teardown` planned nothing. The live results cover the tested apps and account scope.
 
 ## Login and selection
 

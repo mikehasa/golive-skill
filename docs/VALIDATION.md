@@ -19,7 +19,7 @@ Public-channel installation acceptance was recorded later the same day; see
 | Vercel + GoDaddy (CLI transport) | Same journey on a third disposable subdomain with DNS served by the official `gddy` CLI and the user's own OAuth session: one scope consent, both records created through `gddy api call`, inline read-back, ownership verification and HTTPS 200; the v3 update-by-ID (PUT) endpoint separately validated through the same session (status 200, mutation read back) | Static fixture; golive's owned-record update flows and the REST update-by-ID path remain mock-covered |
 | Vercel + Resend email | Disposable project and a subdomain of an existing Porkbun zone: Resend domain created through the CLI transport, DKIM/SPF/MX/return-path records written under `--confirm-dns`, domain verified, two sending-scoped keys issued and written into the app env, and a real send using the app's own environment key delivered to a personal inbox (report: 4 pass, 0 fail, 1 warn) | Fresh subdomain without sending history: the message landed in the recipient provider's spam folder (no DMARC, new reputation); Auth SMTP, bounce handling and richer message content not exercised |
 | Vercel + Stripe test payments | Disposable project: restricted operator key plus a standard app key, sandbox identity bound into approval; `STRIPE_SECRET_KEY` written and re-checked in both targets; a test-mode webhook endpoint registered and re-checked via the API; the unsigned probe rejected with 400; a real test-card payment delivered `checkout.session.completed`, signature-verified, HTTP 200 (report: 5 pass, 0 fail) | Test mode (sandbox) only; live-mode keys/charges, entitlements, refunds and subscriptions not exercised |
-| Teardown (approved removal of golive-created resources) | `golive teardown` planned and removed a disposable Vercel project plus two GoDaddy and four Porkbun records golive had created, with read-back absence checks on every record; separately removed a test-mode Stripe webhook endpoint and revoked two Resend sending keys from recorded state. An apply without `--confirm-destroy` was blocked with nothing deleted | Removal covers only resources golive provably created; adopted projects, unowned records and resources of signed-out providers become manual handoffs (Supabase/Neon projects, the Resend sending domain); Cloudflare and Netlify removals and live-mode deletions not exercised |
+| Teardown (approved removal of golive-created resources) | `golive teardown` planned and removed a disposable Vercel project and a disposable Netlify project golive had created and deployed in the same run, plus two GoDaddy and four Porkbun records golive had created, with read-back absence checks on every record: the Netlify site and its URL read 404, the account's site list counted 0 before the run, 1 during it and 0 after, and a second `teardown` planned nothing; separately removed a test-mode Stripe webhook endpoint and revoked two Resend sending keys from recorded state. An apply without `--confirm-destroy` was blocked with nothing deleted — re-checked in the Netlify run, where the project was still present and no teardown had been recorded | Removal covers only resources golive provably created; adopted projects, unowned records and resources of signed-out providers become manual handoffs (Supabase/Neon projects, the Resend sending domain); Cloudflare removals and live-mode deletions not exercised |
 | Cleanup | Separately approved exact test projects deleted; exact project reads and test URLs returned 404; unaffected scoped resources and login identities stayed unchanged | Normal provider deletion; Neon may retain a recovery window |
 
 Early cleanup used supervised fixture helpers; later runs removed their disposable resources through
@@ -94,6 +94,18 @@ and may trail the run that produced the evidence.
 - **Silent omissions (teardown run):** recorded webhook endpoints or sending keys that cannot be
   removed right now (e.g. a provider that is not signed in) are now explicit manual handoffs instead
   of silently missing from the inventory.
+- **Teardown deploy state (Netlify removal run):** removing a project left its `deployed:production`
+  marker and its completed `deploy:production` record behind, so a project created again in the same
+  repo would have been planned with no deploy at all. Removal now forgets those deploy facts
+  (fixed in #21).
+- **Host-project delete read-back (Netlify removal run):** the project-delete step reported success
+  from the delete response alone, unlike the DNS steps. It now re-reads the host project and fails
+  the step if the project still resolves (fixed in #21).
+- **Netlify visitor access (Netlify removal run):** that account's team enforces visitor access
+  (`sso_login` on every context), so the disposable project's homepage answered 401 to an anonymous
+  request even though the production deployment was provider-confirmed ready. GoLive raised its own
+  `netlify-public-access` handoff with the dashboard URL and changed no visibility setting; no public
+  200 was observed on this account.
 
 Provider fixes have offline mocked regressions. These implementation tests never use real accounts.
 The repaired behavior was subsequently exercised where described above; this is not blanket live
