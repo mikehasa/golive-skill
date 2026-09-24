@@ -120,8 +120,10 @@ records and webhooks re-read the proof from the provider, while a host project r
 creation marker and re-reads the project after deleting it. So is a step whose risk declares
 `replayable`: the same bar, asserted by an author for a write that re-observes the provider and
 golive's own recorded resource before acting (the `auth:test-user` password rotation, which re-reads
-the account state names, and the `auth:recovery` rotation, which re-reads the recorded account and its
-provider state before it asks for a recovery link). Nothing else is replayed automatically.
+the account state names; the `auth:recovery` rotation, which re-reads the recorded account and its
+provider state before it asks for a recovery link; and the `auth:isolation` second-account seed or
+rotation, which re-reads its own recorded account and the provider's state for it before writing).
+Nothing else is replayed automatically.
 `teardown` removes only proven golive-created resources under its own approval and confirmation gate;
 there is no automatic cross-provider rollback, restore or general reconciliation command. Its
 read-only inventory (`src/core/inventory.ts`) is shared with the handover document, so what a teardown

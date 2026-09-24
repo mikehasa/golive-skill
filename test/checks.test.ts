@@ -48,7 +48,7 @@ describe('ALL_CHECKS', () => {
     const ids = ALL_CHECKS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.sort()).toEqual(
-      ['accounts', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'preview-bundle', 'preview-deploy', 'rls-probe', 'site-headers', 'stripe-live-ready', 'webhook-registered', 'webhook-unsigned'].sort(),
+      ['accounts', 'auth-isolation', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'preview-bundle', 'preview-deploy', 'rls-probe', 'site-headers', 'stripe-live-ready', 'webhook-registered', 'webhook-unsigned'].sort(),
     );
   });
 });
@@ -1060,8 +1060,9 @@ describe('site-headers', () => {
 // ── read-only guarantee ─────────────────────────────────────────────────────────────────────────
 
 describe('read-only', () => {
-  // The only writes a check makes are the probes a human opted into: the unsigned webhook POST, and
-  // (with `auth.e2e: true`) the throwaway signup `auth-signup` performs.
+  // The only writes a check makes are the probes a human opted into: the unsigned webhook POST, the
+  // throwaway signup `auth-signup` performs with `auth.e2e: true`, and the one marker row per test
+  // account `auth-isolation` stores through the app with `auth.isolation: true`.
   it('no check sends a write method except the unsigned webhook POST of {}', async () => {
     const { http, calls } = mockHttp([
       dohRoute({ 'A shop.example.com': ['1.2.3.4'] }),

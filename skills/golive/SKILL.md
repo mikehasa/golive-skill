@@ -1,6 +1,6 @@
 ---
 name: golive
-description: Take an agent-written app from repo to live production on the user's OWN accounts, with providers they choose (hosting, database, auth, payments, email, domain/DNS). The human connects accounts and approves changes; supported wiring operations run through a local CLI and produce verification evidence with explicit limits. Use when the user wants to ship, deploy, go live, launch, publish, or put their app online, or asks to wire up env vars, webhooks, auth settings (signup, email confirmation, password policy), a real signup → confirmation email → login journey, auth redirects, email DNS or a custom domain.
+description: Take an agent-written app from repo to live production on the user's OWN accounts, with providers they choose (hosting, database, auth, payments, email, domain/DNS). The human connects accounts and approves changes; supported wiring operations run through a local CLI and produce verification evidence with explicit limits. Use when the user wants to ship, deploy, go live, launch, publish, or put their app online, or asks to wire up env vars, webhooks, auth settings (signup, email confirmation, password policy), a real signup → confirmation email → login journey, password recovery, account isolation between two users, auth redirects, email DNS or a custom domain.
 ---
 
 # golive: ship this app to production, on the user's own accounts
@@ -58,8 +58,8 @@ Never update between a plan and its apply. A changed release requires a new plan
 3. **No provider/account writes until the human approves the plan.** Local credential setup and
    human-submitted credential entry, `init`, and report files can be prepared during onboarding. Explain `plan` and get a
    clear yes before `apply`. Pass `--confirm-live` (live payments **or production data**, e.g. the
-   `auth:test-user` account, `auth-signup`'s throwaway probe and the `auth:recovery` password
-   rotation), `--confirm-dns` (DNS records) or
+   `auth:test-user` account, the `auth:isolation` second account, `auth-signup`'s throwaway probe and
+   the `auth:recovery` password rotation), `--confirm-dns` (DNS records) or
    `--confirm-destroy` (deletions) only if the human explicitly approved those categories.
 4. **Never buy anything or create accounts for them.** Signups, payment methods, identity checks
    (KYC) and domain purchases are handoffs the human does in their browser.
@@ -234,6 +234,18 @@ Explain the steps by provider, in plain language, and call out:
   the token live only in that run's memory, and the recovery email lands in the human's inbox: clicking
   it is their step (`auth:recovery-email`, non-blocking, closed by `auth-recovery`). It never touches
   any other account, and a captcha or the provider's mail throttle stops it with the reason.
+- `auth:isolation`: only when the human opted in with `auth.isolation: true` **and** `auth.e2e: true`
+  already seeds the first account. Say plainly that it **creates a second real account in their
+  project** (a `--confirm-live` write) whose address is `auth.testEmail` plus `+gl-isolation`, that
+  golive **confirms that second account through the provider's admin API** (so no second click is
+  needed; the confirmation email it also receives is a side effect), and that the passwords live only
+  in that run's memory. Then say what the isolation check needs from the app: two routes named by
+  `auth.identityPath` (the caller's own identity as JSON) and `auth.isolationPath` (the caller's own
+  rows; a POST stores one row for the caller), both refusing anonymous callers. When those are not
+  declared, `auth:isolation-routes` (non-blocking, closed by `auth-isolation`) is the app-code task to
+  hand to the coding agent — the check itself writes one marker row per account through
+  `auth.isolationPath` while it runs, so `verify` stores two small rows in the app's own data when
+  this opt-in is on.
 - `preview:deploy` / `release:check`: only with `release.preview: true` in `golive.yaml` **and**
   `preview` in `targets`. Say plainly that the deploy makes a real preview deployment of the current
   working tree (the branch is named in its preview; the preview env is filled from the same
@@ -311,6 +323,7 @@ Check scope:
 | `auth-signup` | the `auth.e2e` journey: a fresh probe address gets a confirmation email, cannot sign in before confirming, and the test account reads back confirmed (`email_confirmed_at`) — a sign-in of that account is extra evidence when this run holds its password (golive never sees the inbox: delivery and the click stay human-confirmed) |
 | `auth-session` | the `auth.e2e` journey: the test account's password login returns a session, the token resolves to that user, an anonymous request is refused, and a declared `auth.protectedPath` is not publicly readable |
 | `auth-recovery` | the `auth.recovery` journey: the provider accepts the recovery request for the test account, an address with no account gets the same answer (a different one is account enumeration), the token this run spent is refused when replayed, the new password signs in and the one it replaced is refused, and the token's window is named from `otpExpirySeconds` when the provider reports it (a 429 only warns: the mail throttle decides what a run can prove) |
+| `auth-isolation` | the `auth.isolation` journey: two recorded accounts sign in at once, both declared routes refuse an anonymous caller, each account's identity route answers with its own id and never the other's, and each account's rows route returns its own marker row and none of the other's (an anonymous 200, a crossed id or another account's marker fails **critical**) |
 | `webhook-unsigned` | the production webhook rejects unsigned POSTs (a non-HTML 401/403 only warns: it may be an auth wall) |
 | `webhook-registered` | the endpoint exists, enabled, for the right URL and events |
 | `stripe-live-ready` | the Stripe account can take live payments |
@@ -334,6 +347,16 @@ password it set and the token it spent exist there and nowhere else, so a plain 
 429 warns rather than fails, and it never reads the inbox: the click stays with the human. Treat this
 check as **implemented and mock-covered, not live-validated**: until a live run's report says `pass`
 for it, never present the recovery journey as proven on the human's project.
+
+`auth-isolation` is opt-in too (`auth.isolation: true`, plus `auth.identityPath` and
+`auth.isolationPath`), needs the second account the `auth:isolation` step seeds (`blocked by:
+auth:isolation` without one) and needs BOTH accounts' passwords, which exist only in the run that
+seeds or rotates them: a plain `verify` skips with that reason. A skip — never a pass — is also the
+answer when a route is undeclared or answers 404 (the skip names the app-code task), when a route
+refuses the session token golive holds, when the host cannot confirm the production URL, or when the
+provider or the app rate-limits a request. Treat it as **implemented and mock-covered, not
+live-validated**: until a live run's report says `pass`, never present account isolation as proven on
+the human's project, and never read it as covering an app whose routes golive could not read.
 
 `preview-deploy` and `preview-bundle` only mean anything after an opted-in preview deploy recorded
 `deployed:preview:id`: without one they skip with that reason, and a plan without `release.preview`

@@ -143,11 +143,16 @@ golive automates (after plan approval):
   own recovery link through the Auth admin API, exchanges the token for a session and sets the new
   password with that session. `auth-recovery-email` hands the inbox click over and `auth-recovery`
   proves the outcome.
+- **Seeds a second account and reads the app's own routes** when the human opted in with
+  `auth.isolation: true` (see below): the `auth:isolation` step signs up a second account
+  (`testEmail` plus `+gl-isolation`) and confirms it through the Auth admin API, and `auth-isolation`
+  signs in as both accounts and checks that neither can read the other's identity or rows through
+  `auth.identityPath` / `auth.isolationPath`.
 - Verifies: `rls-probe` (tables not readable with the public key, plus security advisors, read-only),
   `auth-redirects` (production URLs, no `localhost`), `auth-policy` (signup/confirmation/password
   policy and the mailer, with the effective values as evidence), `auth-signup`/`auth-session` (the
   journey above, when opted in), `auth-recovery` (the recovery journey above, when opted in),
-  `env-parity` (names on the host).
+  `auth-isolation` (the two-account journey above, when opted in), `env-parity` (names on the host).
 
 Stays with the human (and why):
 - **The database password of an existing project.** Supabase only reveals it at creation, so a
@@ -158,7 +163,10 @@ Stays with the human (and why):
 - **Fixing RLS findings.** You (the agent) write the migration/policy change; the human approves it.
   golive never write-probes your application's data tables. With `auth.e2e: true` it does create auth
   **test users** (see below) — that opt-in is exactly what covers them; with `auth.recovery: true` it
-  also sets a new password on that same recorded test account through the recovery path.
+  also sets a new password on that same recorded test account through the recovery path; with
+  `auth.isolation: true` it creates a **second** test account, confirms it through the admin API, and
+  the check stores one small marker row per test account through the app's own
+  `auth.isolationPath` route.
 - **Custom SMTP for auth emails.** Not automated yet. The human sets it in the Supabase dashboard
   (Authentication → SMTP), pasting a sending key straight from the email provider (see `resend.md`).
   Until then `auth-policy` warns that auth emails still use the built-in mailer (rate-limited, meant
@@ -219,7 +227,10 @@ Caveats to pass on before enabling it:
 - **It writes real users.** One test account per project, plus one throwaway probe account on every
   run of these two checks (every `verify` with `auth.e2e: true`, and the `apply` that carries the
   step). Both live in the project's user list until someone deletes them. `auth:test-user` carries
-  `--confirm-live` for exactly this, and nothing here is a purchase.
+  `--confirm-live` for exactly this, and nothing here is a purchase. With `auth.isolation: true` there
+  is a second seeded account (`+gl-isolation`) that `auth:isolation` creates and confirms the same way,
+  and the `auth-isolation` check stores one small marker row per test account through the app's own
+  `auth.isolationPath` route on every run — those two rows stay in the project's data too.
 - **The built-in mailer is rate-limited** (a handful of auth emails per hour). Supabase then answers
   HTTP 429: `auth-signup` warns, `auth:test-user` fails with instructions, and the fix is waiting for
   the limit to reset or configuring custom SMTP. Check the spam folder — a project without DMARC
@@ -278,7 +289,68 @@ What `auth-recovery` proves, and what stays human:
   check skips instead of claiming a pass.
 
 This is **implemented and mock-covered, not live-validated yet**: the live run that exercises it (and
-the `docs/VALIDATION.md` row recording it) comes separately, and account isolation is the next slice.
+the `docs/VALIDATION.md` row recording it) comes separately.
+
+### The account-isolation journey (`auth.isolation`)
+
+The third opt-in, and the only one that answers a question about YOUR app rather than about Supabase:
+can the account that just signed in read anything that belongs to another one? Supabase holds the two
+accounts; your routes hold the answer.
+
+```yaml
+auth:
+  isolation: true               # seed a second real account and read the app's own routes
+  identityPath: /api/me         # GET: the signed-in caller's OWN id as JSON; 401/403 or a redirect without a session
+  isolationPath: /api/notes     # GET: the caller's OWN rows; POST {"marker": "…"}: store one row for the caller; both refuse anonymous callers
+```
+
+`auth.e2e: true` and `auth.testEmail` are prerequisites: the first account is the one `auth:test-user`
+seeds, and its password for this run comes from that same step. A plan warns and waits when the first
+account is missing or not yet confirmed.
+
+What the `auth:isolation` step (`--confirm-live`) does:
+
+- **Seeds or rotates the second account** through the project's own `/auth/v1/signup` at
+  `you+gl-isolation@example.com` (derived from `auth.testEmail`, so a later run finds the same
+  account). Only the user id and the address are recorded (`supabase.isolationUserId` /
+  `supabase.isolationUserEmail`); the generated password stays in that run's memory under the same
+  per-user key `auth:test-user` uses — so `auth-signup`/`auth-session` keep working on the first
+  account and `auth-isolation` can sign in as both.
+- **Confirms it through the admin API.** `PUT /auth/v1/admin/users/{id}` with
+  `{"email_confirm": true}`, re-read afterwards. This is deliberately not an inbox leg: the journey is
+  about the app's data, and a second click would spend the project's throttled mail budget. The
+  confirmation email the signup sends is a side effect, not a step.
+- **Never touches an account golive did not seed.** It re-reads the recorded account first, refuses
+  when it is gone, and its risk is `{ writes, live, replayable }` — the same discipline as its
+  siblings, so a failed attempt from an older release may resume.
+
+What `auth-isolation` proves, and what stays with the app:
+
+- **Both routes refuse anonymous callers.** A 200 on either declared route is a **critical** finding.
+- **Each account sees its own identity.** With each session, `identityPath` must answer with that
+  account's own user id and never the other's (`user.id` from `/auth/v1/user` is what golive compares).
+- **Each account reads only its own rows.** The check writes one unique marker row per account through
+  `isolationPath` (**through the app, with that account's session**) and reads both routes back: a
+  response carrying the other account's marker is a cross-account read and fails **critical**.
+- **Sessions are real but not evidence of delivery.** Both accounts sign in with the passwords that
+  run generated; nothing here is a claim about the inbox.
+- **Skips, never passes:** the opt-in is off, either route is not declared (`auth:isolation-routes`
+  carries the app-code task when they are missing), a route answers 404 or refuses the session token
+  golive holds (the skip names the exact app-code task), the host cannot confirm the production URL,
+  or the provider or the app rate-limits a request. A route that answers without the caller's own id
+  or marker only **warns**: the absence of the other account's data is then not attributable.
+
+The app-side contract, in one place: `identityPath` answers `GET` with the caller's own identity as
+JSON and refuses (401/403 or a redirect) without a session; `isolationPath` answers `GET` with only
+the caller's own rows and stores one row for the caller for a `POST` body `{"marker": "…"}`, refusing
+both without a session. golive sends the account's session as an `Authorization: Bearer <token>`
+header — the same token the app already gets from `supabase.auth.getSession()`. RLS with
+`auth.uid() = user_id` is the usual way to satisfy the rows half; the identity half is a route the app
+already has to have (or a two-line handler).
+
+This is **implemented and mock-covered, not live-validated yet** on a real Supabase project: the live
+run that exercises it (and the `docs/VALIDATION.md` row recording it) comes separately. Never present
+account isolation as proven on a human's project until a live report says `pass` for `auth-isolation`.
 
 ## 3. Explain these in plain words
 
@@ -352,6 +424,16 @@ the `docs/VALIDATION.md` row recording it) comes separately, and account isolati
 | `auth-recovery` fails: the spent token resolved again | The verification endpoint accepted a one-time token twice. Check for anything answering `/auth/v1/verify` ahead of the project, then re-run verify. |
 | `auth-recovery` fails: the password set through recovery cannot sign in | The project's password policy may reject the generated password, or the account changed during the run. Check the user in the dashboard, then run `plan` + `apply` again (a fresh rotation) and re-run verify. |
 | `auth:recovery` or `auth-recovery` warns/errors with HTTP 429 | The project's auth email limit refused the send. Wait for the window to reset (the built-in mailer allows roughly one accepted send), configure custom SMTP (§2) and raise `rate_limit_email_sent`, then re-run. |
+| `auth.isolation` journey | Start with `auth.e2e: true`, `auth.testEmail`, `auth.isolation: true`, `auth.identityPath` and `auth.isolationPath` in `golive.yaml`, have the app expose both routes (the `auth:isolation-routes` handoff holds the contract), then `plan` + `apply --confirm-live` (the `auth:isolation` step creates and confirms the second account) and re-run `verify`. |
+| `plan` warns `the FIRST account comes from auth.e2e …` | `auth.isolation` needs the first test account too: set `auth.e2e: true` and `auth.testEmail`, then run `plan` again. |
+| `plan` warns the test account `is not confirmed yet` (with `auth.isolation`) | The isolation check signs in as both accounts, so the first one has to be confirmed: click its confirmation link, then run `plan` again. |
+| `auth-isolation` skips with `no app route is declared` | `auth.identityPath` / `auth.isolationPath` are not set. Get the app's code changed (the `auth:isolation-routes` handoff), name both routes in `golive.yaml`, then re-run `verify`. |
+| `auth-isolation` skips with `no password for … in this run` | Both passwords exist only in the run that seeds or rotates them. Run `plan` + `apply --confirm-live`, then re-run `verify`. |
+| `auth-isolation` skips with `HTTP 404: the app does not implement the declared … route` | The route is not deployed (or the path is wrong). Deploy it as the skip's app-code task describes, then re-run `verify`. |
+| `auth-isolation` skips with `the route refused the session token golive holds` | The app is not reading the caller's session from `Authorization: Bearer <token>` (a cookie-only route, or a proxy in front). Fix the route or accept that golive cannot exercise isolation there. |
+| `auth-isolation` fails `the declared … route is served without a session` | That route answers anonymous callers: make it 401/403 or redirect to sign-in when there is no session. |
+| `auth-isolation` fails `carried the OTHER account's id` / `carried …'s row` | A cross-account read: the route answered with another account's data. Scope it to the caller (RLS `auth.uid() = user_id`, or the same filter in the route) and check anything that widens it (shared cache, service-role client, join), then re-run verify. |
+| `auth-isolation` warns `was not in its own rows` | The route said 200 but did not return the row golive just wrote for that caller, so the read-back proves nothing either way. Return the caller's own rows from `auth.isolationPath` and re-run verify. |
 
 ## Unverified
 

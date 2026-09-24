@@ -68,7 +68,7 @@ identities match. Neon delegates supported stored-login access to its CLI.
 
 | Area | Adapter | Scope |
 | --- | --- | --- |
-| Auth | Supabase Auth | Production Site URL and redirect configuration, plus the auth policy from golive.yaml; custom SMTP stays a manual dashboard step. The opt-in signup journey (`auth.e2e: true`) adds one approved step that seeds a real test account (`auth:test-user`, `--confirm-live`), the human's click in their inbox (`auth:confirm-email`) and the `auth-signup`/`auth-session` checks (confirmation email, enforced confirmation, session, declared protected path). Live-validated once on a disposable project: the policy write was confirmed by the read-back (`password minimum length: 6 → 12`), and the journey passed `auth-signup` and `auth-session` (probe signup, enforced confirmation, confirmed login, session token accepted, anonymous request refused). The confirmation came through the Auth admin API rather than the seeded email click. A later disposable run with a deployed Vercel fixture exercised both app-side legs: an anonymous GET of the declared protected path answered 401 and the signed-in probe read the project's one exposed RLS table as the authenticated user, so that probe is no longer mock-covered (the table line is a count, not a name; any 401 counts as protected — tracked in #30). Password recovery (`auth.recovery: true`) adds the `auth:recovery` step (`--confirm-live`, rotating that same recorded test account's password through the provider's own recovery calls), the human's inbox click (`auth:recovery-email`) and the `auth-recovery` check (accepted request, an unknown address answered the same way, the spent token refused on replay, the new password signing in and the replaced one refused). **Implemented and mock-covered, not live-validated yet**: its live run comes separately. |
+| Auth | Supabase Auth | Production Site URL and redirect configuration, plus the auth policy from golive.yaml; custom SMTP stays a manual dashboard step. The opt-in signup journey (`auth.e2e: true`) adds one approved step that seeds a real test account (`auth:test-user`, `--confirm-live`), the human's click in their inbox (`auth:confirm-email`) and the `auth-signup`/`auth-session` checks (confirmation email, enforced confirmation, session, declared protected path). Live-validated once on a disposable project: the policy write was confirmed by the read-back (`password minimum length: 6 → 12`), and the journey passed `auth-signup` and `auth-session` (probe signup, enforced confirmation, confirmed login, session token accepted, anonymous request refused). The confirmation came through the Auth admin API rather than the seeded email click. A later disposable run with a deployed Vercel fixture exercised both app-side legs: an anonymous GET of the declared protected path answered 401 and the signed-in probe read the project's one exposed RLS table as the authenticated user, so that probe is no longer mock-covered (the table line is a count, not a name; any 401 counts as protected — tracked in #30). Password recovery (`auth.recovery: true`) adds the `auth:recovery` step (`--confirm-live`, rotating that same recorded test account's password through the provider's own recovery calls), the human's inbox click (`auth:recovery-email`) and the `auth-recovery` check (accepted request, an unknown address answered the same way, the spent token refused on replay, the new password signing in and the replaced one refused). **Implemented and mock-covered, not live-validated yet**: its live run comes separately. Account isolation (`auth.isolation: true` with `auth.identityPath`/`auth.isolationPath`) adds the `auth:isolation` step (`--confirm-live`, seeding and admin-confirming a SECOND test account, recorded as `supabase.isolationUserId`/`supabase.isolationUserEmail`) and the `auth-isolation` check (two sessions, both declared routes refused anonymously, each account's own id and own marker row and never the other's; an anonymous 200, a crossed id or another account's row fails critical). The app-side contract is the two routes plus the `Authorization: Bearer <token>` session header; when they are not declared, the non-blocking `auth:isolation-routes` handoff carries the app-code task. **Implemented and mock-covered, not live-validated yet**. |
 | Payments | Stripe | Test-mode env wiring, webhook registration and signed-event acceptance passed a disposable run; live-mode payments, refunds, entitlements and subscriptions remain open |
 | Email | Resend | Sending-domain setup, DNS wiring, scoped-key issuance and a real send through the app's environment key passed a disposable run (delivered; spam folder on a fresh subdomain); Auth SMTP and bounce handling remain open |
 | DNS | Cloudflare | Records in an existing authoritative zone; no domain purchase, renewal, transfer or nameserver changes. Live validation pending. |
@@ -120,7 +120,25 @@ finding), the spent token is refused on replay, the new password signs in and th
 refused, and the token's window is named from `otpExpirySeconds` when the provider reports it. A 429
 only warns — the provider's mail throttle decides what a run can prove — and the inbox click and a
 captcha stay human steps (`auth:recovery-email`). This is **implemented and mock-covered, not
-live-validated yet**; account isolation is the next slice.
+live-validated yet**.
+
+Account isolation (`auth.isolation: true`, with `auth.identityPath` and `auth.isolationPath`) is the
+half that needs TWO accounts: the `auth:isolation` step seeds a second one (the address derived from
+`auth.testEmail`, `you+gl-isolation@example.com`) with the same signup call `auth:test-user` uses, and
+confirms it through `PUT /auth/v1/admin/users/{id}` with `email_confirm` — deliberately not a second
+inbox leg, since the journey's subject is the app's data, not delivery — then re-reads it before the
+step reports done. Only the user id and the address are recorded; the password lives in that run's
+memory under the same per-user key as the first account's. `auth-isolation` then signs in as both and
+reads the app's OWN routes on the host-confirmed production URL: both must refuse an anonymous caller
+(a 200 is a critical finding), each account's `auth.identityPath` must answer with its own user id and
+never the other's, and `auth.isolationPath` must return only the caller's own rows — proven by one
+unique marker row the check stores **through that route** with each account's session and then reads
+back (an answer carrying the other account's marker is a cross-account read and fails critically).
+Both routes are read with the account's session in an `Authorization: Bearer <token>` header, the same
+token the app already has. When either route is not declared, the non-blocking `auth:isolation-routes`
+handoff hands the app-code task over; a 404, a route that refuses the session, or a rate limit skips
+with that task named, never as a pass. It never probes a table anonymously — that stays `rls-probe`'s
+job. This is **implemented and mock-covered, not live-validated yet**.
 
 ## Guided providers
 

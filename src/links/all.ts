@@ -9,6 +9,7 @@ import { authRedirectsLink } from './auth.js';
 import { authSettingsLink } from './auth-settings.js';
 import { authE2eLink } from './auth-e2e.js';
 import { authRecoveryLink } from './auth-recovery.js';
+import { authIsolationLink } from './auth-isolation.js';
 import { emailDomainLink, emailKeysLink } from './email.js';
 import { deployLink } from './deploy.js';
 import { netlifyVisibilityLink } from './netlify-visibility.js';
@@ -21,4 +22,4 @@ import { releaseLink } from './release.js';
  * production deploy), which orderSteps() then sorts topologically. release is last: it reads what the
  * other links planned (the preview env writes, the host project) before it plans a preview deploy.
  */
-export const ALL_LINKS: Link[] = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, authE2eLink, authRecoveryLink, emailDomainLink, emailKeysLink, deployLink, netlifyVisibilityLink, releaseLink];
+export const ALL_LINKS: Link[] = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, authE2eLink, authIsolationLink, authRecoveryLink, emailDomainLink, emailKeysLink, deployLink, netlifyVisibilityLink, releaseLink];

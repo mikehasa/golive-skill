@@ -247,6 +247,8 @@ export function fakeWorld() {
       confirm(email: string): void {
         for (const u of db.authUsers.users) if (u.email === email) u.confirmed = true;
       },
+      /** A provider that accepts an admin confirmation and never applies it. */
+      confirmNoop: false,
       byEmail(email: string) {
         return db.authUsers.users.find((u) => u.email === email);
       },
@@ -368,6 +370,16 @@ export function fakeWorld() {
           const u = users.missing.has(id) ? undefined : users.users.find((x) => x.id === id);
           if (!u) throw new Error(`no such user ${id}`);
           u.pass = password.reveal();
+        },
+        confirmEmail: async (_c, id) => {
+          const users = db.authUsers;
+          rec('fakedb', 'authUsers.confirmEmail', id);
+          if (users.error) throw new Error(users.error);
+          const u = users.missing.has(id) ? undefined : users.users.find((x) => x.id === id);
+          if (!u) throw new Error(`no such user ${id}`);
+          // Accepted but not applied: a 2xx the provider never turns into `email_confirmed_at`.
+          if (users.confirmNoop) return;
+          u.confirmed = true;
         },
         requestRecovery: async (_c, email) => {
           const users = db.authUsers;

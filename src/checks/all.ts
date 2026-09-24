@@ -11,6 +11,7 @@ import { authPolicyCheck } from './auth.js';
 import { authSignupCheck } from './auth-signup.js';
 import { authSessionCheck } from './auth-session.js';
 import { authRecoveryCheck } from './auth-recovery.js';
+import { authIsolationCheck } from './auth-isolation.js';
 import { emailDnsCheck, emailVerifiedCheck } from './email.js';
 import { domainLiveCheck } from './domain.js';
 import { netlifyPublicAccessCheck } from './netlify-public-access.js';
@@ -32,6 +33,7 @@ export const ALL_CHECKS: Check[] = [
   authSignupCheck,
   authSessionCheck,
   authRecoveryCheck,
+  authIsolationCheck,
   webhookUnsignedCheck,
   webhookRegisteredCheck,
   stripeLiveReadyCheck,

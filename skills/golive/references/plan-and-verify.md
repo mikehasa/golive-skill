@@ -185,6 +185,37 @@ that the spent token is refused on replay, and that the new password signs in wh
 does not. A 429 anywhere in it warns, never fails: the provider's mail throttle decides what a run can
 prove.
 
+**Auth account isolation (`auth.isolation: true`).** The second half of the journey: with TWO real
+accounts, golive can ask whether one signed-in account can read the other's data through the app. The
+`auth:isolation` step (risk `{ writes, live, replayable }`, so `--confirm-live`) seeds or rotates a
+SECOND account beside the one `auth:test-user` seeds — the same provider signup, the address derived
+from `auth.testEmail` (`you+gl-isolation@example.com`), the password again only in that run's memory —
+and confirms it through the provider's **admin API**, re-reading it before the step reports done: a
+second inbox click would spend the throttled mail budget on a journey whose subject is the app's data,
+not delivery. The step reads the recorded account and its provider state before acting and only ever
+touches accounts golive created and recorded. `auth.e2e: true` and `auth.testEmail` are prerequisites
+(the first account's password comes from `auth:test-user` in the same run); a plan says so and waits
+when the first account is missing or unconfirmed.
+
+The app has to answer for itself: `auth.identityPath` and `auth.isolationPath` in `golive.yaml` name
+two routes — one that returns the signed-in caller's OWN identity (its provider user id) as JSON, one
+that returns ONLY the caller's own rows (a GET) and stores one row for the caller for a POST body
+`{"marker": "…"}`. Both must refuse an anonymous request (401/403 or a redirect). `auth:isolation-routes`
+(non-blocking, verified by `auth-isolation`) hands that app-code task to the agent or the human when
+either route is not declared.
+
+`auth-isolation` needs both accounts' passwords, so it only passes in the run that seeds or rotates
+them; otherwise it skips with `blocked by: no password for … in this run`. With both sessions it reads
+both routes anonymously (**a 200 is a critical finding**, whoever the caller is), then reads the
+identity route as each account (each must answer with its own id, never the other's) and writes one
+unique marker row per account **through the app's own rows route**, then reads it back as each: a
+response carrying the other account's marker is a cross-account read and fails critically. It skips —
+never passes — when the opt-in is off, either route is not declared, the app answers 404 (the app-code
+task is named), the route refuses the session token it was given, the host cannot confirm the
+production URL, or the provider or the app rate-limits a request. A route that answers without the
+caller's own id or marker only warns: the absence of the other account's data is then not attributable.
+It never probes a table anonymously — that stays `rls-probe`'s job.
+
 **Email.** `email:verify` is re-sent on each plan while the domain is pending; its preview shows
 `previous request: <time>`.
 
@@ -223,7 +254,10 @@ dashboard; `env-parity` can't read a guided host, so it stays `done: null`),
 `stripe:webhook-env` / `stripe:webhook-guided` (see Webhook above), `auth:confirm-email` (non-blocking,
 verified by `auth-signup`: the human clicks the confirmation link in their own inbox, which golive
 cannot read), `auth:recovery-email` (non-blocking, verified by `auth-recovery`: the same for the
-recovery link — golive requests it and mints its own copy, the human clicks theirs), and
+recovery link — golive requests it and mints its own copy, the human clicks theirs),
+`auth:isolation-routes` (non-blocking, verified by `auth-isolation`: the app must expose the two
+declared routes, which only the agent or the human can add — golive names exactly what they answer and
+drops the handoff once both paths are declared), and
 `auth:redirects` for a guided auth provider (manual, non-blocking: confirm it with
 the human, name it as unverified).
 
@@ -258,8 +292,9 @@ missing: `login:<adapter>`, `project:hosting`, `project:db`, `deploy:production`
 plain reason (e.g. `no publishable/anon key`, `the hosting token's role cannot read production env
 vars`). Only `accounts` fails for login problems; fix it first, then re-run `verify`.
 
-**Active probes** (`bundle-secrets`, `webhook-unsigned`, `auth-session`'s protected-path GET, and the
-key `rls-probe` takes from the bundle) only target the production URL the hosting adapter reports
+**Active probes** (`bundle-secrets`, `webhook-unsigned`, `auth-session`'s protected-path GET,
+`auth-isolation`'s route reads and its one marker row per test account, and the key `rls-probe` takes
+from the bundle) only target the production URL the hosting adapter reports
 for the linked project, never `config.domain` directly. If the host can't confirm it, the check skips with `cannot confirm <url>
 belongs to your project yet`. If the host reports another origin than `config.domain` (e.g. the domain
 isn't verified at Vercel yet), `webhook-unsigned` probes the host's URL and says so. `domain-live`
@@ -280,6 +315,7 @@ state — and a protected preview skips instead of being reported as scanned.
 | `auth-signup` | a fresh probe address got a confirmation email, could not sign in before confirming, and the seeded account reads back confirmed (`email_confirmed_at`) — the confirmed account's own sign-in is extra evidence when this run holds its password (delivery stays human-confirmed) | `auth.e2e` off; no `auth.testEmail`; guided auth; `blocked by: login:<id>` / `auth:test-user`; a captcha blocks signup; **warns** on a 429 or while the account is still unconfirmed |
 | `auth-session` | the seeded account's session is accepted for the same user, an anonymous request is 401, and a declared `auth.protectedPath` is not publicly readable | `auth.e2e` off; guided auth; `blocked by: login:<id>` / `auth:test-user` / `no password for the test account in this run`; **warns** on a 429, an unconfirmed account, every exposed table denying the signed-in user, or an inconclusive protected-path answer |
 | `auth-recovery` | the recorded account's recovery request is accepted for sending, an address with no account gets the same answer (no account enumeration), the token this run spent is refused on replay, the new password signs in and the replaced one is refused, and the token window is named from `otpExpirySeconds` when reported | `auth.recovery` off; guided auth; `blocked by: login:<id>` / `auth:test-user`; no rotation in this run (`this run holds none of what the recovery check needs`); a captcha blocks a scripted request; **warns** on a 429 for either request or a login leg, never fails |
+| `auth-isolation` | two accounts golive seeded and recorded sign in, both declared routes refuse an anonymous request, each account's identity route answers with its own id (never the other's), and each account's rows route returns its own marker row and none of the other's | `auth.isolation` off; no `auth.identityPath`/`auth.isolationPath` declared; guided auth; `blocked by: login:<id>` / `auth:test-user` / `auth:isolation` / `no password for … in this run`; production URL not confirmed; a route answers 404 or refuses the session token (the app-code task is named); a route does not accept the marker write; a 429 from the provider or the app. **Fails critical** on an anonymous 200, a crossed id or another account's marker; **warns** while an account is unconfirmed, on an inconclusive status, or when nothing in the answer is attributable |
 | `webhook-unsigned` | an unsigned POST gets 4xx from the handler (a non-HTML 401/403 only warns — ambiguous between a rejection and an auth wall) | production URL not confirmed |
 | `webhook-registered` | an enabled endpoint for the production URL covers the configured events | guided payments; no production URL |
 | `stripe-live-ready` | the account has `charges_enabled` | production isn't live mode |

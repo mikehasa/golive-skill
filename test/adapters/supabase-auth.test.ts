@@ -170,6 +170,20 @@ describe('adminUser / setPassword', () => {
     expectNoSecret((e as Error).message);
   });
 
+  it('confirms a seeded user with the admin API and the `email_confirm` field', async () => {
+    const { http, calls } = mockHttp([['PUT', `${AUTH}/admin/users/usr_2`, () => ({ json: { id: 'usr_2', email_confirmed_at: '2026-09-24T00:00:00Z' } })]]);
+    await cap().confirmEmail!(testCtx({ http }), 'usr_2');
+    expect(calls[0]!.body).toEqual({ email_confirm: true });
+    expect(calls[0]!.headers.authorization).toBe(`Bearer ${SECRET_KEY}`);
+
+    // The refusal a key problem produces reads like every other admin call, and names no secret.
+    const bad = mockHttp([['PUT', `${AUTH}/admin/users/usr_2`, () => ({ status: 403, json: { msg: `forbidden for ${SECRET_KEY}` } })]]);
+    const e = await cap().confirmEmail!(testCtx({ http: bad.http }), 'usr_2').catch((x: unknown) => x as Error);
+    expect(e).toBeInstanceOf(SupabaseError);
+    expect((e as Error).message).toMatch(/the project key was not allowed to do this \(403\)/);
+    expectNoSecret((e as Error).message);
+  });
+
   it('a rejected admin read names the key problem and stays secret-free', async () => {
     const { http } = mockHttp([['GET', `${AUTH}/admin/users/usr_1`, () => ({ status: 403, json: { msg: `forbidden for ${SECRET_KEY}` } })]]);
     const e = await cap().adminUser(testCtx({ http }), 'usr_1').catch((x: unknown) => x as Error);
@@ -312,15 +326,17 @@ describe('Authorization headers', () => {
     await api.user(ctx, token);
     await api.adminUser(ctx, 'usr_1');
     await api.setPassword(ctx, 'usr_1', secret());
+    await api.confirmEmail!(ctx, 'usr_1');
 
     expect(calls.map((c) => c.headers.authorization)).toEqual([
       `Bearer ${PUB_KEY}`,
       `Bearer ${token.reveal()}`,
       `Bearer ${SECRET_KEY}`,
       `Bearer ${SECRET_KEY}`,
+      `Bearer ${SECRET_KEY}`,
     ]);
     // A session replaces the key on Authorization only; the key itself still rides on apikey.
-    expect(calls.map((c) => c.headers.apikey)).toEqual([PUB_KEY, PUB_KEY, SECRET_KEY, SECRET_KEY]);
+    expect(calls.map((c) => c.headers.apikey)).toEqual([PUB_KEY, PUB_KEY, SECRET_KEY, SECRET_KEY, SECRET_KEY]);
     expect(calls.map((c) => c.headers.authorization)).not.toContain(token.reveal());
   });
 
