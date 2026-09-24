@@ -185,13 +185,15 @@ describe('vercel project', () => {
   });
 
   it('current(): state first, then .vercel/project.json', async () => {
-    expect(await project.current(testCtx({ state: linkedState() }))).toEqual({ id: 'prj_1', name: 'my-app' });
+    // The owning scope rides along whenever it can be read. Here no provider read is available, so
+    // the team id state recorded is reported as-is rather than a name golive never saw.
+    expect(await project.current(testCtx({ state: linkedState() }))).toEqual({ id: 'prj_1', name: 'my-app', scope: { kind: 'team', id: 'team_1' } });
 
     const dir = mkdtempSync(join(tmpdir(), 'golive-vercel-'));
     try {
       mkdirSync(join(dir, '.vercel'));
       writeFileSync(join(dir, '.vercel', 'project.json'), JSON.stringify({ projectId: 'prj_9', orgId: 'team_9', projectName: 'linked' }));
-      expect(await project.current(testCtx({ cwd: dir }))).toEqual({ id: 'prj_9', name: 'linked' });
+      expect(await project.current(testCtx({ cwd: dir }))).toEqual({ id: 'prj_9', name: 'linked', scope: { kind: 'team', id: 'team_9' } });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -199,11 +201,29 @@ describe('vercel project', () => {
     expect(await project.current(testCtx())).toBeNull();
   });
 
+  it('current() names the team the logged-in CLI is in, so the handover account cell is not empty', async () => {
+    // The live `handoff --write` run printed "—" as the account while its plan named this team.
+    const ex = mockExec([WHOAMI_OK]);
+    expect(await project.current(testCtx({ exec: ex.run, state: linkedState() }))).toEqual({ id: 'prj_1', name: 'my-app', scope: { kind: 'team', id: 'team_1', name: 'Acme' } });
+    expect(ex.calls.filter((c) => c.args[0] === 'whoami')).toHaveLength(1);
+  });
+
+  it('current() reads the team name over the token transport, and keeps only the id when that read fails', async () => {
+    const named = mockHttp([['GET', `${API}/v2/teams/team_1`, () => ({ json: { id: 'team_1', name: 'Team One' } })]]);
+    const ctx = testCtx({ exec: mockExec([WHOAMI_OUT]).run, http: named.http, tokens: { VERCEL_TOKEN: TOKEN }, state: linkedState() });
+    expect(await project.current(ctx)).toEqual({ id: 'prj_1', name: 'my-app', scope: { kind: 'team', id: 'team_1', name: 'Team One' } });
+    expect(named.calls[0]!.url).toBe(`${API}/v2/teams/team_1?teamId=team_1`);
+
+    const refused = mockHttp([['GET', `${API}/v2/teams/team_1`, () => ({ status: 403, json: { error: { code: 'forbidden', message: 'no access to this team' } } })]]);
+    const other = testCtx({ exec: mockExec([WHOAMI_OUT]).run, http: refused.http, tokens: { VERCEL_TOKEN: TOKEN }, state: linkedState() });
+    expect(await project.current(other)).toEqual({ id: 'prj_1', name: 'my-app', scope: { kind: 'team', id: 'team_1' } });
+  });
+
   it('current() from config.projects.hosting resolves the name without leaking the project JSON', async () => {
     const ex = mockExec([WHOAMI_OK, cliApi({ 'GET /v9/projects/my-app': RAW_PROJECT })]);
     const ctx = testCtx({ exec: ex.run, config: { projects: { hosting: 'my-app' } } });
     const ref = await project.current(ctx);
-    expect(ref).toEqual({ id: 'prj_1', name: 'my-app' });
+    expect(ref).toEqual({ id: 'prj_1', name: 'my-app', scope: { kind: 'team', id: 'team_1', name: 'Acme' } });
     expect(JSON.stringify(ref)).not.toContain(BYPASS);
   });
 
@@ -326,12 +346,19 @@ const ENV_ROWS = {
 
 describe('vercel env', () => {
   it('listNames() returns names only; branch-scoped rows do not count for preview', async () => {
-    const h = mockHttp([['GET', `${API}/v10/projects/prj_1/env`, () => ({ json: ENV_ROWS })]]);
+    const h = mockHttp([
+      ['GET', `${API}/v10/projects/prj_1/env`, () => ({ json: ENV_ROWS })],
+      ['GET', `${API}/v2/teams/team_1`, () => ({ json: { id: 'team_1', name: 'Acme' } })],
+    ]);
     const ctx = testCtx({ exec: mockExec([WHOAMI_OUT]).run, http: h.http, tokens: { VERCEL_TOKEN: TOKEN }, state: linkedState() });
     expect(await env.listNames(ctx, 'preview')).toEqual(['POSTGRES_URL', 'PUBLIC_THING']);
     expect(await env.listNames(ctx, 'production')).toEqual(['DATABASE_URL', 'POSTGRES_URL', 'PUBLIC_THING']);
-    expect(h.calls[0]!.url).toBe(`${API}/v10/projects/prj_1/env?teamId=team_1`);
-    expect(h.calls[0]!.url).not.toContain('decrypt');
+    const envCalls = h.calls.filter((c) => c.url.includes('/v10/projects/prj_1/env'));
+    expect(envCalls).toHaveLength(2); // one read per listNames() call, and every one of them is the env read
+    for (const c of envCalls) {
+      expect(c.url).toBe(`${API}/v10/projects/prj_1/env?teamId=team_1`);
+      expect(c.url).not.toContain('decrypt');
+    }
   });
 
   it('set() via CLI: value travels on stdin only, one POST per target, type sensitive', async () => {

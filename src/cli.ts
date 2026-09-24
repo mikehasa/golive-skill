@@ -24,7 +24,7 @@ import { detectDrift } from './core/drift.js';
 import { applyPlan, runCheck, PlanMismatchError } from './core/runner.js';
 import { credentialsStatus, setupCredentials } from './core/credentials.js';
 import { promptCredential } from './core/credential-prompt.js';
-import { AXES, type Axis, type CheckResult, type Ctx, type HandoffItem, type Report, type ShipConfig } from './core/types.js';
+import { AXES, type Axis, type Check, type CheckResult, type Ctx, type HandoffItem, type Report, type ShipConfig } from './core/types.js';
 import { ADAPTERS, CHECKS, adapterById, adapterFor, checkMap, linkList } from './registry.js';
 import { GUIDED } from './adapters/index.js';
 import { detect } from './detect/index.js';
@@ -254,7 +254,7 @@ async function main(argv: string[]): Promise<number> {
         return 0;
       }
       // The ownership document: written only on request, and never over a file golive did not write.
-      const doc = await buildHandover(ctx, { handoffs: items, checkIds: CHECKS.map((c) => c.id) });
+      const doc = await buildHandover(ctx, { handoffs: items, checks: CHECKS.map((c) => ({ id: c.id, applies: checkRuns(c, ctx) })) });
       const paths = handoverPaths(cwd);
       assertOverwritable(paths.json, flags.force === true);
       assertOverwritable(paths.markdown, flags.force === true);
@@ -273,6 +273,20 @@ async function main(argv: string[]): Promise<number> {
     }
     default:
       throw new UsageError(`unknown command "${cmd}". Run \`help\`.`);
+  }
+}
+
+/**
+ * Whether a registered check runs on this stack: the check's own predicate decides, so the handover
+ * runbook never hands a provider another provider's check. A predicate that throws keeps the check
+ * nameable — the runbook advises what to run, and a check golive cannot classify is not a reason to
+ * drop it from the advice.
+ */
+function checkRuns(check: Check, ctx: Ctx): boolean {
+  try {
+    return check.applies(ctx);
+  } catch {
+    return true;
   }
 }
 

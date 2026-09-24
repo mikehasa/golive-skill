@@ -74,12 +74,59 @@ export function validProjectName(name: string): boolean {
 
 const scopeRef = (id: string, name?: string): ProjectScope => ({ kind: id.startsWith('team_') ? 'team' : 'account', id, ...(name ? { name } : {}) });
 
+/** `GET /v2/teams/{id}`: the display name Vercel reports for a team, plus its echo of the id asked about. */
+function readTeam(ctx: Ctx, id: string): Promise<{ id?: string; name?: string; slug?: string }> {
+  return vercelApi(ctx, 'GET', `/v2/teams/${encodeURIComponent(id)}`, undefined, { scopeId: id });
+}
+
+// A team's display name is a label, not a decision: one read per exec function and team id is enough,
+// and a StepContext shares the exec of the ctx it came from (the same key `session` uses).
+const teamScopes = new WeakMap<object, Map<string, Promise<ProjectScope>>>();
+
+/** The scope of a team golive knows only by id; read once per run, and never allowed to reject. */
+function teamScope(ctx: Ctx, id: string): Promise<ProjectScope> {
+  let byId = teamScopes.get(ctx.exec);
+  if (!byId) {
+    byId = new Map();
+    teamScopes.set(ctx.exec, byId);
+  }
+  let scope = byId.get(id);
+  if (!scope) {
+    scope = readTeam(ctx, id).then((t) => (t.id === id ? scopeRef(id, t.name ?? t.slug) : scopeRef(id)));
+    byId.set(id, scope);
+  }
+  return scope;
+}
+
+/**
+ * The team/account owning a project, as a display scope. The logged-in CLI already names the team it
+ * is in (no extra call); otherwise the same `GET /v2/teams/{id}` read the creation target uses
+ * answers it. A read golive cannot make leaves the scope unnamed: callers report the id they have
+ * rather than a guessed name, and the handover document says the name was not reported.
+ */
+async function owningScope(ctx: Ctx, accountId: string | undefined): Promise<ProjectScope | undefined> {
+  if (!accountId) return undefined;
+  const team = accountId.startsWith('team_');
+  try {
+    const s = await session(ctx);
+    if (s.kind === 'cli') {
+      if (s.user.team?.id === accountId) return scopeRef(accountId, s.user.team.name ?? s.user.team.slug);
+      if (!team) return scopeRef(accountId, s.user.username);
+    }
+    if (team) return await teamScope(ctx, accountId);
+    const u = await vercelApi<{ user?: { username?: string } }>(ctx, 'GET', '/v2/user');
+    return scopeRef(accountId, u.user?.username);
+  } catch {
+    return scopeRef(accountId);
+  }
+}
+
 async function creationTarget(ctx: Ctx): Promise<ProjectCreateTarget> {
   const s = await session(ctx);
   const configured = orgId(ctx);
   if (configured?.startsWith('team_')) {
     if (s.kind === 'cli' && s.user.team?.id === configured) return { scope: scopeRef(configured, s.user.team.name ?? s.user.team.slug) };
-    const team = await vercelApi<{ id?: string; name?: string; slug?: string }>(ctx, 'GET', `/v2/teams/${encodeURIComponent(configured)}`, undefined, { scopeId: configured });
+    const team = await readTeam(ctx, configured);
     if (team.id !== configured) throw new VercelError('Vercel could not confirm the selected team. Check VERCEL_ORG_ID and re-plan.');
     return { scope: scopeRef(configured, team.name ?? team.slug) };
   }
@@ -97,6 +144,29 @@ async function resolveProject(ctx: Ctx, idOrName: string): Promise<ProjectRef> {
   return { id: p.id, name: p.name, scope: scopeRef(p.accountId, label) };
 }
 
+/**
+ * The project this repo is linked to — golive state, then `.vercel/project.json`, then `golive.yaml` —
+ * carrying the owning account id when a read named it. Kept apart from `current()` because naming
+ * that account costs a read of its own, which not every caller needs.
+ */
+async function linkedProject(ctx: Ctx): Promise<(ProjectRef & { accountId?: string }) | null> {
+  const stateId = ctx.state.resource('vercel.projectId');
+  const stateName = ctx.state.resource('vercel.projectName');
+  if (stateId && stateName) return { id: stateId, name: stateName };
+  const link = readLinkFile(ctx);
+  const ref = stateId ?? ctx.config.projects?.hosting ?? link?.projectId;
+  if (!ref) return null;
+  if (link?.projectId === ref && link.projectName) return { id: ref, name: link.projectName, accountId: link.orgId };
+  try {
+    const p = await projectInfo(ctx, ref);
+    return { id: p.id, name: p.name, accountId: p.accountId };
+  } catch (e) {
+    if (!isNotFound(e)) throw e;
+    ctx.log.warn(`Vercel project "${ref}" no longer exists or is in another team; pick or create one again.`);
+    return null;
+  }
+}
+
 export const vercelProject: ProjectLinker = {
   creationTarget,
   resolve: resolveProject,
@@ -111,21 +181,10 @@ export const vercelProject: ProjectLinker = {
     }
   },
   async current(ctx) {
-    const stateId = ctx.state.resource('vercel.projectId');
-    const stateName = ctx.state.resource('vercel.projectName');
-    if (stateId && stateName) return { id: stateId, name: stateName };
-    const link = readLinkFile(ctx);
-    const ref = stateId ?? ctx.config.projects?.hosting ?? link?.projectId;
-    if (!ref) return null;
-    if (link?.projectId === ref && link.projectName) return { id: ref, name: link.projectName };
-    try {
-      const p = await projectInfo(ctx, ref);
-      return { id: p.id, name: p.name };
-    } catch (e) {
-      if (!isNotFound(e)) throw e;
-      ctx.log.warn(`Vercel project "${ref}" no longer exists or is in another team; pick or create one again.`);
-      return null;
-    }
+    const linked = await linkedProject(ctx);
+    if (!linked) return null;
+    const scope = await owningScope(ctx, linked.accountId ?? orgId(ctx));
+    return { id: linked.id, name: linked.name, ...(scope ? { scope } : {}) };
   },
 
   async candidates(ctx) {

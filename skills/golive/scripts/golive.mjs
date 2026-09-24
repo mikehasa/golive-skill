@@ -13411,12 +13411,45 @@ function validProjectName(name3) {
   return /^[a-z0-9]([a-z0-9._-]{0,98}[a-z0-9])?$/.test(name3) && !name3.includes("---");
 }
 var scopeRef = (id2, name3) => ({ kind: id2.startsWith("team_") ? "team" : "account", id: id2, ...name3 ? { name: name3 } : {} });
+function readTeam(ctx, id2) {
+  return vercelApi(ctx, "GET", `/v2/teams/${encodeURIComponent(id2)}`, void 0, { scopeId: id2 });
+}
+var teamScopes = /* @__PURE__ */ new WeakMap();
+function teamScope(ctx, id2) {
+  let byId = teamScopes.get(ctx.exec);
+  if (!byId) {
+    byId = /* @__PURE__ */ new Map();
+    teamScopes.set(ctx.exec, byId);
+  }
+  let scope = byId.get(id2);
+  if (!scope) {
+    scope = readTeam(ctx, id2).then((t) => t.id === id2 ? scopeRef(id2, t.name ?? t.slug) : scopeRef(id2));
+    byId.set(id2, scope);
+  }
+  return scope;
+}
+async function owningScope(ctx, accountId) {
+  if (!accountId) return void 0;
+  const team = accountId.startsWith("team_");
+  try {
+    const s = await session(ctx);
+    if (s.kind === "cli") {
+      if (s.user.team?.id === accountId) return scopeRef(accountId, s.user.team.name ?? s.user.team.slug);
+      if (!team) return scopeRef(accountId, s.user.username);
+    }
+    if (team) return await teamScope(ctx, accountId);
+    const u = await vercelApi(ctx, "GET", "/v2/user");
+    return scopeRef(accountId, u.user?.username);
+  } catch {
+    return scopeRef(accountId);
+  }
+}
 async function creationTarget2(ctx) {
   const s = await session(ctx);
   const configured = orgId(ctx);
   if (configured?.startsWith("team_")) {
     if (s.kind === "cli" && s.user.team?.id === configured) return { scope: scopeRef(configured, s.user.team.name ?? s.user.team.slug) };
-    const team = await vercelApi(ctx, "GET", `/v2/teams/${encodeURIComponent(configured)}`, void 0, { scopeId: configured });
+    const team = await readTeam(ctx, configured);
     if (team.id !== configured) throw new VercelError("Vercel could not confirm the selected team. Check VERCEL_ORG_ID and re-plan.");
     return { scope: scopeRef(configured, team.name ?? team.slug) };
   }
@@ -13432,6 +13465,23 @@ async function resolveProject2(ctx, idOrName) {
   const label3 = s.kind === "cli" && s.user.team?.id === p.accountId ? s.user.team.name ?? s.user.team.slug : void 0;
   return { id: p.id, name: p.name, scope: scopeRef(p.accountId, label3) };
 }
+async function linkedProject(ctx) {
+  const stateId = ctx.state.resource("vercel.projectId");
+  const stateName = ctx.state.resource("vercel.projectName");
+  if (stateId && stateName) return { id: stateId, name: stateName };
+  const link = readLinkFile(ctx);
+  const ref3 = stateId ?? ctx.config.projects?.hosting ?? link?.projectId;
+  if (!ref3) return null;
+  if (link?.projectId === ref3 && link.projectName) return { id: ref3, name: link.projectName, accountId: link.orgId };
+  try {
+    const p = await projectInfo(ctx, ref3);
+    return { id: p.id, name: p.name, accountId: p.accountId };
+  } catch (e) {
+    if (!isNotFound(e)) throw e;
+    ctx.log.warn(`Vercel project "${ref3}" no longer exists or is in another team; pick or create one again.`);
+    return null;
+  }
+}
 var vercelProject = {
   creationTarget: creationTarget2,
   resolve: resolveProject2,
@@ -13446,21 +13496,10 @@ var vercelProject = {
     }
   },
   async current(ctx) {
-    const stateId = ctx.state.resource("vercel.projectId");
-    const stateName = ctx.state.resource("vercel.projectName");
-    if (stateId && stateName) return { id: stateId, name: stateName };
-    const link = readLinkFile(ctx);
-    const ref3 = stateId ?? ctx.config.projects?.hosting ?? link?.projectId;
-    if (!ref3) return null;
-    if (link?.projectId === ref3 && link.projectName) return { id: ref3, name: link.projectName };
-    try {
-      const p = await projectInfo(ctx, ref3);
-      return { id: p.id, name: p.name };
-    } catch (e) {
-      if (!isNotFound(e)) throw e;
-      ctx.log.warn(`Vercel project "${ref3}" no longer exists or is in another team; pick or create one again.`);
-      return null;
-    }
+    const linked = await linkedProject(ctx);
+    if (!linked) return null;
+    const scope = await owningScope(ctx, linked.accountId ?? orgId(ctx));
+    return { id: linked.id, name: linked.name, ...scope ? { scope } : {} };
   },
   async candidates(ctx) {
     const q2 = encodeURIComponent(basename6(ctx.cwd));
@@ -20543,7 +20582,7 @@ async function buildHandover(ctx, input) {
     costs: costRows(ctx),
     manual,
     manualClosed: input.handoffs.filter((h) => h.done === true).length,
-    runbook: runbookRows(ctx, input.checkIds),
+    runbook: runbookRows(ctx, input.checks),
     evidence: [
       ".golive/state.json \u2014 resource ids, fingerprints and per-step records (no values)",
       ".golive/report.json and GOLIVE_REPORT.md \u2014 the last `verify` results, check by check",
@@ -20551,7 +20590,7 @@ async function buildHandover(ctx, input) {
       "golive.yaml \u2014 provider choices and non-secret configuration"
     ],
     retirement: retirementRows(ctx, inventory2),
-    provenance: provenanceRows(generatedAt)
+    provenance: provenanceRows(generatedAt, resources)
   };
 }
 function limits(ctx, input) {
@@ -20580,6 +20619,7 @@ async function currentProjects(ctx) {
   }
   return out;
 }
+var NO_ACCOUNT = "not reported by the provider";
 async function accountRows(ctx, projects2) {
   const rows = [];
   for (const axis of AXES) {
@@ -20587,13 +20627,14 @@ async function accountRows(ctx, projects2) {
     if (!id2) continue;
     const adapter = adapterById(id2, ctx.adapters);
     const providerTitle = adapter?.title ?? GUIDED.find((g) => g.id === id2)?.title ?? id2;
-    const account2 = projects2.get(axis)?.scope?.name ?? projects2.get(axis)?.scope?.id;
+    const project = projects2.get(axis);
+    const account2 = project?.scope?.name ?? project?.scope?.id ?? NO_ACCOUNT;
     if (!adapter || !adapter.automated) {
       rows.push({
         axis,
         provider: id2,
         providerTitle,
-        ...account2 ? { account: account2 } : {},
+        account: account2,
         login: `guided provider: golive has no adapter for it, so confirm the ${providerTitle} account with the human in its dashboard`,
         provenance: { kind: "unverifiable" }
       });
@@ -20610,7 +20651,7 @@ async function accountRows(ctx, projects2) {
       login2 = `golive could not check the ${providerTitle} login (${errMsg(e)}); run \`doctor\` after fixing access`;
       provenance = { kind: "unknown" };
     }
-    rows.push({ axis, provider: id2, providerTitle, ...via ? { via } : {}, ...account2 ? { account: account2 } : {}, login: login2, provenance });
+    rows.push({ axis, provider: id2, providerTitle, ...via ? { via } : {}, account: account2, login: login2, provenance });
   }
   return rows;
 }
@@ -20784,15 +20825,17 @@ function manualRows(ctx, handoffs) {
   }
   return [...open, ...recurring];
 }
-function runbookRows(ctx, checkIds) {
-  const registered = new Set(checkIds);
+function runbookRows(ctx, checks) {
+  const registered = new Set(checks.map((c) => c.id));
+  const runs = new Set(checks.filter((c) => c.applies).map((c) => c.id));
   const rows = [];
   for (const { axis, providerTitle } of axesUsed(ctx)) {
-    const ids = AXIS_CHECKS[axis].filter((id2) => registered.has(id2));
+    const offered = AXIS_CHECKS[axis].filter((id2) => registered.has(id2));
+    const ids = offered.filter((id2) => runs.has(id2));
     rows.push({
       subject: `${axis} (${providerTitle})`,
       commands: ["golive doctor", ...ids.length ? [`golive verify --only ${ids.join(",")}`] : []],
-      note: ids.length ? `re-reads ${ids.join(", ")}; evidence names ids, URLs and counts, never values.` : "golive has no registered check for this axis: confirm it by hand or in the provider dashboard."
+      note: ids.length ? `re-reads ${ids.join(", ")}; evidence names ids, URLs and counts, never values.` : offered.length ? "golive registers checks for this axis, but none of them runs on this stack: confirm it by hand or in the provider dashboard." : "golive has no registered check for this axis: confirm it by hand or in the provider dashboard."
     });
   }
   rows.push({
@@ -20862,15 +20905,21 @@ function retirementRows(ctx, inventory2) {
   }
   return rows;
 }
-function provenanceRows(at) {
+function provenanceRows(at, resources) {
   return [
     { section: "Accounts and login route", source: "live `auth()` reads made for this document", at, tags: ["verified", "unverifiable", "unknown"] },
-    { section: "Resources created", source: "the DNS provider's owned-record read (this run) plus recorded state", at, tags: ["verified", "recorded"] },
+    { section: "Resources created", source: resourcesSource(resources), at, tags: ["verified", "recorded"] },
     { section: "Costs and recurrence", source: "golive.yaml only: no billing, quota or usage read", at, tags: ["unknown"] },
     { section: "What is manual", source: "the current plan's handoffs and their check results", at, tags: ["verified", "unverifiable"] },
     { section: "If it breaks", source: "the registered checks of this release", at, tags: [] },
     { section: "Retirement", source: "the read-only inventory of what golive provably created", at, tags: ["verified", "recorded", "unverifiable"] }
   ];
+}
+function resourcesSource(resources) {
+  const reads = [];
+  if (resources.some((r) => r.axis === "dns" && r.provenance.kind === "verified")) reads.push("the DNS provider's owned-record read (this run)");
+  if (resources.some((r) => r.kind === "host project" && r.provenance.kind === "verified")) reads.push("this run's read of the host project");
+  return [...reads, "recorded state"].join(" plus ");
 }
 function axesUsed(ctx) {
   const out = [];
@@ -20974,6 +21023,7 @@ function renderHandover(doc) {
   lines.push("## Retirement", "");
   lines.push("`golive teardown` lists exactly these resources and deletes only what golive provably created, under its own approval:", "");
   lines.push("_golive lists only what the inventory could read: a provider it cannot reach right now contributes no rows, and never a deletion it cannot do._", "");
+  lines.push("_A removal is reported as done only after re-reading the resource at its provider; fetching the URL proves nothing, because a CDN cache can keep answering after the resource is gone._", "");
   if (doc.retirement.length) {
     lines.push("| Resource | How it goes away | Removal |", "| --- | --- | --- |");
     for (const r of doc.retirement) lines.push(retirementLine(r));
@@ -21208,7 +21258,7 @@ async function main(argv) {
         emit({ ok: items.every((i) => i.done !== false || !i.blocking), handoffs: items, unverified: unverified.map((i) => i.id), note }, { json: json2 });
         return 0;
       }
-      const doc = await buildHandover(ctx, { handoffs: items, checkIds: CHECKS.map((c) => c.id) });
+      const doc = await buildHandover(ctx, { handoffs: items, checks: CHECKS.map((c) => ({ id: c.id, applies: checkRuns(c, ctx) })) });
       const paths = handoverPaths(cwd);
       assertOverwritable(paths.json, flags.force === true);
       assertOverwritable(paths.markdown, flags.force === true);
@@ -21227,6 +21277,13 @@ async function main(argv) {
     }
     default:
       throw new UsageError(`unknown command "${cmd}". Run \`help\`.`);
+  }
+}
+function checkRuns(check, ctx) {
+  try {
+    return check.applies(ctx);
+  } catch {
+    return true;
   }
 }
 async function handoffStatus(ctx, handoffs, ran = [], runAdditionalChecks = true) {

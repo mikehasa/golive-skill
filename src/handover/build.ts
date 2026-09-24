@@ -29,8 +29,11 @@ export interface HandoverAccount {
   providerTitle: string;
   /** How golive reaches the account now, from the provider's own auth check. */
   via?: string;
-  /** The team/organization display name a read returned, when the provider has one. */
-  account?: string;
+  /**
+   * The team/organization display name a read returned. Always present: a provider that reported
+   * none is stated as such, because an empty cell reads as "there is no account at all".
+   */
+  account: string;
   /** What the human does to log in (or back in). */
   login: string;
   provenance: Provenance;
@@ -125,11 +128,24 @@ export interface HandoverDoc {
 export interface HandoverInput {
   /** Handoffs with their status, exactly as the `handoff` command computed them. */
   handoffs: Array<HandoffItem & { done: boolean | null; evidence: string[] }>;
-  /** Registered check ids, so the runbook never names a check this release does not run. */
-  checkIds: readonly string[];
+  /** Registered checks with the applicability their own `applies()` reported for this stack. */
+  checks: readonly HandoverCheck[];
 }
 
-/** Which checks cover each axis. A runbook line only names ids the release actually registers. */
+/** A check this release registers, and whether its own predicate says this stack ever runs it. */
+export interface HandoverCheck {
+  id: string;
+  /**
+   * False when the check's predicate says it skips this stack — the Netlify visibility check on a
+   * Vercel app, a domain check with no domain configured — so a runbook must not name it.
+   */
+  applies: boolean;
+}
+
+/**
+ * Which checks cover each axis. A runbook line only names ids this release registers *and* this stack
+ * runs, so a provider is never handed another provider's check.
+ */
 const AXIS_CHECKS: Record<Axis, string[]> = {
   hosting: ['domain-live', 'env-parity', 'netlify-public-access', 'bundle-secrets'],
   db: ['db-connection', 'rls-probe'],
@@ -186,7 +202,7 @@ export async function buildHandover(ctx: Ctx, input: HandoverInput): Promise<Han
     costs: costRows(ctx),
     manual,
     manualClosed: input.handoffs.filter((h) => h.done === true).length,
-    runbook: runbookRows(ctx, input.checkIds),
+    runbook: runbookRows(ctx, input.checks),
     evidence: [
       '.golive/state.json — resource ids, fingerprints and per-step records (no values)',
       '.golive/report.json and GOLIVE_REPORT.md — the last `verify` results, check by check',
@@ -194,7 +210,7 @@ export async function buildHandover(ctx: Ctx, input: HandoverInput): Promise<Han
       'golive.yaml — provider choices and non-secret configuration',
     ],
     retirement: retirementRows(ctx, inventory),
-    provenance: provenanceRows(generatedAt),
+    provenance: provenanceRows(generatedAt, resources),
   };
 }
 
@@ -233,6 +249,12 @@ async function currentProjects(ctx: Ctx): Promise<Map<Axis, ProjectRef | null>> 
   return out;
 }
 
+/**
+ * The account cell of the login table. A provider that named no team/account is said to have named
+ * none — the column is never left blank, which would read as "there is no account".
+ */
+const NO_ACCOUNT = 'not reported by the provider';
+
 async function accountRows(ctx: Ctx, projects: Map<Axis, ProjectRef | null>): Promise<HandoverAccount[]> {
   const rows: HandoverAccount[] = [];
   for (const axis of AXES) {
@@ -240,13 +262,14 @@ async function accountRows(ctx: Ctx, projects: Map<Axis, ProjectRef | null>): Pr
     if (!id) continue;
     const adapter = adapterById(id, ctx.adapters);
     const providerTitle = adapter?.title ?? GUIDED.find((g) => g.id === id)?.title ?? id;
-    const account = projects.get(axis)?.scope?.name ?? projects.get(axis)?.scope?.id;
+    const project = projects.get(axis);
+    const account = project?.scope?.name ?? project?.scope?.id ?? NO_ACCOUNT;
     if (!adapter || !adapter.automated) {
       rows.push({
         axis,
         provider: id,
         providerTitle,
-        ...(account ? { account } : {}),
+        account,
         login: `guided provider: golive has no adapter for it, so confirm the ${providerTitle} account with the human in its dashboard`,
         provenance: { kind: 'unverifiable' },
       });
@@ -266,7 +289,7 @@ async function accountRows(ctx: Ctx, projects: Map<Axis, ProjectRef | null>): Pr
       login = `golive could not check the ${providerTitle} login (${errMsg(e)}); run \`doctor\` after fixing access`;
       provenance = { kind: 'unknown' };
     }
-    rows.push({ axis, provider: id, providerTitle, ...(via ? { via } : {}), ...(account ? { account } : {}), login, provenance });
+    rows.push({ axis, provider: id, providerTitle, ...(via ? { via } : {}), account, login, provenance });
   }
   return rows;
 }
@@ -470,15 +493,23 @@ function manualRows(ctx: Ctx, handoffs: HandoverInput['handoffs']): HandoverManu
 
 // ── Runbook ─────────────────────────────────────────────────────────────────────────────────────
 
-function runbookRows(ctx: Ctx, checkIds: readonly string[]): HandoverRunbook[] {
-  const registered = new Set(checkIds);
+function runbookRows(ctx: Ctx, checks: readonly HandoverCheck[]): HandoverRunbook[] {
+  const registered = new Set(checks.map((c) => c.id));
+  // Only checks this release registers and this stack actually runs: a Vercel owner is never handed
+  // the Netlify visibility check, and a stack with no domain is not told to re-read the domain.
+  const runs = new Set(checks.filter((c) => c.applies).map((c) => c.id));
   const rows: HandoverRunbook[] = [];
   for (const { axis, providerTitle } of axesUsed(ctx)) {
-    const ids = AXIS_CHECKS[axis].filter((id) => registered.has(id));
+    const offered = AXIS_CHECKS[axis].filter((id) => registered.has(id));
+    const ids = offered.filter((id) => runs.has(id));
     rows.push({
       subject: `${axis} (${providerTitle})`,
       commands: ['golive doctor', ...(ids.length ? [`golive verify --only ${ids.join(',')}`] : [])],
-      note: ids.length ? `re-reads ${ids.join(', ')}; evidence names ids, URLs and counts, never values.` : 'golive has no registered check for this axis: confirm it by hand or in the provider dashboard.',
+      note: ids.length
+        ? `re-reads ${ids.join(', ')}; evidence names ids, URLs and counts, never values.`
+        : offered.length
+          ? 'golive registers checks for this axis, but none of them runs on this stack: confirm it by hand or in the provider dashboard.'
+          : 'golive has no registered check for this axis: confirm it by hand or in the provider dashboard.',
     });
   }
   rows.push({
@@ -561,15 +592,26 @@ function retirementRows(ctx: Ctx, inventory: Inventory): HandoverRetirement[] {
 
 // ── Provenance ──────────────────────────────────────────────────────────────────────────────────
 
-function provenanceRows(at: string): HandoverSectionProvenance[] {
+function provenanceRows(at: string, resources: HandoverResource[]): HandoverSectionProvenance[] {
   return [
     { section: 'Accounts and login route', source: 'live `auth()` reads made for this document', at, tags: ['verified', 'unverifiable', 'unknown'] },
-    { section: 'Resources created', source: 'the DNS provider\'s owned-record read (this run) plus recorded state', at, tags: ['verified', 'recorded'] },
+    { section: 'Resources created', source: resourcesSource(resources), at, tags: ['verified', 'recorded'] },
     { section: 'Costs and recurrence', source: 'golive.yaml only: no billing, quota or usage read', at, tags: ['unknown'] },
     { section: 'What is manual', source: 'the current plan\'s handoffs and their check results', at, tags: ['verified', 'unverifiable'] },
     { section: 'If it breaks', source: 'the registered checks of this release', at, tags: [] },
     { section: 'Retirement', source: 'the read-only inventory of what golive provably created', at, tags: ['verified', 'recorded', 'unverifiable'] },
   ];
+}
+
+/**
+ * What the "Resources created" rows were built from: only the reads this run really made, named by
+ * the rows they produced. A stack with no DNS record claims no DNS read.
+ */
+function resourcesSource(resources: HandoverResource[]): string {
+  const reads: string[] = [];
+  if (resources.some((r) => r.axis === 'dns' && r.provenance.kind === 'verified')) reads.push('the DNS provider\'s owned-record read (this run)');
+  if (resources.some((r) => r.kind === 'host project' && r.provenance.kind === 'verified')) reads.push('this run\'s read of the host project');
+  return [...reads, 'recorded state'].join(' plus ');
 }
 
 // ── Shared ─────────────────────────────────────────────────────────────────────────────────────

@@ -9,9 +9,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _resetSecretRegistry, Secret } from '../src/core/secret.js';
 import { emptyState } from '../src/core/state.js';
-import { buildHandover, type HandoverDoc, type HandoverInput } from '../src/handover/build.js';
+import { buildHandover, type HandoverCheck, type HandoverDoc, type HandoverInput } from '../src/handover/build.js';
 import { assertOverwritable, handoverJson, handoverPaths, renderHandover } from '../src/report/handover.js';
-import type { Adapter, ProjectRef, ShipConfig, ShipState } from '../src/core/types.js';
+import { ALL_CHECKS } from '../src/checks/all.js';
+import type { Adapter, Ctx, ProjectRef, ShipConfig, ShipState } from '../src/core/types.js';
 import { detectFixture, testCtx } from './helpers.js';
 import { ALL_RAW_SECRETS, RAW, fakeWorld, type FakeWorld } from './fakes.js';
 
@@ -62,14 +63,34 @@ function arrange(w: FakeWorld): void {
   w.pay.endpoints = [{ id: 'we_test', url: 'https://example.com/api/webhooks/stripe', events: ['checkout.session.completed'], enabled: true, mode: 'test' }];
 }
 
-function setup(opts: { state?: ShipState; adapters?: Adapter[]; handoffs?: HandoverInput['handoffs']; checkIds?: readonly string[]; config?: Partial<ShipConfig> } = {}) {
+/** The release's own applicability predicates, evaluated the way the `handoff` command evaluates them. */
+const releaseChecks = (ctx: Ctx): HandoverCheck[] => ALL_CHECKS.map((c) => ({ id: c.id, applies: c.applies(ctx) }));
+
+/** Checks as the `handoff` command passes them: registered, and running here unless the test says otherwise. */
+const registeredChecks = (ids: readonly string[], skip: readonly string[] = []): HandoverCheck[] => ids.map((id) => ({ id, applies: !skip.includes(id) }));
+
+function setup(opts: {
+  state?: ShipState;
+  adapters?: Adapter[];
+  handoffs?: HandoverInput['handoffs'];
+  checkIds?: readonly string[];
+  /** Registered checks whose own predicate says this stack never runs them. */
+  skipChecks?: readonly string[];
+  config?: Partial<ShipConfig>;
+  /** What the host's project read returns (null = nothing linked). */
+  host?: ProjectRef | null;
+} = {}) {
   const w = fakeWorld();
   arrange(w);
+  if (opts.host !== undefined) w.host.current = opts.host;
   const ctx = testCtx({ cwd: '/work/shop', adapters: opts.adapters ?? w.adapters, config: { ...CONFIG, ...opts.config }, state: opts.state ?? STATE, detect: { framework: 'next' } });
+  const input = (checks: readonly HandoverCheck[]): HandoverInput => ({ handoffs: opts.handoffs ?? HANDOFFS, checks });
   return {
     w,
     ctx,
-    build: () => buildHandover(ctx, { handoffs: opts.handoffs ?? HANDOFFS, checkIds: opts.checkIds ?? CHECKS }),
+    build: () => buildHandover(ctx, input(registeredChecks(opts.checkIds ?? CHECKS, opts.skipChecks ?? []))),
+    /** Build with checks a caller supplies — e.g. the release's own predicates for a given stack. */
+    buildWith: (checks: readonly HandoverCheck[]) => buildHandover(ctx, input(checks)),
   };
 }
 
@@ -177,7 +198,41 @@ describe('handover: data', () => {
     // A check this release does not register is never offered as a command.
     const partial = await setup({ checkIds: ['accounts'] }).build();
     expect(partial.runbook.find((r) => r.subject === 'hosting (FakeHost)')!.commands).toEqual(['golive doctor']);
-    expect(partial.runbook.find((r) => r.subject === 'hosting (FakeHost)')!.note).toMatch(/no registered check/);
+    expect(partial.runbook.find((r) => r.subject === 'hosting (FakeHost)')!.note).toMatch(/no registered check for this axis/);
+
+    // Registered but skipping this stack: still no command, and the note says which case it is.
+    const skipped = await setup({ skipChecks: ['domain-live', 'env-parity', 'netlify-public-access', 'bundle-secrets'] }).build();
+    expect(skipped.runbook.find((r) => r.subject === 'hosting (FakeHost)')!.commands).toEqual(['golive doctor']);
+    expect(skipped.runbook.find((r) => r.subject === 'hosting (FakeHost)')!.note).toMatch(/registers checks for this axis, but none of them runs on this stack/);
+  });
+
+  it('names only the checks the linked host runs: no Netlify check on a Vercel app, and vice versa', async () => {
+    // The live `handoff --write` run on a Vercel-only fixture told the owner to run the Netlify
+    // visibility check. The predicates below are the release's own, not a test double.
+    const vercel = setup({ config: { stack: { hosting: 'vercel' }, domain: undefined } });
+    const vercelDoc = await vercel.buildWith(releaseChecks(vercel.ctx));
+    const vercelRun = vercelDoc.runbook.find((r) => r.subject === 'hosting (vercel)')!;
+    expect(vercelRun.commands).toEqual(['golive doctor', 'golive verify --only env-parity,bundle-secrets']);
+    expect(JSON.stringify(vercelDoc)).not.toMatch(/netlify-public-access/);
+
+    const netlify = setup({ config: { stack: { hosting: 'netlify' }, domain: undefined } });
+    const netlifyDoc = await netlify.buildWith(releaseChecks(netlify.ctx));
+    expect(netlifyDoc.runbook.find((r) => r.subject === 'hosting (netlify)')!.commands[1]).toBe('golive verify --only env-parity,netlify-public-access,bundle-secrets');
+  });
+
+  it('prints the team/account a provider read named, and never leaves the cell blank', async () => {
+    // The live Vercel run printed "—" here while its own plan read named the team; the cell now
+    // carries whatever the provider's project read reported.
+    const named = await setup({ host: { id: 'prj_1', name: 'shop', scope: { kind: 'team', id: 'team_fixture', name: "Eden's Team" } } }).build();
+    expect(named.accounts.find((a) => a.axis === 'hosting')).toMatchObject({ account: "Eden's Team" });
+    expect(renderHandover(named)).toContain("| Eden's Team |");
+
+    // A provider that reported none says so, rather than leaving the column empty.
+    const unnamed = await setup({ host: { id: 'prj_1', name: 'shop' } }).build();
+    expect(unnamed.accounts.find((a) => a.axis === 'hosting')!.account).toBe('not reported by the provider');
+    const markdown = renderHandover(unnamed);
+    expect(markdown).toContain('| not reported by the provider |');
+    expect(markdown).not.toMatch(/\| hosting \| FakeHost \| fakehost CLI \[verified by golive\] \| — \|/);
   });
 
   it('names the removal gates and what has to be done by hand', async () => {
@@ -209,6 +264,22 @@ describe('handover: data', () => {
     const doc = await setup().build();
     expect(doc.provenance.map((p) => p.section)).toEqual(['Accounts and login route', 'Resources created', 'Costs and recurrence', 'What is manual', 'If it breaks', 'Retirement']);
     for (const p of doc.provenance) expect(p.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    // This fixture did read DNS records, so its Resources section may say so.
+    expect(doc.provenance.find((p) => p.section === 'Resources created')!.source).toBe("the DNS provider's owned-record read (this run) plus this run's read of the host project plus recorded state");
+  });
+
+  it('claims only the reads this run made: no DNS provenance on a stack with no DNS axis', async () => {
+    // The live Vercel-only run's document said the DNS provider's owned-record read had happened.
+    const hostOnly = await setup({ config: { stack: { hosting: 'fakehost' }, domain: undefined, email: undefined } }).build();
+    expect(hostOnly.resources.some((r) => r.axis === 'dns')).toBe(false);
+    const source = hostOnly.provenance.find((p) => p.section === 'Resources created')!.source;
+    expect(source).toBe("this run's read of the host project plus recorded state");
+    expect(source).not.toMatch(/DNS/);
+    expect(renderHandover(hostOnly)).not.toMatch(/DNS provider's owned-record read/);
+
+    // Nothing read in this run at all: the section says what it is, which is recorded state.
+    const recorded = await setup({ config: { stack: { hosting: 'fakehost' }, domain: undefined, email: undefined }, host: null }).build();
+    expect(recorded.provenance.find((p) => p.section === 'Resources created')!.source).toBe('recorded state');
   });
 });
 
@@ -238,6 +309,8 @@ describe('handover: rendering', () => {
     expect(markdown).toContain('Handoff id: `login:fakehost`');
     expect(markdown).toContain('`golive verify --only domain-live,env-parity,netlify-public-access,bundle-secrets`');
     expect(markdown).toMatch(/renew example\.com/);
+    // The retirement section never lets a URL check stand in for a provider read.
+    expect(markdown).toContain('_A removal is reported as done only after re-reading the resource at its provider; fetching the URL proves nothing, because a CDN cache can keep answering after the resource is gone._');
     expect(markdown.trimEnd().endsWith('review it before sharing it.')).toBe(true);
   });
 
@@ -280,7 +353,7 @@ describe('handover: secret freedom', () => {
       config: { ...CONFIG, projects: { hosting: 'shop', db: 'abcd1234' } },
       state: { ...STATE, secrets: { 'RESEND_API_KEY@production': { fp: secrets[1]!.fingerprint, at: '2026-08-02T10:00:00.000Z' } } },
     });
-    const doc = await buildHandover(ctx, { handoffs, checkIds: CHECKS });
+    const doc = await buildHandover(ctx, { handoffs, checks: registeredChecks(CHECKS) });
     const markdown = renderHandover(doc);
     const json = handoverJson(doc);
 
@@ -295,7 +368,7 @@ describe('handover: secret freedom', () => {
 
   it('never reads state.secrets or an Outputs value into the document', async () => {
     const ctx = testCtx({ cwd: '/work/shop', adapters: fakeWorld().adapters, config: CONFIG, state: STATE });
-    const doc = await buildHandover(ctx, { handoffs: [], checkIds: [] });
+    const doc = await buildHandover(ctx, { handoffs: [], checks: [] });
     const text = JSON.stringify(doc);
     expect(text).not.toContain('secrets');
     expect(text).not.toMatch(/"(secret|value|key)"\s*:\s*"[^"]{8,}"/);
