@@ -86,12 +86,34 @@ function appleString(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r/g, '\\r').replace(/\n/g, '\\n')}"`;
 }
 
+/** Human descriptions for the credentials golive prompts for, so the two dialogs of a pair cannot be confused. */
+const DESCRIPTIONS: Record<string, { zh: string; en: string }> = {
+  PORKBUN_API_KEY: {
+    zh: 'Porkbun 的 API Key（以 pk1_ 开头）。注意：不是 Secret Key。',
+    en: 'the Porkbun API Key (starts with "pk1_"). Not the Secret Key.',
+  },
+  PORKBUN_SECRET_API_KEY: {
+    zh: 'Porkbun 的 Secret Key（以 sk1_ 开头）。注意：不是 API Key——两者是不同的值。',
+    en: 'the Porkbun Secret Key (starts with "sk1_"). Not the API Key — they are different values.',
+  },
+  CLOUDFLARE_API_TOKEN: {
+    zh: 'Cloudflare API token（"Edit zone DNS" 模板 + Zone:Zone:Read，仅限该域名的 zone）。',
+    en: 'the Cloudflare API token ("Edit zone DNS" template plus Zone:Zone:Read, limited to this domain\'s zone).',
+  },
+  GODADDY_API_TOKEN: {
+    zh: 'GoDaddy Personal Access Token（在 developer.godaddy.com 创建；权限 domains.domain:read + domains.dns:update）。',
+    en: 'the GoDaddy Personal Access Token (from developer.godaddy.com; scopes domains.domain:read + domains.dns:update).',
+  },
+};
+
 function nativeAnswer(name: string, path: string, language: 'en' | 'zh'): Promise<Answer> {
   const zh = language === 'zh';
+  const known = DESCRIPTIONS[name];
+  const what = known ? (zh ? known.zh : known.en) : zh ? '服务商 API key / access token' : 'the provider API key / access token';
   const message = zh
-    ? `请输入 ${name} 对应的服务商 API key / access token。\n不是 Mac 登录密码，请不要输入电脑密码。\n\n将以明文保存到本机私有文件（权限 0600）：\n${path}\n\n输入值不会返回给 agent 聊天或命令输出。保存后仍需验证服务商权限。`
-    : `Enter the provider API key / access token for ${name}.\nThis is NOT your Mac login password. Do not enter your computer password.\n\nSaved as plaintext in this local private file (mode 0600):\n${path}\n\nThe value is not returned to agent chat or command output. Provider access still needs verification after saving.`;
-  const title = zh ? 'GoLive — 服务商 API key / token' : 'GoLive — provider API key / token';
+    ? `本步骤输入：${what}\n变量名：${name}\n\n这不是 Mac 登录密码，请不要输入电脑密码。\n\n将以明文保存到本机私有文件（权限 0600）：\n${path}\n\n输入值不会返回给 agent 聊天或命令输出。保存后仍需验证服务商权限。`
+    : `This step enters: ${what}\nVariable: ${name}\n\nThis is NOT your Mac login password. Do not enter your computer password.\n\nSaved as plaintext in this local private file (mode 0600):\n${path}\n\nThe value is not returned to agent chat or command output. Provider access still needs verification after saving.`;
+  const title = `GoLive — ${name}`;
   const buttons = zh ? ['取消', '保存'] : ['Cancel', 'Save'];
   const script = `set answer to display dialog ${appleString(message)} default answer "" with hidden answer buttons {${buttons.map(appleString).join(', ')}} default button 2 cancel button 1 with title ${appleString(title)} giving up after ${DIALOG_SECONDS}\nif gave up of answer then error number -1712\nreturn text returned of answer\n`;
 

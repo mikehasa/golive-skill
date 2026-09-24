@@ -97,6 +97,15 @@ describe('Porkbun authentication and transport', () => {
     expect(result.howToFix).toContain('IP_NOT_ALLOWED');
     expect(result.howToFix).not.toMatch(/private account data|FAKEporkbun/);
   });
+  it('explains a mismatched key pair and a missing secret with focused hints', async () => {
+    const mismatch = await porkbunAdapter.auth(fake({ failure: { status: 400, json: { status: 'ERROR', code: 'INVALID_API_KEYS_002' } } }).ctx);
+    expect(mismatch.ok).toBe(false);
+    expect(mismatch.howToFix).toContain('key pair does not match');
+    expect(mismatch.howToFix).toContain('--replace');
+    const missing = await porkbunAdapter.auth(fake({ failure: { status: 400, json: { status: 'ERROR', code: 'MISSING_SECRETAPIKEY' } } }).ctx);
+    expect(missing.howToFix).toContain('MISSING_SECRETAPIKEY');
+    expect(missing.howToFix).toContain('PORKBUN_SECRET_API_KEY');
+  });
   it('rejects HTTP 200 error envelopes and malformed successful responses', async () => {
     expect((await porkbunAdapter.auth(fake({ failure: { status: 200, json: { status: 'ERROR', code: 'API_KEY_REQUIRED' } } }).ctx)).ok).toBe(false);
     expect((await porkbunAdapter.auth(fake({ failure: { status: 200, json: {} } }).ctx)).ok).toBe(false);
