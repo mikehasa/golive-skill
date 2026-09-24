@@ -168,12 +168,36 @@ export async function productionUrl(ctx: Ctx): Promise<string | null> {
 
 // ── Deploy bookkeeping (state) ────────────────────────────────────────────────────────────────────
 
+/** resources key: time of the last successful deploy of `target`. */
+export const deployedKey = (target: Exclude<EnvTarget, 'development'>): string => `deployed:${target}`;
+/** resources key: a `target` env write that no deploy has picked up yet. */
+export const redeployKey = (target: Exclude<EnvTarget, 'development'>): string => `redeploy:${target}`;
+/** resources key: the provider's own identity of the deployment golive recorded for `target`. */
+export const deployedIdKey = (target: Exclude<EnvTarget, 'development'>): string => `${deployedKey(target)}:id`;
 /** resources key: time of the last successful production deploy by golive. */
-export const DEPLOYED_KEY = 'deployed:production';
+export const DEPLOYED_KEY = deployedKey('production');
 /** resources key: time of a production env write that no deploy has picked up yet. */
-export const REDEPLOY_KEY = 'redeploy:production';
+export const REDEPLOY_KEY = redeployKey('production');
 /** The step ids a production deploy records (see deployLink). */
 const DEPLOY_STEPS = ['deploy:production', 'deploy:production:final'];
+
+/**
+ * Record a successful deploy of `target`: the `deployed:<target>` time marker the deploy link reads,
+ * plus — only when the provider reported one — its own deployment identity under
+ * `deployed:<target>:id` as `provider|id|url|<time>`, the name a promotion or rollback of exactly
+ * that deployment would use. A provider that reports no id records the marker alone; golive never
+ * derives an identity from the URL, and a deploy that reports none clears a stale one. Also clears
+ * this target's pending-redeploy marker: this deployment picked up every env write so far.
+ */
+export function recordDeploy(ctx: Ctx, provider: string, target: Exclude<EnvTarget, 'development'>, deployment: { url: string; id?: string }): void {
+  ctx.state.save((s) => {
+    const at = new Date().toISOString();
+    s.resources[deployedKey(target)] = at;
+    delete s.resources[redeployKey(target)];
+    if (deployment.id) s.resources[deployedIdKey(target)] = [provider, deployment.id, deployment.url, at].join('|');
+    else delete s.resources[deployedIdKey(target)];
+  });
+}
 
 /** When golive last deployed production successfully (state), or undefined if it never did. */
 export function lastDeployAt(ctx: Ctx): string | undefined {
@@ -187,9 +211,11 @@ export function lastDeployAt(ctx: Ctx): string | undefined {
 
 /**
  * Forget the deploy facts that belonged to a host project golive just removed: the recorded deploy
- * time(s) and the completed deploy step evidence. A project created again in the same repo must be
- * deployed again instead of inheriting "production was deployed" (which plans no deploy at all).
- * Failed records and every other key are left as they are.
+ * time(s), the recorded deployment identity (`deployed:<target>:id`) and the completed deploy step
+ * evidence. A project created again in the same repo must be deployed again instead of inheriting
+ * "production was deployed" (which plans no deploy at all), and the identity of a deployment that
+ * project no longer serves must not outlive it. Failed records and every other key are left as they
+ * are.
  */
 export function forgetDeployFacts(ctx: Ctx): void {
   ctx.state.save((s) => {

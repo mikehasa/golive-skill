@@ -589,7 +589,7 @@ describe('vercel deploy', () => {
     const envelope = { status: 'ok', deployment: { id: 'dpl_1', url: 'https://my-app-abc123-acme.vercel.app', readyState: 'READY' }, message: 'ok' };
     const ex = mockExec([WHOAMI_OK, ['vercel deploy', { stdout: JSON.stringify(envelope) }]]);
     const ctx = testCtx({ exec: ex.run, state: linkedState() });
-    expect(await deployer.deploy(ctx, 'production')).toEqual({ url: 'https://my-app-abc123-acme.vercel.app' });
+    expect(await deployer.deploy(ctx, 'production')).toEqual({ url: 'https://my-app-abc123-acme.vercel.app', id: 'dpl_1' });
     const call = ex.calls.find((c) => c.args[0] === 'deploy')!;
     expect(call.args).toEqual(['deploy', '--prod', '--yes', '--non-interactive', '--format', 'json', '--scope', 'team_1']);
     expect(call.args.join(' ')).not.toMatch(/--env|--build-env|--token/);
@@ -600,7 +600,8 @@ describe('vercel deploy', () => {
 
   it('accepts the plain deployment object and falls back to the last *.vercel.app line', async () => {
     const ex = mockExec([WHOAMI_OK, ['vercel deploy', { stdout: JSON.stringify({ id: 'dpl_2', url: 'my-app-x-acme.vercel.app' }) }]]);
-    expect(await deployer.deploy(testCtx({ exec: ex.run, state: linkedState() }), 'preview')).toEqual({ url: 'https://my-app-x-acme.vercel.app' });
+    expect(await deployer.deploy(testCtx({ exec: ex.run, state: linkedState() }), 'preview')).toEqual({ url: 'https://my-app-x-acme.vercel.app', id: 'dpl_2' });
+    // A CLI that printed only the URL reports no identity: golive records none rather than making one up.
     const ex2 = mockExec([WHOAMI_OK, ['vercel deploy', { stdout: 'Uploading…\nhttps://my-app-y-acme.vercel.app\n' }]]);
     expect(await deployer.deploy(testCtx({ exec: ex2.run, state: linkedState() }), 'preview')).toEqual({ url: 'https://my-app-y-acme.vercel.app' });
     expect(ex2.calls.find((c) => c.args[0] === 'deploy')!.args).not.toContain('--prod');

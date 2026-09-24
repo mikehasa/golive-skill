@@ -24,6 +24,11 @@ const AUTH_SETTINGS: Record<string, (v: unknown) => string | null> = {
   recovery: (v) => (typeof v === 'boolean' ? null : 'must be true or false'),
 };
 
+/** The opt-in `release` settings and how each may look. Each one is off unless set to true. */
+const RELEASE_SETTINGS: Record<string, (v: unknown) => string | null> = {
+  preview: (v) => (typeof v === 'boolean' ? null : 'must be true or false'),
+};
+
 export function defaultConfig(): ShipConfig {
   return { version: 1, stack: {}, targets: ['preview', 'production'] };
 }
@@ -128,6 +133,16 @@ export function parseConfig(text: string): ShipConfig {
       if (problem) throw new ConfigError(`${CONFIG_FILE}: auth.${key} ${problem}`);
     }
     cfg.auth = auth as ShipConfig['auth'];
+  }
+  const release = raw.release as Record<string, unknown> | undefined;
+  if (release !== undefined) {
+    if (!release || typeof release !== 'object' || Array.isArray(release)) throw new ConfigError(`${CONFIG_FILE}: release must be a mapping of opt-in release settings`);
+    for (const [key, value] of Object.entries(release)) {
+      if (!Object.hasOwn(RELEASE_SETTINGS, key)) throw new ConfigError(`${CONFIG_FILE}: unknown release setting; expected ${Object.keys(RELEASE_SETTINGS).join(', ')} (no credentials)`);
+      const problem = RELEASE_SETTINGS[key]!(value);
+      if (problem) throw new ConfigError(`${CONFIG_FILE}: release.${key} ${problem}`);
+    }
+    cfg.release = release as ShipConfig['release'];
   }
   const projects = raw.projects as Record<string, unknown> | undefined;
   if (projects) {

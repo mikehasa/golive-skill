@@ -6,7 +6,7 @@ import { emptyState } from '../src/core/state.js';
 import type { Check, Finding, Plan, ShipConfig, ShipState, Step } from '../src/core/types.js';
 import { envParityCheck } from '../src/checks/env-parity.js';
 import { ALL_LINKS } from '../src/links/all.js';
-import { availableKeys } from '../src/links/util.js';
+import { availableKeys, recordDeploy } from '../src/links/util.js';
 import { emailDomain } from '../src/links/email.js';
 import { mockExec, testCtx } from './helpers.js';
 import { ALL_RAW_SECRETS, FAKE_STACK, PUBLIC, RAW, fakeWorld, type FakeWorld } from './fakes.js';
@@ -190,6 +190,8 @@ describe('golden path', () => {
     expect(order.lastIndexOf('deploy')).toBeGreaterThan(order.indexOf('webhooks.ensure'));
     expect(st.resources['redeploy:production']).toBeUndefined();
     expect(st.resources['deployed:production']).toBeDefined();
+    // The deployment the provider reported, with its own id: <provider>|<id>|<url>|<time>.
+    expect(st.resources['deployed:production:id']).toMatch(/^fakehost\|dpl_fake1\|https:\/\/shop-abc123\.fakehost\.app\|\d{4}-\d\d-\d\dT/);
     // Every env-writing step verified exactly the names it wrote.
     const inline = outcomes.flatMap((o) => o.checks).filter((c) => c.id.endsWith(':env-written'));
     expect(inline.map((c) => c.id).sort()).toEqual(
@@ -646,6 +648,46 @@ describe('deploy', () => {
     expect(ids(plan)).toEqual(['project:hosting', 'deploy:production']);
     // No webhook secret has been written yet, so the unsigned-webhook probe waits for `verify`.
     expect(byId(plan, 'deploy:production').verifyWith).toEqual(['bundle-secrets']);
+  });
+
+  it('records the provider’s own deployment id next to the deploy time marker', async () => {
+    const { ctx } = setup({ config: { stack: { hosting: 'fakehost' }, domain: undefined }, env: [], arrange: (w) => (w.host.urls.production = null) });
+    await apply(ctx, await build(ctx));
+    const at = ctx.state.resource('deployed:production')!;
+    expect(at).toMatch(/^\d{4}-/);
+    // <provider>|<the deployment the provider reported>|<url>|<time>: the name a promotion or
+    // rollback would use, not a value golive derived.
+    expect(ctx.state.resource('deployed:production:id')).toBe(`fakehost|dpl_fake1|https://shop-abc123.fakehost.app|${at}`);
+  });
+
+  it('records the marker alone, inventing no id, for a provider that reports none', async () => {
+    const { w, ctx } = setup({
+      config: { stack: { hosting: 'fakehost' }, domain: undefined },
+      env: [],
+      arrange: (x) => {
+        x.host.urls.production = null;
+        x.host.deployId = null;
+      },
+    });
+    await apply(ctx, await build(ctx));
+    expect(w.host.deploys).toBe(1);
+    expect(ctx.state.resource('deployed:production')).toMatch(/^\d{4}-/);
+    expect(ctx.state.resource('deployed:production:id')).toBeUndefined();
+  });
+
+  it('does not leave an earlier deployment’s identity behind when the provider reports none', () => {
+    const { ctx } = setup({ state: stateWith([], { 'deployed:production': '2026-01-01T00:00:00.000Z', 'deployed:production:id': 'fakehost|dpl_old|https://shop.fakehost.app|2026-01-01T00:00:00.000Z' }) });
+    recordDeploy(ctx, 'fakehost', 'production', { url: 'https://shop.fakehost.app' });
+    expect(ctx.state.resource('deployed:production:id')).toBeUndefined();
+    expect(ctx.state.resource('deployed:production')).not.toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('the release.preview opt-in plans nothing yet and leaves the plan id unchanged', async () => {
+    const plain = await build(setup().ctx);
+    const optedIn = await build(setup({ config: { release: { preview: true } } }).ctx);
+    expect(ids(optedIn)).toEqual(ids(plain));
+    expect(optedIn.id).toBe(plain.id);
+    expect(optedIn.steps.map((s) => s.preview)).toEqual(plain.steps.map((s) => s.preview));
   });
 });
 

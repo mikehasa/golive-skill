@@ -242,7 +242,14 @@ export interface PublicUrl {
 }
 
 export interface Deployer {
-  deploy(ctx: Ctx, target: Exclude<EnvTarget, 'development'>): Promise<{ url: string }>;
+  /**
+   * Deploy `target` and report the deployment the provider actually made: its public `url` plus,
+   * when the provider reports one, its OWN deployment identity (`id`) — the name a promotion or
+   * rollback of exactly this deployment would use. It comes from the provider (its deploy output or
+   * the API), never derived from the URL; a provider that cannot report one leaves it unset rather
+   * than inventing one.
+   */
+  deploy(ctx: Ctx, target: Exclude<EnvTarget, 'development'>): Promise<{ url: string; id?: string }>;
 }
 
 export interface DomainAttach {
@@ -768,6 +775,12 @@ export interface ShipConfig {
   };
   /** Project chosen per axis (id or name), e.g. { hosting: "my-app", db: "abcd1234efgh" }. */
   projects?: Partial<Record<Axis, string>>;
+  /**
+   * Opt-in release capabilities, none of which golive does by itself. `preview: true` asks for a
+   * preview deployment of this repo alongside production: the preview deploy itself lands in a later
+   * release, so today the flag plans nothing and leaves every existing plan unchanged.
+   */
+  release?: { preview?: boolean };
 }
 
 export interface StepRecord {

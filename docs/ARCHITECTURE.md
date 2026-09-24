@@ -52,9 +52,20 @@ neither claims the other's coverage.
 ## Adapters, capabilities and links
 
 An adapter speaks to a provider and exposes capabilities such as `EnvStore`, `PublicUrl`,
-`DomainAttach`, `DnsZone`, `DbAdmin`, `DbConnection`, `AuthConfig`, `AuthUsers`, `WebhookRegistry` and
-`SendingDomain`. Links compose those capabilities, for example database output → hosting env or
-hosting URL → auth redirects. A new adapter does not need a separate recipe for every pairing.
+`DomainAttach`, `DnsZone`, `DbAdmin`, `DbConnection`, `AuthConfig`, `AuthUsers`, `WebhookRegistry`,
+`SendingDomain` and `Deployer`. Links compose those capabilities, for example database output →
+hosting env or hosting URL → auth redirects. A new adapter does not need a separate recipe for every
+pairing.
+
+`Deployer` answers with the URL of the deployment it made plus, when the provider reports one, the
+provider's own identity for that deployment (the id in Vercel's deploy output; the deployment
+Netlify confirms). golive records both in `.golive/state.json`: the `deployed:<target>` time marker
+and, when there is one, the identity as `deployed:<target>:id` = `<provider>|<deployment id>|<url>|<time>`.
+An id derived from the URL would name nothing a promotion or rollback could act on, so a provider
+that cannot report one leaves it unset. Recording that identity is all this release does with it: it
+plans and writes no new deployment, `golive.yaml`'s opt-in `release.preview` flag plans nothing yet,
+and previews, promotion and rollback do not exist — see the CI/CD and safe-releases bullet in
+`README.md`.
 
 | Source | Responsibility |
 | --- | --- |
@@ -125,7 +136,8 @@ checks against the configured domain; that does not authorize active app probes 
 `golive.yaml` holds provider choices and non-secret configuration. `.golive/state.json` holds
 resource IDs, fingerprints and step evidence, including one machine-readable baseline per DNS record
 golive wrote under the documented key `dns:<zone>|<type>|<name>` (record values are public DNS data,
-never credentials). `.golive/report.json` and `GOLIVE_REPORT.md` hold verification results and
+never credentials) and the deployment identity of the last successful deploy per target under
+`deployed:<target>:id`. `.golive/report.json` and `GOLIVE_REPORT.md` hold verification results and
 outstanding work. `.golive/handover.json` and `GOLIVE_HANDOVER.md` hold the
 ownership document: what golive provably created, the accounts and login route, what is manual, what
 recurs and how removal works, each row tagged by how it was checked. Review these files before

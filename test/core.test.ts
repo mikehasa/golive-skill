@@ -142,6 +142,25 @@ auth: { e2e: true, testEmail: "you+go-live@example.com", protectedPath: /dashboa
     expect(c.auth).toEqual({ e2e: true, testEmail: 'you+go-live@example.com', protectedPath: '/dashboard', recovery: true });
   });
 
+  it('parses the opt-in release block', () => {
+    const c = parseConfig(`version: 1
+stack: { hosting: vercel }
+release: { preview: true }
+`);
+    expect(c.release).toEqual({ preview: true });
+    expect(parseConfig('version: 1\nrelease: { preview: false }\n').release).toEqual({ preview: false });
+    expect(parseConfig('version: 1\n').release).toBeUndefined();
+  });
+
+  it.each([
+    ['version: 1\nrelease: { preview: yes-please }\n', /release\.preview must be true or false/],
+    ['version: 1\nrelease: { promotion: true }\n', /unknown release setting/],
+    ['version: 1\nrelease: true\n', /release must be a mapping/],
+  ])('rejects a bad release setting %#', (text, re) => {
+    expect(() => parseConfig(text)).toThrow(ConfigError);
+    expect(() => parseConfig(text)).toThrow(re);
+  });
+
   it.each([
     ['version: 1\nauth: { e2e: yes-please }\n', /auth\.e2e must be true or false/],
     ['version: 1\nauth: { testEmail: not-an-address }\n', /auth\.testEmail must be the address/],

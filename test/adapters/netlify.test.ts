@@ -412,6 +412,8 @@ describe('Netlify deployment and owned URLs', () => {
     const ctx = testCtx({ exec: ex.run, http: http().http, tokens, state: linkedState() });
     const result = await deploy.deploy(ctx, target);
     expect(result.url).toBe(target === 'production' ? SITE_RAW.ssl_url : DEPLOY.deploy_ssl_url);
+    // The same deploy id Netlify confirmed through the API, so a later promotion names this deployment.
+    expect(result.id).toBe('deploy_1');
     const call = ex.calls.find(c => c.args[0] === 'deploy')!;
     expect(call.args).toEqual(['deploy', '--site', SITE, '--context', target === 'production' ? 'production' : 'deploy-preview', '--json', ...(target === 'production' ? ['--prod'] : [])]);
     expect(JSON.stringify(call)).not.toContain(TOKEN); expect(call.args).not.toContain('--no-build');

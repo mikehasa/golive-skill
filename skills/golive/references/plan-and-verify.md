@@ -59,9 +59,10 @@ ownership before deleting. Each deleted DNS record is confirmed by re-reading th
 deleted host project by re-reading the project: a project that is still resolvable fails the step,
 while a read the provider cannot answer (auth, network) warns instead of passing. The webhook and key
 removals rely on the provider's successful delete response, and every removal treats "already gone"
-as done. Removing the host project also forgets its recorded deploy facts (the `deployed:…` marker
-and the completed deploy step), so a project created again in the same repo is deployed again rather
-than inheriting "production was deployed". Resources it cannot remove — adopted projects,
+as done. Removing the host project also forgets its recorded deploy facts (the `deployed:…` time
+marker, the recorded deployment identity and the completed deploy step), so a project created again
+in the same repo is deployed again rather than inheriting "production was deployed". Resources it
+cannot remove — adopted projects,
 Supabase/Neon projects, the Resend sending domain — appear as non-blocking `manual` handoffs;
 records or endpoints a human created are never deleted.
 
@@ -82,6 +83,14 @@ production. Preview-only env changes don't trigger a production deploy. If produ
 deployed by golive, `deploy:production` runs **before** `domain:attach`, and
 `deploy:production:final` redeploys after env writes that need the domain (the webhook secret). Once
 deployed, attaching a domain neither waits for nor triggers a deploy.
+
+A successful deploy records the deployment the provider reported: the `deployed:production` time
+marker plus, when the provider gives one, its own identity under `deployed:production:id` as
+`<provider>|<deployment id>|<url>|<time>` in `.golive/state.json` — the name a later promotion or
+rollback of exactly that deployment would use. A provider that reports no identity records the
+marker alone; golive never derives one from the URL. Opting into preview deployments is
+`release: { preview: true }` in `golive.yaml`; today it plans nothing and changes no plan, and the
+preview deploy, promotion and rollback are still to come.
 
 **Production URL before the first deploy.** Without a custom domain, the host's production URL is used
 for the webhook, the auth site URL and `SITE_URL`-style vars only after golive has deployed production
