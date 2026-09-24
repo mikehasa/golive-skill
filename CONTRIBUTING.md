@@ -44,7 +44,7 @@ has **zero external package dependencies**. Keep that property when adding funct
 generated files in your PR; do not edit them by hand.
 
 A plain build creates a development manifest with no release tag. Before committing generated
-files, rebuild with `GOLIVE_RELEASE_REF=v0.1.0-alpha.2 pnpm build` (use the version in
+files, rebuild with `GOLIVE_RELEASE_REF=v0.1.0-alpha.3 pnpm build` (use the version in
 `package.json` if it changes). CI uses that tagged build and checks that the committed bundle matches.
 
 ## Making a change

@@ -11,7 +11,7 @@ created, re-checks it for drift on demand, and can remove it again.
 Automate the parts providers expose. Guide you through the parts that need a human. Verify what
 can be observed, and make unfinished work clear. No GoLive account, hosted backend or product telemetry.
 
-> **Early alpha · 0.1.0-alpha.2**
+> **Early alpha · 0.1.0-alpha.3**
 > Disposable live tests now cover six journeys: **hosting** (Vercel, Netlify), **database**
 > (Supabase, Neon), **custom-domain DNS** (Porkbun, GoDaddy), **transactional email** (Resend),
 > **test-mode payments** (Stripe) and **Supabase authentication**, plus the `teardown` uninstall
@@ -69,7 +69,7 @@ noninteractive agent flags, runtime verification and the optional own installer.
 
 ### Install from npm
 
-The same skill is published to npm as `golive@0.1.0-alpha.2` (dist-tags `alpha` and `latest`), which
+The same skill is published to npm as `golive@0.1.0-alpha.3` (dist-tags `alpha` and `latest`), which
 installs it offline, with no Git or Skills CLI involved:
 
 ```bash
