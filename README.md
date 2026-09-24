@@ -193,9 +193,9 @@ outcome: the request is accepted, an address with no account gets the same answe
 enumeration), the spent token is refused on replay, the new password signs in and the one it replaced
 does not. The inbox click and any captcha stay with the human (the `auth:recovery-email` handoff says
 so); the live run that exercises it comes separately, and account isolation is still to come.
-The domain journey is **not a
-validated alpha path yet** either; the DNS, email and test-mode payment paths listed above are the
-tested ones, and other auth providers stay guided. See [provider scope](docs/PROVIDERS.md) and
+The DNS, email and test-mode payment paths listed above are the tested ones, with the custom-domain
+runs using Porkbun and GoDaddy record writes; **Cloudflare DNS specifically is not a validated alpha
+path yet**, and other auth providers stay guided. See [provider scope](docs/PROVIDERS.md) and
 [observed validation](docs/VALIDATION.md).
 
 ## The full go-live checklist and roadmap

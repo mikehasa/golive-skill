@@ -112,6 +112,12 @@ The conversation also offers **Other**: name a provider even if it is absent fro
 Existing dependencies are retained; a hosting choice does not silently replace a Supabase app's
 database or Auth. The agent checks compatibility before proposing a path.
 
+Monitoring is **guided-only on purpose**, not accidentally unfinished: there is no automated adapter
+for that axis (Sentry and PostHog are guided menu entries), `plan` has no monitoring step, and the
+handover document's monitoring row names no check to run and sends the owner to the provider
+dashboard. golive therefore claims no monitoring setup or verification for this alpha; adding one
+would mean writing an adapter, not filling a gap in this one.
+
 Guided means the agent attempts setup using current official documentation. It prefers a suitable
 official CLI, can use an available official MCP or API with safe credential handling, and falls back
 to step-by-step dashboard guidance. These are capability-based choices, not a requirement to install

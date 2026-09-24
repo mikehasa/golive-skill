@@ -19122,12 +19122,70 @@ var emailVerifiedCheck = {
   }
 };
 
+// src/checks/site-headers.ts
+var CORE = ["strict-transport-security", "x-content-type-options"];
+var OPTIONAL = ["content-security-policy", "referrer-policy", "permissions-policy"];
+var BANNERS = ["server", "x-powered-by"];
+var FRAME_ANCESTORS = /frame-ancestors/i;
+var clip = (v) => v.length > 200 ? `${v.slice(0, 200)}\u2026` : v;
+var howToFix = (headers) => `Set ${headers.join(", ")} on the app's responses: on Vercel in the \`headers\` block of vercel.json (or the framework's next.config headers()), on Netlify in netlify.toml \`[[headers]]\` or a _headers file. golive deploys the app but does not set its response headers, so this is a change in your repo \u2014 then redeploy and re-run verify.`;
+var siteHeadersCheck = {
+  id: "site-headers",
+  title: "Production responses carry the core security headers",
+  severity: "medium",
+  applies: () => true,
+  async run(ctx) {
+    const confirmed = await confirmedProductionUrl(ctx);
+    if (!confirmed.ok) return confirmed.outcome;
+    const url = `${trimSlash(confirmed.url)}/`;
+    let res;
+    try {
+      res = await probe(ctx, url, { headers: { "user-agent": "golive-verify" }, timeoutMs: 15e3 });
+    } catch (e) {
+      return result("warn", "medium", [`could not fetch ${url}: ${errMsg2(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
+    }
+    const got = `GET ${url} \u2192 HTTP ${res.status}`;
+    if (res.status === 401 || res.status === 403) {
+      return skip(`${got}: the deployment may be private (visitor access, SSO or an auth wall answering anonymous requests), so its headers are unverified; make production publicly reachable, then re-run verify`);
+    }
+    if (res.status >= 300 && res.status < 400) {
+      return skip(`${got}: a redirect is not followed, so the headers of the app itself are unverified; point the production URL at the deployed app (or set the host's redirect), then re-run verify`);
+    }
+    if (res.status < 200 || res.status >= 300) {
+      return result("warn", "medium", [`${got}: the production page did not load, so its headers are unverified`], "Fix the deployment, then re-run verify.");
+    }
+    const h = res.headers;
+    const header = (name3) => `${name3}: ${h[name3] ? clip(h[name3]) : "absent"}`;
+    const frameOptions = h["x-frame-options"];
+    const frameAncestors = FRAME_ANCESTORS.test(h["content-security-policy"] ?? "");
+    const clickjacking = Boolean(frameOptions) || frameAncestors;
+    const evidence = [
+      got,
+      ...[...CORE, ...OPTIONAL].map(header),
+      `clickjacking protection: ${frameOptions ? header("x-frame-options") : frameAncestors ? "content-security-policy frame-ancestors" : "absent"}`
+    ];
+    for (const name3 of BANNERS) {
+      const v = h[name3];
+      if (v) evidence.push(`${name3}: ${clip(v)} (names the stack; not a finding)`);
+    }
+    const missing = [];
+    if (!h["strict-transport-security"]) missing.push("strict-transport-security");
+    if (!h["x-content-type-options"]) missing.push("x-content-type-options");
+    if (!clickjacking) missing.push("clickjacking protection (x-frame-options or a CSP frame-ancestors)");
+    if (missing.length) return result("warn", "medium", [...evidence, `missing: ${missing.join(", ")}`], howToFix(missing));
+    const optional = OPTIONAL.filter((name3) => !h[name3]);
+    if (optional.length) return result("warn", "low", [...evidence, `missing (optional, not a failure): ${optional.join(", ")}`], howToFix(optional));
+    return pass(evidence);
+  }
+};
+
 // src/checks/all.ts
 var ALL_CHECKS = [
   accountsCheck,
   envParityCheck,
   domainLiveCheck,
   netlifyPublicAccessCheck,
+  siteHeadersCheck,
   bundleSecretsCheck,
   rlsCheck,
   dbConnectionCheck,
