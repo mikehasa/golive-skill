@@ -85,7 +85,11 @@ In order of preference:
    Nothing is copied. Never suggest a `--token` / `--key` login flag, even when a CLI's error hint
    does: it puts the secret on the command line (and, with `!`, into this chat).
    If macOS Keychain or the vendor login requests system authentication, explain which app is
-   requesting access and why; the human responds to that system-controlled prompt. Never collect
+   requesting access and why; the human responds to that system-controlled prompt. Name the buttons:
+   "Allow" answers that one read (the dialog returns next time), "Always Allow" records the permission
+   permanently for that item. Golive's Supabase read is a read-only `security` helper and never
+   changes the Keychain; if the dialog goes unanswered, say that the CLI-covered reads keep working
+   and the rest is a handoff, then re-run so the human can answer it. Never collect
    their Mac login password yourself or imitate an OS authorization prompt.
 2. **Native token entry on macOS, when a manual API key is actually needed.** Give the exact
    variable name, provider token page, scope and permissions first. Explain that a GoLive input

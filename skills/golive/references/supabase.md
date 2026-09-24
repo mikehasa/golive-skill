@@ -16,8 +16,17 @@ created Management API token is not required. Do not inspect or print the CLI to
 
 Supported credential stores (Supabase CLI v2.117.0 or later within v2):
 - **macOS:** the official Keychain service/profile, with the documented private-file fallback when
-  its items are absent. macOS may ask the human to allow a Keychain read. Denied/locked access stops
-  the flow; golive does not silently choose another account.
+  its items are absent. macOS may raise a **SecurityAgent dialog** asking whether the read-only
+  `security` helper (golive's reader) may read the item "Supabase CLI" — the Supabase CLI itself is on
+  the item's allow list, which is why its own commands never ask. golive only reads that item and
+  never changes the Keychain. Tell the human which dialog is theirs to answer and that in it:
+  **"Allow"** answers this read (the dialog returns on the next run) and **"Always Allow"** records the
+  permission permanently for that item, so it stops asking. golive waits 15 s, then one longer
+  attended window (120 s) while it says the dialog is coming; if it still goes unanswered, the
+  reusable credential read fails closed with that same instruction, and the reads the CLI performs
+  itself (project discovery, API keys, the RLS query) keep working through the CLI while anything that
+  needs the Management API is handed over. A refused/locked read is never retried and never falls
+  back to another account.
 - **Linux/WSL:** the CLI's private token file with keyring disabled, or on WSL. On Linux use
   `SUPABASE_NO_KEYRING=1 supabase login --profile supabase` in the human's terminal and preserve
   `SUPABASE_NO_KEYRING=1` when running golive. This is still browser login, not manual PAT creation.
@@ -69,9 +78,13 @@ the experimental-token dropdown in Stage 1; that is an observed rollout detail, 
 Alternatively the human creates the throwaway project first, then supplies a token scoped to that project.
 
 `doctor` / `plan` report the reused CLI login and the API-confirmed account identity. A missing,
-unsupported or unsafe store gives a blocking `login:supabase` handoff with a specific remedy. If
-only the limited legacy CLI fallback is usable, it covers project discovery, keys and the RLS query;
-creation/Auth flows stay blocked until the login can be reused or the human supplies the alternative.
+unsupported or unsafe store gives a blocking `login:supabase` handoff with a specific remedy. When
+only the limited legacy CLI fallback is usable, it covers project discovery, keys and the RLS query
+(those reads shell out to the CLI, which reads its own store without a prompt and never exposes the
+credential); creation, the pooled database URL, auth settings and advisors use the Management API,
+and stay blocked until the login can be reused or the human supplies the alternative. An unanswered
+macOS Keychain dialog is exactly that case: the CLI-covered reads continue, the rest fails closed
+with the dialog instruction, and the run warns once that the reusable credential could not be read.
 
 A `/profile` 403 does not mean the token is invalid: project-scoped tokens can still access their selected project.
 golive verifies an explicitly selected visible existing project (exact ref or unambiguous configured name). With no
@@ -431,7 +444,7 @@ account isolation as proven on a human's project until a live report says `pass`
 |---|---|
 | "Cannot use automatic login flow inside non-TTY environments" | The human runs `supabase login` in a real terminal window (Terminal app / IDE terminal), not with `!`. Not `--token`: use the credentials file. |
 | CLI credential cannot be reused | Follow the specific version/profile/store remedy in `doctor`; check §1 platform support. Do not print or copy the vendor store. A manual PAT is the alternative only for unsupported setups. |
-| Keychain denied, locked or timed out | The human unlocks Keychain and allows the read, then re-runs. golive does not silently fall back to another credential. |
+| Keychain denied, locked or timed out | Nothing was clicked in time: re-run and answer the dialog macOS raises for the read-only `security` helper — **"Allow"** for this read, **"Always Allow"** to record it permanently for the item so it stops asking. golive never changes the Keychain and never falls back to another credential; a refusal or a locked Keychain is not retried. If the dialog cannot appear (CI, no desktop session), use the explicit-token alternative. Meanwhile the CLI-covered reads (project discovery, keys, the RLS query) still run through the CLI. |
 | Credential invalid / expired (401) | If `via` is CLI login, refresh it with `supabase login --profile supabase`. If explicitly supplied, replace or remove that setting privately. No automatic account fallback. |
 | `/profile` 403 but `/projects` succeeds | Project access can be valid. Explicitly select that existing project; creating needs organization/account management access. |
 | 403 reading API keys | Check selected project, API Keys Read and API Key Secrets Read. A provider bug has also been reported; do not assume all scoped tokens fail or automatically broaden access. |
