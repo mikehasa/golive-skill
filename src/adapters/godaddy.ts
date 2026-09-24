@@ -31,9 +31,11 @@ class GoDaddyError extends Error {
   constructor(message: string, readonly status = 0) { super(message); }
 }
 
-function responseError(status: number): GoDaddyError {
+function responseError(status: number, transport: 'rest' | 'cli' = 'rest'): GoDaddyError {
   const hint = status === 401 ? 'The PAT is missing, expired or revoked.' :
-    status === 403 ? 'Check PAT scopes and account eligibility (at least one domain or a plan granting management access).' :
+    status === 403 ? (transport === 'cli'
+      ? 'The cached gddy session may lack the DNS write scope: run `gddy auth login -s domains.dns:update` (browser), then re-run. Otherwise check account eligibility (at least one domain or a plan granting management access).'
+      : 'Check PAT scopes and account eligibility (at least one domain or a plan granting management access).') :
     status === 404 ? 'The zone or record is not accessible to this account.' :
     status === 429 ? 'Rate limited; wait before running golive again.' :
     status === 409 ? 'The record conflicts with the current zone state.' : 'Inspect the zone in the GoDaddy dashboard, then re-run.';
@@ -52,7 +54,7 @@ async function api(ctx: Ctx, method: 'GET' | 'POST' | 'PUT', path: string, body?
     // Same endpoints, methods and bodies as the REST path; gddy supplies its own cached session.
     const result = await cliRequest(ctx, cli, method, path, body);
     if (result.status === 0) throw new GoDaddyError('GoDaddy CLI request did not complete. Re-read the zone before retrying a write.');
-    if (result.status < 200 || result.status >= 300) throw responseError(result.status);
+    if (result.status < 200 || result.status >= 300) throw responseError(result.status, 'cli');
     return result.json;
   }
   const token = ctx.envToken(TOKEN);

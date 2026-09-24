@@ -16,6 +16,7 @@ Public-channel installation acceptance was recorded later the same day; see
 | Supabase native CLI credential reuse | Existing macOS production-profile login reused with explicit-token input disabled; profile/projects/organizations returned 200; CLI/API project inventories agreed | Read-only; no fresh browser login, project creation, Auth writes or deployment through that credential |
 | Vercel + Porkbun custom domain | Approved disposable Vercel project and a disposable subdomain of an existing Porkbun zone: project creation, production deploy, domain attachment, one approved Porkbun CNAME write under `--confirm-dns`, Vercel ownership verification and HTTPS 200 on the subdomain (final report: 4 pass, 0 fail) | Static fixture without app auth or data flows; attachment is Vercel-only (Netlify stays guided); one adapter fix from this run is mock-covered until its next live exercise |
 | Vercel + GoDaddy custom domain | Same approved journey on a second disposable subdomain (existing GoDaddy zone): project creation, deploy, attachment, two approved record writes under `--confirm-dns` (CNAME plus the `_vercel` ownership TXT), ownership verification and HTTPS 200 (final report: 4 pass, 0 fail) | Static fixture; the `_vercel` TXT sits at the zone's `_vercel` name; the update-by-ID path and redirects were not exercised |
+| Vercel + GoDaddy (CLI transport) | Same journey on a third disposable subdomain with DNS served by the official `gddy` CLI and the user's own OAuth session: one scope consent, both records created through `gddy api call`, inline read-back, ownership verification and HTTPS 200; the v3 update-by-ID (PUT) endpoint separately validated through the same session (status 200, mutation read back) | Static fixture; golive's owned-record update flows and the REST update-by-ID path remain mock-covered |
 | Cleanup | Separately approved exact test projects deleted; exact project reads and test URLs returned 404; unaffected scoped resources and login identities stayed unchanged | Normal provider deletion; Neon may retain a recovery window |
 
 Cleanup used supervised fixture helpers; GoLive does not yet expose a general teardown command.
@@ -59,6 +60,11 @@ and may trail the run that produced the evidence.
   provider's troubleshooting page implies one is required), the `_vercel` ownership TXT Vercel asked
   for after attaching was written and verified, and the follow-up run adopted both records as
   `unchanged`.
+- **GoDaddy CLI transport (live run):** the first write failed with HTTP 403 because the cached
+  `gddy` session had only read scopes and gddy does not prompt for a scope step-up in a
+  non-interactive run; after one `gddy auth login -s domains.dns:update`, both creates and a `PUT`
+  update-by-ID succeeded through the same session. The adapter's 403 hint now names that command
+  for the CLI transport.
 
 Provider fixes have offline mocked regressions. These implementation tests never use real accounts.
 The repaired behavior was subsequently exercised where described above; this is not blanket live
