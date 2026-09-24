@@ -96,7 +96,7 @@ export interface CliResult {
  * maps them exactly like the REST path. Record values travel in argv, which is fine: DNS record
  * content is public by design, and no credential is ever passed (gddy reads its own store).
  */
-export async function cliRequest(ctx: Ctx, cli: GoDaddyCli, method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown): Promise<CliResult> {
+export async function cliRequest(ctx: Ctx, cli: GoDaddyCli, method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<CliResult> {
   const args = ['api', 'call', `/v3/domains${path}`, '-X', method, '-o', 'json'];
   if (body !== undefined) args.push('-d', JSON.stringify(body));
   let res;

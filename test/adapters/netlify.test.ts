@@ -288,6 +288,57 @@ describe('Netlify project scope and cost gates', () => {
   });
 });
 
+describe('Netlify project removal', () => {
+  const created = () => { const state = linkedState(); state.resources['netlify.createdProjectId'] = SITE; return state; };
+
+  it('marks only a site golive created; selecting one leaves no marker', async () => {
+    const h = http([['POST', `${NETLIFY_API}/example-team/sites`, () => ({ json: { ...SITE_RAW, name: 'new-app' } })]]);
+    const made = testCtx({ exec: cli().run, http: h.http, tokens });
+    expect(await project.create!(made, 'new-app', { scope: { kind: 'team', id: 'account_1' } })).toMatchObject({ id: SITE });
+    expect(made.state.resource('netlify.createdProjectId')).toBe(SITE);
+
+    const selected = testCtx({ exec: cli().run });
+    await project.select(selected, SITE);
+    expect(selected.state.resource('netlify.createdProjectId')).toBeUndefined();
+    expect(await project.remove!(selected)).toEqual({ removed: false, reason: 'the project was adopted or selected, not created by golive' });
+  });
+
+  it('remove() deletes a golive-created site and clears its state', async () => {
+    const h = http([['DELETE', `${NETLIFY_API}/sites/${SITE}`, () => ({ status: 204 })]]);
+    const ctx = testCtx({ exec: cli().run, http: h.http, tokens, state: created() });
+    expect(await project.remove!(ctx)).toEqual({ removed: true });
+    const call = h.calls.find(c => c.method === 'DELETE')!;
+    expect(call.url).toBe(`${NETLIFY_API}/sites/${SITE}`);
+    expect(call.headers.authorization).toBe(`Bearer ${TOKEN}`);
+    expect(ctx.state.resource('netlify.siteId')).toBeUndefined();
+    expect(ctx.state.resource('netlify.siteName')).toBeUndefined();
+    expect(ctx.state.resource('netlify.createdProjectId')).toBeUndefined();
+    expect(JSON.stringify(ctx.state.get())).not.toContain(TOKEN);
+  });
+
+  it.each([
+    ['no site linked', undefined, undefined],
+    ['a selected site', SITE, undefined],
+    ['a mismatched marker', SITE, OTHER],
+  ])('remove() refuses %s without calling Netlify', async (_what, siteId, createdId) => {
+    const state = linkedState();
+    if (siteId === undefined) delete state.resources['netlify.siteId'];
+    if (createdId !== undefined) state.resources['netlify.createdProjectId'] = createdId;
+    const h = http();
+    const ctx = testCtx({ exec: cli().run, http: h.http, tokens, state });
+    expect(await project.remove!(ctx)).toMatchObject({ removed: false });
+    expect(h.calls).toEqual([]);
+    expect(state.resources['netlify.siteId']).toBe(siteId);
+  });
+
+  it('remove() treats a site that is already gone as removed', async () => {
+    const h = http([['DELETE', `${NETLIFY_API}/sites/${SITE}`, () => ({ status: 404, text: '{"code":404,"message":"Not Found"}' })]]);
+    const ctx = testCtx({ exec: cli().run, http: h.http, tokens, state: created() });
+    expect(await project.remove!(ctx)).toEqual({ removed: true });
+    expect(ctx.state.resource('netlify.siteId')).toBeUndefined();
+  });
+});
+
 describe('Netlify environment writes', () => {
   it('lists matching context names only and never returns values', async () => {
     const ex = cli({ getEnvVars: [

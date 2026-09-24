@@ -12,6 +12,8 @@ export interface ApplyOptions {
   yes: boolean;
   confirmLive: boolean;
   confirmDns: boolean;
+  /** Required for steps that delete a resource golive created (risk.destroy). */
+  confirmDestroy?: boolean;
   /** Only run these step ids; their read-only project destination guards still run. */
   only?: string[];
   /** Re-run steps even if state says they are done. */
@@ -74,11 +76,13 @@ export async function applyPlan(ctx: Ctx, plan: Plan, checks: Map<string, Check>
   // A new release may safely retain completed identical steps. Inspect the entire selected
   // dependency graph before ANY step, including dependencies omitted by --only: an old done
   // record cannot authorize a downstream deploy when the approved prerequisite has changed.
+  // Destroy steps are exempt from the cross-release replay block: a deletion is idempotent and
+  // re-observes ownership before acting, so resuming a failed one under a newer release is safe.
   for (const step of plan.steps) {
     if (!visited.has(step.id)) continue;
     const rec = ctx.state.get().steps[step.id];
     const selected = !opts.only || opts.only.includes(step.id);
-    if (step.risk.writes && rec && !sameRelease(rec.release, ctx.release)
+    if (step.risk.writes && !step.risk.destroy && rec && !sameRelease(rec.release, ctx.release)
       && (rec.status !== 'done' || rec.hash !== stepHash(step) || (opts.force && selected))) {
       throw new PlanMismatchError(`historical step ${step.id} belongs to another or unknown release. Preserve state and reconcile its remote outcome before a new plan; automatic write replay is blocked.`);
     }
@@ -160,6 +164,7 @@ function gateFlags(step: Step, o: ApplyOptions): string[] {
   const missing: string[] = [];
   if (step.risk.live && !o.confirmLive) missing.push('--confirm-live');
   if (step.risk.dns && !o.confirmDns) missing.push('--confirm-dns');
+  if (step.risk.destroy && !o.confirmDestroy) missing.push('--confirm-destroy');
   if (step.risk.spend) missing.push('(spend steps are never automated — this should be a handoff)');
   return missing;
 }

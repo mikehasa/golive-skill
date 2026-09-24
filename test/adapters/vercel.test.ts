@@ -238,6 +238,60 @@ describe('vercel project', () => {
     const ex = mockExec([WHOAMI_OK]);
     await expect(project.create!(testCtx({ exec: ex.run }), 'My App')).rejects.toThrow(/not a valid Vercel project name/);
   });
+
+  it('marks only a project golive created; adopting an existing one leaves no marker', async () => {
+    const created = mockExec([WHOAMI_OK, cliApi({ 'POST /v11/projects': { ...RAW_PROJECT, id: 'prj_new', name: 'fresh' } })]);
+    const madeCtx = testCtx({ exec: created.run, detect: { framework: 'next' } });
+    await project.create!(madeCtx, 'fresh');
+    expect(madeCtx.state.resource('vercel.createdProjectId')).toBe('prj_new');
+
+    const adopted = mockExec([WHOAMI_OK, cliApi({ 'GET /v9/projects/my-app': RAW_PROJECT })]);
+    const adoptedCtx = testCtx({ exec: adopted.run });
+    expect(await project.create!(adoptedCtx, 'my-app')).toEqual({ id: 'prj_1', name: 'my-app' });
+    expect(adoptedCtx.state.resource('vercel.createdProjectId')).toBeUndefined();
+    expect(await project.remove!(adoptedCtx)).toEqual({ removed: false, reason: 'the project was adopted or selected, not created by golive' });
+  });
+
+  it('remove() deletes a golive-created project and clears its state', async () => {
+    const ex = mockExec([WHOAMI_OK, cliApi({ 'DELETE /v9/projects/prj_1': {} })]);
+    const ctx = testCtx({ exec: ex.run, state: linkedState({ 'vercel.createdProjectId': 'prj_1' }) });
+    expect(await project.remove!(ctx)).toEqual({ removed: true });
+    const call = ex.calls.find((c) => c.args[0] === 'api')!;
+    expect(call.args).toEqual(['api', '/v9/projects/prj_1', '-X', 'DELETE', '--raw', '--non-interactive', '--dangerously-skip-permissions', '--scope', 'team_1']);
+    expect(ctx.state.resource('vercel.projectId')).toBeUndefined();
+    expect(ctx.state.resource('vercel.projectName')).toBeUndefined();
+    expect(ctx.state.resource('vercel.createdProjectId')).toBeUndefined();
+  });
+
+  it('remove() deletes over the token transport with the exact URL', async () => {
+    const h = mockHttp([
+      ['GET', `${API}/v2/user`, () => ({ json: { user: { username: 'alice' } } })],
+      ['DELETE', `${API}/v9/projects/prj_1`, () => ({ status: 204 })],
+    ]);
+    const ctx = testCtx({ exec: mockExec([WHOAMI_OUT]).run, http: h.http, tokens: { VERCEL_TOKEN: TOKEN }, state: linkedState({ 'vercel.createdProjectId': 'prj_1' }) });
+    expect(await project.remove!(ctx)).toEqual({ removed: true });
+    const call = h.calls.find((c) => c.method === 'DELETE')!;
+    expect(call.url).toBe(`${API}/v9/projects/prj_1?teamId=team_1`);
+    expect(call.headers.authorization).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it('remove() refuses to delete without a project or a matching marker', async () => {
+    const empty = testCtx({ exec: mockExec([WHOAMI_OK]).run });
+    expect(await project.remove!(empty)).toEqual({ removed: false, reason: 'no Vercel project is linked in state' });
+
+    const adopted = testCtx({ exec: mockExec([WHOAMI_OK]).run, state: linkedState() });
+    expect(await project.remove!(adopted)).toEqual({ removed: false, reason: 'the project was adopted or selected, not created by golive' });
+
+    const mismatched = testCtx({ exec: mockExec([WHOAMI_OK]).run, state: linkedState({ 'vercel.createdProjectId': 'prj_other' }) });
+    expect(await project.remove!(mismatched)).toEqual({ removed: false, reason: 'the project was adopted or selected, not created by golive' });
+    expect(mismatched.state.resource('vercel.projectId')).toBe('prj_1');
+  });
+
+  it('remove() treats a project that is already gone as removed', async () => {
+    const ctx = testCtx({ exec: mockExec([WHOAMI_OK, cliApi({})]).run, state: linkedState({ 'vercel.createdProjectId': 'prj_1' }) });
+    expect(await project.remove!(ctx)).toEqual({ removed: true });
+    expect(ctx.state.resource('vercel.projectId')).toBeUndefined();
+  });
 });
 
 // ── env ───────────────────────────────────────────────────────────────────────────────────────

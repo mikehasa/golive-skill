@@ -16,7 +16,8 @@ Built-in adapters use CLI/API transports; users do not need to install provider 
 The two live runs used existing accounts and approved disposable resources. Schema and app-flow
 acceptance were separately reviewed work; provisioning does not design or migrate the app's schema.
 Cross-pairings have mock coverage, not equivalent live proof. Test resources were removed after
-explicit approval; GoLive has no general teardown command.
+explicit approval — earlier runs with supervised fixture helpers, later ones through the approved
+`golive teardown` flow.
 
 ### Account connection
 

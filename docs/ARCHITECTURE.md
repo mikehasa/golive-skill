@@ -12,9 +12,10 @@ detect → choose missing providers → connect accounts → plan → approve �
 ```
 
 `detect` scans the app, `menu` lists providers, `init` writes configuration, and `doctor` checks
-access. `plan` observes destinations and returns steps and handoffs. `apply` requires the approved
-plan identity and applicable risk confirmations. `verify` produces check evidence; `handoff` lists
-what remains outside automation. Guided or skipped work is not treated as verified success.
+access. `plan` observes destinations and returns steps and handoffs; `teardown` returns the inverse
+plan of resources golive provably created. `apply` requires the approved plan identity and applicable
+risk confirmations. `verify` produces check evidence; `handoff` lists what remains outside
+automation. Guided or skipped work is not treated as verified success.
 
 ## Adapters, capabilities and links
 
@@ -45,8 +46,11 @@ purchases and account creation remain human tasks.
 
 Compatible completed steps can be skipped when their identity and evidence still match. Resource
 IDs, fingerprints and operation records survive interruptions. Unknown schema versions or ambiguous
-historical writes stop for reviewed recovery. There is no automatic cross-provider rollback or
-general reconciliation command. Do not clear state to force a retry.
+historical writes stop for reviewed recovery (destruction steps are exempt: a deletion re-checks
+ownership and is idempotent; DNS records and webhooks re-read the proof from the provider, while a
+host project relies on its recorded creation marker). `teardown` removes only proven golive-created
+resources under its own approval and confirmation gate; there is no automatic cross-provider rollback,
+restore or general reconciliation command. Do not clear state to force a retry.
 
 Provider-specific adapters handle uncertain creation results; non-idempotent writes must not be
 blindly repeated after a timeout. A successful API response is followed by the relevant observation

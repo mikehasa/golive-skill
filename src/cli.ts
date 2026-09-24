@@ -19,6 +19,7 @@ import { fileStateStore } from './core/state.js';
 import { createCtx } from './core/context.js';
 import { mapEnv } from './core/envmap.js';
 import { buildPlan, planView } from './core/plan.js';
+import { approvedPlan, buildTeardownPlan } from './core/teardown.js';
 import { applyPlan, runCheck, PlanMismatchError } from './core/runner.js';
 import { credentialsStatus, setupCredentials } from './core/credentials.js';
 import { promptCredential } from './core/credential-prompt.js';
@@ -67,8 +68,9 @@ Commands (add --json for machine output; --cwd <dir> to target another repo):
        [--stripe-publishable test=pk_test_…,live=pk_live_…]   (public keys only)
   doctor                     Is each chosen provider reachable/logged in? What must the human do?
   plan                       Show the steps golive would take (read-only). Prints a planId.
+  teardown                   Inverse plan: only resources golive created, for removal. Prints a planId.
   apply --plan <id> --yes    Execute the approved plan. Risky steps also need --confirm-live /
-        [--confirm-live] [--confirm-dns] [--only id,id] [--force]
+        [--confirm-live] [--confirm-dns] [--confirm-destroy] [--only id,id] [--force]
   verify [--only id,id]      Run live checks; writes .golive/report.json and GOLIVE_REPORT.md.
   handoff                    What only the human can do (logins, KYC, payments), and whether it's done.
 `;
@@ -163,9 +165,15 @@ async function main(argv: string[]): Promise<number> {
       emit({ ok: true, ...planView(plan), findings }, { json });
       return 0;
     }
+    case 'teardown': {
+      const plan = await buildTeardownPlan(ctx);
+      const note = plan.steps.length || plan.handoffs.length ? undefined : 'nothing golive created was found to remove';
+      emit({ ok: true, ...planView(plan), ...(note ? { note } : {}) }, { json });
+      return 0;
+    }
     case 'apply': {
-      if (typeof flags.plan !== 'string') throw new UsageError('apply needs --plan <planId> (from `plan`, approved by the human)');
-      const plan = await buildPlan(ctx, linkList(), { unmappedEnv: env.unmapped, warnings: [] });
+      if (typeof flags.plan !== 'string') throw new UsageError('apply needs --plan <planId> (from `plan` or `teardown`, approved by the human)');
+      const plan = await approvedPlan(ctx, flags.plan, () => buildPlan(ctx, linkList(), { unmappedEnv: env.unmapped, warnings: [] }));
       const only = typeof flags.only === 'string' ? flags.only.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
       const unknown = (only ?? []).filter((id) => !plan.steps.some((s) => s.id === id));
       if (unknown.length) throw new UsageError(`unknown step id(s): ${unknown.join(', ')}. Steps in this plan: ${plan.steps.map((s) => s.id).join(', ') || '(none)'}`);
@@ -174,6 +182,7 @@ async function main(argv: string[]): Promise<number> {
         yes: flags.yes === true,
         confirmLive: flags['confirm-live'] === true,
         confirmDns: flags['confirm-dns'] === true,
+        confirmDestroy: flags['confirm-destroy'] === true,
         only,
         force: flags.force === true,
       });

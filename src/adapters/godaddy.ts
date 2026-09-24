@@ -48,7 +48,7 @@ function accessHelp(): string {
   return `Sign in once with the official GoDaddy CLI (${cliLoginHelp()}), or use a Personal Access Token. ${tokenHelp()}`;
 }
 
-async function api(ctx: Ctx, method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown): Promise<unknown> {
+async function api(ctx: Ctx, method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<unknown> {
   const cli = await godaddyCli(ctx);
   if (cli) {
     // Same endpoints, methods and bodies as the REST path; gddy supplies its own cached session.
@@ -199,6 +199,8 @@ const same = (a: GdRecord, b: Omit<GdRecord, 'recordId'>): boolean => sameValue(
 const ownedKey = (zone: string, id: string): string => `godaddy.recordFingerprint:${zone}:${id}`;
 const snapshot = (r: GdRecord): string => fingerprint(JSON.stringify(r));
 const owned = (ctx: Ctx, zone: string, r: GdRecord): boolean => ctx.state.resource(ownedKey(zone, r.recordId)) === snapshot(r);
+/** Record values are public by design, but an error line stays readable. */
+const brief = (s: string): string => (s.length > 80 ? `${s.slice(0, 77)}...` : s);
 function remember(ctx: Ctx, zone: string, r: GdRecord): void {
   ctx.state.save((s) => { s.resources[ownedKey(zone, r.recordId)] = snapshot(r); });
 }
@@ -246,6 +248,42 @@ export const godaddyDns: DnsZone = {
     const found = await zoneAndRecords(ctx, domain);
     if (!found) throw new GoDaddyError('GoDaddy does not serve accessible authoritative DNS for this domain. Use its current DNS provider.');
     return found.records.filter((r) => TYPES.has(r.type)).map((r) => publicRecord(r, found.zone));
+  },
+  async listOwned(ctx, domain) {
+    const found = await zoneAndRecords(ctx, domain);
+    if (!found) throw new GoDaddyError('GoDaddy does not serve accessible authoritative DNS for this domain. Use its current DNS provider.');
+    return found.records.filter((r) => TYPES.has(r.type) && owned(ctx, found.zone, r)).map((r) => publicRecord(r, found.zone));
+  },
+  async remove(ctx, domain, record) {
+    const found = await zoneAndRecords(ctx, domain);
+    if (!found) throw new GoDaddyError('GoDaddy does not serve accessible authoritative DNS for this domain. Use its current DNS provider.');
+    const { zone } = found;
+    const want = desired(record, zone); // same validation as a write: unsupported/invalid intents never reach a delete
+    const fqdn = want.name === '@' ? zone : `${want.name}.${zone}`;
+    const matching = found.records.filter((r) => same(r, want));
+    if (!matching.length) return 'unchanged';
+    if (matching.length > 1) {
+      throw new GoDaddyError(
+        `GoDaddy DNS: ${fqdn} has ${matching.length} identical ${want.type} records (${matching.map((r) => r.recordId).join(', ')}), ` +
+          'so golive cannot tell which one it created; nothing was deleted. Remove the duplicate in the GoDaddy dashboard, then re-run.',
+      );
+    }
+    const have = matching[0]!;
+    if (!owned(ctx, zone, have)) {
+      throw new GoDaddyError(
+        `GoDaddy DNS: refusing to delete ${want.type} ${fqdn} -> ${brief(content(want.type, want.data))}: golive did not create it (no matching ownership fingerprint in state), ` +
+          'so nothing was deleted. Delete it in the GoDaddy DNS dashboard if it is no longer used; golive can only remove records it wrote itself.',
+      );
+    }
+    try {
+      await api(ctx, 'DELETE', `${pathFor(zone)}/${encodeURIComponent(have.recordId)}`);
+    } catch (e) {
+      // Already gone: the outcome teardown asked for.
+      if (e instanceof GoDaddyError && e.status === 404) return 'unchanged';
+      throw e;
+    }
+    ctx.state.save((s) => { delete s.resources[ownedKey(zone, have.recordId)]; });
+    return 'removed';
   },
   async upsert(ctx, domain, record) {
     const found = await zoneAndRecords(ctx, domain);

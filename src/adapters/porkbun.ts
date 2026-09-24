@@ -205,31 +205,79 @@ function conflict(want: DnsRecord): never {
   throw new Error(`Porkbun DNS conflict at ${want.name}: existing records cannot safely become the required ${want.type}. Review them in Porkbun; golive only replaces a single record marked with notes starting "golive:" and never deletes unrelated records.`);
 }
 
+/**
+ * Everything a write and a delete must agree on first: a supported, validated intent plus the
+ * authoritative zone and its current rows. `remove` runs the same preconditions so a teardown can
+ * never reach a record golive would refuse to write.
+ */
+async function prepare(ctx: Ctx, domain: string, record: DnsRecord): Promise<{ zone: string; want: DnsRecord; all: RecordRow[] }> {
+  if (!TYPES.has(record.type)) throw new Error(`Porkbun DNS does not support ${String(record.type)} in golive.`);
+  if (record.proxied) throw new Error('Porkbun DNS adapter cannot enable a proxy. Set proxied=false.');
+  const want: DnsRecord = {
+    ...record, name: name(record.name, true), content: content(record.type, record.content),
+    // Neutral DNS records may use Cloudflare's automatic TTL sentinel. Porkbun uses zero.
+    ttl: record.ttl === 1 ? 0 : record.ttl,
+    ...(record.type === 'MX' ? { priority: record.priority ?? 10 } : {}),
+  };
+  if (want.ttl !== undefined && (!Number.isInteger(want.ttl) || want.ttl < 0)) throw new Error('Porkbun DNS TTL must be a non-negative integer.');
+  if (want.priority !== undefined && (!Number.isInteger(want.priority) || want.priority < 0 || want.priority > 65535)) throw new Error('Porkbun DNS priority must be an integer from 0 to 65535.');
+  const zone = await requireZone(ctx, domain);
+  if (!inside(want.name, zone)) throw new Error(`Porkbun DNS record ${want.name} is outside ${zone}; nothing was changed.`);
+  if (!(await withinAuthority(ctx, want.name, zone))) throw new Error(`Porkbun DNS record ${want.name} is beneath a delegated child zone; nothing was changed.`);
+  if (want.type === 'CNAME' && want.name === zone) throw new Error('Porkbun apex CNAME is unsafe; use the host-provided A/AAAA record. golive does not substitute ALIAS automatically.');
+  const all = await records(ctx, zone);
+  if (all.some((r) => r.type === 'NS' && r.name !== zone && inside(want.name, r.name))) {
+    throw new Error(`Porkbun DNS record ${want.name} is beneath a delegated child zone in the parent records; nothing was changed.`);
+  }
+  return { zone, want, all };
+}
+
+/** The requested record is already gone: the provider reports the id/record as missing. */
+const gone = (e: unknown): boolean =>
+  e instanceof PorkbunError && (e.status === 404 || e.code === 'NOT_FOUND' || e.code === 'INVALID_RECORD_ID');
+/** Record values are public by design, but an error line stays readable. */
+const brief = (s: string): string => (s.length > 80 ? `${s.slice(0, 77)}...` : s);
+
 export const porkbunDns: DnsZone = {
   async hosts(ctx, domain) { return (await findZone(ctx, domain)) !== null; },
   async list(ctx, domain) {
     const zone = await requireZone(ctx, domain);
     return (await records(ctx, zone)).filter((r) => TYPES.has(r.type)).map((r): DnsRecord => ({ type: r.type as DnsRecord['type'], name: r.name, content: r.content, ttl: r.ttl, priority: r.priority, proxied: false }));
   },
-  async upsert(ctx, domain, record) {
-    if (!TYPES.has(record.type)) throw new Error(`Porkbun DNS does not support ${String(record.type)} in golive.`);
-    if (record.proxied) throw new Error('Porkbun DNS adapter cannot enable a proxy. Set proxied=false.');
-    const want: DnsRecord = {
-      ...record, name: name(record.name, true), content: content(record.type, record.content),
-      // Neutral DNS records may use Cloudflare's automatic TTL sentinel. Porkbun uses zero.
-      ttl: record.ttl === 1 ? 0 : record.ttl,
-      ...(record.type === 'MX' ? { priority: record.priority ?? 10 } : {}),
-    };
-    if (want.ttl !== undefined && (!Number.isInteger(want.ttl) || want.ttl < 0)) throw new Error('Porkbun DNS TTL must be a non-negative integer.');
-    if (want.priority !== undefined && (!Number.isInteger(want.priority) || want.priority < 0 || want.priority > 65535)) throw new Error('Porkbun DNS priority must be an integer from 0 to 65535.');
+  async listOwned(ctx, domain) {
     const zone = await requireZone(ctx, domain);
-    if (!inside(want.name, zone)) throw new Error(`Porkbun DNS record ${want.name} is outside ${zone}; nothing was changed.`);
-    if (!(await withinAuthority(ctx, want.name, zone))) throw new Error(`Porkbun DNS record ${want.name} is beneath a delegated child zone; nothing was changed.`);
-    if (want.type === 'CNAME' && want.name === zone) throw new Error('Porkbun apex CNAME is unsafe; use the host-provided A/AAAA record. golive does not substitute ALIAS automatically.');
-    const all = await records(ctx, zone);
-    if (all.some((r) => r.type === 'NS' && r.name !== zone && inside(want.name, r.name))) {
-      throw new Error(`Porkbun DNS record ${want.name} is beneath a delegated child zone in the parent records; nothing was changed.`);
+    return (await records(ctx, zone)).filter((r) => TYPES.has(r.type) && owned(r)).map((r): DnsRecord => ({ type: r.type as DnsRecord['type'], name: r.name, content: r.content, ttl: r.ttl, priority: r.priority, proxied: false }));
+  },
+  async remove(ctx, domain, record) {
+    const { zone, want, all } = await prepare(ctx, domain, record);
+    const here = all.filter((r) => r.name === want.name);
+    const matching = here.filter((r) => r.type === want.type && r.content === want.content && (want.type !== 'MX' || r.priority === want.priority));
+    if (!matching.length) return 'unchanged';
+    if (matching.length > 1) {
+      throw new Error(
+        `Porkbun DNS: ${want.name} has ${matching.length} identical ${want.type} records (${matching.map((r) => r.id).join(', ')}), ` +
+          'so golive cannot tell which one it created; nothing was deleted. Remove the duplicate in Porkbun, then re-run.',
+      );
     }
+    const have = matching[0]!;
+    if (!owned(have)) {
+      throw new Error(
+        `Porkbun DNS: refusing to delete ${want.type} ${want.name} -> ${brief(have.content)}: golive did not create it ` +
+          `(its notes do not start with "${OWNED}"), so nothing was deleted. Delete it in Porkbun if it is no longer used, or set its notes to start with "${OWNED}" to let golive manage it.`,
+      );
+    }
+    // v3 delete-by-id: POST /dns/delete/{zone}/{id}, matching the documented create/edit paths above.
+    try {
+      await api(ctx, 'POST', `/dns/delete/${encodeURIComponent(zone)}/${encodeURIComponent(have.id)}`);
+    } catch (e) {
+      if (gone(e)) return 'unchanged';
+      throw e;
+    }
+    ctx.log.info(`porkbun: deleted ${want.type} ${want.name}`);
+    return 'removed';
+  },
+  async upsert(ctx, domain, record) {
+    const { zone, want, all } = await prepare(ctx, domain, record);
     const here = all.filter((r) => r.name === want.name);
     const equal = here.filter((r) => r.type === want.type && r.content === want.content);
     // A CNAME is exclusive of every other type; never convert it or an ALIAS in place.

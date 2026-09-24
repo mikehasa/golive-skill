@@ -36,8 +36,9 @@ SPF policies requiring an added sender need manual review unless golive created 
 
 GoDaddy requires TTL 600–86400 and does not support an apex CNAME. Use the host's apex A/AAAA
 instructions or a subdomain. Domain purchases, renewals, transfers and nameserver changes are outside
-this adapter. Teardown needs human approval; use only record IDs tracked under
-`godaddy.recordFingerprint:<zone>:<recordId>` and confirm their current state before dashboard removal.
+this adapter. `golive teardown` removes fingerprint-matched records after plan approval and
+`--confirm-destroy`; manual dashboard removal should likewise use the record IDs tracked under
+`godaddy.recordFingerprint:<zone>:<recordId>` and confirm their current state first.
 
 Official references: [DNS API](https://developer.godaddy.com/en/docs/api-users/domains/manage/dns),
 [PAT setup](https://developer.godaddy.com/en/docs/api-users/auth),

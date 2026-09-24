@@ -13,16 +13,16 @@
     "approval": 1
   },
   "files": {
-    "SKILL.md": "3ec2152958fa5e98e75a32d1277cd22f0176bf8067b088a9b9571a0ad6c72b76",
+    "SKILL.md": "66d5e7c70ac8052260663e68765b23646fb6b1b4274e01ab36f80a301a9bf15c",
     "LICENSE": "b1546216882fd37b1602f3a004e8548b5f6c38ada73117308d4c3ac6968235e9",
     "THIRD_PARTY_NOTICES.md": "ad33f954a31c411cc667c07460859c77a014d6720e581a5ce5edd48c9c962781",
     "references/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "references/cloudflare-dns.md": "1e2c3143d714590486d181befa0237f18e077328ab7fcd2151adaa0f68b898ff",
-    "references/godaddy.md": "b2198ec83fbeaa14b9005dab4c8d51515870ce6b9a96a8613a40a980b5fdd242",
+    "references/godaddy.md": "c27d1776f7424f1910e2231250ac9430dd72ddae6a56bcb42e9d1b33e0a020ea",
     "references/guided.md": "43081b870baec23f67b5523c786ee109d647d3e36ef57d86cec7fe961e98662e",
-    "references/neon.md": "221bc3134a22241fc6d61780ab4be3f1094a229175b7137c841375260819b4e5",
-    "references/netlify.md": "7c1705f0bea0987d0a19c3be8f370e64c66f0d205f9fb963bbf923744f846f0a",
-    "references/plan-and-verify.md": "af6d0ba516ccf1454d071acc5ce6cc6b177fbe67acc7102e8baeb5d6099aa2af",
+    "references/neon.md": "a5a85919d318b8f15fca6dd49a8a495a6aeb3e713ddac620978747c5a67bd400",
+    "references/netlify.md": "5889627df48b5cdf5213f6a1ec951395d13b5f5eb4f9e9c0aba00db12f0247d8",
+    "references/plan-and-verify.md": "f047ac6ec89b4ee399cf1f00b8074f674905de953b1592b2083093665594eb92",
     "references/porkbun.md": "8eaeb8890ce3c104e242ced33e77179253a9d8f3b9425be6692585254c6b6490",
     "references/resend.md": "21166f08bbbbf3e0a9b19559f4f7bfe29024d38840ca7d37fab8aab5248d4fed",
     "references/stripe.md": "ef06e9f2782919849b49dfa5145010a8b3017e2210c655c8af45e3683d105c32",
@@ -30,9 +30,9 @@
     "references/troubleshooting.md": "8a9a8bd3a4c79e5fac00edbec3db0d6c47eaf36f4f6e7a5b92a46a92b21e50fd",
     "references/updates.md": "f7e162ed69a3935ab6bd87896d54876345c39e59d305afdd9fae1950fe56fd37",
     "references/vercel.md": "83e98b61a1f16ba0e76327ccf01268a3a4c42be3ffecc0ab12bc8c6f061c18df",
-    "scripts/golive.mjs": "2a96f46f389c2c62039281cc2fff98b838bb521cc4af4a72887f47d74fbcf077",
+    "scripts/golive.mjs": "a16bc9198188adbe1a92d6cf7c6fadb411447316b2a054339cdefac94fe5b3c8",
     "scripts/install-cli.mjs": "55e2a776892a9d34fa62d7ebf70bb101a0f54a3592ba9f87b77a1d43043e108a",
     "scripts/install-lib.mjs": "9d3de597acc711178e588247f3cc9b5b5445f90d492cd464018065f2cd25caec"
   },
-  "bundleDigest": "0913fc8e7b7cc3a145ed0b559d9bdc897889cff047d6d17b1c026e8be46d04bf"
+  "bundleDigest": "0023017d8d3b27466bc7970c94dbd6b3109e4d245b848738b4d0fe8099996fdc"
 }

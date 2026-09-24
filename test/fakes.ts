@@ -45,6 +45,14 @@ export function fakeWorld() {
     candidates: [] as ProjectRef[],
     canCreate: true,
     createError: null as string | null,
+    /** When false, the fake project linker has no remove() (a provider golive cannot delete from). */
+    canRemoveProject: true,
+    /** What project.remove() answers. */
+    removeResult: { removed: true } as { removed: boolean; reason?: string },
+    /** When set, project.remove() throws this (a provider-side error, unlike a refusal). */
+    removeError: null as string | null,
+    /** Ids project.remove() was called for (the current project, or '?' when none was linked). */
+    removed: [] as string[],
     env: { development: new Map(), preview: new Map(), production: new Map() } as EnvMap,
     urls: { development: null, preview: 'https://shop-git-main.fakehost.app', production: 'https://shop.fakehost.app' } as Record<EnvTarget, string | null>,
     previewPatterns: ['https://shop-*.fakehost.app/**'],
@@ -86,6 +94,17 @@ export function fakeWorld() {
                 if (host.createError) throw new Error(host.createError);
                 host.current = { id: `prj_new_${name}`, name };
                 return host.current;
+              }
+            : undefined;
+        },
+        get remove() {
+          return host.canRemoveProject
+            ? async (): Promise<{ removed: boolean; reason?: string }> => {
+                rec('fakehost', 'project.remove');
+                if (host.removeError) throw new Error(host.removeError);
+                host.removed.push(host.current?.id ?? '?');
+                if (host.removeResult.removed) host.current = null;
+                return host.removeResult;
               }
             : undefined;
         },
@@ -208,6 +227,10 @@ export function fakeWorld() {
     withReplace: true,
     /** When false, the fake has no find() (links fall back to list()). */
     withFind: true,
+    /** When set, webhooks.remove() throws this (a provider-side error, unlike a refusal). */
+    removeError: null as string | null,
+    /** What webhooks.remove() answers instead of deleting, e.g. a caught provider error. */
+    removeResult: null as { deleted: boolean; reason?: string } | null,
   };
   // Same rule as the stripe adapter: owned by golive first, else any endpoint at that URL.
   const matchEndpoint = (url: string, mode: Mode) => {
@@ -280,6 +303,8 @@ export function fakeWorld() {
           return pay.withReplace
             ? async (_c: unknown, id: string) => {
                 rec('fakepay', 'webhooks.remove', id);
+                if (pay.removeError) throw new Error(pay.removeError);
+                if (pay.removeResult) return pay.removeResult;
                 const old = pay.endpoints.find((x) => x.id === id);
                 if (!old) return { deleted: false, reason: 'endpoint not found' };
                 if (old.owned === false) return { deleted: false, reason: 'not created by golive' };
@@ -299,6 +324,14 @@ export function fakeWorld() {
     domains: new Map<string, { id: string; status: 'verified' | 'pending' | 'failed' | 'not_started' }>(),
     verifyError: null as string | null,
     keys: 0,
+    /** When false, the fake key issuer has no revoke() (a provider golive can't revoke at). */
+    withRevoke: true,
+    /** When set, keys.revoke() throws this (a provider-side error, unlike an already-revoked key). */
+    revokeError: null as string | null,
+    /** What keys.revoke() answers instead of revoking, e.g. a key that is already gone. */
+    revokeResult: null as { revoked: boolean; reason?: string } | null,
+    /** Ids keys.revoke() was called for. */
+    revoked: [] as string[],
   };
   const mailRecords = (d: string): DnsRecord[] => [
     { type: 'MX', name: `send.${d}`, content: 'feedback-smtp.fakemail.com', priority: 10 },
@@ -332,6 +365,17 @@ export function fakeWorld() {
           rec('fakemail', 'keys.issue', target, scope);
           return { key: 'resend.apiKey', id: `key_${++mail.keys}`, secret: new Secret('RESEND_API_KEY', `${RAW.resendKey}${mail.keys}`) };
         },
+        get revoke() {
+          return mail.withRevoke
+            ? async (_c: unknown, id: string): Promise<{ revoked: boolean; reason?: string }> => {
+                rec('fakemail', 'keys.revoke', id);
+                if (mail.revokeError) throw new Error(mail.revokeError);
+                if (mail.revokeResult) return mail.revokeResult;
+                mail.revoked.push(id);
+                return { revoked: true };
+              }
+            : undefined;
+        },
       },
       testSend: { send: async () => ({ id: 'msg_1' }), status: async () => 'delivered' },
     },
@@ -346,6 +390,12 @@ export function fakeWorld() {
     lookupError: null as string | null,
     /** When true, list() returns nothing (simulates a write that didn't stick). */
     hideRecords: false,
+    /** The records the fake provider reports as golive-owned (listOwned) — teardown candidates. */
+    owned: [] as DnsRecord[],
+    /** When false, the fake zone has no listOwned/remove: a provider that can't tell owned records apart. */
+    withOwned: true,
+    /** When set, remove() throws this (like a provider refusing an unowned or ambiguous match). */
+    removeError: null as string | null,
   };
   const dnsAdapter: Adapter = {
     id: 'fakedns',
@@ -370,6 +420,27 @@ export function fakeWorld() {
           if (dns.records[i]!.content === r.content) return 'unchanged';
           dns.records[i] = r;
           return 'updated';
+        },
+        get listOwned() {
+          return dns.withOwned
+            ? async (_c: unknown, domain: string): Promise<DnsRecord[]> => {
+                rec('fakedns', 'dns.listOwned', domain);
+                // Like a real zone listing: only records inside the requested zone.
+                return dns.owned.filter((r) => r.name === domain || r.name.endsWith(`.${domain}`));
+              }
+            : undefined;
+        },
+        get remove() {
+          return dns.withOwned
+            ? async (_c: unknown, domain: string, r: DnsRecord): Promise<'removed' | 'unchanged'> => {
+                rec('fakedns', 'dns.remove', domain, r);
+                if (dns.removeError) throw new Error(dns.removeError);
+                const i = dns.owned.findIndex((x) => x.type === r.type && x.name === r.name && x.content === r.content);
+                if (i < 0) return 'unchanged';
+                dns.owned.splice(i, 1);
+                return 'removed';
+              }
+            : undefined;
         },
       },
     },

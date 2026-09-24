@@ -215,6 +215,19 @@ describe('runner', () => {
     expect(calls).toEqual(['a']);
   });
 
+  it('blocks a destroy step without --confirm-destroy and runs it with the flag', async () => {
+    const ctx = mkCtx();
+    const calls: string[] = [];
+    const plan = await planOf(ctx, [step('rm', [], { risk: { writes: true, destroy: true } }, calls)]);
+    const blocked = await applyPlan(ctx, plan, new Map(), { ...base, approvedPlanId: plan.id });
+    expect(blocked.map((o) => [o.id, o.status])).toEqual([['rm', 'blocked']]);
+    expect(blocked[0]!.next).toMatch(/--confirm-destroy/);
+    expect(calls).toEqual([]);
+    const ok = await applyPlan(ctx, plan, new Map(), { ...base, approvedPlanId: plan.id, confirmDestroy: true });
+    expect(ok.map((o) => [o.id, o.status])).toEqual([['rm', 'done']]);
+    expect(calls).toEqual(['rm']);
+  });
+
   it('stops at the first failure and resumes from there', async () => {
     const ctx = mkCtx();
     const calls: string[] = [];

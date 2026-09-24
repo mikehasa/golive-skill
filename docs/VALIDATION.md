@@ -19,9 +19,11 @@ Public-channel installation acceptance was recorded later the same day; see
 | Vercel + GoDaddy (CLI transport) | Same journey on a third disposable subdomain with DNS served by the official `gddy` CLI and the user's own OAuth session: one scope consent, both records created through `gddy api call`, inline read-back, ownership verification and HTTPS 200; the v3 update-by-ID (PUT) endpoint separately validated through the same session (status 200, mutation read back) | Static fixture; golive's owned-record update flows and the REST update-by-ID path remain mock-covered |
 | Vercel + Resend email | Disposable project and a subdomain of an existing Porkbun zone: Resend domain created through the CLI transport, DKIM/SPF/MX/return-path records written under `--confirm-dns`, domain verified, two sending-scoped keys issued and written into the app env, and a real send using the app's own environment key delivered to a personal inbox (report: 4 pass, 0 fail, 1 warn) | Fresh subdomain without sending history: the message landed in the recipient provider's spam folder (no DMARC, new reputation); Auth SMTP, bounce handling and richer message content not exercised |
 | Vercel + Stripe test payments | Disposable project: restricted operator key plus a standard app key, sandbox identity bound into approval; `STRIPE_SECRET_KEY` written and re-checked in both targets; a test-mode webhook endpoint registered and re-checked via the API; the unsigned probe rejected with 400; a real test-card payment delivered `checkout.session.completed`, signature-verified, HTTP 200 (report: 5 pass, 0 fail) | Test mode (sandbox) only; live-mode keys/charges, entitlements, refunds and subscriptions not exercised |
+| Teardown (approved removal of golive-created resources) | `golive teardown` planned and removed a disposable Vercel project plus two GoDaddy and four Porkbun records golive had created, with read-back absence checks on every record; separately removed a test-mode Stripe webhook endpoint and revoked two Resend sending keys from recorded state. An apply without `--confirm-destroy` was blocked with nothing deleted | Removal covers only resources golive provably created; adopted projects, unowned records and resources of signed-out providers become manual handoffs (Supabase/Neon projects, the Resend sending domain); Cloudflare and Netlify removals and live-mode deletions not exercised |
 | Cleanup | Separately approved exact test projects deleted; exact project reads and test URLs returned 404; unaffected scoped resources and login identities stayed unchanged | Normal provider deletion; Neon may retain a recovery window |
 
-Cleanup used supervised fixture helpers; GoLive does not yet expose a general teardown command.
+Early cleanup used supervised fixture helpers; later runs removed their disposable resources through
+the approved `golive teardown` flow (see the teardown row).
 Sample application data was removed before project deletion. No domains were purchased and no live
 payment or email resources were created in these runs. The custom-domain run created one DNS record
 and one host project on approved disposable resources; their cleanup follows the same supervision
@@ -80,6 +82,18 @@ and may trail the run that produced the evidence.
   operator fingerprint were bound into approval. The live `webhook-unsigned` probe received a 400
   from the fixture and passed, and a real test-card payment delivered a signed
   `checkout.session.completed` event that verified and returned 200 (deployment-log evidence).
+- **Vercel CLI DELETE guard (teardown run):** `vercel api` refuses DELETE non-interactively without
+  `--dangerously-skip-permissions`; the delete capability now passes it for its already-gated call
+  (plan approval, creation marker, `--confirm-destroy`).
+- **Cross-release resume (teardown run):** the historical-write block refused to resume a failed
+  deletion recorded under an older release. Destroy steps are now exempt — a deletion re-checks
+  ownership and is idempotent — with a regression covering both directions.
+- **Stale forward state (teardown run):** rebuilding the forward plan can fail when state refers to
+  resources a human already removed; `apply --plan <teardown id>` no longer depends on forward
+  observation, while the original forward error still surfaces when nothing matches.
+- **Silent omissions (teardown run):** recorded webhook endpoints or sending keys that cannot be
+  removed right now (e.g. a provider that is not signed in) are now explicit manual handoffs instead
+  of silently missing from the inventory.
 
 Provider fixes have offline mocked regressions. These implementation tests never use real accounts.
 The repaired behavior was subsequently exercised where described above; this is not blanket live

@@ -21,7 +21,7 @@ interface Rec {
 }
 
 /** A stateful fake of the Cloudflare zone + dns_records API. */
-function fakeCloudflare(opts: { zones?: Record<string, typeof ZONE>; records?: Rec[]; failWith?: { status: number; errors: Array<{ code: number; message: string }> } } = {}) {
+function fakeCloudflare(opts: { zones?: Record<string, typeof ZONE>; records?: Rec[]; failWith?: { status: number; errors: Array<{ code: number; message: string }> }; deleteStatus?: number } = {}) {
   const zones = opts.zones ?? { 'example.com': ZONE };
   const records: Rec[] = structuredClone(opts.records ?? []);
   let nextId = 1;
@@ -67,6 +67,18 @@ function fakeCloudflare(opts: { zones?: Record<string, typeof ZONE>; records?: R
         const rec = records.find((r) => r.id === id)!;
         Object.assign(rec, c.body);
         return { json: { success: true, result: rec } };
+      },
+    ],
+    [
+      'DELETE',
+      /\/zones\/zone123\/dns_records\/[^/?]+$/,
+      (c) => {
+        if (opts.deleteStatus) return { status: opts.deleteStatus, json: { success: false, errors: [{ code: 81044, message: 'Record does not exist.' }], result: null } };
+        const id = c.url.split('/').pop()!;
+        const index = records.findIndex((r) => r.id === id);
+        if (index < 0) return { status: 404, json: { success: false, errors: [{ code: 81044, message: 'Record does not exist.' }], result: null } };
+        records.splice(index, 1);
+        return { json: { success: true, result: { id } } };
       },
     ],
   ]);
@@ -236,6 +248,82 @@ describe('cloudflare dns.list', () => {
     const err = await errorOf(cloudflareDns.list(ctxWith(fakeCloudflare({ zones: {} })), 'nothere.dev'));
     expect(err.message).toMatch(/No active Cloudflare zone for nothere\.dev/);
     expect(err.message).toMatch(/nameservers/);
+  });
+});
+
+describe('cloudflare dns ownership (listOwned / remove)', () => {
+  const ownedRec: Rec = { id: 'o1', type: 'A', name: 'www.example.com', content: '192.0.2.1', ttl: 1, proxied: false, comment: 'golive: managed' };
+  const foreignRec: Rec = { id: 'f1', type: 'A', name: 'example.com', content: '192.0.2.9', ttl: 1, proxied: false, comment: 'owner note' };
+  const wanted: DnsRecord = { type: 'A', name: 'www.example.com', content: '192.0.2.1' };
+
+  it('listOwned returns only marker-owned records of supported types', async () => {
+    const fake = fakeCloudflare({ records: [ownedRec, foreignRec, { id: 'n1', type: 'NS', name: 'sub.example.com', content: 'ns1.other.net', comment: 'golive: managed' }, { id: 'g1', type: 'A', name: 'app.example.com', content: '192.0.2.7', comment: 'golive: managed (preview)' }] });
+    expect(await cloudflareDns.listOwned!(ctxWith(fake), 'example.com')).toEqual([
+      { type: 'A', name: 'www.example.com', content: '192.0.2.1', ttl: 1, proxied: false },
+      { type: 'A', name: 'app.example.com', content: '192.0.2.7' },
+    ]);
+    expect(fake.writes()).toEqual([]);
+  });
+
+  it('remove deletes the exact owned record by id and forgets its state keys', async () => {
+    const fake = fakeCloudflare({ records: [ownedRec, foreignRec] });
+    const ctx = ctxWith(fake);
+    ctx.state.save((s) => {
+      s.resources['cloudflare.recordId:A:www.example.com'] = 'o1';
+      s.resources['cloudflare.recordId:CNAME:old.example.com'] = 'o1';
+      s.resources['cloudflare.recordId:TXT:example.com:abc'] = 'other';
+      s.resources['cloudflare.zoneId:example.com'] = 'zone123';
+    });
+    const [listed] = await cloudflareDns.listOwned!(ctx, 'example.com');
+    expect(await cloudflareDns.remove!(ctx, 'example.com', listed!)).toBe('removed');
+    const deletes = fake.calls.filter((c) => c.method === 'DELETE');
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]!.url).toBe(`${API}/zones/zone123/dns_records/o1`);
+    expect(fake.records.map((r) => r.id)).toEqual(['f1']);
+    expect(ctx.state.resource('cloudflare.recordId:A:www.example.com')).toBeUndefined();
+    expect(ctx.state.resource('cloudflare.recordId:CNAME:old.example.com')).toBeUndefined();
+    expect(ctx.state.resource('cloudflare.recordId:TXT:example.com:abc')).toBe('other');
+    expect(ctx.state.resource('cloudflare.zoneId:example.com')).toBe('zone123');
+    assertTokenContained(fake.calls, ctx.logs, [ctx.state.get()]);
+  });
+
+  it('refuses to delete an identical record golive did not create', async () => {
+    const fake = fakeCloudflare({ records: [{ ...ownedRec, id: 'f2', comment: null }] });
+    const err = await errorOf(cloudflareDns.remove!(ctxWith(fake), 'example.com', wanted));
+    expect(err.message).toMatch(/golive did not create it/);
+    expect(err.message).toContain('A 192.0.2.1');
+    expect(err.message).toContain('nothing was deleted');
+    expect(fake.writes()).toEqual([]);
+    expect(fake.records.map((r) => r.id)).toEqual(['f2']);
+  });
+
+  it('is unchanged when the record is already gone', async () => {
+    const fake = fakeCloudflare({ records: [ownedRec] });
+    expect(await cloudflareDns.remove!(ctxWith(fake), 'example.com', { type: 'A', name: 'gone.example.com', content: '192.0.2.1' })).toBe('unchanged');
+    expect(fake.writes()).toEqual([]);
+  });
+
+  it('treats a 404 from the delete itself as already gone', async () => {
+    const fake = fakeCloudflare({ records: [ownedRec], deleteStatus: 404 });
+    expect(await cloudflareDns.remove!(ctxWith(fake), 'example.com', wanted)).toBe('unchanged');
+    expect(fake.writes()).toHaveLength(1);
+    expect(fake.writes()[0]!.method).toBe('DELETE');
+  });
+
+  it('refuses an ambiguous match instead of guessing which duplicate to delete', async () => {
+    const fake = fakeCloudflare({ records: [ownedRec, { ...ownedRec, id: 'o2' }] });
+    const err = await errorOf(cloudflareDns.remove!(ctxWith(fake), 'example.com', wanted));
+    expect(err.message).toMatch(/2 records matching/);
+    expect(err.message).toMatch(/nothing was deleted/);
+    expect(fake.writes()).toEqual([]);
+    expect(fake.records).toHaveLength(2);
+  });
+
+  it('refuses a name outside the zone without listing or deleting anything', async () => {
+    const fake = fakeCloudflare({ records: [ownedRec] });
+    const err = await errorOf(cloudflareDns.remove!(ctxWith(fake), 'example.com', { ...wanted, name: 'other.org' }));
+    expect(err.message).toMatch(/not inside the zone example\.com/);
+    expect(fake.writes()).toEqual([]);
   });
 });
 
@@ -717,6 +805,21 @@ describe('cloudflare dns: stale cached zone id', () => {
     expect(await cloudflareDns.list(ctx, 'example.com')).toEqual([{ type: 'A', name: 'example.com', content: '76.76.21.21' }]);
     expect(ctx.state.resource('cloudflare.zoneId:example.com')).toBe('zoneNEW');
     expect(calls.filter((c) => c.url.includes('zoneOLD'))).toHaveLength(1);
+  });
+
+  it('listOwned() and remove() also recover from a stale cached zone id', async () => {
+    const { http, calls } = mockHttp([
+      ['GET', new RegExp(`^${API}/zones\\?`), () => ({ json: { success: true, result: [{ id: 'zoneNEW', name: 'example.com', status: 'active' }], result_info: { page: 1, total_pages: 1 } } })],
+      ZONES_404,
+      ['GET', new RegExp(`^${API}/zones/zoneNEW/dns_records`), () => ({ json: { success: true, result: [{ id: 'o1', type: 'A', name: 'example.com', content: '76.76.21.21', comment: 'golive: managed' }], result_info: { page: 1, total_pages: 1 } } })],
+      ['DELETE', new RegExp(`^${API}/zones/zoneNEW/dns_records/o1$`), () => ({ json: { success: true, result: { id: 'o1' } } })],
+    ]);
+    const ctx = cachedZone(testCtx({ http, tokens: { CLOUDFLARE_API_TOKEN: TOKEN } }));
+    expect(await cloudflareDns.listOwned!(ctx, 'example.com')).toEqual([{ type: 'A', name: 'example.com', content: '76.76.21.21' }]);
+    expect(await cloudflareDns.remove!(ctx, 'example.com', A)).toBe('removed');
+    expect(calls.filter((c) => c.method === 'DELETE').map((c) => c.url)).toEqual([`${API}/zones/zoneNEW/dns_records/o1`]);
+    expect(calls.filter((c) => c.url.includes('zoneOLD')).length).toBeGreaterThan(0);
+    expect(ctx.state.resource('cloudflare.zoneId:example.com')).toBe('zoneNEW');
   });
 });
 

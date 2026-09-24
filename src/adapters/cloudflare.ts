@@ -57,10 +57,10 @@ function requireToken(ctx: Ctx): Secret {
 }
 
 /**
- * `idempotent`: safe to re-send after a 5xx/timeout. PATCHes here set fixed field values, so they are;
- * creates (POST) are not.
+ * `idempotent`: safe to re-send after a 5xx/timeout. PATCHes here set fixed field values and a delete
+ * targets one record id, so both are; creates (POST) are not.
  */
-async function api<T>(ctx: Ctx, method: 'GET' | 'POST' | 'PATCH', path: string, what: string, body?: unknown, idempotent = false): Promise<Envelope<T>> {
+async function api<T>(ctx: Ctx, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, what: string, body?: unknown, idempotent = false): Promise<Envelope<T>> {
   const t = requireToken(ctx);
   const res = await ctx.http<Envelope<T>>({
     method,
@@ -242,6 +242,13 @@ function forgetStale(ctx: Ctx, want: DnsRecord, id: string): void {
   });
 }
 
+/** A record golive deleted: drop every state key that pointed at its id. */
+function forgetId(ctx: Ctx, id: string): void {
+  ctx.state.save((s) => {
+    for (const [k, v] of Object.entries(s.resources)) if (k.startsWith('cloudflare.recordId:') && v === id) delete s.resources[k];
+  });
+}
+
 /**
  * Records that exist once per name even though TXT/MX normally live alongside other values:
  *   - a DKIM public key at `<selector>._domainkey.<domain>` (two keys at one selector = DKIM fails intermittently)
@@ -394,6 +401,45 @@ export const cloudflareDns: DnsZone = {
 
   async list(ctx, domain) {
     return withZone(ctx, domain, async (zone) => (await fetchRecords(ctx, zone)).filter((r) => TYPES.has(r.type)).map(toDnsRecord));
+  },
+
+  async listOwned(ctx, domain) {
+    return withZone(ctx, domain, async (zone) =>
+      (await fetchRecords(ctx, zone)).filter((r) => isOwned(r) && TYPES.has(r.type)).map(toDnsRecord),
+    );
+  },
+
+  async remove(ctx, domain, record) {
+    return withZone(ctx, domain, async (zone) => {
+      const want = normalizeWanted(record);
+      if (!inZone(want.name, zone.name)) throw new Error(`Cloudflare DNS: ${want.name} is not inside the zone ${zone.name}; nothing was deleted.`);
+      const here = (await fetchRecords(ctx, zone, `name.exact=${encodeURIComponent(want.name)}`)).filter((r) => normName(r.name) === want.name);
+      const matches = here.filter((r) => r.type === want.type && normContent(r.type, r.content) === want.content);
+      if (!matches.length) return 'unchanged';
+      if (matches.length > 1) {
+        throw new Error(
+          `Cloudflare DNS: ${want.name} has ${matches.length} records matching ${describe(want)} (${matches.map((r) => r.id).join(', ')}), ` +
+            'so golive cannot tell which one it created; nothing was deleted. Delete the duplicate in the Cloudflare dashboard (DNS -> Records), then re-run.',
+        );
+      }
+      const have = matches[0]!;
+      if (!isOwned(have)) {
+        throw new Error(
+          `Cloudflare DNS: refusing to delete ${describe(want)} at ${want.name}: golive did not create it (its comment does not start with "${OWNED_PREFIX}"), ` +
+            `so nothing was deleted. Delete it in the Cloudflare dashboard (DNS -> Records) if it is no longer used, or set its comment to start with "${OWNED_PREFIX}" to let golive manage it.`,
+        );
+      }
+      try {
+        await api(ctx, 'DELETE', `/zones/${zone.id}/dns_records/${encodeURIComponent(have.id)}`, `delete ${want.type} ${want.name}`, undefined, true);
+      } catch (e) {
+        // The record is already gone; the outcome is the one teardown asked for.
+        if (e instanceof CloudflareError && e.status === 404) return 'unchanged';
+        throw e;
+      }
+      forgetId(ctx, have.id);
+      ctx.log.info(`cloudflare: deleted ${want.type} ${want.name} -> ${short(want.content)}`);
+      return 'removed';
+    });
   },
 
   async upsert(ctx, domain, record) {

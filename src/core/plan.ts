@@ -79,7 +79,7 @@ export function planView(plan: Plan) {
       title: s.title,
       kind: s.kind,
       writes: s.risk.writes,
-      needs: [s.risk.live && '--confirm-live', s.risk.dns && '--confirm-dns'].filter(Boolean),
+      needs: [s.risk.live && '--confirm-live', s.risk.dns && '--confirm-dns', s.risk.destroy && '--confirm-destroy'].filter(Boolean),
       preview: s.preview,
       dependsOn: s.dependsOn,
     })),
