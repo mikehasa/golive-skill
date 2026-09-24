@@ -86,6 +86,8 @@ provider behaviour filed as [#52](https://github.com/mikehasa/golive-skill/issue
   created the domain), and an adopted resource is reported as recorded-but-not-provable — never offered
   as golive's to delete. The other inventory specs (Supabase `supabase.createdByGolive`, Neon
   `neon.createdProjectId`) were audited and already required a marker that names the exact resource.
+  A state file written before this fix records no Resend marker at all, so such a domain now reads as
+  adopted too: the claim disappears rather than staying wrong, and nothing is deleted on a guess.
 - **A handoff's evidence could read as if the recovery never ran (defect, fixed here).** After the
   rotation, `handoff --json` reported `auth:recovery-email` as `done: null` and used the standalone
   `verify` **skip** text as its evidence — honest about that invocation, but it contradicted the same
