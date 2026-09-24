@@ -12,11 +12,13 @@ function probeAddress(email: string): string {
 }
 
 /**
- * The signup half of the authentication journey, in the four steps that make it evidence:
+ * The signup half of the authentication journey, in the three steps that make it evidence:
  * a fresh probe address is signed up and gets a confirmation email; the SAME address is refused a
  * password login until it is confirmed (that refusal is what proves confirmation is enforced, not
- * just configured); the seeded test account reads back as `email_confirmed_at` after the human
- * clicked; and that confirmed account can finally sign in.
+ * just configured); and the seeded test account reads back as `email_confirmed_at` after the human
+ * clicked. All three read the provider, so a `verify` or `handoff` outside the seeding apply can
+ * still reach `pass`. The confirmed account's own sign-in is added as extra evidence when this run
+ * holds its password (the apply that seeded or rotated it); `auth-session` covers the session.
  *
  * Opt-in only (`auth.e2e: true`), because the signup probe creates a real account. golive cannot
  * read an inbox, so delivery and the click always stay human-confirmed.
@@ -99,7 +101,7 @@ export const authSignupCheck: Check = {
     }
     evidence.push(`the same address cannot sign in before confirming (${refused.code})`);
 
-    // 2. The seeded account: the human's click is visible as `email_confirmed_at`, and login works.
+    // 2. The seeded account: the human's click is visible as `email_confirmed_at`.
     const seededEmail = ctx.state.resource(TEST_USER_EMAIL) ?? email;
     let view;
     try {
@@ -127,10 +129,12 @@ export const authSignupCheck: Check = {
 
     const seededPass = vaultGet(testUserPassKey(seeded));
     if (!seededPass) {
-      return result('skip', 'info', [
-        'blocked by: no password for the test account in this run (only the run that seeds or rotates it keeps one, in memory)',
-        ...evidence,
-      ]);
+      // The journey is proven from provider reads alone. Only the apply that seeds or rotates the
+      // password keeps one (in memory), so a later `verify`/`handoff` says plainly where the
+      // confirmed login itself is exercised instead of skips a handoff that is in fact complete.
+      evidence.push(`this run holds no password for the test account: the confirmed login is exercised by the run that seeds or rotates it (the auth:test-user step), and \`auth-session\` proves the session on its own`);
+      evidence.push('delivery itself stays human-confirmed: golive never sees the inbox, only the provider\'s own confirmation state');
+      return pass(evidence);
     }
     let login;
     try {

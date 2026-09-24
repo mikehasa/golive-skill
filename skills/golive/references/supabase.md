@@ -196,9 +196,12 @@ What stays human, and why the evidence says so:
 - **The generated password.** `auth:test-user` generates one per run (32 random characters) and keeps
   it in that run's memory only — never in state, a report or evidence. A later run re-runs the step
   with a new password for the same account (recorded as `supabase.testUserId` + the address in
-  `.golive/state.json`), which is how a `verify`-only run ends up skipping with
-  `blocked by: no password for the test account in this run`. Run `plan` + `apply` after the human
-  clicks, then re-run `verify`: the step re-runs, and both checks run against the live account.
+  `.golive/state.json`). A `verify`-only run holds no password, so `auth-session` skips with
+  `blocked by: no password for the test account in this run`; `auth-signup` still passes on the
+  provider reads alone (probe signup, its refused login, the account's `email_confirmed_at`, with an
+  evidence line naming where the confirmed login itself is exercised), so `handoff` reports the
+  confirmation handoff done without it. Run `plan` + `apply` after the human clicks, then re-run
+  `verify`: the step rotates the password, and both checks run against the live account.
 
 Caveats to pass on before enabling it:
 
@@ -272,7 +275,7 @@ Caveats to pass on before enabling it:
 | Magic-link emails broken or slow | Supabase's default SMTP is rate-limited; custom SMTP is a manual dashboard step (§2). Turn off link tracking at the email provider. |
 | `auth.e2e` journey | Start with `auth.e2e: true`, `auth.testEmail` and `auth.protectedPath` in `golive.yaml`, then `plan` + `apply --confirm-live` (the `auth:test-user` step creates a real account). Click the link in that inbox, then `plan` + `apply` again and re-run `verify`. |
 | `auth-signup` skips with `blocked by: auth:test-user` | No test account is seeded yet: run `plan` + `apply` with `auth.e2e: true` first. |
-| `auth-signup`/`auth-session` skip with `blocked by: no password for the test account in this run` | The generated password exists only in the run that seeded or rotated it, so a `verify`-only run cannot sign in. Run `plan` + `apply` again (the step re-runs with a new password), then re-run `verify`. |
+| `auth-session` reports `blocked by: no password for the test account in this run` | The generated password exists only in the run that seeded or rotated it, so a `verify`-only run cannot sign in. `auth-signup` still passes on the provider reads (`email_confirmed_at`) and closes the handoff; `auth-session` needs the password. Run `plan` + `apply` again (the step re-runs with a new password), then re-run `verify`. |
 | `auth-signup` says the test account is not confirmed yet | The human has not clicked that link. golive cannot read an inbox; the `auth:confirm-email` handoff stays open until `auth-signup` passes. Check spam (the built-in mailer is rate-limited and new domains often land there). |
 | `auth-signup` warns "rate-limited (HTTP 429)" | Supabase's built-in mailer limit (or a per-project email rate limit) refused the send. Wait for it to reset, raise `rate_limit_email_sent` / configure custom SMTP (§2), then re-run verify. |
 | `auth:test-user` fails with "wants a captcha" | Auth captcha (hcaptcha/turnstile) is on for the project: turn it off for a test journey, or keep the journey manual. A scripted signup cannot pass a captcha. |

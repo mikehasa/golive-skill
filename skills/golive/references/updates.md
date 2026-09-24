@@ -60,4 +60,9 @@ the provider and golive's own recorded resource before acting, e.g. the auth tes
 rotation). Everything else stays blocked. Incompatible schemas stop safely.
 There is no general reconciliation command yet. Explain the blocked operation and prepare a
 separately reviewed recovery after inspecting the provider; do not promise automatic recovery.
+`golive status` states the same boundary: a step that failed under another (or an unknown) release
+appears as `release:step:<id>` with `action: human` when it declares neither exemption, and the item
+says there that re-running `apply` cannot succeed until that reconciliation has happened — including
+when the current plan no longer carries the step at all. A step this release recorded, or one that
+declares the exemption, keeps the plain re-run advice.
 Existing private golive deployments are not automatically migrated to a differently named product.

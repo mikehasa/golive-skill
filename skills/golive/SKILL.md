@@ -220,10 +220,11 @@ Explain the steps by provider, in plain language, and call out:
   app route) `auth.protectedPath`. Say plainly that it **creates a real account in their project**
   (a `--confirm-live` write), that the generated password lives only in that run, and that the
   confirmation email goes to their inbox: clicking that link is their one manual step
-  (`auth:confirm-email`). After they click, run `plan` + `apply` again — the step re-runs (a new
-  password on the same account) and `auth-signup` / `auth-session` then prove the confirmed account
-  can sign in. Those two checks also sign up one throwaway probe account each run, so `verify` writes
-  when `auth.e2e` is on; with it off they skip and nothing is created.
+  (`auth:confirm-email`). Once they click, `golive handoff` reports that handoff done — `auth-signup`
+  proves the journey from the provider's own reads, without needing that run's password — and a fresh
+  `plan` + `apply` rotates the password so `auth-signup` / `auth-session` also prove the confirmed
+  account can sign in. Those two checks also sign up one throwaway probe account each run, so `verify`
+  writes when `auth.e2e` is on; with it off they skip and nothing is created.
 - `warnings` and `findings`, and `unmappedEnv`: env names golive can't fill (e.g. `OPENAI_API_KEY`).
   The human types those into the host's dashboard. Never ask for the value.
 
@@ -283,7 +284,7 @@ Check scope:
 | `db-connection` | selected Neon database and role accept a fixed read-only query; does not verify migrations, deployed app access or user isolation |
 | `auth-redirects` | auth site URL / redirect allowlist point at production |
 | `auth-policy` | auth signup/confirmation/password policy matches the app and golive.yaml (site URL and redirects are `auth-redirects`); a setting the provider does not report is named, never assumed |
-| `auth-signup` | the `auth.e2e` journey: a fresh probe address gets a confirmation email, cannot sign in before confirming, the test account reads back confirmed and can then sign in (golive never sees the inbox: delivery and the click stay human-confirmed) |
+| `auth-signup` | the `auth.e2e` journey: a fresh probe address gets a confirmation email, cannot sign in before confirming, and the test account reads back confirmed (`email_confirmed_at`) — a sign-in of that account is extra evidence when this run holds its password (golive never sees the inbox: delivery and the click stay human-confirmed) |
 | `auth-session` | the `auth.e2e` journey: the test account's password login returns a session, the token resolves to that user, an anonymous request is refused, and a declared `auth.protectedPath` is not publicly readable |
 | `webhook-unsigned` | the production webhook rejects unsigned POSTs (a non-HTML 401/403 only warns: it may be an auth wall) |
 | `webhook-registered` | the endpoint exists, enabled, for the right URL and events |
@@ -293,9 +294,11 @@ Check scope:
 
 `auth-signup` and `auth-session` are opt-in: without `auth.e2e: true` in `golive.yaml` they skip with
 that reason and create nothing. With it on, each run signs up one throwaway probe account (address
-`auth.testEmail` plus a plus-tag) and `auth-signup` may skip with `blocked by: no password for the
-test account in this run` — that password exists only in the run that seeded or rotated it, so the
-journey's evidence comes from an `apply` run. Never report the inbox leg as verified by golive.
+`auth.testEmail` plus a plus-tag). The seeded account's password exists only in the run that seeded or
+rotated it, so `auth-session` skips with `blocked by: no password for the test account in this run`
+outside such a run; `auth-signup` needs no password — it passes on the provider's own reads (the
+probe's signup, its refused login, the account's `email_confirmed_at`) and adds the confirmed login as
+extra evidence when that run holds the password. Never report the inbox leg as verified by golive.
 
 Finish with a short summary: the live URL, what passed, what is still open (`handoff --json`), and
 every `done: null` / skipped item named as not verified by golive. Say who owns each remaining item —

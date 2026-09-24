@@ -4,7 +4,10 @@
  * whole thing into evidence. The fake provider's `authUsers` capability stands in for Supabase's
  * GoTrue API; the one production probe (a declared protected path) is scripted HTTP. Offline only.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { buildPlan, planView } from '../src/core/plan.js';
 import { applyPlan, runCheck } from '../src/core/runner.js';
 import { emptyState } from '../src/core/state.js';
@@ -14,13 +17,18 @@ import { authSessionCheck } from '../src/checks/auth-session.js';
 import { authedRestProbe, restProbe } from '../src/checks/providers.js';
 import { ALL_LINKS } from '../src/links/all.js';
 import { TEST_USER_EMAIL, TEST_USER_ID, testUserPassKey } from '../src/links/auth-e2e.js';
-import type { Check, Ctx, Http, Plan, ReleaseIdentity, ShipConfig, ShipState, Step } from '../src/core/types.js';
+import type { Adapter, Check, Ctx, Http, Plan, ReleaseIdentity, ShipConfig, ShipState, Step } from '../src/core/types.js';
 import { TEST_RELEASE, mockHttp, testCtx } from './helpers.js';
 import { ALL_RAW_SECRETS, RAW, fakeWorld, type FakeWorld } from './fakes.js';
 
 vi.mock('../src/checks/providers.js', () => ({ restProbe: vi.fn(), accountStatus: vi.fn(), authedRestProbe: vi.fn() }));
 const authedProbe = vi.mocked(authedRestProbe);
 const anonProbe = vi.mocked(restProbe);
+
+// The `golive handoff` test at the end drives the real CLI; the harness swaps in the fakes so the
+// command (not just the check) is exercised offline.
+const mocks = vi.hoisted(() => ({ adapters: [] as Adapter[] }));
+vi.mock('../src/registry.js', async (original) => ({ ...await original<typeof import('../src/registry.js')>(), ADAPTERS: mocks.adapters }));
 
 beforeEach(() => {
   _resetSecretRegistry();
@@ -350,17 +358,22 @@ describe('auth-signup check', () => {
     expect(text).toMatch(/cannot sign in before confirming/);
   });
 
-  it('skips the login leg it cannot evidence when this run holds no password', async () => {
-    // A recorded account with no password in this process: exactly a `verify` run after an apply.
+  it('passes on the recorded journey alone, naming where the confirmed login is exercised', async () => {
+    // A recorded account with no password in this process: exactly a `verify` or `handoff` run after
+    // an apply. The journey is proven by provider reads alone, so the handoff can be reported done.
     const w = fakeWorld();
     w.db.authUsers.users.push({ id: 'usr_1', email: EMAIL, confirmed: true, pass: 'whatever' });
     const state: ShipState = { ...emptyState(), resources: { [TEST_USER_ID]: 'usr_1', [TEST_USER_EMAIL]: EMAIL }, secrets: {}, steps: {} };
     const ctx = testCtx({ cwd: '/work/shop', adapters: w.adapters, config: { ...E2E_CONFIG } as ShipConfig, state, detect: { envRefs: [] } });
     const r = await run(authSignupCheck, ctx);
-    expect(r.status).toBe('skip');
-    expect(r.evidence[0]).toMatch(/^blocked by: no password for the test account in this run/);
-    // The probe evidence is still reported, so the skip does not hide a broken signup.
+    expect(r.status).toBe('pass');
     expect(r.evidence.join('\n')).toMatch(/confirmation email sent/);
+    expect(r.evidence.join('\n')).toMatch(/cannot sign in before confirming \(email_not_confirmed\)/);
+    expect(r.evidence.join('\n')).toMatch(/is confirmed \(email_confirmed_at set\)/);
+    expect(r.evidence.join('\n')).toMatch(/this run holds no password for the test account: the confirmed login is exercised by the run that seeds or rotates it \(the auth:test-user step\), and `auth-session` proves the session on its own/);
+    // The one thing it must not claim: that it signed the seeded account in itself.
+    expect(r.evidence.join('\n')).not.toMatch(/the confirmed test account signed in/);
+    expect(JSON.stringify(r) + ctx.logs.join('\n')).not.toContain('whatever');
   });
 
   it('fails when the confirmed test account cannot sign in', async () => {
@@ -502,5 +515,64 @@ describe('auth-session check', () => {
     expect(authedProbe.mock.calls[0]![5]).toMatchObject({ name: 'SUPABASE_AUTH_TOKEN' });
     expect(anonProbe).not.toHaveBeenCalled();
     expect(calls.every((c) => !c.url.includes('/rest/v1/'))).toBe(true);
+  });
+});
+
+// ── the handoff, through the command ─────────────────────────────────────────────────────────────
+
+describe('golive handoff and the confirmation handoff', () => {
+  let root: string;
+  const oldArgv = process.argv;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'golive-auth-handoff-'));
+    mocks.adapters.splice(0);
+    vi.stubGlobal('fetch', vi.fn(() => { throw new Error('handoff must not use the network in tests'); }));
+  });
+  afterEach(() => {
+    process.argv = oldArgv;
+    vi.unstubAllGlobals();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  async function runCli(): Promise<{ output: string; code: number }> {
+    vi.resetModules();
+    process.argv = ['node', 'golive', 'handoff', '--cwd', root, '--json'];
+    const chunks: string[] = [];
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => { chunks.push(String(chunk)); return true; });
+    const exit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    await import('../src/cli.js');
+    await vi.waitFor(() => expect(exit).toHaveBeenCalled());
+    const result = { output: chunks.join(''), code: exit.mock.calls.at(-1)?.[0] as number };
+    stdout.mockRestore(); exit.mockRestore();
+    return result;
+  }
+
+  /** A repo whose state records the seeded test account, but no password: a `handoff` after apply. */
+  function writeRepo(w: FakeWorld, confirmed: boolean): void {
+    w.db.authUsers.users.push({ id: 'usr_1', email: EMAIL, confirmed, pass: 'never-in-this-process' });
+    mocks.adapters.push(...w.adapters);
+    writeFileSync(join(root, 'golive.yaml'), JSON.stringify({ version: 1, stack: { hosting: 'fakehost', db: 'fakedb', auth: 'fakedb' }, targets: ['production'], auth: { e2e: true, testEmail: EMAIL, protectedPath: '/dashboard' } }));
+    mkdirSync(join(root, '.golive'), { recursive: true });
+    const state: ShipState = { ...emptyState(), resources: { [TEST_USER_ID]: 'usr_1', [TEST_USER_EMAIL]: EMAIL }, secrets: {}, steps: {} };
+    writeFileSync(join(root, '.golive/state.json'), JSON.stringify(state));
+  }
+
+  const handoffItem = (output: string) =>
+    (JSON.parse(output) as { handoffs: Array<{ id: string; done: boolean | null; evidence: string[] }> }).handoffs.find((h) => h.id === 'auth:confirm-email')!;
+
+  it('reports the confirmation handoff done once the account reads as confirmed', async () => {
+    writeRepo(fakeWorld(), true);
+    const { output, code } = await runCli();
+    const item = handoffItem(output);
+    expect(item.done).toBe(true);
+    expect(item.evidence.join('\n')).toMatch(/the confirmed login is exercised by the run that seeds or rotates it/);
+    expect(code).toBe(0);
+  });
+
+  it('keeps the handoff open, and says why, while the inbox click has not happened', async () => {
+    writeRepo(fakeWorld(), false);
+    const item = handoffItem((await runCli()).output);
+    expect(item.done).toBe(false);
+    expect(item.evidence.join('\n')).toMatch(/is not confirmed yet/);
   });
 });

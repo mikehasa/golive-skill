@@ -27,16 +27,20 @@ A check proves that something holds now, and its report is release evidence. Dri
 world still matches what golive recorded, which needs the recorded side: `.golive/state.json` (the DNS
 record baselines golive wrote, env names and fingerprints, resource ids and markers, step evidence) or
 a marker the provider itself assigned. `golive status` runs those comparisons read-only: no report
-file, no provider write, no state change, no billing endpoint.
+file, no provider write, no state change, no billing endpoint. A failed step it finds is compared with
+the plan this release would run now — observed through a state view that drops adapter caches, never
+applied — because whether `apply` could replay that write at all turns on what the step declares.
 
 Every item pairs `expected (recorded by golive <time>)` with `observed (read now)`. Severity says what
 a difference means: high = the app is broken (a record deleted, an endpoint gone, a domain detached, a
 project unreadable); medium = hygiene or teardown safety, or a change that may be deliberate and is
 worded that way; info = nothing to act on (still propagating). `action` says who can act: `none`,
 `verify` (an existing check re-establishes the fact), `reconcile` (an approved `plan` then `apply`
-restores it, possibly needing `--confirm-dns`), or `human`. A provider that cannot be read yields
-`unverifiable: true` with `action: 'none'` and is listed in `notChecked` — never drift, and never
-reported as clean. Nothing is re-baselined silently: only a new approved write moves a baseline.
+restores it, possibly needing `--confirm-dns`), or `human` (only the human can act — e.g. a failed
+step recorded by another release that `apply` refuses to replay, where the reviewed reconciliation
+path has to come first). A provider that cannot be read yields `unverifiable: true` with
+`action: 'none'` and is listed in `notChecked` — never drift, and never reported as clean. Nothing is
+re-baselined silently: only a new approved write moves a baseline.
 
 Drift is deliberately not a gate. `plan`, `apply` and `verify` never consult it, because a comparison
 that needs an unapproved decision would deadlock a legitimate intent. A freshly written DNS record may

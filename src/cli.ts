@@ -15,7 +15,7 @@ import { exec } from './core/exec.js';
 import { createHttp, allowHost } from './core/http.js';
 import { emit, logger } from './core/output.js';
 import { loadConfig, saveConfig, defaultConfig, ConfigError, isDomain } from './core/config.js';
-import { fileStateStore } from './core/state.js';
+import { fileStateStore, readOnlyStateStore } from './core/state.js';
 import { createCtx } from './core/context.js';
 import { mapEnv } from './core/envmap.js';
 import { buildPlan, planView } from './core/plan.js';
@@ -229,7 +229,14 @@ async function main(argv: string[]): Promise<number> {
     }
     case 'status': {
       // Read-only: no report or state file, no provider write. Drift is never a gate on plan/apply.
-      const drift = await detectDrift(ctx);
+      // A failed step is compared against the plan this release would run now — observed, never
+      // applied, and through a state view that drops the caches adapters write — because whether
+      // `apply` could replay it depends on what the step declares (see drift.ts).
+      const failed = Object.values(ctx.state.get().steps).some((r) => r.status === 'failed');
+      const plan = failed
+        ? await buildPlan({ ...ctx, state: readOnlyStateStore(ctx.state) }, linkList(), { unmappedEnv: env.unmapped, warnings: [] }).catch(() => null)
+        : null;
+      const drift = await detectDrift(ctx, plan);
       const actionable = drift.items.filter((i) => i.action !== 'none');
       const note = drift.notChecked.length
         ? `${drift.notChecked.length} subject(s) could not be compared this run (see notChecked): golive did not read them, so this is not a clean bill of health`
