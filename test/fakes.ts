@@ -639,8 +639,9 @@ export function fakeWorld() {
         ensure: async (_c, d) => {
           rec(mail.providerId, 'sendingDomain.ensure', d);
           let e = mail.domains.get(d);
+          const created = !e; // like the adapter: only a domain this call made reports created
           if (!e) mail.domains.set(d, (e = { id: `dom_${d}`, status: 'not_started' }));
-          return { id: e.id, records: mailRecords(d) };
+          return { id: e.id, records: mailRecords(d), ...(created ? { created: true } : {}) };
         },
         status: async (_c, id) => [...mail.domains.values()].find((x) => x.id === id)?.status ?? 'not_started',
         verify: async (_c, id) => {

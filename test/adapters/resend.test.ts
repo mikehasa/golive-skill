@@ -157,6 +157,7 @@ describe('resend sendingDomain (REST)', () => {
     const r = await sd.ensure(ctx, 'example.com');
     expect(r.id).toBe('d_new');
     expect(r.records.map((x) => x.name)).toEqual(['send.example.com', 'send.example.com', 'resend._domainkey.example.com']);
+    expect(r.created).toBe(true); // golive made this domain: the link records its creation marker
     expect(h.calls[1]!.body).toEqual({ name: 'example.com', region: 'eu-west-1', open_tracking: false, click_tracking: false });
     assertUA(h.calls);
   });
@@ -170,6 +171,8 @@ describe('resend sendingDomain (REST)', () => {
     const r = await sd.ensure(ctx, 'example.com');
     expect(r.id).toBe('d_1');
     expect(r.records).toHaveLength(6);
+    // Adopted, not made: no creation marker may come out of this call, or teardown would claim it.
+    expect(r.created).toBeUndefined();
     expect(h.calls.some((c) => c.method === 'POST')).toBe(false);
     expect(ctx.logs.join('\n')).toMatch(/adopting existing Resend domain/);
   });

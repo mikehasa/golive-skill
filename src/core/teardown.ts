@@ -13,7 +13,8 @@
  * confirmations. An inventoried resource golive cannot remove right now (the provider is not signed
  * in, another provider is configured, or it has no removal capability) becomes a manual, non-blocking
  * handoff instead of silently missing from the plan. Supabase, Neon and the Resend sending domain
- * have no delete capability at all, so they always become manual handoffs.
+ * have no delete capability at all, so they always become manual handoffs — and one state records
+ * without a creation marker is handed back as adopted, with wording that never claims golive made it.
  */
 import type { Ctx, DnsRecord, HandoffItem, Plan, Step } from './types.js';
 import { buildInventory, createdProjectKey, type InventoryDnsRecord, type InventoryProject, type InventoryRecorded, type InventorySendingKey, type InventoryWebhook } from './inventory.js';
@@ -303,17 +304,31 @@ function projectStep(p: InventoryProject): Step {
 // ── Handoffs for resources golive created but cannot delete yet ──────────────────────────────────
 
 function dbHandoffs(recorded: InventoryRecorded[]): HandoffItem[] {
-  return recorded.filter((r) => r.axis === 'db' && r.created).map(manualHandoff);
+  return recorded.filter((r) => r.axis === 'db').map(manualHandoff);
 }
 
 function emailHandoffs(recorded: InventoryRecorded[]): HandoffItem[] {
-  return recorded.filter((r) => r.kind === 'sending-domain' && r.created).map(manualHandoff);
+  return recorded.filter((r) => r.kind === 'sending-domain').map(manualHandoff);
 }
 
-/** The inventoried resource a human deletes by hand, in the provider's own dashboard or console. */
+/**
+ * The inventoried resource a human deletes by hand, in the provider's own dashboard or console. A
+ * resource golive only adopted (its creation marker is absent or names another id) is handed back the
+ * same way — silently dropping it would hide that state still records it — but the wording never
+ * claims golive made it, so nobody deletes an account's own project or sending domain on golive's word.
+ */
 function manualHandoff(r: InventoryRecorded): HandoffItem {
   const subject = r.kind === 'database-project' ? `${r.providerTitle} project ${r.id}` : `${r.providerTitle} sending domain ${r.name}`;
   const thing = r.kind === 'database-project' ? `the ${r.providerTitle} project ${r.id}` : `the sending domain ${r.name}`;
+  if (!r.created) {
+    return {
+      id: `teardown:${r.axis === 'db' ? 'db' : 'email'}:${r.provider}`,
+      why: `the ${subject} is recorded in .golive/state.json, but no creation marker (${r.markers.join(', ') || 'none declared'}) covers it, so golive cannot prove it created it: it was adopted`,
+      action: `Check ${thing} in ${r.where} before touching it: golive adopted it, so it may belong to this account already and predate this app. Delete it by hand there only if it is really disposable.`,
+      blocking: false,
+      manual: true,
+    };
+  }
   return {
     id: `teardown:${r.axis === 'db' ? 'db' : 'email'}:${r.provider}`,
     why: `the ${subject} was created by golive, and deleting it needs ${r.needs}`,

@@ -616,11 +616,23 @@ describe('teardown: handoffs', () => {
 
   it('does not claim an adopted database or a sending domain golive did not create', async () => {
     const { build } = setup({
-      state: stateWith({ 'supabase.ref': 'abcdefghijklmnop', 'supabase.createdByGolive': 'some-other-project', 'neon.projectId': 'silent-brook-1234' }),
+      state: stateWith({ 'supabase.ref': 'abcdefghijklmnop', 'supabase.createdByGolive': 'some-other-project', 'neon.projectId': 'silent-brook-1234', 'resend.domainId': 'dom_42' }),
     });
     const plan = await build();
+
     expect(plan.steps).toEqual([]);
-    expect(plan.handoffs).toEqual([]);
+    // Recorded-but-unproven resources are still handed back (silently dropping state would hide them),
+    // and the wording never says golive created them: the live defect invited a human to delete the
+    // owner's own sending domain with "was created by golive".
+    expect(plan.handoffs.map((h) => h.id)).toEqual(['teardown:db:supabase', 'teardown:db:neon', 'teardown:email:resend']);
+    for (const h of plan.handoffs) {
+      expect(h).toMatchObject({ blocking: false, manual: true });
+      expect(h.why).toMatch(/golive cannot prove it created it/);
+      expect(h.why).not.toMatch(/was created by golive/);
+      expect(h.action).toMatch(/golive adopted it/);
+    }
+    expect(plan.handoffs[2]!.why).toContain('resend.createdDomainId');
+    expect(plan.handoffs[2]!.why).toContain('send.example.com');
   });
 });
 

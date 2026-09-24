@@ -5,8 +5,10 @@ Load this when the plan uses `email=resend`.
 Status: the disposable live run passed end to end — domain created through the CLI transport, records
 written to an automated DNS provider, domain verified, sending-scoped keys issued into the app's env,
 and a send using that environment key was delivered (spam folder; fresh subdomain, no DMARC). Auth
-SMTP is wired from a sending key golive issues (`auth:smtp`, with `auth.smtp: resend` — implemented
-and mock-covered, not live-validated); bounce handling remains open.
+SMTP is wired from a sending key golive issues (`auth:smtp`, with `auth.smtp: resend`) and that write
+is live-validated (2026-09-24: the settings and the raised auth email rate limit read back; the
+password itself is write-only); bounce handling remains open, and a sending domain's `verified` flag
+can be stale — see [#52](https://github.com/mikehasa/golive-skill/issues/52) before trusting it.
 
 ## 1. Logging in (least friction first)
 

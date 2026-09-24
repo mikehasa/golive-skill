@@ -10681,7 +10681,7 @@ function projectStateKeys(provider) {
 var RECORDED = [
   { axis: "db", provider: "supabase", providerTitle: "Supabase", kind: "database-project", idKey: "supabase.ref", createdBy: ["supabase.createdByGolive"], needs: "the Supabase dashboard", where: "the dashboard" },
   { axis: "db", provider: "neon", providerTitle: "Neon", kind: "database-project", idKey: "neon.projectId", nameKey: "neon.createdProjectName", createdBy: ["neon.createdProjectId"], needs: "the Neon console", where: "the Neon console", extra: "; Neon may keep a recovery window" },
-  { axis: "email", provider: "resend", providerTitle: "Resend", kind: "sending-domain", idKey: "resend.domainId", createdBy: [], needs: "the Resend dashboard", where: "the Resend dashboard", extra: "; any keys golive issued are revoked in the steps of this plan when applicable" }
+  { axis: "email", provider: "resend", providerTitle: "Resend", kind: "sending-domain", idKey: "resend.domainId", createdBy: ["resend.createdDomainId"], needs: "the Resend dashboard", where: "the Resend dashboard", extra: "; any keys golive issued are revoked in the steps of this plan when applicable" }
 ];
 async function buildInventory(ctx) {
   const webhooks2 = await webhookInventory(ctx);
@@ -10787,9 +10787,9 @@ function recordedInventory(ctx) {
   for (const spec of RECORDED) {
     const id2 = ctx.state.resource(spec.idKey);
     if (!id2) continue;
-    const created = spec.createdBy.every((k) => ctx.state.resource(k) === id2);
+    const created = spec.createdBy.length > 0 && spec.createdBy.every((k) => ctx.state.resource(k) === id2);
     const name3 = spec.kind === "sending-domain" ? ctx.config.email?.domain ?? id2 : (spec.nameKey ? ctx.state.resource(spec.nameKey) : void 0) ?? id2;
-    out.push({ axis: spec.axis, provider: spec.provider, providerTitle: spec.providerTitle, kind: spec.kind, key: spec.idKey, id: id2, name: name3, created, needs: spec.needs, where: spec.where, ...spec.extra ? { extra: spec.extra } : {} });
+    out.push({ axis: spec.axis, provider: spec.provider, providerTitle: spec.providerTitle, kind: spec.kind, key: spec.idKey, id: id2, name: name3, created, markers: [...spec.createdBy], needs: spec.needs, where: spec.where, ...spec.extra ? { extra: spec.extra } : {} });
   }
   return out;
 }
@@ -10898,10 +10898,14 @@ function domainStep(adapter, sd, domain, idKey, idIntent) {
     intent: intentOf({ id: idIntent, domain }),
     async run(sctx) {
       const d = await sd.ensure(sctx, domain);
-      sctx.remember(idKey, d.id);
+      rememberDomain(sctx, adapter.id, idKey, d);
       return { changes: [`sending domain ${domain} (${d.id}) needs these DNS records:`, ...d.records.map(formatRecord)] };
     }
   });
+}
+function rememberDomain(sctx, provider, idKey, d) {
+  sctx.remember(idKey, d.id);
+  if (d.created) sctx.remember(`${provider}.createdDomainId`, d.id);
 }
 function dnsStep(ctx, adapter, sd, domain, dnsAdapter, zone, intent) {
   return step({
@@ -10914,9 +10918,10 @@ function dnsStep(ctx, adapter, sd, domain, dnsAdapter, zone, intent) {
     intent,
     verifyWith: ["email-dns"],
     async run(sctx) {
-      const { records: records3 } = await sd.ensure(sctx, domain);
+      const ensured = await sd.ensure(sctx, domain);
+      rememberDomain(sctx, adapter.id, `${adapter.id}.domainId`, ensured);
       const changes = [];
-      for (const rec of records3) {
+      for (const rec of ensured.records) {
         const outcome = await zone.upsert(sctx, domain, { ...rec, proxied: false });
         rememberDnsWrite(sctx, domain, dnsAdapter.id, rec, outcome);
         changes.push(`${outcome}: ${formatRecord(rec)}`);
@@ -11263,14 +11268,23 @@ function projectStep(p) {
   });
 }
 function dbHandoffs(recorded) {
-  return recorded.filter((r) => r.axis === "db" && r.created).map(manualHandoff);
+  return recorded.filter((r) => r.axis === "db").map(manualHandoff);
 }
 function emailHandoffs(recorded) {
-  return recorded.filter((r) => r.kind === "sending-domain" && r.created).map(manualHandoff);
+  return recorded.filter((r) => r.kind === "sending-domain").map(manualHandoff);
 }
 function manualHandoff(r) {
   const subject = r.kind === "database-project" ? `${r.providerTitle} project ${r.id}` : `${r.providerTitle} sending domain ${r.name}`;
   const thing = r.kind === "database-project" ? `the ${r.providerTitle} project ${r.id}` : `the sending domain ${r.name}`;
+  if (!r.created) {
+    return {
+      id: `teardown:${r.axis === "db" ? "db" : "email"}:${r.provider}`,
+      why: `the ${subject} is recorded in .golive/state.json, but no creation marker (${r.markers.join(", ") || "none declared"}) covers it, so golive cannot prove it created it: it was adopted`,
+      action: `Check ${thing} in ${r.where} before touching it: golive adopted it, so it may belong to this account already and predate this app. Delete it by hand there only if it is really disposable.`,
+      blocking: false,
+      manual: true
+    };
+  }
   return {
     id: `teardown:${r.axis === "db" ? "db" : "email"}:${r.provider}`,
     why: `the ${subject} was created by golive, and deleting it needs ${r.needs}`,
@@ -14365,20 +14379,22 @@ var sendingDomain = {
     const t = await transport(ctx);
     const existing = (await t.listDomains()).find((d) => sameName(d.name, domain));
     let id2;
+    let created = false;
     if (existing) {
       id2 = existing.id;
       ctx.log.info(`adopting existing Resend domain ${existing.name} (${id2}, ${existing.status ?? "unknown status"})`);
     } else {
       const region = regionFor(ctx);
-      const created = await t.createDomain(domain, region);
-      if (!created?.id) throw new Error(`Resend create domain ${domain}: response had no domain id`);
-      id2 = created.id;
+      const made = await t.createDomain(domain, region);
+      if (!made?.id) throw new Error(`Resend create domain ${domain}: response had no domain id`);
+      id2 = made.id;
+      created = true;
       ctx.log.info(`created Resend domain ${domain} (${id2}, region ${region})`);
     }
     const full = await t.getDomain(id2);
     const records3 = normalizeRecords(full.name ?? domain, full.records, (m) => ctx.log.warn(m));
     if (records3.length === 0) ctx.log.warn(`Resend returned no DNS records for ${domain}; check https://resend.com/domains`);
-    return { id: id2, records: records3 };
+    return { id: id2, records: records3, ...created ? { created: true } : {} };
   },
   async status(ctx, id2) {
     const t = await transport(ctx);
@@ -22028,7 +22044,7 @@ function resourceRows(ctx, inventory2, projects2, urls) {
       name: r.name,
       id: r.id,
       ownership: r.created ? "created" : "adopted",
-      proof: r.created ? `${r.providerTitle} has no creation marker to read; state records this id as the ${subject} golive created (${r.key})` : `state records this ${subject} (${r.key}) without golive's creation marker, so golive does not claim it`,
+      proof: r.created ? `state's creation marker (${r.markers.join(", ")}) names this id as the ${subject} golive created (${r.key})` : `state records this ${subject} (${r.key}) without golive's creation marker, so golive does not claim it`,
       removable: false,
       // no provider capability: removal is a manual handoff
       provenance: { kind: "recorded", at: recordedAt(ctx, r.kind === "database-project" ? RECORDING_STEP.database : RECORDING_STEP.domain) }
@@ -22496,7 +22512,7 @@ async function main(argv) {
         only,
         force: flags.force === true
       });
-      const hs = await handoffStatus(ctx, plan.handoffs);
+      const hs = await handoffStatus(ctx, plan.handoffs, [], true, plan.steps);
       const openBlocking = hs.filter((h) => h.blocking && h.done === false);
       const allDone = outcomes.every((o) => o.status === "done" || o.status === "skipped");
       const ok = allDone && !(outcomes.length === 0 && openBlocking.length > 0);
@@ -22519,7 +22535,7 @@ async function main(argv) {
         omittedCheckIds
       };
       const plan = await buildPlan(ctx, linkList(), { unmappedEnv: env.unmapped, warnings: [] }).catch(() => null);
-      const report = await makeReport(ctx, results, await handoffStatus(ctx, plan?.handoffs ?? [], results, false), verification);
+      const report = await makeReport(ctx, results, await handoffStatus(ctx, plan?.handoffs ?? [], results, false, plan?.steps ?? []), verification);
       const reportPaths = { json: join18(cwd, ".golive/report.json"), markdown: join18(cwd, "GOLIVE_REPORT.md") };
       mkdirSync6(join18(cwd, ".golive"), { recursive: true });
       writeFileSync6(reportPaths.json, JSON.stringify(report, null, 2) + "\n");
@@ -22538,7 +22554,7 @@ async function main(argv) {
     }
     case "handoff": {
       const plan = await buildPlan(ctx, linkList(), { unmappedEnv: env.unmapped, warnings: [] });
-      const items = await handoffStatus(ctx, plan.handoffs);
+      const items = await handoffStatus(ctx, plan.handoffs, [], true, plan.steps);
       const unverified = items.filter((i) => i.done === null);
       const note = unverified.length ? "items with done:null cannot be verified by golive \u2014 confirm them with the human and name them as unverified in your summary" : void 0;
       if (flags.write !== true) {
@@ -22573,7 +22589,7 @@ function checkRuns(check, ctx) {
     return true;
   }
 }
-async function handoffStatus(ctx, handoffs, ran = [], runAdditionalChecks = true) {
+async function handoffStatus(ctx, handoffs, ran = [], runAdditionalChecks = true, steps = []) {
   const checks = checkMap();
   const out = [];
   for (const h of handoffs) {
@@ -22587,13 +22603,25 @@ async function handoffStatus(ctx, handoffs, ran = [], runAdditionalChecks = true
     }
     const existing = ran.find((x) => x.id === h.verifiedBy);
     if (!existing && !runAdditionalChecks) {
-      out.push({ ...h, done: null, evidence: ["not run in this verification invocation"] });
+      out.push({ ...h, done: null, evidence: [...recordedStepEvidence(ctx, steps, h.verifiedBy), "not run in this verification invocation"] });
       continue;
     }
     const r = existing ?? await runCheck(ctx, checks.get(h.verifiedBy));
-    out.push({ ...h, done: r.status === "pass" ? true : r.status === "skip" ? null : false, evidence: r.evidence });
+    out.push({ ...h, done: r.status === "pass" ? true : r.status === "skip" ? null : false, evidence: [...r.status === "skip" ? recordedStepEvidence(ctx, steps, h.verifiedBy) : [], ...r.evidence] });
   }
   return out;
+}
+function recordedStepEvidence(ctx, steps, checkId) {
+  const lines = [];
+  for (const s of steps) {
+    if (!s.verifyWith.includes(checkId)) continue;
+    const rec = ctx.state.get().steps[s.id];
+    if (!rec) continue;
+    lines.push(
+      rec.status === "done" ? `the \`${s.id}\` step this check verifies is recorded done in .golive/state.json (plan ${rec.planId}, ${rec.at}): the apply that carried it did the work the step records and its checks raised no failure, so this invocation's inability to re-run the check is not evidence the work was skipped` : `the \`${s.id}\` step this check verifies is recorded failed in .golive/state.json (plan ${rec.planId}, ${rec.at}): ${rec.error ?? "no error was recorded"} \u2014 that recorded outcome stands, whatever this invocation reports`
+    );
+  }
+  return lines;
 }
 function suggestStack(d) {
   const out = {};

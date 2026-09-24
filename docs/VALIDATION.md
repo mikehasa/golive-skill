@@ -7,7 +7,9 @@ provider combination, first-time account setup or renamed package has had a live
 Public-channel installation acceptance was recorded later the same day; see
 [Post-publication acceptance](#post-publication-acceptance). The two auth legs that snapshot could
 not exercise were closed by a 2026-09-24 run, also after publication: it is recorded in the auth row
-and in [Findings from the auth-legs run](#findings-from-the-auth-legs-run).
+and in [Findings from the auth-legs run](#findings-from-the-auth-legs-run). The password-recovery
+journey and the custom-SMTP write were closed later the same day by a second run on a fresh disposable
+project — see the recovery row and [Findings from the password-recovery run](#findings-from-the-password-recovery-run).
 
 ## Observed live results
 
@@ -26,6 +28,7 @@ and in [Findings from the auth-legs run](#findings-from-the-auth-legs-run).
 | Production response headers (`site-headers`) | Read-only `verify --only site-headers` against the live deployment of the same disposable Vercel fixture: the check resolved the provider-reported production alias, made one GET of it (`HTTP 200`) and reported **warn / medium** — `strict-transport-security` present, `x-content-type-options`, `content-security-policy`, `referrer-policy`, `permissions-policy` and clickjacking protection absent — with a fix naming the `headers` block of `vercel.json` (or the framework's `next.config` headers) and Netlify's `netlify.toml`/`_headers`. A raw `curl -sSI` at the same instant returned exactly the same headers, so the evidence lines and the verdict matched the deployment | An unconfigured static fixture, so this shows the check reading and reporting a deployment's own response headers — not a configured app passing. The skip and warn branches that protect the verdict from a response that is not the app's own (401/403 behind visitor access, an unfollowed redirect, a non-2xx page) are mocked-only |
 | Teardown (approved removal of golive-created resources) | `golive teardown` planned and removed a disposable Vercel project and a disposable Netlify project golive had created and deployed in the same run, plus two GoDaddy and four Porkbun records golive had created, with read-back absence checks on every record: the Netlify site and its URL read 404, the account's site list counted 0 before the run, 1 during it and 0 after, and a second `teardown` planned nothing; separately removed a test-mode Stripe webhook endpoint and revoked two Resend sending keys from recorded state. An apply without `--confirm-destroy` was blocked with nothing deleted — re-checked in the Netlify run, where the project was still present and no teardown had been recorded | Removal covers only resources golive provably created; adopted projects, unowned records and resources of signed-out providers become manual handoffs (Supabase/Neon projects, the Resend sending domain — the Supabase handoff appears even with that CLI's login signed in, see the auth-legs findings); Cloudflare removals and live-mode deletions not exercised |
 | Cleanup | Separately approved exact test projects deleted; exact project reads and test URLs returned 404; unaffected scoped resources and login identities stayed unchanged | Normal provider deletion; Neon may retain a recovery window |
+| Supabase Auth password recovery and the custom-SMTP write | One approved `apply` on a fresh disposable Supabase project (reused CLI login, `americas`, no hosting axis) with `auth.smtp: resend`, `auth.e2e` and `auth.recovery`. `auth:smtp` wrote the project's custom SMTP and read it back — `SMTP host: (not set) → smtp.resend.com`, `SMTP port: (not set) → 465`, `SMTP user: (not set) → resend`, `sender address: (not set) → auth@mail.trytofu.xyz`, `auth email rate limit: 2 → 30 per hour` — issuing one sending key for SMTP alone (recorded in state as `resend.keyId@smtp` by id and fingerprint only, revoked in that run's teardown); `auth-policy` then read `custom SMTP via Resend (smtp.resend.com)`, sender `auth@mail.trytofu.xyz` and `rate limit: 30 auth emails/hour`. `auth:recovery` rotated the seeded account through the recovery path: the request was accepted for sending (HTTP 200), the admin-minted link was exchanged for a session, the new password was set with it and the replaced password refused. The `auth-recovery` check **passed** all five legs: accepted request, an unknown address answered identically (HTTP 200 both, no account enumeration), the spent token refused on replay (403 `otp_expired`), the new password signing in, the old one refused (`invalid_credentials`), plus the provider's 3600 s OTP window. `auth-signup` and `auth-session` both **passed** in the same apply, after the account read back confirmed | The account's confirmation came through the **Auth admin API** (`PUT /auth/v1/admin/users/{id}` with `{"email_confirm": true}`) exactly as in the earlier auth runs: the owner's click was not used, no inbox was read, and that provenance is what the passing `auth-signup`/`auth-session` legs rest on. Inbox delivery stays human-confirmed by design — golive never sees an inbox, so every HTTP 200 here is provider acceptance, not a delivered message (and the stale-verified finding below makes delivery doubtful on that sending domain). The SMTP password is write-only (the provider answers a hash), so the write is proven for host/port/user/sender and the rate limit only; the step reports the password itself as `not confirmed`, and the one full proof — a real auth email arriving — stays with the human. A standalone `verify` skips `auth-recovery`/`auth-session` because the run vault is process-local (`src/core/secret.ts`), so their pass evidence is the inline one from the apply that carried the rotation. Cleanup verified: the disposable project deleted (`supabase projects list` has no match; its auth endpoint answered 410), the run's Resend SMTP key revoked and absent from the key list, and the owner's real sending domains untouched (`resend domains list` still showed both verified; no DNS record was written or removed anywhere in the run). Two defects this run's output contained are fixed in this PR and the third finding is filed as [#52](https://github.com/mikehasa/golive-skill/issues/52) |
 
 Early cleanup used supervised fixture helpers; later runs removed their disposable resources through
 the approved `golive teardown` flow (see the teardown row).
@@ -61,6 +64,53 @@ signed-in user. These are limits of that evidence, not defects: the run's own re
   (`supabase projects list` has no match; `https://<ref>.supabase.co/auth/v1/user` → 410). The
   handoff is deliberate: deletion is irreversible and stays the human's call. The cleanup evidence
   for a database project is therefore provider-CLI evidence, not golive's.
+
+## Findings from the password-recovery run
+
+Recorded 2026-09-24, after publication, from a fresh disposable Supabase project whose sending domain
+was a subdomain of an existing Porkbun zone, with `auth.smtp: resend`, `auth.e2e` and `auth.recovery`
+on. The run's own results were correct — every step it planned completed and the `auth-recovery`
+check passed — but two of its outputs contained defects, both fixed in this PR, and it exposed a
+provider behaviour filed as [#52](https://github.com/mikehasa/golive-skill/issues/52).
+
+- **A teardown handoff claimed golive created the owner's sending domain (defect, fixed here).** The
+  Resend sending-domain spec in the inventory declared `createdBy: []`, and `[].every(...)` is `true`,
+  so *every* recorded sending domain read as golive-created — even the one this run only adopted
+  (`state` held `resend.domainId` alone, and the run's own log said `adopting existing Resend domain`).
+  `teardown` printed "the Resend sending domain … **was created by golive**, and deleting it needs the
+  Resend dashboard", and the ownership document reported the same row as `ownership: created` with a
+  proof sentence saying state recorded it as a domain golive made: a human following either could have
+  deleted a domain that belonged to the account before the run. An empty/absent
+  `createdBy` now means "not proven", the Resend spec carries a real creation marker
+  (`resend.createdDomainId`, recorded by the email link only when the provider reports that this call
+  created the domain), and an adopted resource is reported as recorded-but-not-provable — never offered
+  as golive's to delete. The other inventory specs (Supabase `supabase.createdByGolive`, Neon
+  `neon.createdProjectId`) were audited and already required a marker that names the exact resource.
+- **A handoff's evidence could read as if the recovery never ran (defect, fixed here).** After the
+  rotation, `handoff --json` reported `auth:recovery-email` as `done: null` and used the standalone
+  `verify` **skip** text as its evidence — honest about that invocation, but it contradicted the same
+  state file, where the `auth:recovery` step is recorded done. A handoff whose check skips now names the
+  recorded outcome of the plan step that check verifies (and a failed step's recorded error), so the
+  evidence can no longer disagree with `.golive/state.json`. The check itself stays unrunnable in a
+  plain `verify`: the token and passwords exist only in the rotating run's memory.
+- **Resend's `verified` flag is stale, and nothing corroborates it ([#52](https://github.com/mikehasa/golive-skill/issues/52)).**
+  `email:verify` reported `mail.trytofu.xyz: verified` and `email-verified` passed, while the four
+  records the provider itself returns were absent from the zone's authoritative nameserver: `dig
+  @salvador.ns.porkbun.com` answered the zone wildcard (`pixie.porkbun.com.`) for
+  `resend._domainkey`, `send` (TXT and MX) and `rsend` (CNAME), and for a random nonexistent name under
+  the domain too — so those records are gone, not cached (contrast "Wildcard caches vs post-write
+  checks" below, where the authoritative answer was correct throughout). The earlier phase's `email:dns`
+  handoff had reported exactly that, and it disappeared in the next phase because the link stops
+  planning DNS work once the domain reads verified. Sends were still accepted, so a shipped app could
+  carry a "verified" domain with no SPF/DKIM in DNS and no golive output saying so. Filed, not fixed
+  here: the check should corroborate the provider's own record list against public DNS before passing.
+- **Provenance and limits this run cannot escape.** The confirmation was applied through the Auth admin
+  API (`PUT /auth/v1/admin/users/{id}`, `email_confirm: true`) and read back — as in both earlier auth
+  runs — so the passing `auth-signup`/`auth-session` legs rest on that provenance, not on the owner's
+  click, and no inbox was read. The SMTP password can only be accepted, never read back (the provider
+  answers a hash), so the write is proven for the settings and the rate limit; a real auth email
+  arriving remains the only full proof, and it stays with a human. A standalone `verify` outside the
+  rotating run skips `auth-recovery`/`auth-session` by design (the run vault is a process-local `Map`).
 
 ## Provider mismatches found and repaired
 
@@ -247,15 +297,21 @@ passed (see [Post-publication acceptance](#post-publication-acceptance)).
 
 ## Still unverified
 
-Live-mode Stripe payments (charges, refunds, entitlements, subscriptions), Resend Auth SMTP and
-bounce handling, and the Cloudflare DNS adapter still need live validation (test-mode checkout →
+Live-mode Stripe payments (charges, refunds, entitlements, subscriptions), Resend bounce handling,
+inbox delivery for the auth journeys (human-confirmed by design) and the Cloudflare DNS adapter still
+need live validation (test-mode checkout →
 signed webhook delivery, and a real Resend send → delivery, both passed disposable runs; the Vercel
 attachment passed disposable runs with both Porkbun and GoDaddy DNS; Netlify custom-domain
 attachment remains guided, and custom-domain redirects and certificate edge cases are not covered).
+The custom-SMTP write and the password-recovery rotation are live-validated now — with the write-only
+password and the admin-API confirmation limits recorded in their row — but what an auth email actually
+delivering looks like is still not, and the stale-verified finding above ([#52](https://github.com/mikehasa/golive-skill/issues/52))
+means a passing `email-verified` does not by itself show a sending domain can authenticate mail.
 Cross-provider pairings beyond the tested paths have mocked integration coverage. The ownership
 document is live-validated on a host-only Vercel stack only: its DNS, database, email and payment
 rows, its open-handoff rows and its recurring jobs are covered by mocked tests, and the account-column
-and runbook repairs made after that run have not been re-exercised live. First-time
+and runbook repairs made after that run have not been re-exercised live — the ownership-claim and
+handoff-evidence repairs made after the recovery run are mocked too. First-time
 account/login UX, other OS credential stores and framework-specific behavior need further coverage.
 A native Linux/Windows keyring path is not claimed by the Supabase reuse implementation; the own
 updater's Windows filesystem behavior is not a validated alpha channel.

@@ -4,8 +4,10 @@
  * `teardown` turns this into deletion steps and the handover document reports it, so an entry exists
  * only when golive can point at the proof it made the resource — the DNS provider's own
  * golive-owned record list, the endpoint or key id recorded in state, or the host project's creation
- * marker. Nothing here writes, and no timestamp enters a plan, so re-reading the same account yields
- * the same inventory.
+ * marker. A database project or sending domain that state records without a creation marker is
+ * inventoried too, but explicitly as NOT proven golive's (`created: false`), so no consumer can turn
+ * an adopted resource into a deletion. Nothing here writes, and no timestamp enters a plan, so
+ * re-reading the same account yields the same inventory.
  *
  * A resource recorded in state that golive cannot remove right now (the provider is not signed in,
  * another provider is configured, or it has no removal capability) is inventoried without a removal
@@ -110,9 +112,9 @@ export interface InventoryProject {
 }
 
 /**
- * A database project or sending domain recorded in state. `created` follows the recorded creation
- * marker; `needs` and `where` name the place a human finishes a removal by hand, and `extra` carries
- * the provider's remaining caveat.
+ * A database project or sending domain recorded in state. `created` is true only when the recorded
+ * creation markers prove golive made the resource; `markers` names them, `needs` and `where` say
+ * where a human finishes a removal by hand, and `extra` carries the provider's remaining caveat.
  */
 export interface InventoryRecorded {
   axis: Axis;
@@ -123,6 +125,8 @@ export interface InventoryRecorded {
   id: string;
   name: string;
   created: boolean;
+  /** State keys whose recorded value proved (or would have proved) that golive created it. */
+  markers: string[];
   needs: string;
   where: string;
   extra?: string;
@@ -147,7 +151,11 @@ interface RecordedSpec {
   idKey: string;
   /** State key holding its name, when the provider records one. */
   nameKey?: string;
-  /** State keys that must all record the same id for it to prove golive created the resource. */
+  /**
+   * State keys that must ALL record the same id for it to prove golive created the resource. An empty
+   * list means no such marker exists — the resource is recorded, golive only adopted it — and an empty
+   * `every()` is true, so that case is spelled out as "not proven" at the check below.
+   */
   createdBy: string[];
   needs: string;
   where: string;
@@ -157,7 +165,7 @@ interface RecordedSpec {
 const RECORDED: RecordedSpec[] = [
   { axis: 'db', provider: 'supabase', providerTitle: 'Supabase', kind: 'database-project', idKey: 'supabase.ref', createdBy: ['supabase.createdByGolive'], needs: 'the Supabase dashboard', where: 'the dashboard' },
   { axis: 'db', provider: 'neon', providerTitle: 'Neon', kind: 'database-project', idKey: 'neon.projectId', nameKey: 'neon.createdProjectName', createdBy: ['neon.createdProjectId'], needs: 'the Neon console', where: 'the Neon console', extra: '; Neon may keep a recovery window' },
-  { axis: 'email', provider: 'resend', providerTitle: 'Resend', kind: 'sending-domain', idKey: 'resend.domainId', createdBy: [], needs: 'the Resend dashboard', where: 'the Resend dashboard', extra: '; any keys golive issued are revoked in the steps of this plan when applicable' },
+  { axis: 'email', provider: 'resend', providerTitle: 'Resend', kind: 'sending-domain', idKey: 'resend.domainId', createdBy: ['resend.createdDomainId'], needs: 'the Resend dashboard', where: 'the Resend dashboard', extra: '; any keys golive issued are revoked in the steps of this plan when applicable' },
 ];
 
 /**
@@ -302,9 +310,11 @@ function recordedInventory(ctx: Ctx): InventoryRecorded[] {
   for (const spec of RECORDED) {
     const id = ctx.state.resource(spec.idKey);
     if (!id) continue;
-    const created = spec.createdBy.every((k) => ctx.state.resource(k) === id);
+    // Every marker must name this exact resource. With no marker declared nothing is proven —
+    // `[].every()` is true, which would claim an adopted resource as golive's own.
+    const created = spec.createdBy.length > 0 && spec.createdBy.every((k) => ctx.state.resource(k) === id);
     const name = spec.kind === 'sending-domain' ? (ctx.config.email?.domain ?? id) : ((spec.nameKey ? ctx.state.resource(spec.nameKey) : undefined) ?? id);
-    out.push({ axis: spec.axis, provider: spec.provider, providerTitle: spec.providerTitle, kind: spec.kind, key: spec.idKey, id, name, created, needs: spec.needs, where: spec.where, ...(spec.extra ? { extra: spec.extra } : {}) });
+    out.push({ axis: spec.axis, provider: spec.provider, providerTitle: spec.providerTitle, kind: spec.kind, key: spec.idKey, id, name, created, markers: [...spec.createdBy], needs: spec.needs, where: spec.where, ...(spec.extra ? { extra: spec.extra } : {}) });
   }
   return out;
 }

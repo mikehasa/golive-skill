@@ -494,4 +494,21 @@ describe('golive handoff and the recovery handoff', () => {
     expect(item.action).toMatch(/if that step failed or never ran, nothing was rotated/);
     expect(item.action).toMatch(/re-run `plan` \+ `apply`\.$/);
   });
+
+  it('names the recorded outcome of the step its check verifies, so a skip cannot read as "never ran"', async () => {
+    // The live run's own shape: the rotation ran and its check passed inside the apply, then a
+    // standalone `handoff` could not re-run that check (the run vault is process-local) and printed
+    // the bare skip text — leaving `done: null` looking like the journey had never happened.
+    writeRepo(fakeWorld(), {
+      'auth:recovery': { status: 'done', at: '2026-09-24T23:23:31.076Z', planId: 'b0a44c1c2428', changes: ['asked FakeDB to send a recovery email (HTTP 200)'] },
+    });
+    const { output, code } = await runCli();
+    const item = handoffItem(output);
+    expect(code).toBe(0);
+    expect(item.done).toBeNull(); // the check still cannot re-run outside its run
+    const evidence = item.evidence.join('\n');
+    expect(evidence).toMatch(/the `auth:recovery` step this check verifies is recorded done in \.golive\/state\.json \(plan b0a44c1c2428, 2026-09-24T23:23:31\.076Z\)/);
+    expect(evidence).toMatch(/this invocation's inability to re-run the check is not evidence the work was skipped/);
+    expect(evidence).toMatch(/this run holds none of what the recovery check needs/); // the skip itself stays
+  });
 });

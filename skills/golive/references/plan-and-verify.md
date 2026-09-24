@@ -305,7 +305,11 @@ Each handoff has `id`, `why`, `action`, `blocking`, and optionally `verifiedBy` 
   the plan only because its condition still holds, e.g. `secrets:exposed`, `stripe:webhook-env`).
   Blocking ones count in `apply`'s open handoffs and the report's `blocking`.
 - `done: null`: golive cannot verify it (a `manual` item, or its check skipped). Confirm it with the
-  human and list it as **not verified by golive** in your summary. `unverified` lists them.
+  human and list it as **not verified by golive** in your summary. `unverified` lists them. When a
+  check can only skip outside the run that did the work (e.g. `auth-recovery`, whose token and
+  passwords live in that run's memory), its evidence leads with the recorded outcome of the plan step
+  that check verifies — a step recorded `done` with its plan id and time, or a failed one with its
+  recorded error — so a skip never reads as if the work never happened; the skip itself is still named.
 
 Common ones: `login:<provider>`, `project:<axis>` (golive can't create it), `secrets:exposed`,
 `db:password`, `stripe:activate`, `stripe:publishable-key:<mode>` (ask for the `pk_` key in chat,
