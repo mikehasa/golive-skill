@@ -19,6 +19,7 @@ Public-channel installation acceptance was recorded later the same day; see
 | Vercel + GoDaddy (CLI transport) | Same journey on a third disposable subdomain with DNS served by the official `gddy` CLI and the user's own OAuth session: one scope consent, both records created through `gddy api call`, inline read-back, ownership verification and HTTPS 200; the v3 update-by-ID (PUT) endpoint separately validated through the same session (status 200, mutation read back) | Static fixture; golive's owned-record update flows and the REST update-by-ID path remain mock-covered |
 | Vercel + Resend email | Disposable project and a subdomain of an existing Porkbun zone: Resend domain created through the CLI transport, DKIM/SPF/MX/return-path records written under `--confirm-dns`, domain verified, two sending-scoped keys issued and written into the app env, and a real send using the app's own environment key delivered to a personal inbox (report: 4 pass, 0 fail, 1 warn) | Fresh subdomain without sending history: the message landed in the recipient provider's spam folder (no DMARC, new reputation); Auth SMTP, bounce handling and richer message content not exercised |
 | Vercel + Stripe test payments | Disposable project: restricted operator key plus a standard app key, sandbox identity bound into approval; `STRIPE_SECRET_KEY` written and re-checked in both targets; a test-mode webhook endpoint registered and re-checked via the API; the unsigned probe rejected with 400; a real test-card payment delivered `checkout.session.completed`, signature-verified, HTTP 200 (report: 5 pass, 0 fail) | Test mode (sandbox) only; live-mode keys/charges, entitlements, refunds and subscriptions not exercised |
+| Supabase Auth policy and signup journey | One approved `init` run created a disposable Free-organization project (`golive-auth-live`) through the reused macOS production-profile CLI login — one project, no hosting, domain, payment or email axis. `auth:settings` wrote the policy and re-read it — `password minimum length: 6 → 12`, with the inline `auth:settings:applied` pass confirming it — and `auth-policy` went from a high-severity failure on the provider default to warn/medium with only the built-in-mailer advisory left; `auth:test-user` seeded one account through the project's own signup endpoint (address and user id recorded; the generated password stayed in that run's memory and state's `secrets` stayed empty), the provider accepted a confirmation email for sending (HTTP 200), and the same address could not sign in before confirming (`email_not_confirmed`, observed in two independent runs). After confirmation, one `apply` passed `auth-signup` (probe signup accepted, its confirmation accepted for sending, the unconfirmed probe refused, the seeded account confirmed and signing in) and `auth-session` (the session token resolved through `GET /auth/v1/user` to the same user id; an anonymous request was refused 401); `handoff` and `status` then ran (`status` exit 0, nothing actionable, the project still readable) | Confirmation was applied through the **Auth admin API** (`PUT /auth/v1/admin/users/{id}` with `{"email_confirm": true}`) and re-read, not by clicking the seeded account's own email: the human's click landed on a plus-addressed probe account in the same inbox and did confirm that probe one second after the seeded send, so the emailed-link mechanism itself was observed working. Inbox delivery stays human-confirmed by design — golive never sees the inbox. Not exercised: `auth.protectedPath` (no app route configured) and the signed-in PostgREST table probe (`no tables in exposed schemas`), so that probe's bearer fix stays mock-covered; a standalone `verify` cannot re-prove the journey without the seeding run's in-memory password (it skips, and the `auth:confirm-email` re-probe was rate-limited) |
 | Teardown (approved removal of golive-created resources) | `golive teardown` planned and removed a disposable Vercel project and a disposable Netlify project golive had created and deployed in the same run, plus two GoDaddy and four Porkbun records golive had created, with read-back absence checks on every record: the Netlify site and its URL read 404, the account's site list counted 0 before the run, 1 during it and 0 after, and a second `teardown` planned nothing; separately removed a test-mode Stripe webhook endpoint and revoked two Resend sending keys from recorded state. An apply without `--confirm-destroy` was blocked with nothing deleted — re-checked in the Netlify run, where the project was still present and no teardown had been recorded | Removal covers only resources golive provably created; adopted projects, unowned records and resources of signed-out providers become manual handoffs (Supabase/Neon projects, the Resend sending domain); Cloudflare removals and live-mode deletions not exercised |
 | Cleanup | Separately approved exact test projects deleted; exact project reads and test URLs returned 404; unaffected scoped resources and login identities stayed unchanged | Normal provider deletion; Neon may retain a recovery window |
 
@@ -106,6 +107,31 @@ and may trail the run that produced the evidence.
   request even though the production deployment was provider-confirmed ready. GoLive raised its own
   `netlify-public-access` handoff with the dashboard URL and changed no visibility setting; no public
   200 was observed on this account.
+- **Supabase session token scheme (auth run):** golive sent the session token on `Authorization`
+  without the `Bearer ` scheme — the scheme existed only in the fallback branch that handles the API
+  key — so GoTrue read the request as unauthenticated. Live, a password login succeeded and the very
+  next `GET /auth/v1/user` answered 401 `no_authorization` for the token the project had just issued,
+  which made an authenticated call indistinguishable from an anonymous one. A controlled read-only
+  probe on the same host with the same key pinned the header, not the token, the transport or the
+  provider: `Bearer <key>` → 200, bare `<key>` → 401. The mock that claimed to check the bearer shape
+  asserted the buggy bare value; it now asserts `Bearer <token>`, and the signed-in table probe
+  (`supabaseAuthedProbe`) sent the token bare as well and was repaired in the same audit (fixed in
+  #25).
+- **Cross-release resume of a write step (auth run):** a write step whose intent changes on every plan
+  (its hash embeds the previous attempt time) could never resume after a release change — `apply`
+  refused it with "historical step auth:test-user belongs to another or unknown release". Live that
+  wedged `auth:test-user` permanently: its write had applied (password rotated, account confirmed by
+  the provider) but the step was recorded `failed` by the unrelated defect above, and no later run
+  could re-execute it. Destroy steps already had a replay exemption; a step can now declare
+  `risk.replayable` when it re-observes the provider and golive's own recorded resource before acting
+  and is idempotent, and `auth:test-user` is the only step that opts in (fixed in #27). The drift item
+  whose remedy pointed at that refused re-run is still open as #26.
+- **Supabase auth email throttle (auth run):** the project's `rate_limit_email_sent: 2` did not behave
+  as a clean two-per-rolling-hour bucket: two sends at 05:24:45Z and 05:24:46Z expired at 06:24:45Z,
+  yet at 06:26 the provider accepted one send and refused the next 25 seconds later. Treat it as
+  roughly one accepted send per window and keep the last slot for the run whose evidence matters.
+  Twelve refused probes created no account — a live confirmation that a rate-limited signup creates
+  nothing.
 
 Provider fixes have offline mocked regressions. These implementation tests never use real accounts.
 The repaired behavior was subsequently exercised where described above; this is not blanket live

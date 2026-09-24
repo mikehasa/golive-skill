@@ -30,8 +30,10 @@ persisted profile file; staging, local, Snap and custom API profiles are rejecte
 golive never migrates them or changes permissions. Wrong owners, unsafe permissions or redirected
 paths fail closed. A native macOS read-only test on 2026-09-23 reused the existing login with the
 explicit-token path disabled: profile/projects/organizations reads passed and the CLI/API project
-inventories agreed. First-login UX and project/Auth writes through that credential remain untested;
-the earlier full deployment used an explicit token. Do not describe this as a fresh login or full E2E.
+inventories agreed. The later auth live run (2026-09-23) created one project and wrote its auth
+policy through the same reused login, with no explicit token, no `SUPABASE_*` variable in the shell
+and no Keychain prompt; the hosting E2E before it used an explicit token, and first-login UX is still
+untested. Do not describe either run as a fresh login.
 
 **Alternative: `SUPABASE_ACCESS_TOKEN` for CI or unsupported stores.** The human creates it at
 https://supabase.com/dashboard/account/tokens with the permissions below. On macOS, run
@@ -129,7 +131,9 @@ golive automates (after plan approval):
   `before → after`, the `auth:settings:applied` result confirms them, and anything the API does not
   report back appears as `not confirmed:` instead of a silent success. Only the settings this API is
   known to return are ever read or written; `smtp_pass` is write-only (the API answers a hash), so an
-  SMTP write can never be confirmed from the read-back.
+  SMTP write can never be confirmed from the read-back. The live run confirmed that the Management API
+  does echo signup, email confirmation, the password minimum length, the SMTP-configured flag and the
+  email rate limit back.
 - **Runs the signup journey** when the human opted in with `auth.e2e: true` (see below): the
   `auth:test-user` step seeds one test account through the project's own `/auth/v1` signup endpoint,
   `auth:confirm-email` hands the inbox click over, and the `auth-signup`/`auth-session` checks prove
@@ -281,11 +285,16 @@ Caveats to pass on before enabling it:
 
 - Whether publishable keys are blocked from `/rest/v1/` exactly like anon keys (assumed yes).
 - The exact enforcement date for removing legacy keys ("late 2026", not final).
-- The auth policy write path (`auth:settings`, read-back confirmation and the `auth-policy` check) is
-  mock-covered only: it has never been run against a real project, and which policy fields the
-  Management API actually echoes back is unconfirmed.
-- The signup journey (`auth:test-user`, the `auth-signup`/`auth-session` checks, the GoTrue request
-  shapes and the `/auth/v1` responses they read) is implemented and mock-covered only: no live
-  signup, confirmation email or session has been exercised against a real project yet. The exact
-  GoTrue answer shapes (an obfuscated duplicate signup, a captcha refusal, the 429 error code) are
-  modelled from its documented behaviour.
+- Custom SMTP writes: `smtp_pass` is write-only (the API answers a hash), so no SMTP write has been
+  made or can be confirmed from the read-back. The auth email throttle's exact behaviour is also
+  unconfirmed — the live project's `rate_limit_email_sent: 2` accepted one send and refused the next
+  25 seconds later rather than allowing a clean two per window.
+- GoTrue answer shapes still modelled from its documented behaviour: an obfuscated duplicate signup
+  and a captcha refusal. The disposable live run (2026-09-23) exercised an accepted signup, the
+  confirmation email request, the `email_not_confirmed` login refusal and the 429 rate-limit refusal.
+- The app-side half of the journey: `auth.protectedPath` (that run declared no app route) and the
+  signed-in PostgREST table probe (`no tables in exposed schemas`), so the `supabaseAuthedProbe`
+  bearer fix stays mock-covered. Inbox delivery and the human's click also stay human-confirmed by
+  design, and in that run the confirmation itself was applied through the Auth admin API
+  (`PUT /auth/v1/admin/users/<id>` with `email_confirm: true`) rather than by clicking the seeded
+  account's own email.

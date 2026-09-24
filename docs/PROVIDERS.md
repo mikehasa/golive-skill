@@ -10,7 +10,7 @@ Built-in adapters use CLI/API transports; users do not need to install provider 
 | --- | --- | --- |
 | Vercel | Project selection/creation, env wiring, deployment and supported domain attachment | Vercel + Supabase passed disposable E2E; domain attachment passed separately in the disposable Vercel + Porkbun and Vercel + GoDaddy custom-domain runs. Vercel CLI is required even with token fallback. |
 | Netlify | Free-team project selection/creation, env wiring, CLI build/deploy and public-access checks | Netlify + Neon passed disposable E2E. Custom-domain attachment remains guided; project visibility may require an approved UI change. |
-| Supabase | Project selection/creation, database output, Auth policy and redirect settings, read-only access/security checks | Vercel pairing passed with an explicit token. Existing macOS CLI login reuse separately passed read-only checks; fresh-login UX and writes through that credential remain unverified. The Auth policy settings (signup, email confirmation, minimum password length, mailer) are implemented and verified by re-reading them, but that path has not been exercised against a live project. |
+| Supabase | Project selection/creation, database output, Auth policy and redirect settings, read-only access/security checks | Vercel pairing passed with an explicit token. Existing macOS CLI login reuse separately passed read-only checks, and the auth validation then created one project and wrote its auth policy through that same reused login (no token, no Keychain prompt); fresh-login UX remains unverified. The Auth policy settings (signup, email confirmation, minimum password length, mailer) passed that disposable live run: the policy write was confirmed by the read-back (`password minimum length: 6 → 12`) and `auth-policy` ended with the built-in-mailer advisory as its only finding. |
 | Neon | Free-organization project selection/creation, Postgres URLs and a read-only connection probe | Netlify pairing passed. No Neon Auth, app migrations, new branches on existing projects or per-target branch creation. |
 
 The two live runs used existing accounts and approved disposable resources. Schema and app-flow
@@ -50,7 +50,7 @@ identities match. Neon delegates supported stored-login access to its CLI.
 
 | Area | Adapter | Scope |
 | --- | --- | --- |
-| Auth | Supabase Auth | Production Site URL and redirect configuration, plus the auth policy from golive.yaml; custom SMTP stays a manual dashboard step. The opt-in signup journey (`auth.e2e: true`) adds one approved step that seeds a real test account (`auth:test-user`, `--confirm-live`), the human's click in their inbox (`auth:confirm-email`) and the `auth-signup`/`auth-session` checks (confirmation email, enforced confirmation, session, declared protected path). Implemented and verified by re-reading; not yet exercised live. |
+| Auth | Supabase Auth | Production Site URL and redirect configuration, plus the auth policy from golive.yaml; custom SMTP stays a manual dashboard step. The opt-in signup journey (`auth.e2e: true`) adds one approved step that seeds a real test account (`auth:test-user`, `--confirm-live`), the human's click in their inbox (`auth:confirm-email`) and the `auth-signup`/`auth-session` checks (confirmation email, enforced confirmation, session, declared protected path). Live-validated once on a disposable project: the policy write was confirmed by the read-back (`password minimum length: 6 → 12`), and the journey passed `auth-signup` and `auth-session` (probe signup, enforced confirmation, confirmed login, session token accepted, anonymous request refused). The confirmation came through the Auth admin API rather than the seeded email click, and the declared protected path and signed-in table probe were not exercised. |
 | Payments | Stripe | Test-mode env wiring, webhook registration and signed-event acceptance passed a disposable run; live-mode payments, refunds, entitlements and subscriptions remain open |
 | Email | Resend | Sending-domain setup, DNS wiring, scoped-key issuance and a real send through the app's environment key passed a disposable run (delivered; spam folder on a fresh subdomain); Auth SMTP and bounce handling remain open |
 | DNS | Cloudflare | Records in an existing authoritative zone; no domain purchase, renewal, transfer or nameserver changes. Live validation pending. |
@@ -75,12 +75,17 @@ route) now exercises the user surface itself: `auth:test-user` creates one real 
 the project's own signup endpoint (needs `--confirm-live`; the generated password stays in that run's
 memory and only the user id and address are recorded), the `auth:confirm-email` handoff leaves the
 inbox click with the human, and the `auth-signup`/`auth-session` checks require a confirmation email,
-an immediate login refusal for the unconfirmed address, the `email_confirmed_at` the human's click
-produces, a working session, a refused anonymous request and a declared protected path that is not
-publicly readable. golive cannot read an inbox, so delivery and the click always stay
-human-confirmed. This journey is implemented and mock-covered only: it has not been run against a
-real project, so no live signup, delivered confirmation email or app session has been validated yet,
-and the provider's own rate limits (auth email throttling) and captcha settings can block it.
+an immediate login refusal for the unconfirmed address, the `email_confirmed_at` of the confirmed
+account, a working session, a refused anonymous request and a declared protected path that is not
+publicly readable. golive cannot read an inbox, so delivery and the click always stay human-confirmed.
+That journey passed a disposable live run: the probe signup and its confirmation request were
+accepted, the unconfirmed address was refused a login (`email_not_confirmed`), the seeded account
+signed in, its session token resolved back to the same user, and an anonymous request was refused
+401. Two limits stay with that evidence: the confirmation was applied through the Auth admin API
+(`email_confirm`) rather than the seeded account's own email click — the human's click landed on the
+plus-addressed probe in the shared inbox — and the declared `auth.protectedPath` and signed-in table
+probe were not exercised. The provider's auth email throttle and captcha settings can still block the
+journey, and the built-in mailer allowed roughly one accepted send per window in that run.
 
 ## Guided providers
 
