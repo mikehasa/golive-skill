@@ -3,7 +3,7 @@
 GoLive is the project name; `golive` is the skill name, and the repository is
 [`mikehasa/golive-skill`](https://github.com/mikehasa/golive-skill).
 
-The current alpha is `0.1.0-alpha.1`. There are two installation channels: GitHub through Skills CLI,
+The current alpha is `0.1.0-alpha.2`. There are two installation channels: GitHub through Skills CLI,
 which serves the current release, and the npm package, which still serves the earlier
 `0.1.0-alpha.0` snapshot. GitHub installation works without npm.
 See [validation](VALIDATION.md) for tested capabilities and remaining channel acceptance.
@@ -38,9 +38,10 @@ Skills CLI has its own telemetry policy; GoLive has no product telemetry.
 
 ## Alternative installation: the npm package
 
-The registry serves `golive@0.1.0-alpha.0` under the `alpha` dist-tag. The tarball carries the
-zero-dependency wrapper (`bin/golive.mjs`), the complete skill and the licenses, so it installs the
-skill offline — without Git or the Skills CLI:
+The registry serves `golive@0.1.0-alpha.2` under the `alpha` and `latest` dist-tags. The tarball
+carries the zero-dependency wrapper (`bin/golive.mjs`), the standalone installer helpers
+(`scripts/install-cli.mjs`, `scripts/install-lib.mjs`), the complete skill and the licenses, so it
+installs the skill offline — without Git or the Skills CLI:
 
 ```bash
 npx golive@alpha install --agent codex            # .agents/skills/golive in this project
@@ -56,14 +57,14 @@ exposes the bundled CLI: `npx golive@alpha help`, `version --json`, `detect --js
 and the workflow commands `init`, `doctor`, `plan`, `apply`, `verify` and `handoff`. `apply`
 requires the approved plan ID and explicit confirmation.
 
-**This channel lags the GitHub channel.** The published `0.1.0-alpha.0` is an earlier snapshot than
-the `0.1.0-alpha.1` in this repository: it predates the Netlify and Neon provider references and the
-standalone installer helpers (`scripts/install-cli.mjs`), so a copy installed from npm has no
-updater and cannot be updated in place — the installer refuses an existing destination, so updating
-means removing the copy first, or switching to the Skills CLI channel, which manages its own
-installs. The package's `latest` tag also points at this alpha until a stable release exists, so
-`npx golive` resolves to the same version; `@alpha` states it explicitly. A later npm release will
-be built from a later tag.
+**This channel matches the GitHub channel.** The registry serves the release published from this
+repository (`0.1.0-alpha.2`), including the standalone installer helpers, so an npm installation is
+an owned copy with the same update, pin and rollback flow as the
+[own installer](#optional-own-installer). The earlier `0.1.0-alpha.0` snapshot predates the helpers
+and has no updater: the installer refuses an existing destination, so updating such a copy means
+removing it first, or switching to the Skills CLI channel, which manages its own installs. Both
+`alpha` and `latest` point at the current alpha, so `npx golive` and `npx golive@alpha` resolve to
+the same version.
 
 ## One version and complete bundle integrity
 
@@ -101,7 +102,7 @@ installation ownership and applicable update instructions.
 | Agent plugin | That plugin manager |
 | Manual copy | User replaces the complete verified bundle |
 | Own installer | Our explicit whole-bundle update/rollback flow |
-| npm package (`npx golive@alpha install`) | No updater in `0.1.0-alpha.0`; remove the copy and reinstall, or move to the Skills CLI channel |
+| npm package (`npx golive@alpha install`) | Own installer, from `0.1.0-alpha.2`; a copy installed from `0.1.0-alpha.0` has no updater — remove it and reinstall, or move to the Skills CLI channel |
 
 Externally managed copies are not adopted or deleted automatically. Deliberate per-project pins
 may coexist. Installation status reports duplicates and leaves them unchanged.
@@ -110,8 +111,8 @@ may coexist. Installation status reports duplicates and leaves them unchanged.
 
 The zero-dependency entrypoint is `bin/golive.mjs`, also reachable through npm as
 `npx golive@alpha install` above. The npm `files` allowlist in this repository includes the wrapper,
-the standalone installer and the complete skill with licenses; the published `0.1.0-alpha.0`
-predates the installer helpers. The own installer's Claude flag is `claude`, unlike Skills CLI's
+the standalone installer and the complete skill with licenses, and the published `0.1.0-alpha.2`
+carries all of them. The own installer's Claude flag is `claude`, unlike Skills CLI's
 `claude-code`.
 
 ```bash

@@ -11,7 +11,7 @@ created, re-checks it for drift on demand, and can remove it again.
 Automate the parts providers expose. Guide you through the parts that need a human. Verify what
 can be observed, and make unfinished work clear. No GoLive account, hosted backend or product telemetry.
 
-> **Early alpha · 0.1.0-alpha.1**
+> **Early alpha · 0.1.0-alpha.2**
 > Disposable live tests now cover six journeys: **hosting** (Vercel, Netlify), **database**
 > (Supabase, Neon), **custom-domain DNS** (Porkbun, GoDaddy), **transactional email** (Resend),
 > **test-mode payments** (Stripe) and **Supabase authentication**, plus the `teardown` uninstall
@@ -69,8 +69,8 @@ noninteractive agent flags, runtime verification and the optional own installer.
 
 ### Install from npm
 
-The same skill is published to npm as `golive@0.1.0-alpha.0` (dist-tag `alpha`), which installs it
-offline, with no Git or Skills CLI involved:
+The same skill is published to npm as `golive@0.1.0-alpha.2` (dist-tags `alpha` and `latest`), which
+installs it offline, with no Git or Skills CLI involved:
 
 ```bash
 # Codex
@@ -84,9 +84,10 @@ Add `--global` to install into your home directory (`~/.agents/skills/golive` or
 `~/.claude/skills/golive`) instead of the current project. The installer copies the complete skill
 the package ships with, refuses an existing destination, and never connects provider accounts.
 
-**The two channels are at different versions.** GitHub serves the current release,
-`0.1.0-alpha.1`; the npm channel still serves the earlier `0.1.0-alpha.0` snapshot, which predates
-the Netlify and Neon provider references and has no updater. Use GitHub for the newest providers.
+**Both channels carry the same release.** The npm package publishes the version in this repository,
+including the standalone installer helpers, so an npm installation is an owned copy that updates in
+place. The earlier `0.1.0-alpha.0` snapshot has no updater: remove that copy and reinstall, or use
+the GitHub channel, which manages its own installs.
 The npm package also exposes the terminal CLI: `npx golive@alpha help`, `version`, `detect`, `menu`,
 `plan`, `apply`, `verify`, `handoff` — `apply` needs the approved plan ID and explicit confirmation.
 See [installation and updates](docs/DISTRIBUTION.md#alternative-installation-the-npm-package) for
