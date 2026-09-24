@@ -113,6 +113,29 @@ not fail it; a value the provider keeps reporting differently fails the step. Ch
 again. Auth emails still going through the provider's built-in mailer warn unless
 `auth.smtp: provider` accepts that deliberately; custom SMTP itself stays a manual dashboard step.
 
+**Auth signup journey (`auth.e2e: true`).** The `auth:test-user` step creates ONE real account in the
+project through the provider's own signup endpoint (`risk: { writes, live }`, so it needs
+`--confirm-live`) and records the user id and the address in `.golive/state.json`; the generated
+password lives only in that run's memory. Its intent carries the previous attempt, so a fresh
+`plan` + `apply` re-runs it — as a password rotation on the same account — which is how a later run
+can prove login again. `auth:confirm-email` (non-blocking, verified by `auth-signup`) is the human's
+click in the inbox. Both checks are opt-in:
+
+- `auth-signup` signs up a fresh probe address (`auth.testEmail` plus a random `+gl-…` tag) and
+  requires a confirmation email, requires an immediate login refusal (`email_not_confirmed`), requires
+  the seeded account to read back as `email_confirmed_at` after the click, and requires that account
+  to sign in. golive cannot read an inbox: delivery and the click stay human-confirmed, and the
+  evidence says so.
+- `auth-session` requires a session for the seeded account, requires `GET /auth/v1/user` to return
+  the same user, requires an anonymous request to be 401, and — with `auth.protectedPath` — requires
+  an anonymous GET of the host-confirmed production URL plus that path to redirect or answer
+  401/403 (a 200 fails; a 404 warns). Its table probe uses the session token: anonymity stays
+  `rls-probe`'s job.
+
+Both checks write when they run (one throwaway account per run) and skip, never fail, without the
+opt-in, without `auth.testEmail`, without a usable provider credential, when a captcha blocks the
+scripted signup, or when this run holds no password for the seeded account.
+
 **Email.** `email:verify` is re-sent on each plan while the domain is pending; its preview shows
 `previous request: <time>`.
 
@@ -148,8 +171,10 @@ then `init --stripe-publishable <mode>=pk_<mode>_…`; or the human adds it to t
 `email:dns` / `domain:dns` / `domain:attach` (records or setup at a provider golive can't write),
 `guided:<axis>`, `env:<target>` for a guided host (per target: the human sets the listed names in its
 dashboard; `env-parity` can't read a guided host, so it stays `done: null`),
-`stripe:webhook-env` / `stripe:webhook-guided` (see Webhook above), and `auth:redirects` for a guided
-auth provider (manual, non-blocking: confirm it with the human, name it as unverified).
+`stripe:webhook-env` / `stripe:webhook-guided` (see Webhook above), `auth:confirm-email` (non-blocking,
+verified by `auth-signup`: the human clicks the confirmation link in their own inbox, which golive
+cannot read), and `auth:redirects` for a guided auth provider (manual, non-blocking: confirm it with
+the human, name it as unverified).
 
 **Ownership document.** `handoff --write --json` also writes `GOLIVE_HANDOVER.md` and
 `.golive/handover.json` (paths are reported as `handoverPaths`; `--force` replaces a file golive did
@@ -182,9 +207,9 @@ missing: `login:<adapter>`, `project:hosting`, `project:db`, `deploy:production`
 plain reason (e.g. `no publishable/anon key`, `the hosting token's role cannot read production env
 vars`). Only `accounts` fails for login problems; fix it first, then re-run `verify`.
 
-**Active probes** (`bundle-secrets`, `webhook-unsigned`, and the key `rls-probe` takes from the bundle)
-only target the production URL the hosting adapter reports for the linked project, never
-`config.domain` directly. If the host can't confirm it, the check skips with `cannot confirm <url>
+**Active probes** (`bundle-secrets`, `webhook-unsigned`, `auth-session`'s protected-path GET, and the
+key `rls-probe` takes from the bundle) only target the production URL the hosting adapter reports
+for the linked project, never `config.domain` directly. If the host can't confirm it, the check skips with `cannot confirm <url>
 belongs to your project yet`. If the host reports another origin than `config.domain` (e.g. the domain
 isn't verified at Vercel yet), `webhook-unsigned` probes the host's URL and says so. `domain-live`
 does resolve and GET `config.domain`.
@@ -199,6 +224,8 @@ does resolve and GET `config.domain`.
 | `db-connection` | the selected Neon compute accepts a fixed read-only query and returns the expected database and role; no schema/Auth/app-isolation claim | no connection-probe capability; `blocked by: login:<db>` / `project:db` |
 | `auth-redirects` | site URL and allowlist point at production, no localhost | guided auth; `blocked by: deploy:production` |
 | `auth-policy` | the reported signup/confirmation/password policy matches golive.yaml `auth` (below 12 characters or a built-in mailer only warns); evidence lists the effective values | guided auth; `blocked by: login:<id>` / `project:<axis>`; the provider reports no policy fields |
+| `auth-signup` | a fresh probe address got a confirmation email, could not sign in before confirming, the seeded account reads back confirmed and then signs in (delivery stays human-confirmed) | `auth.e2e` off; no `auth.testEmail`; guided auth; `blocked by: login:<id>` / `auth:test-user`; a captcha blocks signup; **warns** on a 429 or while the account is still unconfirmed |
+| `auth-session` | the seeded account's session is accepted for the same user, an anonymous request is 401, and a declared `auth.protectedPath` is not publicly readable | `auth.e2e` off; guided auth; `blocked by: login:<id>` / `auth:test-user` / `no password for the test account in this run`; **warns** on a 429, an unconfirmed account, every exposed table denying the signed-in user, or an inconclusive protected-path answer |
 | `webhook-unsigned` | an unsigned POST gets 4xx from the handler (a non-HTML 401/403 only warns — ambiguous between a rejection and an auth wall) | production URL not confirmed |
 | `webhook-registered` | an enabled endpoint for the production URL covers the configured events | guided payments; no production URL |
 | `stripe-live-ready` | the account has `charges_enabled` | production isn't live mode |

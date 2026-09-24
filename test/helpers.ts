@@ -49,7 +49,7 @@ export interface HttpCall {
   body: unknown;
 }
 
-type Route = [method: string, url: string | RegExp, respond: (c: HttpCall) => { status?: number; json?: unknown; text?: string }];
+type Route = [method: string, url: string | RegExp, respond: (c: HttpCall) => { status?: number; json?: unknown; text?: string; headers?: Record<string, string> }];
 
 /** Scripted HTTP. Unmatched requests fail loudly. */
 export function mockHttp(routes: Route[]) {
@@ -67,7 +67,7 @@ export function mockHttp(routes: Route[]) {
       if (typeof u === 'string' ? req.url === u || req.url.startsWith(u + '?') : u.test(req.url)) {
         const r = respond(call);
         const text = r.text ?? (r.json !== undefined ? JSON.stringify(r.json) : '');
-        return { status: r.status ?? 200, headers: {}, json: (r.json ?? (text ? safeJson(text) : undefined)) as T, text };
+        return { status: r.status ?? 200, headers: r.headers ?? {}, json: (r.json ?? (text ? safeJson(text) : undefined)) as T, text };
       }
     }
     throw new Error(`mockHttp: unexpected request: ${method} ${req.url}`);

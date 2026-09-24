@@ -1180,13 +1180,13 @@ var require_Collection = __commonJS({
 var require_stringifyComment = __commonJS({
   "node_modules/.pnpm/yaml@2.9.1/node_modules/yaml/dist/stringify/stringifyComment.js"(exports) {
     "use strict";
-    var stringifyComment = (str3) => str3.replace(/^(?!$)(?: $)?/gm, "#");
+    var stringifyComment = (str4) => str4.replace(/^(?!$)(?: $)?/gm, "#");
     function indentComment(comment, indent) {
       if (/^\n+$/.test(comment))
         return comment.substring(1);
       return indent ? comment.replace(/^(?! *$)/gm, indent) : comment;
     }
-    var lineComment = (str3, indent, comment) => str3.endsWith("\n") ? indentComment(comment, indent) : comment.includes("\n") ? "\n" + indentComment(comment, indent) : (str3.endsWith(" ") ? "" : " ") + comment;
+    var lineComment = (str4, indent, comment) => str4.endsWith("\n") ? indentComment(comment, indent) : comment.includes("\n") ? "\n" + indentComment(comment, indent) : (str4.endsWith(" ") ? "" : " ") + comment;
     exports.indentComment = indentComment;
     exports.lineComment = lineComment;
     exports.stringifyComment = stringifyComment;
@@ -1340,16 +1340,16 @@ var require_stringifyString = __commonJS({
       lineWidth: ctx.options.lineWidth,
       minContentWidth: ctx.options.minContentWidth
     });
-    var containsDocumentMarker = (str3) => /^(%|---|\.\.\.)/m.test(str3);
-    function lineLengthOverLimit(str3, lineWidth, indentLength) {
+    var containsDocumentMarker = (str4) => /^(%|---|\.\.\.)/m.test(str4);
+    function lineLengthOverLimit(str4, lineWidth, indentLength) {
       if (!lineWidth || lineWidth < 0)
         return false;
       const limit = lineWidth - indentLength;
-      const strLen = str3.length;
+      const strLen = str4.length;
       if (strLen <= limit)
         return false;
       for (let i = 0, start = 0; i < strLen; ++i) {
-        if (str3[i] === "\n") {
+        if (str4[i] === "\n") {
           if (i - start > limit)
             return true;
           start = i + 1;
@@ -1366,11 +1366,11 @@ var require_stringifyString = __commonJS({
       const { implicitKey } = ctx;
       const minMultiLineLength = ctx.options.doubleQuotedMinMultiLineLength;
       const indent = ctx.indent || (containsDocumentMarker(value) ? "  " : "");
-      let str3 = "";
+      let str4 = "";
       let start = 0;
       for (let i = 0, ch = json2[i]; ch; ch = json2[++i]) {
         if (ch === " " && json2[i + 1] === "\\" && json2[i + 2] === "n") {
-          str3 += json2.slice(start, i) + "\\ ";
+          str4 += json2.slice(start, i) + "\\ ";
           i += 1;
           start = i;
           ch = "\\";
@@ -1379,38 +1379,38 @@ var require_stringifyString = __commonJS({
           switch (json2[i + 1]) {
             case "u":
               {
-                str3 += json2.slice(start, i);
+                str4 += json2.slice(start, i);
                 const code = json2.substr(i + 2, 4);
                 switch (code) {
                   case "0000":
-                    str3 += "\\0";
+                    str4 += "\\0";
                     break;
                   case "0007":
-                    str3 += "\\a";
+                    str4 += "\\a";
                     break;
                   case "000b":
-                    str3 += "\\v";
+                    str4 += "\\v";
                     break;
                   case "001b":
-                    str3 += "\\e";
+                    str4 += "\\e";
                     break;
                   case "0085":
-                    str3 += "\\N";
+                    str4 += "\\N";
                     break;
                   case "00a0":
-                    str3 += "\\_";
+                    str4 += "\\_";
                     break;
                   case "2028":
-                    str3 += "\\L";
+                    str4 += "\\L";
                     break;
                   case "2029":
-                    str3 += "\\P";
+                    str4 += "\\P";
                     break;
                   default:
                     if (code.substr(0, 2) === "00")
-                      str3 += "\\x" + code.substr(2);
+                      str4 += "\\x" + code.substr(2);
                     else
-                      str3 += json2.substr(i, 6);
+                      str4 += json2.substr(i, 6);
                 }
                 i += 5;
                 start = i + 1;
@@ -1420,14 +1420,14 @@ var require_stringifyString = __commonJS({
               if (implicitKey || json2[i + 2] === '"' || json2.length < minMultiLineLength) {
                 i += 1;
               } else {
-                str3 += json2.slice(start, i) + "\n\n";
+                str4 += json2.slice(start, i) + "\n\n";
                 while (json2[i + 2] === "\\" && json2[i + 3] === "n" && json2[i + 4] !== '"') {
-                  str3 += "\n";
+                  str4 += "\n";
                   i += 2;
                 }
-                str3 += indent;
+                str4 += indent;
                 if (json2[i + 2] === " ")
-                  str3 += "\\";
+                  str4 += "\\";
                 i += 1;
                 start = i + 1;
               }
@@ -1436,8 +1436,8 @@ var require_stringifyString = __commonJS({
               i += 1;
           }
       }
-      str3 = start ? str3 + json2.slice(start) : json2;
-      return implicitKey ? str3 : foldFlowLines.foldFlowLines(str3, indent, foldFlowLines.FOLD_QUOTED, getFoldOptions(ctx, false));
+      str4 = start ? str4 + json2.slice(start) : json2;
+      return implicitKey ? str4 : foldFlowLines.foldFlowLines(str4, indent, foldFlowLines.FOLD_QUOTED, getFoldOptions(ctx, false));
     }
     function singleQuotedString(value, ctx) {
       if (ctx.options.singleQuote === false || ctx.implicitKey && value.includes("\n") || /[ \t]\n|\n[ \t]/.test(value))
@@ -1565,15 +1565,15 @@ ${indent}${start}${value}${end}`;
           return quotedString(value, ctx);
         }
       }
-      const str3 = value.replace(/\n+/g, `$&
+      const str4 = value.replace(/\n+/g, `$&
 ${indent}`);
       if (actualString) {
-        const test = (tag2) => tag2.default && tag2.tag !== "tag:yaml.org,2002:str" && tag2.test?.test(str3);
+        const test = (tag2) => tag2.default && tag2.tag !== "tag:yaml.org,2002:str" && tag2.test?.test(str4);
         const { compat, tags } = ctx.doc.schema;
         if (tags.some(test) || compat?.some(test))
           return quotedString(value, ctx);
       }
-      return implicitKey ? str3 : foldFlowLines.foldFlowLines(str3, indent, foldFlowLines.FOLD_FLOW, getFoldOptions(ctx, false));
+      return implicitKey ? str4 : foldFlowLines.foldFlowLines(str4, indent, foldFlowLines.FOLD_FLOW, getFoldOptions(ctx, false));
     }
     function stringifyString(item, ctx, onComment, onChompKeep) {
       const { implicitKey, inFlow } = ctx;
@@ -1725,11 +1725,11 @@ var require_stringify = __commonJS({
       const props = stringifyProps(node, tagObj, ctx);
       if (props.length > 0)
         ctx.indentAtStart = (ctx.indentAtStart ?? 0) + props.length + 1;
-      const str3 = typeof tagObj.stringify === "function" ? tagObj.stringify(node, ctx, onComment, onChompKeep) : identity.isScalar(node) ? stringifyString.stringifyString(node, ctx, onComment, onChompKeep) : node.toString(ctx, onComment, onChompKeep);
+      const str4 = typeof tagObj.stringify === "function" ? tagObj.stringify(node, ctx, onComment, onChompKeep) : identity.isScalar(node) ? stringifyString.stringifyString(node, ctx, onComment, onChompKeep) : node.toString(ctx, onComment, onChompKeep);
       if (!props)
-        return str3;
-      return identity.isScalar(node) || str3[0] === "{" || str3[0] === "[" ? `${props} ${str3}` : `${props}
-${ctx.indent}${str3}`;
+        return str4;
+      return identity.isScalar(node) || str4[0] === "{" || str4[0] === "[" ? `${props} ${str4}` : `${props}
+${ctx.indent}${str4}`;
     }
     exports.createStringifyContext = createStringifyContext;
     exports.stringify = stringify;
@@ -1764,8 +1764,8 @@ var require_stringifyPair = __commonJS({
       });
       let keyCommentDone = false;
       let chompKeep = false;
-      let str3 = stringify.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
-      if (!explicitKey && !ctx.inFlow && str3.length > 1024) {
+      let str4 = stringify.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
+      if (!explicitKey && !ctx.inFlow && str4.length > 1024) {
         if (simpleKeys)
           throw new Error("With simple keys, single line scalar must not span more than 1024 characters");
         explicitKey = true;
@@ -1774,27 +1774,27 @@ var require_stringifyPair = __commonJS({
         if (allNullValues || value == null) {
           if (keyCommentDone && onComment)
             onComment();
-          return str3 === "" ? "?" : explicitKey ? `? ${str3}` : str3;
+          return str4 === "" ? "?" : explicitKey ? `? ${str4}` : str4;
         }
       } else if (allNullValues && !simpleKeys || value == null && explicitKey) {
-        str3 = `? ${str3}`;
+        str4 = `? ${str4}`;
         if (keyComment && !keyCommentDone) {
-          str3 += stringifyComment.lineComment(str3, ctx.indent, commentString(keyComment));
+          str4 += stringifyComment.lineComment(str4, ctx.indent, commentString(keyComment));
         } else if (chompKeep && onChompKeep)
           onChompKeep();
-        return str3;
+        return str4;
       }
       if (keyCommentDone)
         keyComment = null;
       if (explicitKey) {
         if (keyComment)
-          str3 += stringifyComment.lineComment(str3, ctx.indent, commentString(keyComment));
-        str3 = `? ${str3}
+          str4 += stringifyComment.lineComment(str4, ctx.indent, commentString(keyComment));
+        str4 = `? ${str4}
 ${indent}:`;
       } else {
-        str3 = `${str3}:`;
+        str4 = `${str4}:`;
         if (keyComment)
-          str3 += stringifyComment.lineComment(str3, ctx.indent, commentString(keyComment));
+          str4 += stringifyComment.lineComment(str4, ctx.indent, commentString(keyComment));
       }
       let vsb, vcb, valueComment;
       if (identity.isNode(value)) {
@@ -1810,7 +1810,7 @@ ${indent}:`;
       }
       ctx.implicitKey = false;
       if (!explicitKey && !keyComment && identity.isScalar(value))
-        ctx.indentAtStart = str3.length + 1;
+        ctx.indentAtStart = str4.length + 1;
       chompKeep = false;
       if (!indentSeq && indentStep.length >= 2 && !ctx.inFlow && !explicitKey && identity.isSeq(value) && !value.flow && !value.tag && !value.anchor) {
         ctx.indent = ctx.indent.substring(2);
@@ -1854,16 +1854,16 @@ ${ctx.indent}`;
       } else if (valueStr === "" || valueStr[0] === "\n") {
         ws = "";
       }
-      str3 += ws + valueStr;
+      str4 += ws + valueStr;
       if (ctx.inFlow) {
         if (valueCommentDone && onComment)
           onComment();
       } else if (valueComment && !valueCommentDone) {
-        str3 += stringifyComment.lineComment(str3, ctx.indent, commentString(valueComment));
+        str4 += stringifyComment.lineComment(str4, ctx.indent, commentString(valueComment));
       } else if (chompKeep && onChompKeep) {
         onChompKeep();
       }
-      return str3;
+      return str4;
     }
     exports.stringifyPair = stringifyPair;
   }
@@ -2090,31 +2090,31 @@ var require_stringifyCollection = __commonJS({
           }
         }
         chompKeep = false;
-        let str4 = stringify.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
+        let str5 = stringify.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
         if (comment2)
-          str4 += stringifyComment.lineComment(str4, itemIndent, commentString(comment2));
+          str5 += stringifyComment.lineComment(str5, itemIndent, commentString(comment2));
         if (chompKeep && comment2)
           chompKeep = false;
-        lines.push(blockItemPrefix + str4);
+        lines.push(blockItemPrefix + str5);
       }
-      let str3;
+      let str4;
       if (lines.length === 0) {
-        str3 = flowChars.start + flowChars.end;
+        str4 = flowChars.start + flowChars.end;
       } else {
-        str3 = lines[0];
+        str4 = lines[0];
         for (let i = 1; i < lines.length; ++i) {
           const line = lines[i];
-          str3 += line ? `
+          str4 += line ? `
 ${indent}${line}` : "\n";
         }
       }
       if (comment) {
-        str3 += "\n" + stringifyComment.indentComment(commentString(comment), indent);
+        str4 += "\n" + stringifyComment.indentComment(commentString(comment), indent);
         if (onComment)
           onComment();
       } else if (chompKeep && onChompKeep)
         onChompKeep();
-      return str3;
+      return str4;
     }
     function stringifyFlowCollection({ items }, ctx, { flowChars, itemIndent }) {
       const { indent, indentStep, flowCollectionPadding: fcPadding, options: { commentString } } = ctx;
@@ -2157,21 +2157,21 @@ ${indent}${line}` : "\n";
         }
         if (comment)
           reqNewline = true;
-        let str3 = stringify.stringify(item, itemCtx, () => comment = null);
-        reqNewline || (reqNewline = lines.length > linesAtValue || str3.includes("\n"));
+        let str4 = stringify.stringify(item, itemCtx, () => comment = null);
+        reqNewline || (reqNewline = lines.length > linesAtValue || str4.includes("\n"));
         if (i < items.length - 1) {
-          str3 += ",";
+          str4 += ",";
         } else if (ctx.options.trailingComma) {
           if (ctx.options.lineWidth > 0) {
-            reqNewline || (reqNewline = lines.reduce((sum, line) => sum + line.length + 2, 2) + (str3.length + 2) > ctx.options.lineWidth);
+            reqNewline || (reqNewline = lines.reduce((sum, line) => sum + line.length + 2, 2) + (str4.length + 2) > ctx.options.lineWidth);
           }
           if (reqNewline) {
-            str3 += ",";
+            str4 += ",";
           }
         }
         if (comment)
-          str3 += stringifyComment.lineComment(str3, itemIndent, commentString(comment));
-        lines.push(str3);
+          str4 += stringifyComment.lineComment(str4, itemIndent, commentString(comment));
+        lines.push(str4);
         linesAtValue = lines.length;
       }
       const { start, end } = flowChars;
@@ -2183,11 +2183,11 @@ ${indent}${line}` : "\n";
           reqNewline = ctx.options.lineWidth > 0 && len > ctx.options.lineWidth;
         }
         if (reqNewline) {
-          let str3 = start;
+          let str4 = start;
           for (const line of lines)
-            str3 += line ? `
+            str4 += line ? `
 ${indentStep}${indent}${line}` : "\n";
-          return `${str3}
+          return `${str4}
 ${indent}${end}`;
         } else {
           return `${start}${fcPadding}${lines.join(" ")}${fcPadding}${end}`;
@@ -2519,7 +2519,7 @@ var require_string = __commonJS({
       identify: (value) => typeof value === "string",
       default: true,
       tag: "tag:yaml.org,2002:str",
-      resolve: (str3) => str3,
+      resolve: (str4) => str4,
       stringify(item, ctx, onComment, onChompKeep) {
         ctx = Object.assign({ actualString: true }, ctx);
         return stringifyString.stringifyString(item, ctx, onComment, onChompKeep);
@@ -2557,7 +2557,7 @@ var require_bool = __commonJS({
       default: true,
       tag: "tag:yaml.org,2002:bool",
       test: /^(?:[Tt]rue|TRUE|[Ff]alse|FALSE)$/,
-      resolve: (str3) => new Scalar.Scalar(str3[0] === "t" || str3[0] === "T"),
+      resolve: (str4) => new Scalar.Scalar(str4[0] === "t" || str4[0] === "T"),
       stringify({ source, value }, ctx) {
         if (source && boolTag.test.test(source)) {
           const sv = source[0] === "t" || source[0] === "T";
@@ -2609,7 +2609,7 @@ var require_float = __commonJS({
       default: true,
       tag: "tag:yaml.org,2002:float",
       test: /^(?:[-+]?\.(?:inf|Inf|INF)|\.nan|\.NaN|\.NAN)$/,
-      resolve: (str3) => str3.slice(-3).toLowerCase() === "nan" ? NaN : str3[0] === "-" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY,
+      resolve: (str4) => str4.slice(-3).toLowerCase() === "nan" ? NaN : str4[0] === "-" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY,
       stringify: stringifyNumber.stringifyNumber
     };
     var floatExp = {
@@ -2618,7 +2618,7 @@ var require_float = __commonJS({
       tag: "tag:yaml.org,2002:float",
       format: "EXP",
       test: /^[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)[eE][-+]?[0-9]+$/,
-      resolve: (str3) => parseFloat(str3),
+      resolve: (str4) => parseFloat(str4),
       stringify(node) {
         const num2 = Number(node.value);
         return isFinite(num2) ? num2.toExponential() : stringifyNumber.stringifyNumber(node);
@@ -2629,11 +2629,11 @@ var require_float = __commonJS({
       default: true,
       tag: "tag:yaml.org,2002:float",
       test: /^[-+]?(?:\.[0-9]+|[0-9]+\.[0-9]*)$/,
-      resolve(str3) {
-        const node = new Scalar.Scalar(parseFloat(str3));
-        const dot = str3.indexOf(".");
-        if (dot !== -1 && str3[str3.length - 1] === "0")
-          node.minFractionDigits = str3.length - dot - 1;
+      resolve(str4) {
+        const node = new Scalar.Scalar(parseFloat(str4));
+        const dot = str4.indexOf(".");
+        if (dot !== -1 && str4[str4.length - 1] === "0")
+          node.minFractionDigits = str4.length - dot - 1;
         return node;
       },
       stringify: stringifyNumber.stringifyNumber
@@ -2650,7 +2650,7 @@ var require_int = __commonJS({
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
-    var intResolve = (str3, offset, radix, { intAsBigInt }) => intAsBigInt ? BigInt(str3) : parseInt(str3.substring(offset), radix);
+    var intResolve = (str4, offset, radix, { intAsBigInt }) => intAsBigInt ? BigInt(str4) : parseInt(str4.substring(offset), radix);
     function intStringify(node, radix, prefix) {
       const { value } = node;
       if (intIdentify(value) && value >= 0)
@@ -2663,7 +2663,7 @@ var require_int = __commonJS({
       tag: "tag:yaml.org,2002:int",
       format: "OCT",
       test: /^0o[0-7]+$/,
-      resolve: (str3, _onError, opt) => intResolve(str3, 2, 8, opt),
+      resolve: (str4, _onError, opt) => intResolve(str4, 2, 8, opt),
       stringify: (node) => intStringify(node, 8, "0o")
     };
     var int2 = {
@@ -2671,7 +2671,7 @@ var require_int = __commonJS({
       default: true,
       tag: "tag:yaml.org,2002:int",
       test: /^[-+]?[0-9]+$/,
-      resolve: (str3, _onError, opt) => intResolve(str3, 0, 10, opt),
+      resolve: (str4, _onError, opt) => intResolve(str4, 0, 10, opt),
       stringify: stringifyNumber.stringifyNumber
     };
     var intHex = {
@@ -2680,7 +2680,7 @@ var require_int = __commonJS({
       tag: "tag:yaml.org,2002:int",
       format: "HEX",
       test: /^0x[0-9a-fA-F]+$/,
-      resolve: (str3, _onError, opt) => intResolve(str3, 2, 16, opt),
+      resolve: (str4, _onError, opt) => intResolve(str4, 2, 16, opt),
       stringify: (node) => intStringify(node, 16, "0x")
     };
     exports.int = int2;
@@ -2733,7 +2733,7 @@ var require_schema2 = __commonJS({
         identify: (value) => typeof value === "string",
         default: true,
         tag: "tag:yaml.org,2002:str",
-        resolve: (str3) => str3,
+        resolve: (str4) => str4,
         stringify: stringifyJSON
       },
       {
@@ -2750,7 +2750,7 @@ var require_schema2 = __commonJS({
         default: true,
         tag: "tag:yaml.org,2002:bool",
         test: /^true$|^false$/,
-        resolve: (str3) => str3 === "true",
+        resolve: (str4) => str4 === "true",
         stringify: stringifyJSON
       },
       {
@@ -2758,7 +2758,7 @@ var require_schema2 = __commonJS({
         default: true,
         tag: "tag:yaml.org,2002:int",
         test: /^-?(?:0|[1-9][0-9]*)$/,
-        resolve: (str3, _onError, { intAsBigInt }) => intAsBigInt ? BigInt(str3) : parseInt(str3, 10),
+        resolve: (str4, _onError, { intAsBigInt }) => intAsBigInt ? BigInt(str4) : parseInt(str4, 10),
         stringify: ({ value }) => intIdentify(value) ? value.toString() : JSON.stringify(value)
       },
       {
@@ -2766,7 +2766,7 @@ var require_schema2 = __commonJS({
         default: true,
         tag: "tag:yaml.org,2002:float",
         test: /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]*)?(?:[eE][-+]?[0-9]+)?$/,
-        resolve: (str3) => parseFloat(str3),
+        resolve: (str4) => parseFloat(str4),
         stringify: stringifyJSON
       }
     ];
@@ -2774,9 +2774,9 @@ var require_schema2 = __commonJS({
       default: true,
       tag: "",
       test: /^/,
-      resolve(str3, onError) {
-        onError(`Unresolved plain scalar ${JSON.stringify(str3)}`);
-        return str3;
+      resolve(str4, onError) {
+        onError(`Unresolved plain scalar ${JSON.stringify(str4)}`);
+        return str4;
       }
     };
     var schema = [map.map, seq.seq].concat(jsonScalars, jsonError);
@@ -2808,10 +2808,10 @@ var require_binary = __commonJS({
         if (typeof node_buffer.Buffer === "function") {
           return node_buffer.Buffer.from(src, "base64");
         } else if (typeof atob === "function") {
-          const str3 = atob(src.replace(/[\n\r]/g, ""));
-          const buffer = new Uint8Array(str3.length);
-          for (let i = 0; i < str3.length; ++i)
-            buffer[i] = str3.charCodeAt(i);
+          const str4 = atob(src.replace(/[\n\r]/g, ""));
+          const buffer = new Uint8Array(str4.length);
+          for (let i = 0; i < str4.length; ++i)
+            buffer[i] = str4.charCodeAt(i);
           return buffer;
         } else {
           onError("This environment does not support reading binary tags; either Buffer or atob is required");
@@ -2822,28 +2822,28 @@ var require_binary = __commonJS({
         if (!value)
           return "";
         const buf = value;
-        let str3;
+        let str4;
         if (typeof node_buffer.Buffer === "function") {
-          str3 = buf instanceof node_buffer.Buffer ? buf.toString("base64") : node_buffer.Buffer.from(buf.buffer).toString("base64");
+          str4 = buf instanceof node_buffer.Buffer ? buf.toString("base64") : node_buffer.Buffer.from(buf.buffer).toString("base64");
         } else if (typeof btoa === "function") {
           let s = "";
           for (let i = 0; i < buf.length; ++i)
             s += String.fromCharCode(buf[i]);
-          str3 = btoa(s);
+          str4 = btoa(s);
         } else {
           throw new Error("This environment does not support writing binary tags; either Buffer or btoa is required");
         }
         type ?? (type = Scalar.Scalar.BLOCK_LITERAL);
         if (type !== Scalar.Scalar.QUOTE_DOUBLE) {
           const lineWidth = Math.max(ctx.options.lineWidth - ctx.indent.length, ctx.options.minContentWidth);
-          const n = Math.ceil(str3.length / lineWidth);
+          const n = Math.ceil(str4.length / lineWidth);
           const lines = new Array(n);
           for (let i = 0, o = 0; i < n; ++i, o += lineWidth) {
-            lines[i] = str3.substr(o, lineWidth);
+            lines[i] = str4.substr(o, lineWidth);
           }
-          str3 = lines.join(type === Scalar.Scalar.BLOCK_LITERAL ? "\n" : " ");
+          str4 = lines.join(type === Scalar.Scalar.BLOCK_LITERAL ? "\n" : " ");
         }
-        return stringifyString.stringifyString({ comment, type, value: str3 }, ctx, onComment, onChompKeep);
+        return stringifyString.stringifyString({ comment, type, value: str4 }, ctx, onComment, onChompKeep);
       }
     };
     exports.binary = binary;
@@ -3049,7 +3049,7 @@ var require_float2 = __commonJS({
       default: true,
       tag: "tag:yaml.org,2002:float",
       test: /^(?:[-+]?\.(?:inf|Inf|INF)|\.nan|\.NaN|\.NAN)$/,
-      resolve: (str3) => str3.slice(-3).toLowerCase() === "nan" ? NaN : str3[0] === "-" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY,
+      resolve: (str4) => str4.slice(-3).toLowerCase() === "nan" ? NaN : str4[0] === "-" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY,
       stringify: stringifyNumber.stringifyNumber
     };
     var floatExp = {
@@ -3058,7 +3058,7 @@ var require_float2 = __commonJS({
       tag: "tag:yaml.org,2002:float",
       format: "EXP",
       test: /^[-+]?(?:[0-9][0-9_]*)?(?:\.[0-9_]*)?[eE][-+]?[0-9]+$/,
-      resolve: (str3) => parseFloat(str3.replace(/_/g, "")),
+      resolve: (str4) => parseFloat(str4.replace(/_/g, "")),
       stringify(node) {
         const num2 = Number(node.value);
         return isFinite(num2) ? num2.toExponential() : stringifyNumber.stringifyNumber(node);
@@ -3069,11 +3069,11 @@ var require_float2 = __commonJS({
       default: true,
       tag: "tag:yaml.org,2002:float",
       test: /^[-+]?(?:[0-9][0-9_]*)?\.[0-9_]*$/,
-      resolve(str3) {
-        const node = new Scalar.Scalar(parseFloat(str3.replace(/_/g, "")));
-        const dot = str3.indexOf(".");
+      resolve(str4) {
+        const node = new Scalar.Scalar(parseFloat(str4.replace(/_/g, "")));
+        const dot = str4.indexOf(".");
         if (dot !== -1) {
-          const f = str3.substring(dot + 1).replace(/_/g, "");
+          const f = str4.substring(dot + 1).replace(/_/g, "");
           if (f[f.length - 1] === "0")
             node.minFractionDigits = f.length;
         }
@@ -3093,34 +3093,34 @@ var require_int2 = __commonJS({
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
-    function intResolve(str3, offset, radix, { intAsBigInt }) {
-      const sign = str3[0];
+    function intResolve(str4, offset, radix, { intAsBigInt }) {
+      const sign = str4[0];
       if (sign === "-" || sign === "+")
         offset += 1;
-      str3 = str3.substring(offset).replace(/_/g, "");
+      str4 = str4.substring(offset).replace(/_/g, "");
       if (intAsBigInt) {
         switch (radix) {
           case 2:
-            str3 = `0b${str3}`;
+            str4 = `0b${str4}`;
             break;
           case 8:
-            str3 = `0o${str3}`;
+            str4 = `0o${str4}`;
             break;
           case 16:
-            str3 = `0x${str3}`;
+            str4 = `0x${str4}`;
             break;
         }
-        const n2 = BigInt(str3);
+        const n2 = BigInt(str4);
         return sign === "-" ? BigInt(-1) * n2 : n2;
       }
-      const n = parseInt(str3, radix);
+      const n = parseInt(str4, radix);
       return sign === "-" ? -1 * n : n;
     }
     function intStringify(node, radix, prefix) {
       const { value } = node;
       if (intIdentify(value)) {
-        const str3 = value.toString(radix);
-        return value < 0 ? "-" + prefix + str3.substr(1) : prefix + str3;
+        const str4 = value.toString(radix);
+        return value < 0 ? "-" + prefix + str4.substr(1) : prefix + str4;
       }
       return stringifyNumber.stringifyNumber(node);
     }
@@ -3130,7 +3130,7 @@ var require_int2 = __commonJS({
       tag: "tag:yaml.org,2002:int",
       format: "BIN",
       test: /^[-+]?0b[0-1_]+$/,
-      resolve: (str3, _onError, opt) => intResolve(str3, 2, 2, opt),
+      resolve: (str4, _onError, opt) => intResolve(str4, 2, 2, opt),
       stringify: (node) => intStringify(node, 2, "0b")
     };
     var intOct = {
@@ -3139,7 +3139,7 @@ var require_int2 = __commonJS({
       tag: "tag:yaml.org,2002:int",
       format: "OCT",
       test: /^[-+]?0[0-7_]+$/,
-      resolve: (str3, _onError, opt) => intResolve(str3, 1, 8, opt),
+      resolve: (str4, _onError, opt) => intResolve(str4, 1, 8, opt),
       stringify: (node) => intStringify(node, 8, "0")
     };
     var int2 = {
@@ -3147,7 +3147,7 @@ var require_int2 = __commonJS({
       default: true,
       tag: "tag:yaml.org,2002:int",
       test: /^[-+]?[0-9][0-9_]*$/,
-      resolve: (str3, _onError, opt) => intResolve(str3, 0, 10, opt),
+      resolve: (str4, _onError, opt) => intResolve(str4, 0, 10, opt),
       stringify: stringifyNumber.stringifyNumber
     };
     var intHex = {
@@ -3156,7 +3156,7 @@ var require_int2 = __commonJS({
       tag: "tag:yaml.org,2002:int",
       format: "HEX",
       test: /^[-+]?0x[0-9a-fA-F_]+$/,
-      resolve: (str3, _onError, opt) => intResolve(str3, 2, 16, opt),
+      resolve: (str4, _onError, opt) => intResolve(str4, 2, 16, opt),
       stringify: (node) => intStringify(node, 16, "0x")
     };
     exports.int = int2;
@@ -3260,9 +3260,9 @@ var require_timestamp = __commonJS({
   "node_modules/.pnpm/yaml@2.9.1/node_modules/yaml/dist/schema/yaml-1.1/timestamp.js"(exports) {
     "use strict";
     var stringifyNumber = require_stringifyNumber();
-    function parseSexagesimal(str3, asBigInt) {
-      const sign = str3[0];
-      const parts = sign === "-" || sign === "+" ? str3.substring(1) : str3;
+    function parseSexagesimal(str4, asBigInt) {
+      const sign = str4[0];
+      const parts = sign === "-" || sign === "+" ? str4.substring(1) : str4;
       const num2 = (n) => asBigInt ? BigInt(n) : Number(n);
       const res = parts.replace(/_/g, "").split(":").reduce((res2, p) => res2 * num2(60) + num2(p), num2(0));
       return sign === "-" ? num2(-1) * res : res;
@@ -3299,7 +3299,7 @@ var require_timestamp = __commonJS({
       tag: "tag:yaml.org,2002:int",
       format: "TIME",
       test: /^[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+$/,
-      resolve: (str3, _onError, { intAsBigInt }) => parseSexagesimal(str3, intAsBigInt),
+      resolve: (str4, _onError, { intAsBigInt }) => parseSexagesimal(str4, intAsBigInt),
       stringify: stringifySexagesimal
     };
     var floatTime = {
@@ -3308,7 +3308,7 @@ var require_timestamp = __commonJS({
       tag: "tag:yaml.org,2002:float",
       format: "TIME",
       test: /^[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*$/,
-      resolve: (str3) => parseSexagesimal(str3, false),
+      resolve: (str4) => parseSexagesimal(str4, false),
       stringify: stringifySexagesimal
     };
     var timestamp = {
@@ -3319,8 +3319,8 @@ var require_timestamp = __commonJS({
       // may be omitted altogether, resulting in a date format. In such a case, the time part is
       // assumed to be 00:00:00Z (start of day, UTC).
       test: RegExp("^([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})(?:(?:t|T|[ \\t]+)([0-9]{1,2}):([0-9]{1,2}):([0-9]{1,2}(\\.[0-9]+)?)(?:[ \\t]*(Z|[-+][012]?[0-9](?::[0-9]{2})?))?)?$"),
-      resolve(str3) {
-        const match = str3.match(timestamp.test);
+      resolve(str4) {
+        const match = str4.match(timestamp.test);
         if (!match)
           throw new Error("!!timestamp expects a date, starting with yyyy-mm-dd");
         const [, year, month, day, hour, minute, second] = match.map(Number);
@@ -7707,7 +7707,10 @@ var init_config = __esm({
       signup: (v) => typeof v === "boolean" ? null : "must be true or false",
       requireEmailConfirm: (v) => typeof v === "boolean" ? null : "must be true or false",
       passwordMinLength: (v) => typeof v === "number" && Number.isInteger(v) && v > 0 ? null : "must be a positive whole number (e.g. 12), never a password",
-      smtp: (v) => v === "provider" || v === "resend" ? null : `must be "provider" (the auth provider's own mailer) or "resend" (the app's email provider)`
+      smtp: (v) => v === "provider" || v === "resend" ? null : `must be "provider" (the auth provider's own mailer) or "resend" (the app's email provider)`,
+      e2e: (v) => typeof v === "boolean" ? null : "must be true or false",
+      testEmail: (v) => typeof v === "string" && /^[^@\s+]+(\+[^@\s]+)?@[^@\s]+\.[^@\s]+$/.test(v) ? null : 'must be the address the test account uses, like "you+go-live@example.com" (plus-addressing allowed; never a password)',
+      protectedPath: (v) => typeof v === "string" && v.startsWith("/") ? null : 'must be an app route starting with "/", e.g. "/dashboard" (the page that must require a session)'
     };
   }
 });
@@ -8036,6 +8039,180 @@ var init_supabase_api = __esm({
   }
 });
 
+// src/adapters/supabase-auth.ts
+import { randomBytes } from "node:crypto";
+function testPassword() {
+  return new Secret("GOLIVE_TEST_PASSWORD", [...randomBytes(32)].map((b) => CHARS[b % CHARS.length]).join(""));
+}
+function codeOf(json2) {
+  const o = asObject(json2);
+  return str(o.error_code) ?? (typeof o.code === "string" ? o.code : void 0);
+}
+function detailOf(json2) {
+  const o = asObject(json2);
+  const text = [str(o.error_code), str(o.msg), str(o.message), str(o.error_description), str(o.error)].filter(Boolean).join(" ");
+  return redact(text).slice(0, 200);
+}
+function view(status, u) {
+  const id2 = str(u.id);
+  const email = str(u.email);
+  return { status, ...id2 ? { id: id2 } : {}, ...email ? { email } : {}, ...id2 ? { emailConfirmed: confirmedOf(u) } : {} };
+}
+function publicHeaders(key, token2) {
+  const bearer2 = token2 ?? (key instanceof Secret ? new Secret(key.name, `Bearer ${key.reveal()}`) : `Bearer ${key}`);
+  return { apikey: key, Authorization: bearer2, Accept: "application/json" };
+}
+function adminHeaders(key) {
+  const bearer2 = key instanceof Secret ? new Secret(key.name, `Bearer ${key.reveal()}`) : `Bearer ${key}`;
+  return { apikey: key, Authorization: bearer2, Accept: "application/json" };
+}
+function requirePublic(keys3) {
+  if (!keys3.publishable) {
+    throw new SupabaseAuthPrereqError(
+      "Supabase did not return a publishable (anon) key for this project, so its auth endpoints cannot be called. Check API Keys Read and API Key Secrets Read for this project, then re-run."
+    );
+  }
+  return keys3.publishable;
+}
+function requireSecret(keys3) {
+  if (!keys3.secret) {
+    throw new SupabaseAuthPrereqError(
+      "Supabase did not return the project's secret key, so its admin user endpoints cannot be called. Check API Keys Read and API Key Secrets Read for this project, then re-run."
+    );
+  }
+  return keys3.secret;
+}
+function fail2(status, json2, what) {
+  const code = codeOf(json2);
+  const detail = detailOf(json2);
+  const tail = [code, detail].filter(Boolean).join(" ");
+  if (status === 429) throw new SupabaseError(`${what} failed: Supabase rate limit hit (429). Wait a minute and re-run.`, status);
+  if (status === 401 || status === 403) {
+    throw new SupabaseError(`${what} failed: the project key was ${status === 401 ? "rejected (401)" : "not allowed to do this (403)"}${tail ? ` (${tail})` : ""}. Check the publishable and secret keys of the linked project (\`golive doctor\` re-checks the Supabase credential).`, status);
+  }
+  throw new SupabaseError(`${what} failed: HTTP ${status}${tail ? ` (${tail})` : ""}.`, status);
+}
+function expectOk(status, json2, what) {
+  if (status < 200 || status >= 300) fail2(status, json2, what);
+}
+async function require2(deps2, ctx) {
+  const ref3 = await deps2.ref(ctx);
+  if (!ref3) {
+    throw new SupabaseAuthPrereqError("No Supabase project is selected for this app, so its auth users cannot be reached. Run `golive plan` to select one, or set `projects.db` in golive.yaml.");
+  }
+  const memo2 = `supabaseAuth.keys:${ref3}`;
+  let keys3 = ctx.cache.get(memo2);
+  if (!keys3) {
+    keys3 = deps2.keys(ctx, ref3).catch((e) => {
+      if (e instanceof SupabaseError) throw new SupabaseAuthPrereqError(e.message, e.status);
+      throw e;
+    });
+    ctx.cache.set(memo2, keys3);
+  }
+  return { ref: ref3, keys: await keys3 };
+}
+async function signup(deps2, ctx, email, password) {
+  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const res = await ctx.http({
+    url: `${base(ref3)}/signup`,
+    method: "POST",
+    headers: publicHeaders(requirePublic(keys3)),
+    body: { email, password }
+  });
+  const body2 = asObject(res.json);
+  const ok = res.status >= 200 && res.status < 300;
+  const session2 = ok && Boolean(str(body2.access_token));
+  const identities2 = Array.isArray(body2.identities) ? body2.identities : void 0;
+  const existing = ok && !session2 && identities2?.length === 0;
+  const userId = str(body2.id) ?? str(asObject(body2.user).id);
+  const detail = detailOf(res.json);
+  return {
+    status: res.status,
+    ...userId ? { userId } : {},
+    confirmationSent: ok && !session2 && !existing,
+    existing: Boolean(existing),
+    rateLimited: res.status === 429,
+    captchaRequired: !ok && isCaptcha(codeOf(res.json), detail),
+    ...ok ? {} : { code: [codeOf(res.json), detail].filter(Boolean).join(" | ").slice(0, 200) || `HTTP ${res.status}` }
+  };
+}
+async function login(deps2, ctx, email, password) {
+  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const res = await ctx.http({
+    url: `${base(ref3)}/token?grant_type=password`,
+    method: "POST",
+    headers: publicHeaders(requirePublic(keys3)),
+    body: { email, password }
+  });
+  const body2 = asObject(res.json);
+  const who = asObject(body2.user);
+  const token2 = str(body2.access_token);
+  const userId = str(who.id);
+  if (res.status >= 200 && res.status < 300 && token2 && userId) {
+    const session2 = { accessToken: new Secret("SUPABASE_AUTH_TOKEN", token2), userId, emailConfirmed: confirmedOf(who) };
+    return { status: res.status, session: session2, rateLimited: false };
+  }
+  const detail = detailOf(res.json);
+  return { status: res.status, rateLimited: res.status === 429, code: [codeOf(res.json), detail].filter(Boolean).join(" | ").slice(0, 200) || `HTTP ${res.status}` };
+}
+async function user(deps2, ctx, token2) {
+  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const res = await ctx.http({ url: `${base(ref3)}/user`, headers: publicHeaders(requirePublic(keys3), token2) });
+  return view(res.status, asObject(res.json));
+}
+async function adminUser(deps2, ctx, id2) {
+  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const res = await ctx.http({ url: `${base(ref3)}/admin/users/${encodeURIComponent(id2)}`, headers: adminHeaders(requireSecret(keys3)) });
+  if (res.status === 404) return null;
+  expectOk(res.status, res.json, `Reading Supabase auth user ${id2}`);
+  return view(res.status, asObject(res.json));
+}
+async function setPassword(deps2, ctx, id2, password) {
+  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const res = await ctx.http({
+    url: `${base(ref3)}/admin/users/${encodeURIComponent(id2)}`,
+    method: "PUT",
+    headers: adminHeaders(requireSecret(keys3)),
+    body: { password }
+  });
+  expectOk(res.status, res.json, `Setting a new password on the Supabase test user ${id2}`);
+}
+async function destination(deps2, ctx) {
+  let ref3 = null;
+  try {
+    ref3 = await deps2.ref(ctx);
+  } catch {
+    return null;
+  }
+  return ref3 ? { ref: ref3, url: `https://${ref3}.supabase.co` } : null;
+}
+function supabaseAuthUsers(deps2) {
+  return {
+    signup: (ctx, email, password) => signup(deps2, ctx, email, password),
+    login: (ctx, email, password) => login(deps2, ctx, email, password),
+    user: (ctx, token2) => user(deps2, ctx, token2),
+    adminUser: (ctx, id2) => adminUser(deps2, ctx, id2),
+    setPassword: (ctx, id2, password) => setPassword(deps2, ctx, id2, password),
+    destination: (ctx) => destination(deps2, ctx)
+  };
+}
+var SupabaseAuthPrereqError, CHARS, asObject, str, isCaptcha, confirmedOf, base;
+var init_supabase_auth = __esm({
+  "src/adapters/supabase-auth.ts"() {
+    "use strict";
+    init_secret();
+    init_supabase_api();
+    SupabaseAuthPrereqError = class extends SupabaseError {
+    };
+    CHARS = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*-_";
+    asObject = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+    str = (v) => typeof v === "string" && v ? v : void 0;
+    isCaptcha = (code, detail) => /captcha|challenge/i.test(`${code ?? ""} ${detail}`);
+    confirmedOf = (u) => Boolean(str(u.email_confirmed_at) ?? str(u.confirmed_at));
+    base = (ref3) => `https://${ref3}.supabase.co/auth/v1`;
+  }
+});
+
 // src/adapters/supabase.ts
 var supabase_exports = {};
 __export(supabase_exports, {
@@ -8044,12 +8221,13 @@ __export(supabase_exports, {
   pooledUrl: () => pooledUrl,
   sessionUrl: () => sessionUrl,
   supabaseAdapter: () => supabaseAdapter,
+  supabaseAuthedProbe: () => supabaseAuthedProbe,
   supabaseRestProbe: () => supabaseRestProbe,
   supabaseTiming: () => supabaseTiming,
   tablesSql: () => tablesSql,
   usesPrisma: () => usesPrisma
 });
-import { randomBytes } from "node:crypto";
+import { randomBytes as randomBytes2 } from "node:crypto";
 import { basename as basename3 } from "node:path";
 async function auth(ctx) {
   let tok;
@@ -8383,7 +8561,7 @@ async function create(ctx, name3, approvedTarget) {
   }
   const org = approvedTarget?.scope.id ?? await freeOrg(ctx, tok);
   const before = new Set(all.map((p) => p.id));
-  const dbPass = new Secret("SUPABASE_DB_PASSWORD", randomBytes(24).toString("base64url"));
+  const dbPass = new Secret("SUPABASE_DB_PASSWORD", randomBytes2(24).toString("base64url"));
   let created;
   try {
     created = await api(
@@ -8500,7 +8678,7 @@ async function passwordResettable(ctx, ref3) {
   return ctx.state.resource(STATE_CREATED) === ref3 && !vaultGet(dbPassKey(ref3)) && !dbUrlWritten(ctx, ref3) && await supabaseCredential(ctx) !== void 0;
 }
 async function resetDbPassword(ctx, tok, ref3) {
-  const pass2 = new Secret("SUPABASE_DB_PASSWORD", randomBytes(24).toString("base64url"));
+  const pass2 = new Secret("SUPABASE_DB_PASSWORD", randomBytes2(24).toString("base64url"));
   await api(ctx, tok, "PATCH", `/projects/${ref3}/database/password`, "Setting a new database password on the Supabase project golive created", { password: pass2 }, { idempotent: true });
   vaultPut(dbPassKey(ref3), pass2);
   ctx.log.info(`set a new generated database password on Supabase project ${ref3} (created by golive; the one generated at creation was lost with the run that created it, and nothing used it yet)`);
@@ -8661,9 +8839,9 @@ function smtpPasswordOf(v) {
   return v;
 }
 function smtpOf(reported) {
-  const host = str(reported.host);
-  const senderEmail = str(reported.senderEmail);
-  const senderName = str(reported.senderName);
+  const host = str2(reported.host);
+  const senderEmail = str2(reported.senderEmail);
+  const senderName = str2(reported.senderName);
   return { configured: Boolean(host), ...host ? { host } : {}, ...senderEmail ? { senderEmail } : {}, ...senderName ? { senderName } : {} };
 }
 function fieldValue(obj2, name3) {
@@ -8740,14 +8918,24 @@ async function supabaseRestProbe(ctx, ref3, table, schema, publishableKey2) {
   const code = res.json && typeof res.json === "object" && !Array.isArray(res.json) ? res.json.code : void 0;
   return { status: res.status, rows, ...typeof code === "string" ? { code } : {} };
 }
+async function supabaseAuthedProbe(ctx, ref3, table, schema, publishableKey2, accessToken) {
+  assertRef(ref3);
+  const headers = { apikey: publishableKey2, Authorization: accessToken, Accept: "application/json" };
+  if (schema && schema !== "public") headers["Accept-Profile"] = schema;
+  const res = await ctx.http({ url: `https://${ref3}.supabase.co/rest/v1/${encodeURIComponent(table)}?select=*&limit=1`, headers });
+  const rows = res.status === 200 && Array.isArray(res.json) ? res.json.length : 0;
+  const code = res.json && typeof res.json === "object" && !Array.isArray(res.json) ? res.json.code : void 0;
+  return { status: res.status, rows, ...typeof code === "string" ? { code } : {} };
+}
 function detect(d) {
   return !!d.providers.db?.includes("supabase") || !!d.providers.auth?.includes("supabase") || Object.keys(d.configs).some((k) => k.startsWith("supabase/")) || d.envRefs.some((e) => e.name.includes("SUPABASE"));
 }
-var supabaseTiming, dbPassKey, STATE_CREATED, refOf, PAUSED, BROKEN, STARTING, CREATE_TIMEOUT_MS, usableKey, preferDefault, isStepRun, wantsDbUrls, LEVEL, str, bool, int, flip, optionalStr, splitList, AUTH_FIELDS, sameValue, show, supabaseAdapter;
+var supabaseTiming, dbPassKey, STATE_CREATED, refOf, PAUSED, BROKEN, STARTING, CREATE_TIMEOUT_MS, usableKey, preferDefault, isStepRun, wantsDbUrls, LEVEL, str2, bool, int, flip, optionalStr, splitList, AUTH_FIELDS, sameValue, show, supabaseAdapter;
 var init_supabase = __esm({
   "src/adapters/supabase.ts"() {
     "use strict";
     init_supabase_credentials();
+    init_supabase_auth();
     init_secret();
     init_supabase_api();
     init_supabase_api();
@@ -8764,19 +8952,19 @@ var init_supabase = __esm({
     isStepRun = (ctx) => typeof ctx.rememberSecret === "function";
     wantsDbUrls = (keys3) => keys3 === void 0 || keys3.some((k) => k === "db.url" || k === "db.directUrl");
     LEVEL = { ERROR: "high", WARN: "medium", INFO: "info" };
-    str = (v) => typeof v === "string" && v.trim() ? v.trim() : void 0;
+    str2 = (v) => typeof v === "string" && v.trim() ? v.trim() : void 0;
     bool = (v) => typeof v === "boolean" ? v : void 0;
     int = (v) => typeof v === "number" && Number.isInteger(v) && v > 0 ? v : void 0;
     flip = (v) => v === void 0 ? void 0 : !v;
-    optionalStr = (key) => (raw2, res) => Object.hasOwn(res, key) ? str(raw2) ?? "" : void 0;
+    optionalStr = (key) => (raw2, res) => Object.hasOwn(res, key) ? str2(raw2) ?? "" : void 0;
     splitList = (raw2) => raw2.split(",").map((s) => s.trim()).filter(Boolean);
     AUTH_FIELDS = [
       {
         name: "siteUrl",
         key: "site_url",
-        read: (raw2) => str(raw2) ?? null,
+        read: (raw2) => str2(raw2) ?? null,
         write: (v) => {
-          const url = str(v);
+          const url = str2(v);
           if (!url || url.includes(",")) throw new SupabaseError(`Supabase site URL must be a single URL without commas (got ${JSON.stringify(v)}).`);
           return url;
         }
@@ -8789,9 +8977,9 @@ var init_supabase = __esm({
       { name: "otpExpirySeconds", key: "mailer_otp_exp", read: int, write: (v) => intOf("mailer_otp_exp", v) },
       { name: "otpLength", key: "mailer_otp_length", read: int, write: (v) => intOf("mailer_otp_length", v) },
       { name: "emailRateLimitPerHour", key: "rate_limit_email_sent", read: int, write: (v) => intOf("rate_limit_email_sent", v) },
-      { name: "smtp.host", key: "smtp_host", read: optionalStr("smtp_host"), write: (v) => str(v) },
-      { name: "smtp.senderEmail", key: "smtp_admin_email", read: optionalStr("smtp_admin_email"), write: (v) => str(v) },
-      { name: "smtp.senderName", key: "smtp_sender_name", read: optionalStr("smtp_sender_name"), write: (v) => str(v) },
+      { name: "smtp.host", key: "smtp_host", read: optionalStr("smtp_host"), write: (v) => str2(v) },
+      { name: "smtp.senderEmail", key: "smtp_admin_email", read: optionalStr("smtp_admin_email"), write: (v) => str2(v) },
+      { name: "smtp.senderName", key: "smtp_sender_name", read: optionalStr("smtp_sender_name"), write: (v) => str2(v) },
       // Write-only: GET answers `smtp_pass` with a hash, never the value.
       { name: "smtpPassword", key: "smtp_pass", read: () => void 0, write: smtpPasswordOf, writeOnly: true }
     ];
@@ -8808,7 +8996,16 @@ var init_supabase = __esm({
         project: { current, candidates, select, create, resolve: resolveProject, creationTarget },
         outputs: { outputs, provides },
         dbAdmin: { tables, advisors },
-        authConfig: { get: getAuth, set: setAuth }
+        authConfig: { get: getAuth, set: setAuth },
+        // The GoTrue surface (signup, password grant, admin users), wired to this adapter's project
+        // readers so the auth adapter never touches the Management API itself.
+        authUsers: supabaseAuthUsers({
+          ref: resolveRef,
+          keys: async (ctx, ref3) => {
+            const picked = pickKeys(await listKeys(ctx, ref3));
+            return { publishable: picked["supabase.publishableKey"], secret: picked["supabase.secretKey"] };
+          }
+        })
       }
     };
   }
@@ -9438,13 +9635,13 @@ function loadRuntimeRelease(moduleUrl, invokedPath = process.argv[1]) {
   if (basename(path) === "cli.ts" && basename(dirname(path)) === "src") {
     const root = resolve(dirname(path), "..");
     const hashes = {};
-    const walk = (base, relative2) => {
-      for (const name3 of readdirSync(join(base, relative2)).sort()) {
+    const walk = (base2, relative2) => {
+      for (const name3 of readdirSync(join(base2, relative2)).sort()) {
         const file = `${relative2}/${name3}`;
-        const stat2 = lstatSync(join(base, file));
+        const stat2 = lstatSync(join(base2, file));
         if (stat2.isSymbolicLink()) throw new ReleaseIntegrityError(BUNDLE_ERROR);
-        if (stat2.isDirectory()) walk(base, file);
-        else hashes[file] = createHash("sha256").update(readRegular(join(base, file))).digest("hex");
+        if (stat2.isDirectory()) walk(base2, file);
+        else hashes[file] = createHash("sha256").update(readRegular(join(base2, file))).digest("hex");
       }
     };
     walk(root, "src");
@@ -9588,7 +9785,7 @@ async function download(fetcher, timeoutMs) {
 }
 async function checkForUpdate(current3, options = {}) {
   const owner = options.ownership;
-  const base = {
+  const base2 = {
     ok: true,
     status: "unavailable",
     current: current3,
@@ -9598,7 +9795,7 @@ async function checkForUpdate(current3, options = {}) {
     manager: owner?.manager ?? "external",
     updateCommand: owner?.manager === "owned" ? "At the start of a new run: node <installed-skill>/scripts/install-cli.mjs update --between-runs --ref <release-tag>" : owner?.updateCommand ?? "Use your installation manager: Skills CLI: npx skills update golive -p (project) or -g (global); plugins: their manager; manual copies: replace the complete bundle."
   };
-  if (options.disabled) return { ...base, status: "disabled", note: "Update checking is disabled; no network request was made." };
+  if (options.disabled) return { ...base2, status: "disabled", note: "Update checking is disabled; no network request was made." };
   const now = options.now ?? Date.now();
   const cachePath = options.cachePath === void 0 ? join2(process.env.XDG_CACHE_HOME || join2(homedir(), ".cache"), "golive", "update-check.json") : options.cachePath;
   try {
@@ -9610,7 +9807,7 @@ async function checkForUpdate(current3, options = {}) {
     const checkedAt = cached?.checkedAt ?? new Date(now).toISOString();
     if (!cached && cachePath) writeCache(cachePath, { url: UPDATE_METADATA_URL, checkedAt, manifest });
     return {
-      ...base,
+      ...base2,
       status: owner?.pin ? "pinned" : compareVersions(latest.version, current3.version) > 0 ? "available" : "current",
       latest,
       checkedAt,
@@ -9618,7 +9815,7 @@ async function checkForUpdate(current3, options = {}) {
       ...owner?.pin ? { note: "Pinned installation was not changed. Select a different release explicitly to upgrade." } : {}
     };
   } catch {
-    return { ...base, note: "Public update metadata is unavailable or invalid. Existing offline commands remain usable; no installation was changed." };
+    return { ...base2, note: "Public update metadata is unavailable or invalid. Existing offline commands remain usable; no installation was changed." };
   }
 }
 
@@ -9733,24 +9930,24 @@ function verifyBundle(source) {
   if (canonical(found.sort()) !== canonical([...Object.keys(manifest.files), "release.json"].sort())) fail("Bundle file set is incomplete or mixed.");
   return manifest;
 }
-function layout(destination) {
-  return { store: join3(dirname3(destination), `.${PRODUCT}-owned`), destination: resolve2(destination) };
+function layout(destination2) {
+  return { store: join3(dirname3(destination2), `.${PRODUCT}-owned`), destination: resolve2(destination2) };
 }
-function active(destination) {
-  const { store } = layout(destination);
-  safePath(dirname3(destination), true);
+function active(destination2) {
+  const { store } = layout(destination2);
+  safePath(dirname3(destination2), true);
   safePath(store, true);
-  const info = stat(destination);
+  const info = stat(destination2);
   if (!info) return null;
   if (!info.isSymbolicLink()) return { manager: "external" };
-  const link = readlinkSync(destination);
-  const target = resolve2(dirname3(destination), link);
+  const link = readlinkSync(destination2);
+  const target = resolve2(dirname3(destination2), link);
   const rel = relative(store, target).split(sep).join("/");
   if (!/^versions\/[a-f0-9-]{36}\/bundle$/.test(rel)) return { manager: "external" };
   safePath(target);
   const container = dirname3(target);
   const receipt = json(join3(container, "receipt.json"));
-  if (receipt.schema !== 1 || receipt.manager !== "owned" || receipt.channel !== "own-installer" || receipt.location !== resolve2(destination) || receipt.source !== REPOSITORY || typeof receipt.autoUpdate !== "boolean" || !(receipt.pin === null || isRef(receipt.pin)) || !(receipt.previous === null || /^[a-f0-9-]{36}$/.test(receipt.previous))) fail("Owned installation metadata is inconsistent.");
+  if (receipt.schema !== 1 || receipt.manager !== "owned" || receipt.channel !== "own-installer" || receipt.location !== resolve2(destination2) || receipt.source !== REPOSITORY || typeof receipt.autoUpdate !== "boolean" || !(receipt.pin === null || isRef(receipt.pin)) || !(receipt.previous === null || /^[a-f0-9-]{36}$/.test(receipt.previous))) fail("Owned installation metadata is inconsistent.");
   const manifest = verifyBundle(target);
   if (receipt.version !== manifest.version || receipt.digest !== manifest.bundleDigest || receipt.ref !== manifest.source.ref) fail("Installed release and ownership metadata disagree.");
   return { manager: "owned", target, container, id: rel.split("/")[1], receipt, manifest };
@@ -9769,14 +9966,14 @@ function statusForBundle(bundleRoot) {
   const location = ownedLocationForBundle(bundleRoot);
   return location ? installationStatus(location) : { manager: "external", location: resolve2(bundleRoot), updateCommand: managerAdvice(bundleRoot), autoUpdate: false, pin: null };
 }
-function managerAdvice(destination, global = false) {
-  const normalized = destination.split(sep).join("/");
+function managerAdvice(destination2, global = false) {
+  const normalized = destination2.split(sep).join("/");
   if (/\/(?:plugins|\.codex\/plugins)\//.test(normalized)) return "Use the plugin manager to update this installation.";
   return `This copy is externally managed. For Skills CLI use: npx skills update ${PRODUCT} ${global ? "-g" : "-p"}. For a plugin use its manager; for a manual copy replace the complete verified bundle yourself.`;
 }
-function installationStatus(destination, { global = false, candidates: candidates3 = [] } = {}) {
-  const value = active(destination);
-  return { installed: Boolean(value), manager: value?.manager ?? null, location: resolve2(destination), ...value?.manager === "owned" ? { version: value.manifest.version, ref: value.receipt.ref, pin: value.receipt.pin, source: value.receipt.source, autoUpdate: value.receipt.autoUpdate, previous: value.receipt.previous !== null } : { updateCommand: managerAdvice(destination, global) }, duplicates: [...new Set(candidates3.map((path) => resolve2(path)))].filter((path) => path !== resolve2(destination) && stat(path)).map((location) => ({ location, action: "left unchanged" })) };
+function installationStatus(destination2, { global = false, candidates: candidates3 = [] } = {}) {
+  const value = active(destination2);
+  return { installed: Boolean(value), manager: value?.manager ?? null, location: resolve2(destination2), ...value?.manager === "owned" ? { version: value.manifest.version, ref: value.receipt.ref, pin: value.receipt.pin, source: value.receipt.source, autoUpdate: value.receipt.autoUpdate, previous: value.receipt.previous !== null } : { updateCommand: managerAdvice(destination2, global) }, duplicates: [...new Set(candidates3.map((path) => resolve2(path)))].filter((path) => path !== resolve2(destination2) && stat(path)).map((location) => ({ location, action: "left unchanged" })) };
 }
 
 // src/core/exec.ts
@@ -10135,9 +10332,9 @@ async function hostUrl(ctx, target) {
     return null;
   }
 }
-function joinUrl(base, path) {
+function joinUrl(base2, path) {
   if (/^https?:\/\//.test(path)) return path;
-  return `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+  return `${base2.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
 }
 function uniq(xs) {
   return [...new Set(xs)];
@@ -11152,6 +11349,10 @@ async function restProbe(ctx, ref3, table, schema, publishableKey2) {
   const { supabaseRestProbe: supabaseRestProbe2 } = await Promise.resolve().then(() => (init_supabase(), supabase_exports));
   return supabaseRestProbe2(ctx, ref3, table, schema, publishableKey2);
 }
+async function authedRestProbe(ctx, ref3, table, schema, publishableKey2, accessToken) {
+  const { supabaseAuthedProbe: supabaseAuthedProbe2 } = await Promise.resolve().then(() => (init_supabase(), supabase_exports));
+  return supabaseAuthedProbe2(ctx, ref3, table, schema, publishableKey2, accessToken);
+}
 async function accountStatus(ctx, mode) {
   const { stripeAccountStatus: stripeAccountStatus2 } = await Promise.resolve().then(() => (init_stripe(), stripe_exports));
   return stripeAccountStatus2(ctx, mode);
@@ -11770,8 +11971,8 @@ async function webhookItems(ctx, at, c) {
 async function webhookUrl(ctx) {
   const path = ctx.config.payments?.webhook?.path;
   if (!path) return null;
-  const base = await once(ctx, "production:url", () => productionUrl(ctx));
-  return base ? joinUrl(base, path) : null;
+  const base2 = await once(ctx, "production:url", () => productionUrl(ctx));
+  return base2 ? joinUrl(base2, path) : null;
 }
 async function domainItems(ctx, at, c) {
   const domain = ctx.config.domain;
@@ -12525,7 +12726,7 @@ init_credentials();
 init_credentials();
 init_secret();
 import { execFile, execFileSync } from "node:child_process";
-import { randomBytes as randomBytes2 } from "node:crypto";
+import { randomBytes as randomBytes3 } from "node:crypto";
 import {
   closeSync as closeSync6,
   constants as constants6,
@@ -12560,8 +12761,8 @@ async function promptCredential(name3, options = {}) {
   if (options.language !== void 0 && options.language !== "en" && options.language !== "zh") throw new Error("Credential prompt language must be en or zh.");
   if (options.replace !== void 0 && typeof options.replace !== "boolean") throw new Error("Credential replacement must be explicitly enabled.");
   const path = resolve5(credentialsPath());
-  const base = { name: name3, path, envOverride: Boolean(process.env[name3]) };
-  const unavailable = (reason) => ({ ...base, status: "unavailable", reason });
+  const base2 = { name: name3, path, envOverride: Boolean(process.env[name3]) };
+  const unavailable = (reason) => ({ ...base2, status: "unavailable", reason });
   if (platform() !== "darwin") return unavailable("unsupported-platform");
   let before;
   try {
@@ -12572,14 +12773,14 @@ async function promptCredential(name3, options = {}) {
   const replaced = hasAssignment(before.content, name3);
   if (replaced && options.replace !== true) return unavailable("already-exists");
   const answer = await nativeAnswer(name3, path, options.language ?? "en");
-  if (answer.status === "cancelled") return { ...base, status: "cancelled" };
+  if (answer.status === "cancelled") return { ...base2, status: "cancelled" };
   if (answer.status === "unavailable") return unavailable(answer.reason);
   const value = answer.value;
   if (!validValue(name3, value)) return unavailable("invalid-value");
   try {
     const cleanupRequired = saveAtomically(path, before, name3, value);
     _resetCredentialsCache();
-    return { ...base, status: "saved", replaced, private: true, ...cleanupRequired ? { cleanupRequired: true } : {} };
+    return { ...base2, status: "saved", replaced, private: true, ...cleanupRequired ? { cleanupRequired: true } : {} };
   } catch (error) {
     return {
       ...unavailable(error instanceof SafeFailure ? error.reason : "write-failed"),
@@ -12833,7 +13034,7 @@ function saveAtomically(path, before, name3, value) {
     const current3 = snapshot(path);
     if (changed(before, current3)) throw new SafeFailure("concurrent-change");
     const content3 = updated(before, name3, value);
-    const tempPath = join9(dirname7(path), `.${basename5(path)}-${randomBytes2(12).toString("hex")}.tmp`);
+    const tempPath = join9(dirname7(path), `.${basename5(path)}-${randomBytes3(12).toString("hex")}.tmp`);
     const fd = openSync6(tempPath, constants6.O_CREAT | constants6.O_EXCL | constants6.O_WRONLY | constants6.O_NOFOLLOW, 384);
     temp = { path: tempPath, fd };
     temp.info = fstatSync6(fd);
@@ -12954,10 +13155,10 @@ function readLinkFile(ctx) {
 function orgId(ctx) {
   return ctx.state.resource("vercel.orgId") ?? readLinkFile(ctx)?.orgId ?? ctx.env("VERCEL_ORG_ID");
 }
-function cliScope(ctx, user) {
+function cliScope(ctx, user2) {
   const org = orgId(ctx);
   if (org?.startsWith("team_")) return org;
-  if (org && user.team) return user.username;
+  if (org && user2.team) return user2.username;
   return void 0;
 }
 async function vercelApi(ctx, method, path, body2, opts) {
@@ -12966,11 +13167,11 @@ async function vercelApi(ctx, method, path, body2, opts) {
   if (s.kind === "token") return viaToken(ctx, s.token, method, path, body2, opts);
   throw new VercelError(`Not authenticated with Vercel: ${howToLogin()}`, 401, "not_authenticated");
 }
-async function viaCli(ctx, user, method, path, body2, opts) {
+async function viaCli(ctx, user2, method, path, body2, opts) {
   const args = ["api", path, "-X", method, "--raw", "--non-interactive"];
   if (method === "DELETE") args.push("--dangerously-skip-permissions");
   if (body2 !== void 0) args.push("--input", "-");
-  const scope = opts?.scopeId ? opts.scopeId.startsWith("team_") ? opts.scopeId : user.username : cliScope(ctx, user);
+  const scope = opts?.scopeId ? opts.scopeId.startsWith("team_") ? opts.scopeId : user2.username : cliScope(ctx, user2);
   if (scope) args.push("--scope", scope);
   const r = await ctx.exec("vercel", args, { cwd: ctx.cwd, stdin: body2 === void 0 ? void 0 : serialise(body2), env: { NO_COLOR: "1" }, timeoutMs: CLI_TIMEOUT });
   if (r.code !== 0) {
@@ -15721,12 +15922,12 @@ function obj(v) {
   if (!v || typeof v !== "object" || Array.isArray(v)) throw new NeonError("Neon returned an unexpected object; nothing was inferred.");
   return v;
 }
-function str2(v) {
+function str3(v) {
   if (typeof v !== "string" || !v) throw new NeonError("Neon returned a missing identifier or name.");
   return v;
 }
 function id(v) {
-  const s = str2(v);
+  const s = str3(v);
   if (!ID.test(s)) throw new NeonError("Invalid Neon resource identifier.");
   return s;
 }
@@ -15746,7 +15947,7 @@ var enc = encodeURIComponent;
 function ref2(p) {
   const org = id(p.org_id ?? p.owner_id);
   if (p.org_id !== void 0 && p.owner_id !== void 0 && p.org_id !== p.owner_id) throw new NeonError("Neon project ownership fields disagree; re-plan after checking the account.");
-  return { id: id(p.id), name: str2(p.name), scope: { kind: "organization", id: org } };
+  return { id: id(p.id), name: str3(p.name), scope: { kind: "organization", id: org } };
 }
 async function organization(ctx, orgId2) {
   const o = obj(await neonApi(ctx, `/organizations/${id(orgId2)}`));
@@ -15782,7 +15983,7 @@ async function projects(ctx, orgId2) {
       found.push(p);
     }
     if (data.pagination === void 0) return found;
-    cursor = str2(obj(data.pagination).cursor);
+    cursor = str3(obj(data.pagination).cursor);
     if (!batch.length) return found;
     if (seen2.has(cursor)) throw new NeonError("Neon project pagination did not advance.");
     seen2.add(cursor);
@@ -15830,7 +16031,7 @@ async function creationTarget4(ctx) {
   const o = await freeOrg2(ctx);
   const region = cfg(ctx).region ?? "aws-us-east-2";
   if (!/^(?:aws|azure)-[a-z0-9-]+$/.test(region)) throw new NeonError("Invalid Neon region; use an official region ID.");
-  return { scope: { kind: "organization", id: id(o.id), name: str2(o.name) }, region };
+  return { scope: { kind: "organization", id: id(o.id), name: str3(o.name) }, region };
 }
 function targetSame(a, b) {
   return a.scope.kind === b.scope.kind && a.scope.id === b.scope.id && a.region === b.region;
@@ -15896,7 +16097,7 @@ async function selection(ctx) {
   const matches3 = endpoints.filter((e) => e.project_id === project.id && e.branch_id === branchId && e.type === "read_write" && e.disabled === false);
   if (matches3.length !== 1) throw new NeonError("Could not confirm one enabled read-write Neon compute for the selected branch. No compute was created.");
   const endpoint = matches3[0];
-  const host = str2(endpoint.host);
+  const host = str3(endpoint.host);
   if (!/^ep-[a-z0-9-]+\.[a-z0-9.-]+\.neon\.tech$/.test(host)) throw new NeonError("Neon returned an unexpected compute hostname.");
   return { project, branchId, database, role, endpointId: id(endpoint.id), host };
 }
@@ -16627,8 +16828,8 @@ function webhookNames(ctx) {
 async function guidedWebhookHandoff(ctx, adapter, hostTitle) {
   const cfg2 = ctx.config.payments.webhook;
   const mode = modeFor(ctx.config, "production");
-  const base = await productionUrl(ctx);
-  const url = base ? joinUrl(base, cfg2.path) : `<your production URL>${cfg2.path.startsWith("/") ? "" : "/"}${cfg2.path}`;
+  const base2 = await productionUrl(ctx);
+  const url = base2 ? joinUrl(base2, cfg2.path) : `<your production URL>${cfg2.path.startsWith("/") ? "" : "/"}${cfg2.path}`;
   const { names } = webhookNames(ctx);
   return {
     id: `${adapter.id}:webhook-guided`,
@@ -16644,14 +16845,14 @@ async function webhookStep2(ctx, adapter, wh, host) {
   const cfg2 = ctx.config.payments?.webhook;
   if (!cfg2) return { handoffs, warnings };
   if (ctx.config.targets.includes("preview")) warnings.push(`${adapter.title} webhooks are registered for production only: preview URLs change with every deployment`);
-  const base = await productionUrl(ctx);
-  if (!base) {
+  const base2 = await productionUrl(ctx);
+  if (!base2) {
     warnings.push(
       `${adapter.title} webhook: the production URL isn't known yet (no domain, and ${lastDeployAt(ctx) ? "the host reports no production URL" : "golive hasn't deployed production yet, so the host's URL isn't confirmed"}). Apply this plan, then run \`plan\` again to register the webhook.`
     );
     return { handoffs, warnings };
   }
-  const url = joinUrl(base, cfg2.path);
+  const url = joinUrl(base2, cfg2.path);
   const mode = modeFor(ctx.config, "production");
   const accountCap = accountCapability(adapter);
   const account2 = await accountCap.identify(ctx, mode);
@@ -16993,6 +17194,111 @@ async function verifySettings(ctx, title, authConfig, changes) {
   return [{ id: id2, title: checkTitle, status: "pass", severity: "info", evidence: [...confirmed, ...unconfirmed] }];
 }
 
+// src/links/auth-e2e.ts
+init_secret();
+init_supabase_auth();
+var TEST_USER_ID = "supabase.testUserId";
+var TEST_USER_EMAIL = "supabase.testUserEmail";
+var testUserPassKey = (id2) => `supabase.authTestPass:${id2}`;
+var authE2eLink = {
+  id: "auth-e2e",
+  async plan(ctx) {
+    if (ctx.config.auth?.e2e !== true) return null;
+    const email = ctx.config.auth.testEmail;
+    const au = await axisStatus(ctx, "auth");
+    if (au.kind === "none") return null;
+    const title = au.kind === "guided" ? au.title : au.adapter.title;
+    if (au.kind !== "ready") {
+      const why = au.kind === "guided" ? "is not automated by golive" : "is not connected yet";
+      return { steps: [], handoffs: [], warnings: [`auth.e2e is on in golive.yaml, but ${title} ${why}: the signup journey stays a manual dashboard task`] };
+    }
+    const authUsers = au.adapter.capabilities.authUsers;
+    if (!authUsers) {
+      return { steps: [], handoffs: [], warnings: [`auth.e2e is on in golive.yaml, but ${au.adapter.title} exposes no auth-users surface: the signup journey stays a manual dashboard task`] };
+    }
+    if (!email) {
+      return { steps: [], handoffs: [], warnings: ["auth.e2e is on in golive.yaml but auth.testEmail is not set: golive has no inbox to send the test account's confirmation to, so no test account is seeded"] };
+    }
+    const axis = projectAxisFor(ctx, au.adapter);
+    const dest = await authUsers.destination(ctx).catch(() => null);
+    const seeded = ctx.state.resource(TEST_USER_ID);
+    const where = dest ? `${au.adapter.title} project ${dest.ref}` : `the ${au.adapter.title} project`;
+    const s = step({
+      id: "auth:test-user",
+      title: `Seed one ${au.adapter.title} test account for the signup journey`,
+      kind: "provision",
+      risk: { writes: true, live: true },
+      dependsOn: deps(ctx, [...axis ? [`project:${axis}`] : [], "auth:settings"]),
+      preview: [
+        seeded ? `set a new password on the test account ${email} golive seeded earlier (${seeded}) in ${where}` : `create one test account ${email} in ${where}`,
+        "the generated password stays in this run's memory only; state records the user id and the address, never a secret",
+        "the account is real and lives in the project until you delete it (the provider dashboard lists it)",
+        `a confirmation email goes to ${email}; golive cannot read an inbox, so clicking that link is yours`
+      ],
+      intent: intentOf({ project: await projectIntent(ctx, au.adapter), user: seeded ?? "new", email, previous: ctx.state.get().steps["auth:test-user"]?.at }),
+      verifyWith: ["auth-signup", "auth-session"],
+      async run(sctx) {
+        const pass2 = testPassword();
+        const address = sctx.state.resource(TEST_USER_EMAIL) ?? email;
+        const recorded = sctx.state.resource(TEST_USER_ID);
+        if (recorded) {
+          const known = await authUsers.adminUser(sctx, recorded);
+          if (!known) {
+            throw new Error(
+              `The test account ${recorded} recorded in .golive/state.json is gone from ${au.adapter.title}. Remove "${TEST_USER_ID}" from .golive/state.json to seed a new account, or restore the user in the provider dashboard.`
+            );
+          }
+          await authUsers.setPassword(sctx, recorded, pass2);
+          vaultPut(testUserPassKey(recorded), pass2);
+          const after2 = await authUsers.adminUser(sctx, recorded);
+          return {
+            changes: [
+              `set a new password on the existing test account ${address} (${recorded}); fp:${pass2.fingerprint}, kept in this run's memory only`,
+              after2?.emailConfirmed ? `${address} is confirmed (email_confirmed_at set)` : `${address} is not confirmed yet: click the link in the inbox, then run \`plan\` + \`apply\` again`
+            ]
+          };
+        }
+        const res = await authUsers.signup(sctx, address, pass2);
+        if (res.captchaRequired) {
+          throw new Error(
+            `${au.adapter.title} wants a captcha for signup, so golive cannot create the test account programmatically. Turn the auth captcha off for this project (provider dashboard, Authentication settings), or accept that this journey stays manual.`
+          );
+        }
+        if (res.rateLimited) {
+          throw new Error(
+            `${au.adapter.title} refused to send more auth emails (HTTP 429 rate limit) while signing up ${address}, so the test account was not seeded. Wait for the limit to reset (or configure custom SMTP and raise the auth rate limit), then re-run \`apply\`; check the provider's user list for ${address} if you are unsure whether the account was created.`
+          );
+        }
+        if (!res.userId) {
+          throw new Error(`Signing up ${address} returned no user id (HTTP ${res.status}). Check the provider's user list before re-running; golive keeps no account it cannot name.`);
+        }
+        sctx.remember(TEST_USER_ID, res.userId);
+        sctx.remember(TEST_USER_EMAIL, address);
+        vaultPut(testUserPassKey(res.userId), pass2);
+        const after = await authUsers.adminUser(sctx, res.userId);
+        const lines = [`created the test account ${address} (${res.userId})`, `password fp:${pass2.fingerprint} (this run's memory only, never written anywhere)`];
+        if (!res.confirmationSent) {
+          lines.push(
+            res.existing ? `${address} already had an account, so no new confirmation email was sent: golive adopted it as the test account` : `${au.adapter.title} confirmed the account without sending anything: email confirmation is not required by this project (see the auth-policy check)`
+          );
+        } else {
+          lines.push(`confirmation email sent to ${address}; click the link, then run \`plan\` + \`apply\` again to prove the confirmed account can sign in`);
+        }
+        if (after?.emailConfirmed) lines.push(`${address} is already confirmed (email_confirmed_at set)`);
+        return { changes: lines };
+      }
+    });
+    const handoff = {
+      id: "auth:confirm-email",
+      why: `${au.adapter.title} sends the confirmation link for ${email} to that inbox, and golive cannot read an inbox: only the account owner can confirm the address.`,
+      action: `Open the confirmation email for ${email} (check the spam folder; the built-in mailer is rate-limited) and click the link. Then run \`plan\` + \`apply\` again: the auth:test-user step re-runs with a fresh password for the same account, and the auth-signup/auth-session checks prove the confirmed account can sign in.`,
+      blocking: false,
+      verifiedBy: "auth-signup"
+    };
+    return { steps: track(ctx, [s]), handoffs: [handoff], warnings: [] };
+  }
+};
+
 // src/links/deploy.ts
 var WEBHOOK_STEP = "payments:webhook:production";
 var deployLink = {
@@ -17163,7 +17469,7 @@ var netlifyVisibilityLink = {
 };
 
 // src/links/all.ts
-var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, emailDomainLink, emailKeysLink, deployLink, netlifyVisibilityLink];
+var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, authE2eLink, emailDomainLink, emailKeysLink, deployLink, netlifyVisibilityLink];
 
 // src/links/index.ts
 var LINKS = ALL_LINKS;
@@ -17339,10 +17645,10 @@ function scriptUrls(html, pageUrl) {
   }
   return out;
 }
-async function fetchBundle(ctx, base) {
-  const allowed = new Set(hostVariants(new URL(base).host));
+async function fetchBundle(ctx, base2) {
+  const allowed = new Set(hostVariants(new URL(base2).host));
   for (const h of allowed) allowHost(h);
-  let page = `${base}/`;
+  let page = `${base2}/`;
   let res = await probe(ctx, page);
   for (let hop = 0; hop < 3 && res.status >= 300 && res.status < 400 && res.headers.location; hop++) {
     let next;
@@ -17460,12 +17766,12 @@ var bundleSecretsCheck = {
   async run(ctx) {
     const confirmed = await confirmedProductionUrl(ctx);
     if (!confirmed.ok) return confirmed.outcome;
-    const base = confirmed.url;
+    const base2 = confirmed.url;
     let bundle;
     try {
-      bundle = await fetchBundle(ctx, base);
+      bundle = await fetchBundle(ctx, base2);
     } catch (e) {
-      return result("warn", "medium", [`could not fetch ${base}/: ${errMsg2(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
+      return result("warn", "medium", [`could not fetch ${base2}/: ${errMsg2(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
     }
     const seen2 = /* @__PURE__ */ new Set();
     const hits = [];
@@ -17478,7 +17784,7 @@ var bundleSecretsCheck = {
         }
       }
     }
-    const scanned = `scanned ${bundle.files.length} file(s) from ${base}`;
+    const scanned = `scanned ${bundle.files.length} file(s) from ${base2}`;
     if (hits.length) {
       const evidence = hits.map((h) => `${h.kind} in ${h.path} (fp:${h.secret.fingerprint})`);
       return result(
@@ -17513,7 +17819,7 @@ var bundleSecretsCheck = {
 
 // src/checks/rls.ts
 var MAX_TABLES = 60;
-var INTERNAL = /^(auth|storage|extensions|realtime|vault|pgsodium|pgsodium_masks|graphql|graphql_public|net|cron|supabase_.*|pg_.*|information_schema|_realtime|_analytics)$/;
+var INTERNAL_SCHEMAS = /^(auth|storage|extensions|realtime|vault|pgsodium|pgsodium_masks|graphql|graphql_public|net|cron|supabase_.*|pg_.*|information_schema|_realtime|_analytics)$/;
 async function projectRef(ctx) {
   const fromState = ctx.state.resource("supabase.ref");
   if (fromState) return fromState;
@@ -17579,7 +17885,7 @@ var rlsCheck = {
     const evidence = [];
     let tables2;
     try {
-      tables2 = (await admin.tables(ctx)).filter((t) => !INTERNAL.test(t.schema));
+      tables2 = (await admin.tables(ctx)).filter((t) => !INTERNAL_SCHEMAS.test(t.schema));
     } catch (e) {
       return result("fail", "high", [`could not list tables: ${errMsg2(e)}`], "Re-run verify; if it persists, check the Supabase login with `golive doctor`.");
     }
@@ -17656,13 +17962,13 @@ var dbConnectionCheck = {
 
 // src/checks/webhook.ts
 init_config();
-function join14(base, path) {
-  return /^https?:\/\//.test(path) ? path : `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+function join14(base2, path) {
+  return /^https?:\/\//.test(path) ? path : `${base2.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
 }
 async function registeredUrl(ctx) {
   const path = ctx.config.payments?.webhook?.path;
-  const base = await baseUrl(ctx);
-  return path && base ? join14(base, path) : null;
+  const base2 = await baseUrl(ctx);
+  return path && base2 ? join14(base2, path) : null;
 }
 var looksLikeHtml = (text) => /^\s*(<!doctype html|<html)/i.test(text);
 var webhookUnsignedCheck = {
@@ -17790,8 +18096,8 @@ var stripeLiveReadyCheck = {
 };
 
 // src/checks/auth-redirects.ts
-function concrete(base, path) {
-  return base + (path.startsWith("/") ? path : `/${path}`).replace(/\*\*/g, "golive/probe").replace(/\*/g, "golive");
+function concrete(base2, path) {
+  return base2 + (path.startsWith("/") ? path : `/${path}`).replace(/\*\*/g, "golive/probe").replace(/\*/g, "golive");
 }
 var authRedirectsCheck = {
   id: "auth-redirects",
@@ -17946,6 +18252,310 @@ var authPolicyCheck = {
     return pass(lines);
   }
 };
+
+// src/checks/auth-signup.ts
+init_secret();
+init_supabase_auth();
+import { randomBytes as randomBytes4 } from "node:crypto";
+function probeAddress(email) {
+  const m = /^([^@+]+)(?:\+[^@]*)?@([^@\s]+)$/.exec(email);
+  return m ? `${m[1]}+gl-${randomBytes4(3).toString("hex")}@${m[2]}` : email;
+}
+var authSignupCheck = {
+  id: "auth-signup",
+  title: "Signup sends a confirmation email and an unconfirmed account cannot sign in",
+  severity: "high",
+  applies: (ctx) => Boolean(ctx.config.stack.auth),
+  async run(ctx) {
+    if (ctx.config.auth?.e2e !== true) {
+      return skip("auth.e2e is not enabled in golive.yaml: this check signs up a probe account in the real project, so it only runs on explicit opt-in");
+    }
+    const provider = ctx.config.stack.auth;
+    const title = adapterFor(ctx, "auth")?.title ?? provider;
+    const email = ctx.config.auth.testEmail;
+    if (!email) return skip("auth.testEmail is not set in golive.yaml, so golive has no inbox address for the test account");
+    const auth8 = cap(ctx, "auth", "authUsers");
+    if (!auth8) return skip(`auth provider ${provider} has no auth-users surface (guided): the signup journey stays a manual dashboard task`);
+    const pre = await prereq(ctx, "auth");
+    if (pre) return pre;
+    const seeded = ctx.state.resource(TEST_USER_ID);
+    if (!seeded) return blocked("auth:test-user", "no test account has been seeded yet");
+    const evidence = [];
+    const probe2 = probeAddress(email);
+    const probePass = testPassword();
+    let signup2;
+    try {
+      signup2 = await auth8.signup(ctx, probe2, probePass);
+    } catch (e) {
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
+      return result("fail", "high", [`signing up a probe account failed: ${errMsg2(e)}`], `Check that ${provider} auth is reachable and that the project accepts new users (\`auth.signup: true\`), then re-run verify.`);
+    }
+    if (signup2.captchaRequired) {
+      return skip(`${title} requires a captcha for signup, so a scripted signup cannot run (golive will not claim a pass it cannot evidence)`);
+    }
+    if (signup2.rateLimited) {
+      return result("warn", "medium", [`signup for the probe address ${probe2} was rate-limited (HTTP 429)`, ...evidence], `Wait for ${title}'s auth email limit to reset (or configure custom SMTP and raise the auth rate limit), then re-run verify.`);
+    }
+    if (!signup2.confirmationSent) {
+      return result(
+        "fail",
+        "high",
+        [
+          `the signup for ${probe2} was accepted without sending a confirmation email (HTTP ${signup2.status}${signup2.existing ? ", the address already has an account" : ""})`,
+          ...evidence
+        ],
+        `Require email confirmation: \`auth.requireEmailConfirm: true\` in golive.yaml, then \`plan\` + \`apply\` (the auth:settings step) and \`verify --only auth-policy,auth-signup\`.`
+      );
+    }
+    evidence.push(`signed up probe account ${probe2}: confirmation email sent (HTTP ${signup2.status})`);
+    let refused;
+    try {
+      refused = await auth8.login(ctx, probe2, probePass);
+    } catch (e) {
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
+      return result("fail", "high", [`the password login for the probe account failed: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable and re-run verify.`);
+    }
+    if (refused.session) {
+      return result(
+        "fail",
+        "critical",
+        [`the unconfirmed probe account ${probe2} signed in and got a session: email confirmation is not enforced`, ...evidence],
+        `Require email confirmation (\`auth.requireEmailConfirm: true\`, then \`plan\` + \`apply\` for the auth:settings step). An account that can sign in before its address is confirmed is not proven to belong to a real inbox.`
+      );
+    }
+    if (refused.rateLimited) {
+      return result("warn", "medium", [`the immediate login for the probe account was rate-limited (HTTP 429), so confirmation enforcement is not proven`, ...evidence], "Wait for the rate limit to reset, then re-run verify.");
+    }
+    if (!(refused.code ?? "").includes("email_not_confirmed")) {
+      return result(
+        "warn",
+        "medium",
+        [`the unconfirmed probe account was refused sign-in with "${refused.code}" instead of \`email_not_confirmed\`, so confirmation enforcement is not proven`, ...evidence],
+        "Re-run verify; if it persists, check the project's confirmation settings and the signup flow in the app."
+      );
+    }
+    evidence.push(`the same address cannot sign in before confirming (${refused.code})`);
+    const seededEmail = ctx.state.resource(TEST_USER_EMAIL) ?? email;
+    let view2;
+    try {
+      view2 = await auth8.adminUser(ctx, seeded);
+    } catch (e) {
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
+      return result("fail", "high", [`could not read the test account ${seeded}: ${errMsg2(e)}`, ...evidence], "Re-run verify; if it persists, check the provider login and read the user in its dashboard.");
+    }
+    if (!view2) {
+      return result("fail", "high", [`the test account ${seeded} recorded in .golive/state.json is gone from ${title}`, ...evidence], "Delete the recorded test account from the provider dashboard, or remove it from .golive/state.json, then re-run `plan` + `apply` to seed a new one.");
+    }
+    if (!view2.emailConfirmed) {
+      return result(
+        "warn",
+        "medium",
+        [
+          `the test account ${seededEmail} is not confirmed yet (\`email_confirmed_at\` is not set): the auth:confirm-email handoff covers the click in the inbox`,
+          "golive cannot read an inbox, so delivery and the click stay human-confirmed",
+          ...evidence
+        ],
+        "Click the confirmation link in that inbox, then run `plan` + `apply` again (the auth:test-user step re-runs with a fresh password) and re-run verify."
+      );
+    }
+    evidence.push(`the test account ${seededEmail} is confirmed (email_confirmed_at set)`);
+    const seededPass = vaultGet(testUserPassKey(seeded));
+    if (!seededPass) {
+      return result("skip", "info", [
+        "blocked by: no password for the test account in this run (only the run that seeds or rotates it keeps one, in memory)",
+        ...evidence
+      ]);
+    }
+    let login2;
+    try {
+      login2 = await auth8.login(ctx, seededEmail, seededPass);
+    } catch (e) {
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
+      return result("fail", "high", [`the password login for the confirmed test account failed: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+    }
+    if (!login2.session) {
+      return result(
+        "fail",
+        "high",
+        [`the confirmed test account ${seededEmail} cannot sign in (${login2.code})`, ...evidence],
+        "Check the account in the provider dashboard (banned, deleted, password just changed) and that the project's password policy accepts the generated password, then re-run `plan` + `apply` and verify."
+      );
+    }
+    evidence.push(`the confirmed test account signed in (user ${login2.session.userId})`);
+    evidence.push(`delivery itself stays human-confirmed: golive never sees the inbox, only the provider's own confirmation state`);
+    return pass(evidence);
+  }
+};
+
+// src/checks/auth-session.ts
+init_secret();
+init_supabase_auth();
+var MAX_TABLES2 = 10;
+var authSessionCheck = {
+  id: "auth-session",
+  title: "A confirmed test account signs in and its session is accepted",
+  severity: "high",
+  applies: (ctx) => Boolean(ctx.config.stack.auth),
+  async run(ctx) {
+    if (ctx.config.auth?.e2e !== true) {
+      return skip("auth.e2e is not enabled in golive.yaml: this check signs in as a real account, so it only runs on explicit opt-in");
+    }
+    const provider = ctx.config.stack.auth;
+    const title = adapterFor(ctx, "auth")?.title ?? provider;
+    const auth8 = cap(ctx, "auth", "authUsers");
+    if (!auth8) return skip(`auth provider ${provider} has no auth-users surface (guided): the signup journey stays a manual dashboard task`);
+    const pre = await prereq(ctx, "auth");
+    if (pre) return pre;
+    const seeded = ctx.state.resource(TEST_USER_ID);
+    if (!seeded) return blocked("auth:test-user", "no test account has been seeded yet");
+    const password = vaultGet(testUserPassKey(seeded));
+    if (!password) {
+      return skip("blocked by: no password for the test account in this run (only the run that seeds or rotates it keeps one, in memory); re-run `plan` + `apply` to rotate it and prove login");
+    }
+    const dest = await auth8.destination(ctx);
+    if (!dest) return blocked("project:db", "no Supabase project is selected for this app");
+    const address = ctx.state.resource(TEST_USER_EMAIL) ?? ctx.config.auth?.testEmail;
+    if (!address) return skip("the test account's address is not recorded, so golive cannot sign in as it");
+    let outcome;
+    try {
+      outcome = await auth8.login(ctx, address, password);
+    } catch (e) {
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
+      return result("fail", "high", [`signing in as the test account ${address} failed: ${errMsg2(e)}`], `Check that ${provider} auth is reachable, then re-run verify.`);
+    }
+    if (!outcome.session) {
+      if (outcome.rateLimited) return result("warn", "medium", [`the password login for ${address} was rate-limited (HTTP 429)`], "Wait for the rate limit to reset, then re-run verify.");
+      if ((outcome.code ?? "").includes("email_not_confirmed")) {
+        return result(
+          "warn",
+          "medium",
+          [`the test account ${address} is not confirmed yet, so there is no session to check: the auth:confirm-email handoff covers the click in the inbox`],
+          "Click the confirmation link in that inbox, then run `plan` + `apply` again (the auth:test-user step rotates the password in that run) and re-run verify."
+        );
+      }
+      return result("fail", "high", [`the test account ${address} cannot sign in (${outcome.code})`], `Check the account in the ${title} dashboard (confirmed, not banned, password policy) and that auth.testEmail is still that address, then re-run \`plan\` + \`apply\`.`);
+    }
+    const session2 = outcome.session;
+    const evidence = [`signed in as ${address} (user ${session2.userId}, email_confirmed_at set)`];
+    const issues = [];
+    let view2;
+    try {
+      view2 = await auth8.user(ctx, session2.accessToken);
+    } catch (e) {
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
+      return result("fail", "high", [`could not read the signed-in user: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+    }
+    if (view2.status === 401 || view2.status === 403) {
+      return result("fail", "high", [`the session token was rejected (GET /auth/v1/user \u2192 HTTP ${view2.status})`, ...evidence], "The project rejected a token it just issued: check the project's JWT settings and auth logs, then re-run verify.");
+    }
+    if (view2.status !== 200 || !view2.id) {
+      return result("fail", "high", [`GET /auth/v1/user answered HTTP ${view2.status} without a user, so the session is not usable`, ...evidence], "Re-run verify; if it persists, check the auth service status for this project.");
+    }
+    if (view2.id !== session2.userId) {
+      return result("fail", "high", [`GET /auth/v1/user returned user ${view2.id}, not the signed-in user ${session2.userId}`, ...evidence], "The token resolves to another account: stop and inspect the project before using this session.");
+    }
+    evidence.push(`GET /auth/v1/user with that token returned the same user (${view2.id})`);
+    let anon;
+    try {
+      anon = await auth8.user(ctx);
+    } catch (e) {
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
+      return result("fail", "high", [`could not read the anonymous answer from the auth API: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+    }
+    if (anon.status === 200) {
+      return result("fail", "critical", [`an anonymous GET /auth/v1/user returned a user (${anon.id ?? "no id"})`, ...evidence], "The auth API must answer 401 without a token: check for a proxy, middleware or key that turns anonymous requests into signed-in ones.");
+    }
+    if (anon.status === 401) evidence.push("an anonymous GET /auth/v1/user is refused (401)");
+    else issues.push({ severity: "medium", line: `an anonymous GET /auth/v1/user answered HTTP ${anon.status} instead of 401, so the unauthenticated baseline is not established` });
+    const path = ctx.config.auth?.protectedPath;
+    let blockedLeg = null;
+    if (!path) {
+      evidence.push("no auth.protectedPath configured: the app's own route protection was not checked");
+    } else {
+      const confirmed = await confirmedProductionUrl(ctx);
+      if (!confirmed.ok) blockedLeg = confirmed.outcome;
+      else {
+        const url = `${trimSlash(confirmed.url)}${path}`;
+        let r;
+        try {
+          r = await probe(ctx, url, { headers: { "user-agent": "golive-verify" } });
+        } catch (e) {
+          issues.push({ severity: "medium", line: `GET ${url} without a session failed: ${errMsg2(e)}` });
+          r = null;
+        }
+        if (r) {
+          const line = `anonymous GET ${url} \u2192 HTTP ${r.status}${r.status >= 300 && r.status < 400 ? ` (\u2192 ${r.headers.location ?? "no location"})` : ""}`;
+          if (r.status === 200) {
+            return result(
+              "fail",
+              "critical",
+              [`${line}: the declared protected path is served without a session`, ...evidence],
+              `Make ${path} require a session (redirect to sign-in, or answer 401/403 when there is no session). If the route renders a sign-in page with 200 instead, pick a path that redirects in \`auth.protectedPath\` \u2014 golive cannot tell a rendered sign-in page from a public page.`
+            );
+          }
+          if (r.status === 401 || r.status === 403) evidence.push(`${line}: protected without a session`);
+          else if (r.status >= 300 && r.status < 400) evidence.push(`${line}: redirected out of the route without a session`);
+          else issues.push({ severity: "medium", line: `${line}: golive could not establish protection (a 404 usually means the path in auth.protectedPath is wrong or not deployed)` });
+        }
+      }
+    }
+    const table = await signedInTables(ctx, dest.ref, session2.accessToken);
+    evidence.push(...table.lines);
+    if (table.issue) issues.push(table.issue);
+    const lines = [...issues.map((i) => i.line), ...evidence];
+    const failing = issues.filter((i) => i.severity === "high" || i.severity === "critical");
+    if (failing.length) return result("fail", failing[0].severity, lines, failing.map((i) => i.fix).filter(Boolean).join(" "));
+    if (blockedLeg) return { ...blockedLeg, evidence: [...blockedLeg.evidence, ...lines] };
+    if (issues.length) return result("warn", issues[0].severity, lines, issues.map((i) => i.fix).filter(Boolean).join(" "));
+    return result("pass", "info", lines);
+  }
+};
+async function signedInTables(ctx, ref3, token2) {
+  const admin = cap(ctx, "db", "dbAdmin");
+  const outputs4 = cap(ctx, "db", "outputs");
+  if (!admin || !outputs4) return { lines: ["the signed-in table probe needs the database admin and outputs capabilities, so no table was probed"] };
+  let key;
+  try {
+    key = (await outputs4.outputs(ctx, "production", ["supabase.publishableKey"]))["supabase.publishableKey"];
+  } catch {
+    key = void 0;
+  }
+  if (!key) return { lines: ["no publishable/anon key is available, so no table was probed as the signed-in user"] };
+  let tables2;
+  try {
+    tables2 = (await admin.tables(ctx)).filter((t) => !INTERNAL_SCHEMAS.test(t.schema));
+  } catch (e) {
+    return { lines: [`could not list tables: ${errMsg2(e)}`] };
+  }
+  if (!tables2.length) return { lines: ["no tables in exposed schemas"] };
+  const batch = tables2.slice(0, MAX_TABLES2);
+  let reachable = 0;
+  let denied = 0;
+  let other = 0;
+  for (const t of batch) {
+    try {
+      const r = await authedRestProbe(ctx, ref3, t.name, t.schema, key, token2);
+      if (r.status === 200) reachable++;
+      else if ([401, 403, 404, 406].includes(r.status) || r.code === "42501") denied++;
+      else other++;
+    } catch {
+      other++;
+    }
+  }
+  const lines = [`probed ${batch.length} exposed table(s) as the signed-in user: ${reachable} reachable, ${denied} denied, ${other} undecided`];
+  if (tables2.length > batch.length) lines.push(`${tables2.length - batch.length} further table(s) were not probed`);
+  if (denied === batch.length) {
+    return {
+      lines,
+      issue: {
+        severity: "medium",
+        line: `the signed-in user is denied by every exposed table golive probed (${denied}): the app may be missing the GRANT for the authenticated role`,
+        fix: "If the app queries these tables as the signed-in user, add the GRANT plus RLS policies in a migration (`grant select on <table> to authenticated;` with policies scoped to `auth.uid()`), then re-run verify."
+      }
+    };
+  }
+  return { lines };
+}
 
 // src/checks/email.ts
 var DKIM_SELECTORS = {
@@ -18126,6 +18736,8 @@ var ALL_CHECKS = [
   dbConnectionCheck,
   authRedirectsCheck,
   authPolicyCheck,
+  authSignupCheck,
+  authSessionCheck,
   webhookUnsignedCheck,
   webhookRegisteredCheck,
   stripeLiveReadyCheck,
@@ -19507,17 +20119,17 @@ async function accountRows(ctx, projects2) {
       continue;
     }
     let via;
-    let login;
+    let login2;
     let provenance = { kind: "verified" };
     try {
       const status = await adapter.auth(ctx);
       via = status.via;
-      login = status.ok ? `connected \u2014 if access expires: ${status.howToFix ?? `sign in to ${providerTitle} again, in a separate terminal window`}` : status.howToFix ?? `sign in to ${providerTitle} again, in a separate terminal window`;
+      login2 = status.ok ? `connected \u2014 if access expires: ${status.howToFix ?? `sign in to ${providerTitle} again, in a separate terminal window`}` : status.howToFix ?? `sign in to ${providerTitle} again, in a separate terminal window`;
     } catch (e) {
-      login = `golive could not check the ${providerTitle} login (${errMsg(e)}); run \`doctor\` after fixing access`;
+      login2 = `golive could not check the ${providerTitle} login (${errMsg(e)}); run \`doctor\` after fixing access`;
       provenance = { kind: "unknown" };
     }
-    rows.push({ axis, provider: id2, providerTitle, ...via ? { via } : {}, ...account2 ? { account: account2 } : {}, login, provenance });
+    rows.push({ axis, provider: id2, providerTitle, ...via ? { via } : {}, ...account2 ? { account: account2 } : {}, login: login2, provenance });
   }
   return rows;
 }
@@ -20173,8 +20785,8 @@ function menu(d) {
     return { axis, alreadyInRepo: [...inRepo], options, note: "Other provider? Say its name for best-effort guidance via official CLI/MCP/API or dashboard. Support and verification coverage vary; success is not guaranteed." };
   });
 }
-function initConfig(base, flags, d) {
-  const cfg2 = structuredClone(base);
+function initConfig(base2, flags, d) {
+  const cfg2 = structuredClone(base2);
   if (typeof flags.stack === "string") {
     for (const pair of flags.stack.split(",")) {
       const [k, v] = pair.split("=").map((s) => s.trim());

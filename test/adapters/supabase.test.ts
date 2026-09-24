@@ -7,7 +7,7 @@ import { createHttp } from '../../src/core/http.js';
 import { credentialsPath } from '../../src/core/credentials.js';
 import { Secret, _resetSecretRegistry, vaultGet, vaultPut } from '../../src/core/secret.js';
 import { emptyState } from '../../src/core/state.js';
-import { pooledUrl, sessionUrl, supabaseAdapter, supabaseRestProbe, supabaseTiming, SupabaseError, usesPrisma } from '../../src/adapters/supabase.js';
+import { pooledUrl, sessionUrl, supabaseAdapter, supabaseAuthedProbe, supabaseRestProbe, supabaseTiming, SupabaseError, usesPrisma } from '../../src/adapters/supabase.js';
 import type { Capabilities, Ctx, Http, HttpRequest, ShipState, StepContext } from '../../src/core/types.js';
 
 const API = 'https://api.supabase.com/v1';
@@ -1193,10 +1193,33 @@ describe('supabaseRestProbe', () => {
   });
 });
 
+describe('supabaseAuthedProbe (the app\'s own session, not anonymity)', () => {
+  it('puts the session token on Authorization and the publishable key on apikey', async () => {
+    const token = new Secret('SUPABASE_AUTH_TOKEN', 'session-token-for-tests-1234');
+    const { http, calls } = mockHttp([['GET', `https://${REF}.supabase.co/rest/v1/todos`, () => ({ json: [] })]]);
+    const r = await supabaseAuthedProbe(testCtx({ http }), REF, 'todos', 'api', PUB_KEY, token);
+    expect(r).toEqual({ status: 200, rows: 0 });
+    expect(calls[0]!.url).toBe(`https://${REF}.supabase.co/rest/v1/todos?select=*&limit=1`);
+    expect(calls[0]!.headers.apikey).toBe(PUB_KEY);
+    expect(calls[0]!.headers.authorization).toBe(token.reveal());
+    expect(calls[0]!.headers['accept-profile']).toBe('api');
+  });
+
+  it('reports a denied table the way PostgREST answers it, and rejects a malformed ref', async () => {
+    const token = new Secret('SUPABASE_AUTH_TOKEN', 'session-token-for-tests-5678');
+    const { http } = mockHttp([['GET', `https://${REF}.supabase.co/rest/v1/orders`, () => ({ status: 403, json: { code: '42501', message: 'permission denied for table orders' } })]]);
+    expect(await supabaseAuthedProbe(testCtx({ http }), REF, 'orders', 'public', PUB_KEY, token)).toEqual({ status: 403, rows: 0, code: '42501' });
+
+    const none = mockHttp([]);
+    await expect(supabaseAuthedProbe(testCtx({ http: none.http }), 'evil.com/x', 't', 'public', PUB_KEY, token)).rejects.toThrow(/project ref/);
+    expect(none.calls).toHaveLength(0);
+  });
+});
+
 describe('supabase adapter shape', () => {
   it('declares id, axes and capabilities; detects supabase usage', () => {
     expect(supabaseAdapter).toMatchObject({ id: 'supabase', axes: ['db', 'auth'], automated: true });
-    expect(Object.keys(supabaseAdapter.capabilities).sort()).toEqual(['authConfig', 'dbAdmin', 'outputs', 'project']);
+    expect(Object.keys(supabaseAdapter.capabilities).sort()).toEqual(['authConfig', 'authUsers', 'dbAdmin', 'outputs', 'project']);
     const base = { root: '/r', packageManager: null, framework: 'next' as const, providers: {}, envRefs: [], configs: {}, webhooks: [], findings: [], notes: [] };
     expect(supabaseAdapter.detect!(base)).toBe(false);
     expect(supabaseAdapter.detect!({ ...base, providers: { db: ['supabase'] } })).toBe(true);

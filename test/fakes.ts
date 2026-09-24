@@ -5,7 +5,7 @@
  */
 import { Secret } from '../src/core/secret.js';
 import { modeFor } from '../src/core/config.js';
-import type { Adapter, AuthSettings, Ctx, DnsRecord, EnvTarget, Mode, OutputKey, Outputs, ProjectRef, Value } from '../src/core/types.js';
+import type { Adapter, AuthLoginOutcome, AuthSettings, AuthSignupOutcome, AuthUserView, Ctx, DnsRecord, EnvTarget, Mode, OutputKey, Outputs, ProjectRef, Value } from '../src/core/types.js';
 
 export interface Call {
   adapter: string;
@@ -21,6 +21,7 @@ export const RAW = {
   stripeTest: 'sk_' + 'test_FAKEtestSECRETkey0123456789abcdef',
   resendKey: 're' + '_FAKEresend_KEYvalue0123456789',
   whsecPrefix: 'whsec' + '_FAKEwebhookSIGNINGsecret',
+  authSession: 'fake-auth-session-TOKEN-0123456789abcdef',
 } as const;
 
 export const PUBLIC = {
@@ -30,7 +31,7 @@ export const PUBLIC = {
   pkTest: 'pk_test_FAKEpublishable123',
 } as const;
 
-export const ALL_RAW_SECRETS = (): string[] => [RAW.supabaseSecret, RAW.dbUrl, 'FAKEdbPASSWORD9876', RAW.stripeLive, RAW.stripeTest, RAW.resendKey, RAW.whsecPrefix];
+export const ALL_RAW_SECRETS = (): string[] => [RAW.supabaseSecret, RAW.dbUrl, 'FAKEdbPASSWORD9876', RAW.stripeLive, RAW.stripeTest, RAW.resendKey, RAW.whsecPrefix, RAW.authSession];
 
 type EnvMap = Record<EnvTarget, Map<string, Value>>;
 
@@ -199,6 +200,35 @@ export function fakeWorld() {
     /** Policy fields the fake provider accepts but never reports back (its API does not echo them). */
     authIgnores: [] as string[],
     outputsCalls: 0,
+    /**
+     * The provider's own user surface (Supabase GoTrue). `users` holds the seeded accounts with the
+     * passwords the fake was given, so a test can confirm one (the human's click) and watch what the
+     * step and checks do; `sessions` maps a handed-out session token to its user id.
+     */
+    authUsers: {
+      users: [] as Array<{ id: string; email: string; confirmed: boolean; pass: string }>,
+      sessions: new Map<string, string>(),
+      destination: { ref: 'abcdefghijklmnopqrst', url: 'https://abcdefghijklmnopqrst.supabase.co' } as { ref: string; url: string } | null,
+      /** Overrides the next signup answer (captcha, rate limit, no confirmation sent). */
+      signup: null as Partial<AuthSignupOutcome> | null,
+      /** Queued password-grant answers (email_not_confirmed, a session, 429), one per login call. */
+      logins: [] as Array<Partial<AuthLoginOutcome>>,
+      /** Overrides the anonymous `GET /user` answer (for a provider that answers 200). */
+      anonUser: null as AuthUserView | null,
+      /** Throws on the next auth-users call: a provider-side failure, unlike a refusal. */
+      error: null as string | null,
+      /** Throws on the next password grant only (a transport failure mid-check). */
+      loginError: null as string | null,
+      /** Ids the provider no longer knows (a user deleted in the dashboard). */
+      missing: new Set<string>(),
+      /** The human clicked the confirmation link in their inbox. */
+      confirm(email: string): void {
+        for (const u of db.authUsers.users) if (u.email === email) u.confirmed = true;
+      },
+      byEmail(email: string) {
+        return db.authUsers.users.find((u) => u.email === email);
+      },
+    },
   };
   const dbOutputs = (): Outputs => {
     const all: Outputs = {
@@ -259,6 +289,65 @@ export function fakeWorld() {
         },
       },
       dbAdmin: { tables: async () => [] },
+      authUsers: {
+        destination: async () => db.authUsers.destination,
+        signup: async (_c, email, password) => {
+          const users = db.authUsers;
+          rec('fakedb', 'authUsers.signup', email, password);
+          if (users.error) throw new Error(users.error);
+          const override = users.signup;
+          users.signup = null;
+          if (override) {
+            if (override.userId) users.users.push({ id: override.userId, email, confirmed: false, pass: password.reveal() });
+            return { status: 200, confirmationSent: false, existing: false, rateLimited: false, captchaRequired: false, ...override };
+          }
+          const seen = users.byEmail(email);
+          if (seen) return { status: 200, userId: seen.id, confirmationSent: false, existing: true, rateLimited: false, captchaRequired: false };
+          const id = `usr_${users.users.length + 1}`;
+          users.users.push({ id, email, confirmed: false, pass: password.reveal() });
+          return { status: 200, userId: id, confirmationSent: true, existing: false, rateLimited: false, captchaRequired: false };
+        },
+        login: async (_c, email, password) => {
+          const users = db.authUsers;
+          rec('fakedb', 'authUsers.login', email, password);
+          if (users.error) throw new Error(users.error);
+          const failure = users.loginError;
+          users.loginError = null;
+          if (failure) throw new Error(failure);
+          const override = users.logins.shift();
+          if (override) return { status: 200, rateLimited: false, ...override };
+          const u = users.byEmail(email);
+          if (!u || u.pass !== password.reveal()) return { status: 400, code: 'invalid_credentials', rateLimited: false };
+          if (!u.confirmed) return { status: 400, code: 'email_not_confirmed', rateLimited: false };
+          const token = `${RAW.authSession}:${u.id}`;
+          users.sessions.set(token, u.id);
+          return { status: 200, rateLimited: false, session: { accessToken: new Secret('SUPABASE_AUTH_TOKEN', token), userId: u.id, emailConfirmed: true } };
+        },
+        user: async (_c, token) => {
+          const users = db.authUsers;
+          if (users.error) throw new Error(users.error);
+          if (!token) return users.anonUser ?? { status: 401 };
+          const id = users.sessions.get(token.reveal());
+          const u = users.users.find((x) => x.id === id);
+          if (!u || users.missing.has(u.id)) return { status: 401 };
+          return { status: 200, id: u.id, email: u.email, emailConfirmed: u.confirmed };
+        },
+        adminUser: async (_c, id) => {
+          const users = db.authUsers;
+          if (users.error) throw new Error(users.error);
+          if (users.missing.has(id)) return null;
+          const u = users.users.find((x) => x.id === id);
+          return u ? { status: 200, id: u.id, email: u.email, emailConfirmed: u.confirmed } : null;
+        },
+        setPassword: async (_c, id, password) => {
+          const users = db.authUsers;
+          rec('fakedb', 'authUsers.setPassword', id, password);
+          if (users.error) throw new Error(users.error);
+          const u = users.missing.has(id) ? undefined : users.users.find((x) => x.id === id);
+          if (!u) throw new Error(`no such user ${id}`);
+          u.pass = password.reveal();
+        },
+      },
     },
   };
 

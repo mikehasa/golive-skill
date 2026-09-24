@@ -48,7 +48,7 @@ neither claims the other's coverage.
 ## Adapters, capabilities and links
 
 An adapter speaks to a provider and exposes capabilities such as `EnvStore`, `PublicUrl`,
-`DomainAttach`, `DnsZone`, `DbAdmin`, `DbConnection`, `AuthConfig`, `WebhookRegistry` and
+`DomainAttach`, `DnsZone`, `DbAdmin`, `DbConnection`, `AuthConfig`, `AuthUsers`, `WebhookRegistry` and
 `SendingDomain`. Links compose those capabilities, for example database output → hosting env or
 hosting URL → auth redirects. A new adapter does not need a separate recipe for every pairing.
 

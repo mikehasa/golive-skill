@@ -8,6 +8,7 @@
 import { randomBytes } from 'node:crypto';
 import { basename } from 'node:path';
 import { credentialVia, SupabaseCredentialError } from './supabase-credentials.js';
+import { supabaseAuthUsers } from './supabase-auth.js';
 import type {
   Adapter,
   AuthSettings,
@@ -1059,6 +1060,29 @@ export async function supabaseRestProbe(
   return { status: res.status, rows, ...(typeof code === 'string' ? { code } : {}) };
 }
 
+/**
+ * Read-only probe of one table as a SIGNED-IN user: the app's publishable key plus that user's
+ * session token. Used to tell "the authenticated role cannot reach any exposed table" (a missing
+ * `GRANT`) from tables being reachable; the anonymous view of the same tables is `supabaseRestProbe`.
+ */
+export async function supabaseAuthedProbe(
+  ctx: Ctx,
+  ref: string,
+  table: string,
+  schema: string,
+  publishableKey: Value,
+  accessToken: Secret,
+): Promise<{ status: number; rows: number; code?: string }> {
+  assertRef(ref);
+  // The user's token replaces the key on Authorization; the key stays on apikey, as the JS client sends.
+  const headers: Record<string, string | Secret> = { apikey: publishableKey, Authorization: accessToken, Accept: 'application/json' };
+  if (schema && schema !== 'public') headers['Accept-Profile'] = schema;
+  const res = await ctx.http<unknown>({ url: `https://${ref}.supabase.co/rest/v1/${encodeURIComponent(table)}?select=*&limit=1`, headers });
+  const rows = res.status === 200 && Array.isArray(res.json) ? res.json.length : 0;
+  const code = res.json && typeof res.json === 'object' && !Array.isArray(res.json) ? (res.json as { code?: unknown }).code : undefined;
+  return { status: res.status, rows, ...(typeof code === 'string' ? { code } : {}) };
+}
+
 // ── adapter ─────────────────────────────────────────────────────────────────────────────────────
 
 function detect(d: DetectResult): boolean {
@@ -1082,5 +1106,14 @@ export const supabaseAdapter: Adapter = {
     outputs: { outputs, provides },
     dbAdmin: { tables, advisors },
     authConfig: { get: getAuth, set: setAuth },
+    // The GoTrue surface (signup, password grant, admin users), wired to this adapter's project
+    // readers so the auth adapter never touches the Management API itself.
+    authUsers: supabaseAuthUsers({
+      ref: resolveRef,
+      keys: async (ctx, ref) => {
+        const picked = pickKeys(await listKeys(ctx, ref));
+        return { publishable: picked['supabase.publishableKey'], secret: picked['supabase.secretKey'] };
+      },
+    }),
   },
 };

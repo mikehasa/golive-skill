@@ -8,6 +8,8 @@ import { webhookRegisteredCheck, webhookUnsignedCheck } from './webhook.js';
 import { stripeLiveReadyCheck } from './stripe-live.js';
 import { authRedirectsCheck } from './auth-redirects.js';
 import { authPolicyCheck } from './auth.js';
+import { authSignupCheck } from './auth-signup.js';
+import { authSessionCheck } from './auth-session.js';
 import { emailDnsCheck, emailVerifiedCheck } from './email.js';
 import { domainLiveCheck } from './domain.js';
 import { netlifyPublicAccessCheck } from './netlify-public-access.js';
@@ -23,6 +25,8 @@ export const ALL_CHECKS: Check[] = [
   dbConnectionCheck,
   authRedirectsCheck,
   authPolicyCheck,
+  authSignupCheck,
+  authSessionCheck,
   webhookUnsignedCheck,
   webhookRegisteredCheck,
   stripeLiveReadyCheck,

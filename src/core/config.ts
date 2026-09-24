@@ -18,6 +18,9 @@ const AUTH_SETTINGS: Record<string, (v: unknown) => string | null> = {
   requireEmailConfirm: (v) => (typeof v === 'boolean' ? null : 'must be true or false'),
   passwordMinLength: (v) => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? null : 'must be a positive whole number (e.g. 12), never a password'),
   smtp: (v) => (v === 'provider' || v === 'resend' ? null : 'must be "provider" (the auth provider\'s own mailer) or "resend" (the app\'s email provider)'),
+  e2e: (v) => (typeof v === 'boolean' ? null : 'must be true or false'),
+  testEmail: (v) => (typeof v === 'string' && /^[^@\s+]+(\+[^@\s]+)?@[^@\s]+\.[^@\s]+$/.test(v) ? null : 'must be the address the test account uses, like "you+go-live@example.com" (plus-addressing allowed; never a password)'),
+  protectedPath: (v) => (typeof v === 'string' && v.startsWith('/') ? null : 'must be an app route starting with "/", e.g. "/dashboard" (the page that must require a session)'),
 };
 
 export function defaultConfig(): ShipConfig {
