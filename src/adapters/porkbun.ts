@@ -20,7 +20,7 @@ interface Envelope {
 }
 
 export class PorkbunError extends Error {
-  constructor(message: string, readonly status: number, readonly code?: string) { super(message); }
+  constructor(message: string, readonly status: number, readonly code?: string) { super(redact(message)); }
 }
 
 function help(): string {

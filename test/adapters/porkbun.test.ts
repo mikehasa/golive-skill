@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { porkbunAdapter, porkbunDns } from '../../src/adapters/porkbun.js';
-import { Secret, _resetSecretRegistry } from '../../src/core/secret.js';
+import { porkbunAdapter, porkbunDns, PorkbunError } from '../../src/adapters/porkbun.js';
+import { Secret, _resetSecretRegistry, fingerprint } from '../../src/core/secret.js';
 import { HttpError } from '../../src/core/http.js';
 import type { DnsRecord, Http, HttpRequest } from '../../src/core/types.js';
 import { mockHttp, testCtx } from '../helpers.js';
@@ -117,6 +117,14 @@ describe('Porkbun authentication and transport', () => {
   it('rejects HTTP 200 error envelopes and malformed successful responses', async () => {
     expect((await porkbunAdapter.auth(fake({ failure: { status: 200, json: { status: 'ERROR', code: 'API_KEY_REQUIRED' } } }).ctx)).ok).toBe(false);
     expect((await porkbunAdapter.auth(fake({ failure: { status: 200, json: {} } }).ctx)).ok).toBe(false);
+  });
+  it('redacts a registered secret value in the constructor (backstop for future messages)', () => {
+    const value = 'pk1_FAKEregisteredValueThatMustNotLeak';
+    new Secret('PORKBUN_API_KEY', value);
+    const e = new PorkbunError(`Porkbun request failed: HTTP 403 ${value}.`, 403, 'DOMAIN_NOT_ALLOWED');
+    expect(e.message).toContain(`[redacted PORKBUN_API_KEY fp:${fingerprint(value)}]`);
+    expect(e.message).not.toContain(value);
+    expect([e.status, e.code]).toEqual([403, 'DOMAIN_NOT_ALLOWED']);
   });
 });
 

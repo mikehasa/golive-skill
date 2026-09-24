@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { detectFixture, mockExec, mockHttp, testCtx } from '../helpers.js';
@@ -36,6 +36,10 @@ beforeEach(() => {
   supabaseTiming.timeoutMs = 5 * 60_000;
   supabaseTiming.createTimeoutMs = 15 * 60_000;
 });
+
+const tempDirs: string[] = [];
+const tempDir = (): string => { const d = mkdtempSync(join(tmpdir(), 'golive-sb-')); tempDirs.push(d); return d; };
+afterEach(() => { for (const d of tempDirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
 /** What the runner hands a step's run(): a Ctx plus the remember* writers. */
 function asStep<C extends Ctx>(ctx: C): C & StepContext {
@@ -305,11 +309,11 @@ describe('supabase project', () => {
     expect(await caps.project.current(testCtx({ state: withRef() }))).toEqual({ id: REF, name: REF });
     expect(await caps.project.current(testCtx({ config: { projects: { db: REF2 } } }))).toEqual({ id: REF2, name: REF2 });
 
-    const dir = mkdtempSync(join(tmpdir(), 'golive-sb-'));
+    const dir = tempDir();
     mkdirSync(join(dir, 'supabase', '.temp'), { recursive: true });
     writeFileSync(join(dir, 'supabase', '.temp', 'project-ref'), `${REF}\n`);
     expect(await caps.project.current(testCtx({ cwd: dir }))).toEqual({ id: REF, name: REF });
-    expect(await caps.project.current(testCtx({ cwd: mkdtempSync(join(tmpdir(), 'golive-sb-')) }))).toBeNull();
+    expect(await caps.project.current(testCtx({ cwd: tempDir() }))).toBeNull();
   });
 
   it('current(): enriches the name with a token and resolves a config name', async () => {
@@ -930,7 +934,7 @@ describe('supabase outputs', () => {
   });
 
   it('errors actionably when no project is selected', async () => {
-    const ctx = testCtx({ cwd: mkdtempSync(join(tmpdir(), 'golive-sb-')) });
+    const ctx = testCtx({ cwd: tempDir() });
     await expect(caps.outputs.outputs(ctx, 'production')).rejects.toThrow(/No Supabase project is selected/);
   });
 });

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Check, CheckResult, Ctx, Plan, Step, StepContext, Value } from './types.js';
-import { Secret, fingerprint } from './secret.js';
+import { Secret, fingerprint, redact } from './secret.js';
 import { planId as currentPlanId } from './plan.js';
 import { sameRelease } from './release.js';
 import { assertCompatibleState } from './state.js';
@@ -32,6 +32,11 @@ export interface StepOutcome {
 
 export class PlanMismatchError extends Error {}
 
+/** Error text that may reach state, a report or outcomes: redacted first, like every adapter does. */
+function errMsg(e: unknown): string {
+  return redact(e instanceof Error ? e.message : String(e));
+}
+
 export async function runCheck(ctx: Ctx, check: Check): Promise<CheckResult> {
   const t0 = Date.now();
   if (!check.applies(ctx)) return { id: check.id, title: check.title, status: 'skip', severity: check.severity, evidence: ['not applicable to this stack'], durationMs: 0 };
@@ -39,7 +44,7 @@ export async function runCheck(ctx: Ctx, check: Check): Promise<CheckResult> {
     const r = await check.run(ctx);
     return { id: check.id, title: check.title, ...r, durationMs: Date.now() - t0 };
   } catch (e) {
-    return { id: check.id, title: check.title, status: 'fail', severity: check.severity, evidence: [`check errored: ${(e as Error).message}`], durationMs: Date.now() - t0 };
+    return { id: check.id, title: check.title, status: 'fail', severity: check.severity, evidence: [`check errored: ${errMsg(e)}`], durationMs: Date.now() - t0 };
   }
 }
 
@@ -139,7 +144,7 @@ export async function applyPlan(ctx: Ctx, plan: Plan, checks: Map<string, Check>
         try {
           results.push(...(await step.verifyInline(ctx)));
         } catch (e) {
-          results.push({ id: `${step.id}:verify`, title: `verify ${step.id}`, status: 'fail', severity: 'high', evidence: [`verification errored: ${(e as Error).message}`] });
+          results.push({ id: `${step.id}:verify`, title: `verify ${step.id}`, status: 'fail', severity: 'high', evidence: [`verification errored: ${errMsg(e)}`] });
         }
       }
       const bad = results.filter((r) => r.status === 'fail');
@@ -151,7 +156,7 @@ export async function applyPlan(ctx: Ctx, plan: Plan, checks: Map<string, Check>
       record(ctx, step, plan.id, 'done', res.changes);
       outcomes.push({ id: step.id, status: 'done', changes: res.changes, checks: results });
     } catch (e) {
-      const msg = (e as Error).message;
+      const msg = errMsg(e);
       record(ctx, step, plan.id, 'failed', [], msg);
       outcomes.push({ id: step.id, status: 'failed', changes: [], checks: [], error: msg, next: 'fix the error above, then re-run apply (completed steps are skipped)' });
       break;

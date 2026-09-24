@@ -199,7 +199,9 @@ function parseCliError(text: string): { status?: number; code?: string; message:
   const j = json ? parseJson<{ error?: { code?: string; message?: string }; code?: string; message?: string; status?: number }>(json[0]) : null;
   const status = j?.status ?? Number(text.match(/\b([45]\d\d)\b/)?.[1] ?? NaN);
   const code = j?.error?.code ?? j?.code ?? (/not[_ ]found/i.test(text) ? 'not_found' : undefined);
-  const message = j?.error?.message ?? j?.message ?? text.trim().split('\n').slice(-3).join(' ').slice(0, 300);
+  // Whatever is echoed here reaches an error message, a report and the agent's transcript: keep it to
+  // one short line and scrub it, since the raw CLI output may carry a credential.
+  const message = redact((j?.error?.message ?? j?.message ?? text.trim().split('\n').slice(-3).join(' ')).replace(/\s+/g, ' ').trim().slice(0, 300));
   return { status: Number.isFinite(status) ? status : code === 'not_found' ? 404 : undefined, code, message };
 }
 

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { godaddyAdapter, godaddyDns } from '../../src/adapters/godaddy.js';
-import { Secret, fingerprint } from '../../src/core/secret.js';
+import { Secret, fingerprint, _resetSecretRegistry } from '../../src/core/secret.js';
 import type { DnsRecord, HttpRequest } from '../../src/core/types.js';
 import { mockExec, mockHttp, testCtx } from '../helpers.js';
 
@@ -64,6 +64,8 @@ function fake(opts: {
   return { ctx, data, calls: http.calls, requests, writes: () => http.calls.filter((c) => c.method !== 'GET') };
 }
 const rec = (over: Partial<Record> = {}): Record => ({ recordId: 'existing', type: 'TXT', name: '@', data: 'owner-verification', ttl: 600, ...over });
+
+beforeEach(() => _resetSecretRegistry());
 
 describe('GoDaddy DNS authentication', () => {
   it('explains both the gddy login and the scoped PAT when no access is configured', async () => {
@@ -368,6 +370,19 @@ describe('GoDaddy DNS ownership (listOwned / remove)', () => {
     await expect(godaddyDns.remove!(f.ctx, 'example.com', cname)).rejects.toThrow(/app\.example\.com/);
     expect(f.writes()).toEqual([]);
     expect(f.data).toHaveLength(1);
+  });
+
+  it('redacts a registered secret value when a message does echo stored data (constructor backstop)', async () => {
+    // Every message is built from a closed hint table today, so the backstop only shows when a message
+    // does carry stored text. A TXT value that is also a registered secret stands in for that future case.
+    const value = 'verify-token-0123456789abcdef';
+    new Secret('GODADDY_API_TOKEN', value);
+    const f = fake({ records: [rec({ recordId: 'foreign', name: 'verify', data: value })] });
+    const e = (await godaddyDns.remove!(f.ctx, 'example.com', { type: 'TXT', name: 'verify.example.com', content: value }).catch((x: Error) => x)) as Error;
+    expect(e.message).toMatch(/golive did not create it/);
+    expect(e.message).toContain(`[redacted GODADDY_API_TOKEN fp:${fingerprint(value)}]`);
+    expect(e.message).not.toContain(value);
+    expect(f.writes()).toEqual([]);
   });
 
   it('remove is unchanged when nothing matches, and treats a 404 as already gone', async () => {

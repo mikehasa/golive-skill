@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Secret, _resetSecretRegistry } from '../../src/core/secret.js';
@@ -188,9 +188,13 @@ describe('vercel project', () => {
     expect(await project.current(testCtx({ state: linkedState() }))).toEqual({ id: 'prj_1', name: 'my-app' });
 
     const dir = mkdtempSync(join(tmpdir(), 'golive-vercel-'));
-    mkdirSync(join(dir, '.vercel'));
-    writeFileSync(join(dir, '.vercel', 'project.json'), JSON.stringify({ projectId: 'prj_9', orgId: 'team_9', projectName: 'linked' }));
-    expect(await project.current(testCtx({ cwd: dir }))).toEqual({ id: 'prj_9', name: 'linked' });
+    try {
+      mkdirSync(join(dir, '.vercel'));
+      writeFileSync(join(dir, '.vercel', 'project.json'), JSON.stringify({ projectId: 'prj_9', orgId: 'team_9', projectName: 'linked' }));
+      expect(await project.current(testCtx({ cwd: dir }))).toEqual({ id: 'prj_9', name: 'linked' });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
 
     expect(await project.current(testCtx())).toBeNull();
   });
@@ -412,6 +416,25 @@ describe('vercel env', () => {
     ]);
     const ctx = testCtx({ exec: ex.run, state: linkedState() });
     await expect(env.set(ctx, 'K', new Secret('K', SECRET_VAL), ['production'])).rejects.toThrow(/HTTP 401, unauthorized.*vercel login/);
+  });
+
+  it('set(): keeps what a CLI failure may echo to one short, redacted line', async () => {
+    const value = 'vcp_providerEchoedTokenValue0123456789';
+    new Secret('VERCEL_TOKEN', value);
+    const stderr = `Error: (500) ${JSON.stringify({ error: { code: 'internal', message: `broke on ${value}\n${'x'.repeat(400)}` } })}`;
+    const ex = mockExec([
+      WHOAMI_OK,
+      cliApi({
+        'GET /v10/projects/prj_1/env': { envs: [] },
+        'POST /v10/projects/prj_1/env': () => ({ code: 1, stderr }),
+      }),
+    ]);
+    const err = (await env.set(testCtx({ exec: ex.run, state: linkedState() }), 'K', new Secret('K', SECRET_VAL), ['production']).catch((e: unknown) => e)) as VercelError;
+    expect(err).toBeInstanceOf(VercelError);
+    expect(err.detail).not.toContain(value);
+    expect(err.detail).not.toContain('\n');
+    expect(err.detail!.length).toBeLessThanOrEqual(300);
+    expect(err.message).not.toContain(value);
   });
 
   it('regression: hiddenProductionEnvCount → listNames(production) throws "cannot verify", never reports names as missing', async () => {
