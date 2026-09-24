@@ -199,6 +199,35 @@ const RECOVERY_TOKEN = 'hashed-recovery-token-value';
 const recoveryToken = () => new Secret('SUPABASE_RECOVERY_TOKEN', RECOVERY_TOKEN);
 const sessionToken = () => new Secret('SUPABASE_AUTH_TOKEN', 'session-token-value-1234');
 
+/**
+ * `POST /auth/v1/admin/generate_link` as the live provider answered it (read-only probe, 2026-09-24;
+ * field names and types only, values synthetic here): a FLAT user object with `id` and `hashed_token`
+ * at the top level and **no `user` key at all**. The mocks used to nest the user, a shape this
+ * endpoint never sends — so the live call threw "without a user id" while the id sat right here.
+ */
+const liveGenerateLinkAnswer = () => ({
+  action_link: `https://${REF}.supabase.co/auth/v1/verify?token=${RECOVERY_TOKEN}&type=recovery`,
+  app_metadata: { provider: 'email', providers: ['email'] },
+  aud: 'authenticated',
+  confirmed_at: '2026-09-23T00:00:00Z',
+  created_at: '2026-09-23T00:00:00Z',
+  email: 'a@example.com',
+  email_confirmed_at: '2026-09-23T00:00:00Z',
+  email_otp: 'synthetic-one-time-code',
+  hashed_token: RECOVERY_TOKEN,
+  id: 'usr_1',
+  identities: [{ id: 'identity-1', provider: 'email' }],
+  is_anonymous: false,
+  last_sign_in_at: '2026-09-23T00:00:00Z',
+  phone: '',
+  recovery_sent_at: '2026-09-24T00:00:00Z',
+  redirect_to: `https://${REF}.supabase.co/auth/v1/verify`,
+  role: 'authenticated',
+  updated_at: '2026-09-24T00:00:00Z',
+  user_metadata: {},
+  verification_type: 'recovery',
+});
+
 describe('recover', () => {
   it('asks for the recovery email and reads GoTrue\'s one 2xx answer as accepted for sending', async () => {
     // The same answer is what an address WITH an account gets: GoTrue does not say which is which, so
@@ -231,10 +260,12 @@ describe('recover', () => {
 });
 
 describe('recoveryLink / recoverySession / updateOwnPassword', () => {
-  it('mints a link with the admin key and keeps the hashed token in a Secret', async () => {
-    const { http, calls } = mockHttp([
-      ['POST', `${AUTH}/admin/generate_link`, () => ({ json: { action_link: `https://${REF}.supabase.co/auth/v1/verify?token=${RECOVERY_TOKEN}&type=recovery`, hashed_token: RECOVERY_TOKEN, verification_type: 'recovery', user: { id: 'usr_1', email: 'a@example.com' } } })],
-    ]);
+  it('reads the live flat answer — the id and the hashed token at the top level, no `user` key', async () => {
+    const answer = liveGenerateLinkAnswer();
+    // The fixture above is the live response verbatim in shape; a read that only looks inside `user`
+    // finds nothing here, which is exactly how the auth:recovery step failed against the real project.
+    expect(answer).not.toHaveProperty('user');
+    const { http, calls } = mockHttp([['POST', `${AUTH}/admin/generate_link`, () => ({ json: answer })]]);
     const link = await cap().recoveryLink!(testCtx({ http }), 'a@example.com');
     expect(link).toMatchObject({ userId: 'usr_1' });
     expect(link!.token).toBeInstanceOf(Secret);
@@ -247,21 +278,36 @@ describe('recoveryLink / recoverySession / updateOwnPassword', () => {
     expect(calls[0]!.headers.authorization).toBe(`Bearer ${SECRET_KEY}`);
   });
 
+  it('also accepts a nested `user.id`, and prefers the top-level id when an answer carries both', async () => {
+    const nested = mockHttp([['POST', `${AUTH}/admin/generate_link`, () => ({ json: { action_link: `https://${REF}.supabase.co/auth/v1/verify?token=${RECOVERY_TOKEN}&type=recovery`, hashed_token: RECOVERY_TOKEN, verification_type: 'recovery', user: { id: 'usr_1', email: 'a@example.com' } } })]]);
+    expect(await cap().recoveryLink!(testCtx({ http: nested.http }), 'a@example.com')).toMatchObject({ userId: 'usr_1' });
+
+    const both = mockHttp([['POST', `${AUTH}/admin/generate_link`, () => ({ json: { id: 'usr_flat', hashed_token: RECOVERY_TOKEN, user: { id: 'usr_nested' } } })]]);
+    expect(await cap().recoveryLink!(testCtx({ http: both.http }), 'a@example.com')).toMatchObject({ userId: 'usr_flat' });
+  });
+
   it('falls back to the token inside action_link when the answer carries no hashed_token', async () => {
     const link = `${AUTH}/verify?token=token-from-action-link&type=recovery&redirect_to=https%3A%2F%2Fapp.example.com%2Freset`;
-    const { http } = mockHttp([['POST', `${AUTH}/admin/generate_link`, () => ({ json: { action_link: link, user: { id: 'usr_1' } } })]]);
+    const { http } = mockHttp([['POST', `${AUTH}/admin/generate_link`, () => ({ json: { action_link: link, id: 'usr_1' } })]]);
     expect((await cap().recoveryLink!(testCtx({ http }), 'a@example.com'))!.token.reveal()).toBe('token-from-action-link');
   });
 
-  it('returns null when the provider has no account for the address, and refuses an unusable answer', async () => {
+  it('returns null when the provider has no account for the address, and names what an unusable answer is missing', async () => {
     const missing = mockHttp([['POST', `${AUTH}/admin/generate_link`, () => ({ status: 404, json: { error_code: 'user_not_found', msg: 'User not found' } })]]);
     expect(await cap().recoveryLink!(testCtx({ http: missing.http }), 'nobody@example.com')).toBeNull();
 
-    const unusable = mockHttp([['POST', `${AUTH}/admin/generate_link`, () => ({ json: { user: { id: 'usr_1' } } })]]);
-    const e = await cap().recoveryLink!(testCtx({ http: unusable.http }), 'a@example.com').catch((x: unknown) => x as Error);
+    // A token but no id: the error names the id alone, and no id is invented from anything else.
+    const noId = mockHttp([['POST', `${AUTH}/admin/generate_link`, () => ({ json: { hashed_token: RECOVERY_TOKEN, verification_type: 'recovery' } })]]);
+    const e = await cap().recoveryLink!(testCtx({ http: noId.http }), 'a@example.com').catch((x: unknown) => x as Error);
     expect(e).toBeInstanceOf(SupabaseError);
-    expect((e as Error).message).toMatch(/without a user id or a token/);
+    expect((e as Error).message).toMatch(/without a user id, so golive cannot use it/);
+    expect((e as Error).message).not.toMatch(/or a token/);
     expectNoSecret((e as Error).message);
+
+    const noToken = mockHttp([['POST', `${AUTH}/admin/generate_link`, () => ({ json: { id: 'usr_1' } })]]);
+    const t = await cap().recoveryLink!(testCtx({ http: noToken.http }), 'a@example.com').catch((x: unknown) => x as Error);
+    expect((t as Error).message).toMatch(/without a user id or a token/);
+    expectNoSecret((t as Error).message);
   });
 
   it('exchanges a recovery token for a session, and reports a used or expired one as a refusal', async () => {
@@ -285,6 +331,20 @@ describe('recoveryLink / recoverySession / updateOwnPassword', () => {
     expect(refused.session).toBeUndefined();
     expect(refused.code).toContain('otp_expired');
     expect(JSON.stringify(refused)).not.toContain(RECOVERY_TOKEN);
+  });
+
+  it('reads a session whose user is not nested, and invents no session without an id', async () => {
+    // The token grant nests `user` (live-proven); a verify answer that carries the id flat must not
+    // read as a refusal — the recovery verify leg is the one this adapter has never done live.
+    const flat = mockHttp([['POST', `${AUTH}/verify`, () => ({ json: { access_token: 'recovery-session-value', id: 'usr_1' } })]]);
+    const out = await cap().recoverySession(testCtx({ http: flat.http }), recoveryToken());
+    expect(out).toMatchObject({ status: 200, rateLimited: false });
+    expect(out.session).toMatchObject({ userId: 'usr_1' });
+
+    const noId = mockHttp([['POST', `${AUTH}/verify`, () => ({ json: { access_token: 'recovery-session-value' } })]]);
+    const refused = await cap().recoverySession(testCtx({ http: noId.http }), recoveryToken());
+    expect(refused.session).toBeUndefined();
+    expect(refused.code).toBeDefined();
   });
 
   it('sets the signed-in user\'s own password with PUT /user, and never echoes it in an error', async () => {
@@ -345,7 +405,7 @@ describe('Authorization headers', () => {
     const session = sessionToken();
     const { http, calls } = mockHttp([
       ['POST', `${AUTH}/recover`, gotrueAuthed({})],
-      ['POST', `${AUTH}/admin/generate_link`, gotrueAuthed({ hashed_token: RECOVERY_TOKEN, user: { id: 'usr_1' } })],
+      ['POST', `${AUTH}/admin/generate_link`, gotrueAuthed({ hashed_token: RECOVERY_TOKEN, id: 'usr_1' })],
       ['POST', `${AUTH}/verify`, gotrueAuthed({ access_token: 'recovery-session-value', user: { id: 'usr_1' } })],
       ['PUT', `${AUTH}/user`, gotrueAuthed({ id: 'usr_1' })],
     ]);

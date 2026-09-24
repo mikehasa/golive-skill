@@ -213,12 +213,17 @@ async function login(deps: SupabaseAuthDeps, ctx: Ctx, email: string, password: 
   return sessionOutcome(res.status, res.json);
 }
 
-/** The session shape GoTrue answers the password grant and the verify endpoints with. */
+/**
+ * The session shape GoTrue answers the password grant and the verify endpoints with. The token grant
+ * nests the user (live-proven); `id` is also read at the top level, the shape signup answers with, so
+ * an endpoint that carries the id flat is not misread as a refusal. A session still needs both the
+ * token and an id: neither is ever invented to make one.
+ */
 function sessionOutcome(status: number, json: unknown): AuthLoginOutcome {
   const body = asObject(json);
   const who = asObject(body.user);
   const token = str(body.access_token);
-  const userId = str(who.id);
+  const userId = str(who.id) ?? str(body.id);
   if (status >= 200 && status < 300 && token && userId) {
     const session: AuthSession = { accessToken: new Secret('SUPABASE_AUTH_TOKEN', token), userId, emailConfirmed: confirmedOf(who) };
     return { status, session, rateLimited: false };
@@ -255,9 +260,11 @@ async function requestRecovery(deps: SupabaseAuthDeps, ctx: Ctx, email: string):
 
 /**
  * The admin generate-link endpoint: golive mints the token the provider would have emailed, which is
- * what lets a run prove the recovery flow without reading an inbox. The answer carries the token as
- * `hashed_token`; older responses only embed it in `action_link` as `token=…`, so that is read as the
- * fallback. null = the provider has no account for that address.
+ * what lets a run prove the recovery flow without reading an inbox. The live answer is a FLAT user
+ * object — `id` and `hashed_token` at the top level, with no `user` key at all (probed 2026-09-24) —
+ * so the id is read from both shapes, flat first, and never invented. The token rides as
+ * `hashed_token`; older responses only embed it in `action_link` as `token=…`, read as the fallback.
+ * null = the provider has no account for that address.
  */
 async function recoveryLink(deps: SupabaseAuthDeps, ctx: Ctx, email: string): Promise<AuthRecoveryLink | null> {
   const { ref, keys } = await require(deps, ctx);
@@ -270,7 +277,7 @@ async function recoveryLink(deps: SupabaseAuthDeps, ctx: Ctx, email: string): Pr
   if (res.status === 404) return null;
   expectOk(res.status, res.json, `Minting a Supabase recovery link for ${email}`);
   const body = asObject(res.json);
-  const userId = str(asObject(body.user).id);
+  const userId = str(body.id) ?? str(asObject(body.user).id);
   const token = str(body.hashed_token) ?? tokenParam(str(body.action_link));
   if (!userId || !token) {
     throw new SupabaseError(`Supabase answered the recovery link for ${email} without a user id${token ? '' : ' or a token'}, so golive cannot use it.`);

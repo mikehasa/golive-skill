@@ -8170,7 +8170,7 @@ function sessionOutcome(status, json2) {
   const body2 = asObject(json2);
   const who = asObject(body2.user);
   const token2 = str(body2.access_token);
-  const userId = str(who.id);
+  const userId = str(who.id) ?? str(body2.id);
   if (status >= 200 && status < 300 && token2 && userId) {
     const session2 = { accessToken: new Secret("SUPABASE_AUTH_TOKEN", token2), userId, emailConfirmed: confirmedOf(who) };
     return { status, session: session2, rateLimited: false };
@@ -8208,7 +8208,7 @@ async function recoveryLink(deps2, ctx, email) {
   if (res.status === 404) return null;
   expectOk(res.status, res.json, `Minting a Supabase recovery link for ${email}`);
   const body2 = asObject(res.json);
-  const userId = str(asObject(body2.user).id);
+  const userId = str(body2.id) ?? str(asObject(body2.user).id);
   const token2 = str(body2.hashed_token) ?? tokenParam(str(body2.action_link));
   if (!userId || !token2) {
     throw new SupabaseError(`Supabase answered the recovery link for ${email} without a user id${token2 ? "" : " or a token"}, so golive cannot use it.`);
@@ -17714,7 +17714,7 @@ var authRecoveryLink = {
     const handoff = {
       id: "auth:recovery-email",
       why: `${au.adapter.title} sends the recovery link for ${address} to that inbox, and golive cannot read an inbox: only the account owner can click it. A captcha on the project blocks a scripted request before a link even exists.`,
-      action: `Open the recovery email for ${address} (check the spam folder; the built-in mailer is rate-limited) and click the link, then set a password on the page it opens. golive rotated that account's password through the recovery path already and the \`auth-recovery\` check proves it \u2014 the click is how you confirm the same link works for a human.`,
+      action: `Open the recovery email for ${address} (check the spam folder; the built-in mailer is rate-limited) and click the link, then set a password on the page it opens: that click is the one leg golive cannot make for you, and it is how you confirm the same link works for a human. Whether that account's password has been rotated through the recovery path yet depends on the run \u2014 if the \`auth:recovery\` step is recorded as done, it has been, and the \`auth-recovery\` check proves it; if that step failed or never ran, nothing was rotated, so fix the error that run reported and re-run \`plan\` + \`apply\`.`,
       blocking: false,
       verifiedBy: "auth-recovery"
     };
