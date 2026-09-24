@@ -164,6 +164,12 @@ async function records(ctx: Ctx, zone: string): Promise<RecordRow[]> {
 const owned = (r: RecordRow): boolean => r.notes?.startsWith(OWNED) ?? false;
 const returnPath = (value: string): boolean => /^feedback-smtp(\.[a-z0-9-]+)?\.amazonses\.com$/.test(value);
 
+/** The docs and mock show a digit-string id; the live create response has carried other shapes. */
+function createdId(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) return String(value);
+  return typeof value === 'string' && /^\d+$/.test(value) ? value : null;
+}
+
 function body(zone: string, want: DnsRecord, notes?: string): Record<string, unknown> {
   return {
     name: want.name === zone ? '' : want.name.slice(0, -(zone.length + 1)),
@@ -255,7 +261,14 @@ export const porkbunDns: DnsZone = {
     }
     try {
       const result = await api(ctx, 'POST', `/dns/create/${encodeURIComponent(zone)}`, body(zone, want, 'golive: managed'));
-      if (typeof result.id !== 'string' || !/^\d+$/.test(result.id)) throw new Error('Porkbun created a record but returned no valid record ID; re-plan before retrying.');
+      if (!createdId(result.id)) {
+        // The live create response has carried an id shape the documented mock does not show. The
+        // write may still have succeeded, so never blind-retry the POST: confirm it by re-reading.
+        const saved = (await records(ctx, zone)).filter((r) => matches(r, want));
+        if (saved.length !== 1) throw new Error('Porkbun accepted the create but the record could not be confirmed by re-reading the zone; re-plan before retrying.');
+        ctx.log.info(`porkbun: created ${want.type} ${want.name} (unparsed id; confirmed by re-reading the zone)`);
+        return 'created';
+      }
     } catch (e) {
       const duplicate = e instanceof PorkbunError && e.code === 'DUPLICATE_RECORD';
       if (!duplicate && !ambiguous(e)) throw e;
