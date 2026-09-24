@@ -218,6 +218,9 @@ live-tested milestones**, not a finished category or a completed checklist for y
   detection, building on today's approved CLI deployments.
 - [ ] 🗺️ **Backups and recovery:** retention, restore drills, incident steps and approved cleanup.
   Current test cleanup is supervised; there is no general cloud teardown command.
+- [ ] 🗺️ **Uninstall / teardown:** an approved inventory of golive-created resources (host projects,
+  DNS records, webhook endpoints, env names) and their removal, with ownership re-verification before
+  every deletion ([#9](https://github.com/mikehasa/golive-skill/issues/9)).
 - [ ] 🗺️ **Costs and quotas:** plan choices, budgets, alerts and capacity checks.
   Scoped Free-plan guards exist today; ongoing cost management is planned.
 - [ ] 🗺️ **Launch essentials:** metadata, share previews, indexing, accessibility, support links
