@@ -4,6 +4,13 @@ import { cap, errMsg, isFailing, pass, prereq, result, skip, worst } from './uti
 /** The minimum password length golive is comfortable with (provider defaults start at 6). */
 const MIN_PASSWORD = 12;
 
+/**
+ * Accepted auth-email sends one run of the auth journeys needs: the seeding probe, the recovery request
+ * and the recovery check's pair. The provider's own auth-email limit applies with custom SMTP too, so a
+ * limit below this refuses the sends a journey depends on (HTTP 429).
+ */
+const AUTH_EMAILS_PER_RUN = 4;
+
 /** Resend's SMTP host: the endpoint the `auth:smtp` step writes for `auth.smtp: resend`. */
 const RESEND_SMTP_HOST = 'smtp.resend.com';
 const isResendSmtp = (host: string | undefined): boolean => (host ?? '').trim().toLowerCase() === RESEND_SMTP_HOST;
@@ -118,8 +125,9 @@ export const authPolicyCheck: Check = {
 
     // Mailer: the provider's built-in mailer is rate-limited and meant for testing, and one run of the
     // auth journeys needs four accepted sends (the seeding probe, the recovery request, the recovery
-    // check's pair) — more than that limit fits. Custom SMTP on the app's own email provider is the fix
-    // the `auth:smtp` step applies; a configured one is reported as such below.
+    // check's pair) — more than that limit fits. Custom SMTP on the app's own email provider, and the
+    // auth email rate limit the `auth:smtp` step raises beside it, are what the step applies; a
+    // configured mailer is reported as such below.
     if (!cfg.smtp) missing.push('auth email (SMTP)');
     else {
       evidence.push(cfg.smtp.configured ? `auth email: custom SMTP${isResendSmtp(cfg.smtp.host) ? ' via Resend' : ''}${cfg.smtp.host ? ` (${cfg.smtp.host})` : ''}` : 'auth email: provider built-in mailer');
@@ -132,7 +140,7 @@ export const authPolicyCheck: Check = {
         issues.push({
           severity: 'medium',
           line: `golive.yaml asks for the app's email provider (\`auth.smtp: resend\`) but auth emails still go through ${provider}'s built-in mailer, which allows roughly one accepted send per window — the recovery journey alone needs four`,
-          fix: `Re-run \`plan\` + \`apply\` (the \`auth:smtp\` step writes the custom SMTP from a sending key golive issues), then re-run verify.`,
+          fix: `Re-run \`plan\` + \`apply\` (the \`auth:smtp\` step writes the custom SMTP from a sending key golive issues, and raises the auth email rate limit with it), then re-run verify.`,
         });
       } else if (ctx.config.auth?.smtp !== 'provider') {
         issues.push({
@@ -143,8 +151,21 @@ export const authPolicyCheck: Check = {
       }
     }
 
+    // The provider's own auth-email rate limit. It is reported with the mailer above because it applies
+    // to the custom SMTP just as much as to the built-in mailer — a live run read `rate limit: 2 auth
+    // emails/hour` and the recovery request was then refused with HTTP 429 — and one that cannot fit a
+    // run's four sends warns rather than failing.
     if (cfg.emailRateLimitPerHour === undefined) missing.push('rate limit');
-    else evidence.push(`rate limit: ${cfg.emailRateLimitPerHour} auth emails/hour`);
+    else {
+      evidence.push(`rate limit: ${cfg.emailRateLimitPerHour} auth emails/hour (the provider's own limit; custom SMTP does not remove it)`);
+      if (cfg.emailRateLimitPerHour < AUTH_EMAILS_PER_RUN) {
+        issues.push({
+          severity: 'medium',
+          line: `the auth email rate limit is ${cfg.emailRateLimitPerHour} per hour, below the ${AUTH_EMAILS_PER_RUN} accepted sends one run of the auth journeys needs: the sends beyond it are refused (HTTP 429)${cfg.smtp?.configured ? ', custom SMTP included, because the limit is the provider\'s own' : ''}`,
+          fix: `Raise it with \`auth.emailRateLimitPerHour\` in golive.yaml (30 is the provider's suggested starting point), then \`plan\` + \`apply\` — the \`auth:smtp\` step writes it with the custom SMTP when \`auth.smtp: resend\` — or raise the auth email rate limit in the ${provider} dashboard.`,
+        });
+      }
+    }
 
     if (!evidence.length) return skip(`${provider} does not report auth policy settings through its API (only the site URL and redirects are readable)`);
     if (missing.length) evidence.push(`not reported by ${provider}: ${missing.join(', ')}`);

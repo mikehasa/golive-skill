@@ -49,8 +49,9 @@ Not automated yet: the from-address env var (the human sets it if the code reads
 Resend as Supabase Auth's SMTP server is written by the `auth:smtp` step when `auth.smtp: resend` is
 set (host `smtp.resend.com`, port 465, user `resend`): it takes the SMTP password from the key the
 email journey issued in the same run, or issues `golive-<app>-smtp` for that purpose alone and records
-it like every other key. See `supabase.md` for the step's read-back limit (the provider never returns
-the password).
+it like every other key, and it raises Supabase's own auth email rate limit to 30 per hour (or
+`auth.emailRateLimitPerHour`) in the same write, since the provider keeps that limit with custom SMTP.
+See `supabase.md` for the step's read-back limit (the provider never returns the password).
 
 Stays with the human (and why):
 - **A domain already registered by another Resend team.** Claiming it needs a TXT record and gives
@@ -92,7 +93,7 @@ Stays with the human (and why):
 | `403` sending from `onboarding@resend.dev` | Only the owner's address works. Send from the verified domain. |
 | `429 daily_quota_exceeded` / `monthly_quota_exceeded` | Plan quota hit. Wait for the reset or the human upgrades. |
 | `429 rate_limit_exceeded` | 10 requests/second per team; retry after a moment. |
-| Supabase auth emails not arriving | With `auth.smtp: resend`, check the `auth:smtp` step's changes and `auth-policy`'s `custom SMTP via Resend` evidence, that tracking is off, and Supabase's email rate limit. Without that opt-in the project still uses Supabase's built-in mailer, which is rate-limited. |
+| Supabase auth emails not arriving | With `auth.smtp: resend`, check the `auth:smtp` step's changes and `auth-policy`'s `custom SMTP via Resend` evidence, that tracking is off, and the auth email rate limit (the step raises it to 30 per hour, or `auth.emailRateLimitPerHour`). Without that opt-in the project still uses Supabase's built-in mailer, which is rate-limited. |
 
 ## Unverified
 

@@ -301,7 +301,9 @@ live-tested milestones**, not a finished category or a completed checklist for y
   A send through the app's own environment key was delivered (to spam on a fresh subdomain, no DMARC yet).
   With `auth.smtp: resend` the `auth:smtp` step also writes the auth project's custom SMTP — Resend's
   host/port/user, the sender the app already uses, and an SMTP password taken from a sending key golive
-  issued (the email journey's key, or one it issues for SMTP alone) — and `auth-policy` then reports
+  issued (the email journey's key, or one it issues for SMTP alone) — and raises the project's own auth
+  email rate limit (`rate_limit_email_sent`) to 30 per hour (or `auth.emailRateLimitPerHour`) in the
+  same write, because the provider keeps that limit with custom SMTP. `auth-policy` then reports
   `custom SMTP via Resend` instead of warning about the built-in mailer. The password is write-only (the
   provider answers a hash), so the read-back confirms the settings and a real auth email is the only full
   proof. **Implemented and mock-covered, not live-validated**; bounce handling and richer message content

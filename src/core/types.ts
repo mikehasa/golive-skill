@@ -822,6 +822,12 @@ export interface ShipConfig {
     /** Which mailer auth emails should use: the auth provider's own, or the app's email provider. */
     smtp?: 'provider' | 'resend';
     /**
+     * Auth emails per hour the provider may send. The provider keeps its own limit even with custom
+     * SMTP, and one run of the auth journeys needs four accepted sends, so the `auth:smtp` step
+     * writes this value (30 when unset) with the custom SMTP.
+     */
+    emailRateLimitPerHour?: number;
+    /**
      * Opt in to the signup → confirmation → login journey: the `auth:test-user` step seeds a test
      * account and the `auth-signup`/`auth-session` checks prove it. Both write to the real project.
      */

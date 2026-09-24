@@ -10,6 +10,15 @@ const SMTP_HOST = 'smtp.resend.com';
 const SMTP_PORT = 465;
 const SMTP_USER = 'resend';
 
+/**
+ * The auth email rate limit golive writes beside the custom SMTP. The provider keeps its own limit
+ * with custom SMTP configured — a live run recorded `rate limit: 2 auth emails/hour` and the
+ * recovery request was then refused with HTTP 429 while the mailer was being wired — and one run of
+ * the auth journeys needs four accepted sends. 30 per hour is the provider's own suggested starting
+ * point; `auth.emailRateLimitPerHour` overrides it.
+ */
+const DEFAULT_EMAIL_RATE_LIMIT = 30;
+
 /** The state slot recording the sending key golive issued as the auth project's SMTP password. */
 export const smtpKeySlot = (provider: string): string => `${provider}.keyId@smtp`;
 
@@ -26,7 +35,23 @@ type SmtpValue = string | number;
 /** Only fields golive has a value for are written: a sender with no display name has no senderName. */
 type Want = Partial<Pick<AuthSmtp, SmtpField>>;
 
+/** The rate limit as the plan and the step's changes name it (`… → 30 per hour`). */
+const RATE_LIMIT_LABEL = 'auth email rate limit';
+const PER_HOUR = 'per hour';
+
+/** One named difference between the project's settings and what this step writes. */
+interface Change {
+  label: string;
+  /** Undefined = the provider does not report the current value. */
+  from: SmtpValue | undefined;
+  to: SmtpValue;
+  /** The unit the value reads with (`30 per hour`). */
+  unit?: string;
+}
+
 const show = (v: SmtpValue | undefined): string => (v === undefined || v === '' ? '(not set)' : String(v));
+/** `SMTP host: (not set) → smtp.resend.com` — the plan preview and the step's changes read alike. */
+const changeLine = (c: Change): string => `${c.label}: ${show(c.from)} → ${show(c.to)}${c.unit ? ` ${c.unit}` : ''}`;
 
 /** `Shop <hello@example.com>` (or a bare address) → the address and display name the SMTP fields want. */
 export function senderOf(from: string | undefined): { email?: string; name?: string } {
@@ -54,9 +79,14 @@ function whyEmail(status: AxisStatus): string {
  * alone under `golive-<app>-smtp` and records in state like every other key. Never a paste, and never
  * a new manual step.
  *
+ * Configuring the mailer is half the fix: the provider keeps its own auth-email rate limit with custom
+ * SMTP in place, and one run of the auth journeys needs four accepted sends, so the step raises that
+ * limit too (30 per hour, or `auth.emailRateLimitPerHour`), as part of the same approved write.
+ *
  * The provider answers the password field with a hash and never the value, so the step confirms what it
- * can read back (host, port, user, sender) and that the write was accepted. A real auth email arriving
- * is the only full proof, and the auth journeys golive runs after this step are what produce one.
+ * can read back (host, port, user, sender, rate limit) and that the write was accepted. A real auth
+ * email arriving is the only full proof, and the auth journeys golive runs after this step are what
+ * produce one.
  *
  * Separate from `auth:settings` (the policy fields) so a policy change never rewrites the mailer, and
  * it only ever plans for the one opt-in that asks for the app's own email provider.
@@ -93,7 +123,13 @@ export const authSmtpLink: Link = {
     }
 
     const want: Want = { host: SMTP_HOST, port: SMTP_PORT, user: SMTP_USER, senderEmail: sender.email, ...(sender.name ? { senderName: sender.name } : {}) };
-    const changes = FIELDS.filter((f) => want[f.field] !== undefined && before.smtp?.[f.field] !== want[f.field]).map((f) => ({ label: f.label, from: before.smtp?.[f.field] as SmtpValue | undefined, to: want[f.field]! }));
+    const rateLimit = ctx.config.auth?.emailRateLimitPerHour ?? DEFAULT_EMAIL_RATE_LIMIT;
+    const limitChange: Change | undefined =
+      before.emailRateLimitPerHour === rateLimit ? undefined : { label: RATE_LIMIT_LABEL, from: before.emailRateLimitPerHour, to: rateLimit, unit: PER_HOUR };
+    const changes: Change[] = [
+      ...FIELDS.filter((f) => want[f.field] !== undefined && before.smtp?.[f.field] !== want[f.field]).map((f) => ({ label: f.label, from: before.smtp?.[f.field] as SmtpValue | undefined, to: want[f.field]! })),
+      ...(limitChange ? [limitChange] : []),
+    ];
 
     const slot = smtpKeySlot(em.adapter.id);
     const recorded = ctx.state.resource(slot);
@@ -112,7 +148,10 @@ export const authSmtpLink: Link = {
       dependsOn: deps(ctx, [...(axis ? [`project:${axis}`] : []), ...(fromJourney.length ? fromJourney : ['email:domain'])]),
       preview: [
         `set the ${au.adapter.title} project's custom SMTP to Resend (${SMTP_HOST}:${SMTP_PORT}, user ${SMTP_USER}) as ${sender.email}${sender.name ? ` (${sender.name})` : ''}`,
-        ...changes.map((c) => `${c.label}: ${show(c.from)} → ${show(c.to)}`),
+        ...changes.map(changeLine),
+        // Without a change line, the value alone still belongs in the approved text: the limit is the
+        // provider's own, custom SMTP does not remove it, and the step writes it in the same request.
+        ...(limitChange ? [] : [`${RATE_LIMIT_LABEL}: ${rateLimit} ${PER_HOUR} (the provider's own limit, which custom SMTP does not remove; one run of the auth journeys needs four accepted sends)`]),
         fromJourney.length
           ? 'the SMTP password is the sending key the email journey issues in this run'
           : `the SMTP password is a sending key golive issues for SMTP alone (golive-…-smtp), recorded in state as ${slot} like every other key${recorded ? ` (it issued ${recorded} before)` : ''}`,
@@ -122,11 +161,11 @@ export const authSmtpLink: Link = {
         project: await projectIntent(ctx, au.adapter),
         sender: sender.email,
         key: fromJourney.length ? `journey:${fromJourney.join(',')}` : `smtp:${recorded ?? 'new'}`,
-        write: Object.entries(want).map(([k, v]) => `${k}=${String(v)}`),
+        write: [...Object.entries(want).map(([k, v]) => `${k}=${String(v)}`), `emailRateLimitPerHour=${rateLimit}`],
       }),
       verifyWith: ['auth-policy'],
       async run(sctx) {
-        const lines = changes.map((c) => `${c.label}: ${show(c.from)} → ${show(c.to)}`);
+        const lines = changes.map(changeLine);
         const held = vaultGet(KEY_VAULT);
         let password: Secret;
         if (held) {
@@ -139,24 +178,29 @@ export const authSmtpLink: Link = {
           lines.push(`issued the ${em.adapter.title} sending key ${issued.id} as the SMTP password (fp:${password.fingerprint}); recorded in state as ${slot}, so teardown can revoke it`);
           if (recorded && recorded !== issued.id) lines.push(`the SMTP key golive issued earlier (${recorded}) is left active; revoke it in ${em.adapter.title} once nothing uses it`);
         }
-        const outcome = await authConfig.set(sctx, { smtp: want, smtpPassword: password });
+        const outcome = await authConfig.set(sctx, { smtp: want, smtpPassword: password, emailRateLimitPerHour: rateLimit });
         for (const skip of outcome.skipped) lines.push(`not confirmed: ${skip}`);
         lines.push(`the password itself is only ever accepted, never confirmed: ${au.adapter.title} answers it with a hash, and a real auth email arriving is the only full proof it can send`);
         return { changes: lines };
       },
-      verifyInline: (vctx) => verifySmtp(vctx, au.adapter.title, authConfig, want),
+      verifyInline: (vctx) => verifySmtp(vctx, au.adapter.title, authConfig, want, rateLimit),
     });
     return { steps: track(ctx, [s] as Step[]), handoffs: [], warnings: [] };
   },
 };
 
 /**
- * Step-scoped verification: re-read the SMTP fields this step wrote. The password is not part of it —
- * the provider never returns the value — so a field the provider reports differently fails the step,
- * and one it does not report back is named as unconfirmed instead (the step's changes already say the
- * password cannot be confirmed this way).
+ * Step-scoped verification: re-read the SMTP fields this step wrote, then the auth email rate limit it
+ * raised with them. The password is not part of it — the provider never returns the value — so an SMTP
+ * field the provider reports differently fails the step, and one it does not report back is named as
+ * unconfirmed instead (the step's changes already say the password cannot be confirmed this way).
+ *
+ * The rate limit is verified the same way, except that a value the provider kept instead of the one
+ * golive wrote does NOT fail the step: the SMTP settings are what this proves, and the limit is the
+ * provider's own setting. It is reported as a warning naming the value that holds, so a project left
+ * too low to send a run's four auth emails is visible instead of passed over.
  */
-async function verifySmtp(ctx: Ctx, title: string, authConfig: AuthConfig, want: Want): Promise<CheckResult[]> {
+async function verifySmtp(ctx: Ctx, title: string, authConfig: AuthConfig, want: Want, rateLimit: number): Promise<CheckResult[]> {
   const id = 'auth:smtp:applied';
   const checkTitle = `${title} custom SMTP holds after the write`;
   let after: AuthSettings;
@@ -176,6 +220,11 @@ async function verifySmtp(ctx: Ctx, title: string, authConfig: AuthConfig, want:
     else if (got === to) confirmed.push(`${f.label}: ${show(got)}`);
     else wrong.push(`${f.label} is ${show(got)} after the write, not ${show(to)}`);
   }
+  const gotLimit = after.emailRateLimitPerHour;
+  let keptLimit: string | undefined;
+  if (gotLimit === undefined) unconfirmed.push(`${RATE_LIMIT_LABEL}: ${title} does not report it back`);
+  else if (gotLimit === rateLimit) confirmed.push(`${RATE_LIMIT_LABEL}: ${gotLimit} ${PER_HOUR}`);
+  else keptLimit = `${RATE_LIMIT_LABEL} is ${gotLimit} ${PER_HOUR} after the write, not ${rateLimit} ${PER_HOUR}`;
   const limit = 'the SMTP password is write-only (the provider answers a hash), so this proves the settings, not a delivery';
   if (wrong.length) {
     return [
@@ -184,10 +233,23 @@ async function verifySmtp(ctx: Ctx, title: string, authConfig: AuthConfig, want:
         title: checkTitle,
         status: 'fail',
         severity: 'high',
-        evidence: [...wrong, ...confirmed, ...unconfirmed, limit],
+        evidence: [...wrong, ...confirmed, ...unconfirmed, ...(keptLimit ? [keptLimit] : []), limit],
         fix: `Set the custom SMTP in the ${title} dashboard, or check that this credential may update auth settings, then re-run apply.`,
       },
     ];
   }
-  return [{ id, title: checkTitle, status: 'pass', severity: 'info', evidence: [...confirmed, ...unconfirmed, limit] }];
+  const passed: CheckResult = { id, title: checkTitle, status: 'pass', severity: 'info', evidence: [...confirmed, ...unconfirmed, limit] };
+  if (!keptLimit) return [passed];
+  // The provider accepted the patch but kept this value: the step stays done and this says what holds.
+  return [
+    passed,
+    {
+      id: `${id}:rate-limit`,
+      title: `${title} kept its own auth email rate limit`,
+      status: 'warn',
+      severity: 'medium',
+      evidence: [keptLimit, `golive asked for ${rateLimit} ${PER_HOUR}, the value one run of the auth journeys needs four accepted sends to fit`],
+      fix: `Raise the auth email rate limit in the ${title} dashboard, or check that this credential may update auth settings, then re-run apply.`,
+    },
+  ];
 }

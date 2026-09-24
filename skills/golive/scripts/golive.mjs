@@ -7718,6 +7718,7 @@ var init_config = __esm({
       requireEmailConfirm: (v) => typeof v === "boolean" ? null : "must be true or false",
       passwordMinLength: (v) => typeof v === "number" && Number.isInteger(v) && v > 0 ? null : "must be a positive whole number (e.g. 12), never a password",
       smtp: (v) => v === "provider" || v === "resend" ? null : `must be "provider" (the auth provider's own mailer) or "resend" (the app's email provider)`,
+      emailRateLimitPerHour: (v) => typeof v === "number" && Number.isInteger(v) && v > 0 ? null : "must be a positive whole number of auth emails per hour (e.g. 30)",
       e2e: (v) => typeof v === "boolean" ? null : "must be true or false",
       testEmail: (v) => typeof v === "string" && /^[^@\s+]+(\+[^@\s]+)?@[^@\s]+\.[^@\s]+$/.test(v) ? null : 'must be the address the test account uses, like "you+go-live@example.com" (plus-addressing allowed; never a password)',
       protectedPath: (v) => typeof v === "string" && v.startsWith("/") ? null : 'must be an app route starting with "/", e.g. "/dashboard" (the page that must require a session)',
@@ -17505,6 +17506,7 @@ init_secret();
 var SMTP_HOST = "smtp.resend.com";
 var SMTP_PORT = 465;
 var SMTP_USER = "resend";
+var DEFAULT_EMAIL_RATE_LIMIT = 30;
 var smtpKeySlot = (provider) => `${provider}.keyId@smtp`;
 var FIELDS = [
   { field: "host", label: "SMTP host" },
@@ -17513,7 +17515,10 @@ var FIELDS = [
   { field: "senderEmail", label: "sender address" },
   { field: "senderName", label: "sender name" }
 ];
+var RATE_LIMIT_LABEL = "auth email rate limit";
+var PER_HOUR = "per hour";
 var show3 = (v) => v === void 0 || v === "" ? "(not set)" : String(v);
+var changeLine = (c) => `${c.label}: ${show3(c.from)} \u2192 ${show3(c.to)}${c.unit ? ` ${c.unit}` : ""}`;
 function senderOf(from) {
   const raw2 = from?.trim();
   if (!raw2) return {};
@@ -17556,7 +17561,12 @@ var authSmtpLink = {
       return { steps: [], handoffs: [], warnings: [`reading ${au.adapter.title} auth settings failed (${errMsg(e)}); the custom-SMTP write is left out of this plan`] };
     }
     const want = { host: SMTP_HOST, port: SMTP_PORT, user: SMTP_USER, senderEmail: sender.email, ...sender.name ? { senderName: sender.name } : {} };
-    const changes = FIELDS.filter((f) => want[f.field] !== void 0 && before.smtp?.[f.field] !== want[f.field]).map((f) => ({ label: f.label, from: before.smtp?.[f.field], to: want[f.field] }));
+    const rateLimit = ctx.config.auth?.emailRateLimitPerHour ?? DEFAULT_EMAIL_RATE_LIMIT;
+    const limitChange = before.emailRateLimitPerHour === rateLimit ? void 0 : { label: RATE_LIMIT_LABEL, from: before.emailRateLimitPerHour, to: rateLimit, unit: PER_HOUR };
+    const changes = [
+      ...FIELDS.filter((f) => want[f.field] !== void 0 && before.smtp?.[f.field] !== want[f.field]).map((f) => ({ label: f.label, from: before.smtp?.[f.field], to: want[f.field] })),
+      ...limitChange ? [limitChange] : []
+    ];
     const slot = smtpKeySlot(em.adapter.id);
     const recorded = ctx.state.resource(slot);
     const fromJourney = deps(ctx, [...memo(ctx).planned].filter((id2) => id2.startsWith("email:key:")));
@@ -17570,7 +17580,10 @@ var authSmtpLink = {
       dependsOn: deps(ctx, [...axis ? [`project:${axis}`] : [], ...fromJourney.length ? fromJourney : ["email:domain"]]),
       preview: [
         `set the ${au.adapter.title} project's custom SMTP to Resend (${SMTP_HOST}:${SMTP_PORT}, user ${SMTP_USER}) as ${sender.email}${sender.name ? ` (${sender.name})` : ""}`,
-        ...changes.map((c) => `${c.label}: ${show3(c.from)} \u2192 ${show3(c.to)}`),
+        ...changes.map(changeLine),
+        // Without a change line, the value alone still belongs in the approved text: the limit is the
+        // provider's own, custom SMTP does not remove it, and the step writes it in the same request.
+        ...limitChange ? [] : [`${RATE_LIMIT_LABEL}: ${rateLimit} ${PER_HOUR} (the provider's own limit, which custom SMTP does not remove; one run of the auth journeys needs four accepted sends)`],
         fromJourney.length ? "the SMTP password is the sending key the email journey issues in this run" : `the SMTP password is a sending key golive issues for SMTP alone (golive-\u2026-smtp), recorded in state as ${slot} like every other key${recorded ? ` (it issued ${recorded} before)` : ""}`,
         "the password is never printed, stored or reported; the provider answers that field with a hash, so what the write can show is the accepted request plus the host/port/user/sender it reports back, and a real auth email arriving is the only full proof it can send"
       ],
@@ -17578,11 +17591,11 @@ var authSmtpLink = {
         project: await projectIntent(ctx, au.adapter),
         sender: sender.email,
         key: fromJourney.length ? `journey:${fromJourney.join(",")}` : `smtp:${recorded ?? "new"}`,
-        write: Object.entries(want).map(([k, v]) => `${k}=${String(v)}`)
+        write: [...Object.entries(want).map(([k, v]) => `${k}=${String(v)}`), `emailRateLimitPerHour=${rateLimit}`]
       }),
       verifyWith: ["auth-policy"],
       async run(sctx) {
-        const lines = changes.map((c) => `${c.label}: ${show3(c.from)} \u2192 ${show3(c.to)}`);
+        const lines = changes.map(changeLine);
         const held = vaultGet(KEY_VAULT);
         let password;
         if (held) {
@@ -17595,17 +17608,17 @@ var authSmtpLink = {
           lines.push(`issued the ${em.adapter.title} sending key ${issued.id} as the SMTP password (fp:${password.fingerprint}); recorded in state as ${slot}, so teardown can revoke it`);
           if (recorded && recorded !== issued.id) lines.push(`the SMTP key golive issued earlier (${recorded}) is left active; revoke it in ${em.adapter.title} once nothing uses it`);
         }
-        const outcome = await authConfig.set(sctx, { smtp: want, smtpPassword: password });
+        const outcome = await authConfig.set(sctx, { smtp: want, smtpPassword: password, emailRateLimitPerHour: rateLimit });
         for (const skip2 of outcome.skipped) lines.push(`not confirmed: ${skip2}`);
         lines.push(`the password itself is only ever accepted, never confirmed: ${au.adapter.title} answers it with a hash, and a real auth email arriving is the only full proof it can send`);
         return { changes: lines };
       },
-      verifyInline: (vctx) => verifySmtp(vctx, au.adapter.title, authConfig, want)
+      verifyInline: (vctx) => verifySmtp(vctx, au.adapter.title, authConfig, want, rateLimit)
     });
     return { steps: track(ctx, [s]), handoffs: [], warnings: [] };
   }
 };
-async function verifySmtp(ctx, title, authConfig, want) {
+async function verifySmtp(ctx, title, authConfig, want, rateLimit) {
   const id2 = "auth:smtp:applied";
   const checkTitle = `${title} custom SMTP holds after the write`;
   let after;
@@ -17625,6 +17638,11 @@ async function verifySmtp(ctx, title, authConfig, want) {
     else if (got === to) confirmed.push(`${f.label}: ${show3(got)}`);
     else wrong.push(`${f.label} is ${show3(got)} after the write, not ${show3(to)}`);
   }
+  const gotLimit = after.emailRateLimitPerHour;
+  let keptLimit;
+  if (gotLimit === void 0) unconfirmed.push(`${RATE_LIMIT_LABEL}: ${title} does not report it back`);
+  else if (gotLimit === rateLimit) confirmed.push(`${RATE_LIMIT_LABEL}: ${gotLimit} ${PER_HOUR}`);
+  else keptLimit = `${RATE_LIMIT_LABEL} is ${gotLimit} ${PER_HOUR} after the write, not ${rateLimit} ${PER_HOUR}`;
   const limit = "the SMTP password is write-only (the provider answers a hash), so this proves the settings, not a delivery";
   if (wrong.length) {
     return [
@@ -17633,12 +17651,24 @@ async function verifySmtp(ctx, title, authConfig, want) {
         title: checkTitle,
         status: "fail",
         severity: "high",
-        evidence: [...wrong, ...confirmed, ...unconfirmed, limit],
+        evidence: [...wrong, ...confirmed, ...unconfirmed, ...keptLimit ? [keptLimit] : [], limit],
         fix: `Set the custom SMTP in the ${title} dashboard, or check that this credential may update auth settings, then re-run apply.`
       }
     ];
   }
-  return [{ id: id2, title: checkTitle, status: "pass", severity: "info", evidence: [...confirmed, ...unconfirmed, limit] }];
+  const passed = { id: id2, title: checkTitle, status: "pass", severity: "info", evidence: [...confirmed, ...unconfirmed, limit] };
+  if (!keptLimit) return [passed];
+  return [
+    passed,
+    {
+      id: `${id2}:rate-limit`,
+      title: `${title} kept its own auth email rate limit`,
+      status: "warn",
+      severity: "medium",
+      evidence: [keptLimit, `golive asked for ${rateLimit} ${PER_HOUR}, the value one run of the auth journeys needs four accepted sends to fit`],
+      fix: `Raise the auth email rate limit in the ${title} dashboard, or check that this credential may update auth settings, then re-run apply.`
+    }
+  ];
 }
 
 // src/links/auth-e2e.ts
@@ -19383,6 +19413,7 @@ var authRedirectsCheck = {
 
 // src/checks/auth.ts
 var MIN_PASSWORD = 12;
+var AUTH_EMAILS_PER_RUN = 4;
 var RESEND_SMTP_HOST = "smtp.resend.com";
 var isResendSmtp = (host) => (host ?? "").trim().toLowerCase() === RESEND_SMTP_HOST;
 function appUsesAuth(ctx, provider) {
@@ -19480,7 +19511,7 @@ var authPolicyCheck = {
         issues.push({
           severity: "medium",
           line: `golive.yaml asks for the app's email provider (\`auth.smtp: resend\`) but auth emails still go through ${provider}'s built-in mailer, which allows roughly one accepted send per window \u2014 the recovery journey alone needs four`,
-          fix: `Re-run \`plan\` + \`apply\` (the \`auth:smtp\` step writes the custom SMTP from a sending key golive issues), then re-run verify.`
+          fix: `Re-run \`plan\` + \`apply\` (the \`auth:smtp\` step writes the custom SMTP from a sending key golive issues, and raises the auth email rate limit with it), then re-run verify.`
         });
       } else if (ctx.config.auth?.smtp !== "provider") {
         issues.push({
@@ -19491,7 +19522,16 @@ var authPolicyCheck = {
       }
     }
     if (cfg2.emailRateLimitPerHour === void 0) missing.push("rate limit");
-    else evidence.push(`rate limit: ${cfg2.emailRateLimitPerHour} auth emails/hour`);
+    else {
+      evidence.push(`rate limit: ${cfg2.emailRateLimitPerHour} auth emails/hour (the provider's own limit; custom SMTP does not remove it)`);
+      if (cfg2.emailRateLimitPerHour < AUTH_EMAILS_PER_RUN) {
+        issues.push({
+          severity: "medium",
+          line: `the auth email rate limit is ${cfg2.emailRateLimitPerHour} per hour, below the ${AUTH_EMAILS_PER_RUN} accepted sends one run of the auth journeys needs: the sends beyond it are refused (HTTP 429)${cfg2.smtp?.configured ? ", custom SMTP included, because the limit is the provider's own" : ""}`,
+          fix: `Raise it with \`auth.emailRateLimitPerHour\` in golive.yaml (30 is the provider's suggested starting point), then \`plan\` + \`apply\` \u2014 the \`auth:smtp\` step writes it with the custom SMTP when \`auth.smtp: resend\` \u2014 or raise the auth email rate limit in the ${provider} dashboard.`
+        });
+      }
+    }
     if (!evidence.length) return skip(`${provider} does not report auth policy settings through its API (only the site URL and redirects are readable)`);
     if (missing.length) evidence.push(`not reported by ${provider}: ${missing.join(", ")}`);
     const sev = worst(issues.map((i) => i.severity));
