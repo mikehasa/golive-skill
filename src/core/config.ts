@@ -30,6 +30,8 @@ const AUTH_SETTINGS: Record<string, (v: unknown) => string | null> = {
 /** The opt-in `release` settings and how each may look. Each one is off unless set to true. */
 const RELEASE_SETTINGS: Record<string, (v: unknown) => string | null> = {
   preview: (v) => (typeof v === 'boolean' ? null : 'must be true or false'),
+  promote: (v) => (typeof v === 'boolean' ? null : 'must be true or false'),
+  rollback: (v) => (typeof v === 'boolean' ? null : 'must be true or false'),
 };
 
 export function defaultConfig(): ShipConfig {

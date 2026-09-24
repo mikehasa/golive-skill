@@ -178,6 +178,12 @@ export const deployedIdKey = (target: Exclude<EnvTarget, 'development'>): string
 export const DEPLOYED_KEY = deployedKey('production');
 /** resources key: time of a production env write that no deploy has picked up yet. */
 export const REDEPLOY_KEY = redeployKey('production');
+/** resources key: the bounded log of deployment identities golive recorded (JSON, newest first). */
+export const DEPLOY_HISTORY_KEY = 'deployed:history';
+/** resources key: the last production re-point golive performed (`promote:production`/`release:rollback`). */
+export const RELEASED_KEY = 'deployed:release';
+/** How many deployment identities the history keeps. A short trail of what golive itself made, not a deploy log. */
+export const DEPLOY_HISTORY_LIMIT = 8;
 /** The step ids a deploy records (see deployLink and releaseLink): forgotten with the project's facts. */
 const DEPLOY_STEPS = ['deploy:production', 'deploy:production:final', 'preview:deploy'];
 
@@ -186,17 +192,120 @@ const DEPLOY_STEPS = ['deploy:production', 'deploy:production:final', 'preview:d
  * plus — only when the provider reported one — its own deployment identity under
  * `deployed:<target>:id` as `provider|id|url|<time>`, the name a promotion or rollback of exactly
  * that deployment would use. A provider that reports no id records the marker alone; golive never
- * derives an identity from the URL, and a deploy that reports none clears a stale one. Also clears
- * this target's pending-redeploy marker: this deployment picked up every env write so far.
+ * derives an identity from the URL, and a deploy that reports none clears a stale one. The same
+ * identity is pushed onto `deployed:history` (newest first, bounded), which is what a rollback picks
+ * its target from. Also clears this target's pending-redeploy marker: this deployment picked up
+ * every env write so far.
  */
 export function recordDeploy(ctx: Ctx, provider: string, target: Exclude<EnvTarget, 'development'>, deployment: { url: string; id?: string }): void {
   ctx.state.save((s) => {
     const at = new Date().toISOString();
     s.resources[deployedKey(target)] = at;
     delete s.resources[redeployKey(target)];
-    if (deployment.id) s.resources[deployedIdKey(target)] = [provider, deployment.id, deployment.url, at].join('|');
-    else delete s.resources[deployedIdKey(target)];
+    if (deployment.id) {
+      s.resources[deployedIdKey(target)] = [provider, deployment.id, deployment.url, at].join('|');
+      s.resources[DEPLOY_HISTORY_KEY] = withHistory(s.resources[DEPLOY_HISTORY_KEY], { target, provider, id: deployment.id, url: deployment.url, at, production: target === 'production' });
+    } else delete s.resources[deployedIdKey(target)];
   });
+}
+
+/**
+ * One deployment golive recorded: the provider's own identity, the env target it was BUILT for, and
+ * whether production has served it. Secret-free (provider ids, deployment ids, URLs, times).
+ */
+export interface DeploymentRecord {
+  target: Exclude<EnvTarget, 'development'>;
+  provider: string;
+  id: string;
+  url: string;
+  /** When golive recorded this deployment's identity (ISO). */
+  at: string;
+  /** A production deploy, or a deployment a promotion/rollback made production. */
+  production: boolean;
+}
+
+/** Parse the history, dropping anything that is not a complete record: unreadable history is no history. */
+function parseHistory(raw: string | undefined): DeploymentRecord[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((e): e is DeploymentRecord => {
+    const r = e as Partial<DeploymentRecord>;
+    if (!r || typeof r !== 'object') return false;
+    if (r.target !== 'preview' && r.target !== 'production') return false;
+    return typeof r.provider === 'string' && typeof r.id === 'string' && typeof r.url === 'string' && typeof r.at === 'string' && typeof r.production === 'boolean';
+  });
+}
+
+/** `<entry>` in front of the history, its own earlier record replaced, capped at DEPLOY_HISTORY_LIMIT. */
+function withHistory(raw: string | undefined, entry: DeploymentRecord): string {
+  const previous = parseHistory(raw);
+  const rest = previous.filter((e) => !(e.provider === entry.provider && e.id === entry.id));
+  // A deployment that ever reached production keeps that stamp when it is recorded again.
+  const production = entry.production || previous.some((e) => e.provider === entry.provider && e.id === entry.id && e.production);
+  return JSON.stringify([{ ...entry, production }, ...rest].slice(0, DEPLOY_HISTORY_LIMIT));
+}
+
+/** The deployment identities golive recorded, newest first. */
+export function readDeployHistory(ctx: Ctx): DeploymentRecord[] {
+  return parseHistory(ctx.state.resource(DEPLOY_HISTORY_KEY));
+}
+
+/**
+ * The deployment production served before `prod` according to golive's own record: the next record
+ * after it that reached production through the same provider. A rollback target is never anything
+ * golive did not create and record, so this is the only source the rollback step takes one from.
+ */
+export function previousProductionDeploy(history: DeploymentRecord[], prod: { provider: string; id: string }): DeploymentRecord | null {
+  const at = history.findIndex((e) => e.provider === prod.provider && e.id === prod.id);
+  const rest = at >= 0 ? history.slice(at + 1) : history.filter((e) => !(e.provider === prod.provider && e.id === prod.id));
+  return rest.find((e) => e.production && e.provider === prod.provider) ?? null;
+}
+
+/** The last production re-point golive performed, as state records it. */
+export interface RecordedRelease {
+  kind: 'promote' | 'rollback';
+  /** The hosting provider golive re-pointed through. */
+  provider: string;
+  /** The deployment golive made production. */
+  id: string;
+  url: string;
+  /** The provider's id for what production served before this release, or null when it reported none. */
+  displaced: string | null;
+  /** When golive released it (ISO). */
+  at: string;
+}
+
+/**
+ * Record a production re-point golive performed (`promote:production`/`release:rollback`): the release
+ * itself (`deployed:release` = `kind|provider|id|url|displaced|<time>`, the evidence the
+ * `production-release` check re-reads against the provider) and the production pointer, so the deploy
+ * bookkeeping keeps describing what production serves. The deployment's own history record moves to
+ * the front and is marked production — it keeps the env target it was built for, and the newest-first
+ * order is what makes the previous production deployment readable for a later rollback.
+ */
+export function recordRelease(ctx: Ctx, release: Omit<RecordedRelease, 'at'> & { target: Exclude<EnvTarget, 'development'> }): void {
+  ctx.state.save((s) => {
+    const at = new Date().toISOString();
+    s.resources[RELEASED_KEY] = [release.kind, release.provider, release.id, release.url, release.displaced ?? '', at].join('|');
+    s.resources[DEPLOYED_KEY] = at;
+    s.resources[deployedIdKey('production')] = [release.provider, release.id, release.url, at].join('|');
+    s.resources[DEPLOY_HISTORY_KEY] = withHistory(s.resources[DEPLOY_HISTORY_KEY], { target: release.target, provider: release.provider, id: release.id, url: release.url, at, production: true });
+  });
+}
+
+/** The last release golive recorded, or null when state has none (or an unreadable one). */
+export function readRelease(ctx: Ctx): RecordedRelease | null {
+  const raw = ctx.state.resource(RELEASED_KEY);
+  if (!raw) return null;
+  const [kind, provider, id, url, displaced, at] = raw.split('|');
+  if ((kind !== 'promote' && kind !== 'rollback') || !provider || !id || !url || !at) return null;
+  return { kind, provider, id, url, displaced: displaced || null, at };
 }
 
 /** When golive last deployed production successfully (state), or undefined if it never did. */
@@ -234,14 +343,16 @@ export function readRecordedDeploy(ctx: Ctx, target: Exclude<EnvTarget, 'develop
 
 /**
  * Forget the deploy facts that belonged to a host project golive just removed: the recorded deploy
- * time(s), the recorded deployment identity (`deployed:<target>:id`) and the completed deploy step
+ * time(s), the recorded deployment identity (`deployed:<target>:id`), the bounded deployment history
+ * (`deployed:history`), the recorded release (`deployed:release`) and the completed deploy step
  * evidence (production and the opt-in preview). A project created again in the same repo must be
  * deployed again instead of inheriting "production was deployed" (which plans no deploy at all), and
- * the identity of a deployment that project no longer serves must not outlive it. Failed records and
- * every other key are left as they are.
+ * the identity of a deployment that project no longer serves must not outlive it — nor may a later
+ * rollback name one. Failed records and every other key are left as they are.
  */
 export function forgetDeployFacts(ctx: Ctx): void {
   ctx.state.save((s) => {
+    // Every deploy fact lives under `deployed:`, so one prefix rule covers the whole family.
     for (const key of Object.keys(s.resources)) if (key.startsWith('deployed:')) delete s.resources[key];
     for (const id of DEPLOY_STEPS) if (s.steps[id]?.status === 'done') delete s.steps[id];
   });

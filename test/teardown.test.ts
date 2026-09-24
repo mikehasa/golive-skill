@@ -483,9 +483,14 @@ const OTHER_FACTS = {
   steps: { 'env:production': { status: 'done' as const, hash: 'h3', at: DEPLOY_AT, planId: 'plan_1' } },
   secrets: { 'DATABASE_URL@production': { fp: 'abcd1234', at: DEPLOY_AT } },
 };
+/** The deployment trail a release leaves behind: the bounded history and the last production re-point. */
+const DEPLOY_TRAIL = {
+  'deployed:history': JSON.stringify([{ target: 'production', provider: 'fakehost', id: 'dpl_1', url: 'https://shop.fakehost.app', at: DEPLOY_AT, production: true }]),
+  'deployed:release': `promote|fakehost|dpl_1|https://shop.fakehost.app||${DEPLOY_AT}`,
+};
 const stateWithDeploys = (): ShipState => ({
   ...emptyState(),
-  resources: { ...CREATED_PROJECT, 'deployed:production': DEPLOY_AT, 'deployed:production:id': DEPLOY_ID, ...OTHER_FACTS.resources },
+  resources: { ...CREATED_PROJECT, 'deployed:production': DEPLOY_AT, 'deployed:production:id': DEPLOY_ID, ...DEPLOY_TRAIL, ...OTHER_FACTS.resources },
   steps: {
     'deploy:production': { status: 'done', hash: 'h1', at: DEPLOY_AT, planId: 'plan_1' },
     'deploy:production:final': { status: 'done', hash: 'h2', at: DEPLOY_AT, planId: 'plan_1' },
@@ -508,6 +513,9 @@ describe('teardown: deploy facts of a removed project', () => {
     expect(out.map((o) => [o.id, o.status])).toEqual([['teardown:project:hosting', 'done']]);
     expect(ctx.state.resource('deployed:production')).toBeUndefined();
     expect(ctx.state.resource('deployed:production:id')).toBeUndefined(); // the removed project's deployment identity goes with it
+    // So does the trail a release leaves: a later rollback must not name a deployment of a removed project.
+    expect(ctx.state.resource('deployed:history')).toBeUndefined();
+    expect(ctx.state.resource('deployed:release')).toBeUndefined();
     expect(ctx.state.get().steps['deploy:production']).toBeUndefined();
     expect(ctx.state.get().steps['deploy:production:final']).toBeUndefined();
     expect(ctx.state.get().steps['teardown:project:hosting']?.status).toBe('done'); // the teardown evidence stays
@@ -542,6 +550,8 @@ describe('teardown: deploy facts of a removed project', () => {
       expect(out.map((o) => [o.id, o.status]), c.what).toEqual([['teardown:project:hosting', c.status]]);
       expect(ctx.state.resource('deployed:production'), c.what).toBe(DEPLOY_AT);
       expect(ctx.state.resource('deployed:production:id'), c.what).toBe(DEPLOY_ID);
+      expect(ctx.state.resource('deployed:history'), c.what).toBe(DEPLOY_TRAIL['deployed:history']);
+      expect(ctx.state.resource('deployed:release'), c.what).toBe(DEPLOY_TRAIL['deployed:release']);
       expect(ctx.state.get().steps['deploy:production']?.status, c.what).toBe('done');
       expect(ctx.state.get().steps['deploy:production:final']?.status, c.what).toBe('done');
     }

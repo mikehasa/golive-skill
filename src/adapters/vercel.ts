@@ -190,6 +190,10 @@ export const vercelAdapter: Adapter = {
     url: vercelUrl,
     deploy: vercelDeploy,
     domain: vercelDomain,
+    // No `release` capability: this adapter has no read of which deployment production currently
+    // serves (only aliases, which a promotion cannot be proven against) and no promote/rollback call
+    // golive has exercised, so promotion and rollback are refused/skipped with that reason rather than
+    // acting blind — see docs/PROVIDERS.md.
   },
 };
 

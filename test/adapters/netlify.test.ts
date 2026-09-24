@@ -447,3 +447,75 @@ describe('Netlify deployment and owned URLs', () => {
     expect(await url.previewPatterns!(ctx)).toEqual([]);
   });
 });
+
+describe('Netlify production re-points (release capability)', () => {
+  const release = netlifyAdapter.capabilities.release!;
+  const DEPLOY_SSL = DEPLOY.deploy_ssl_url;
+  const deployPath = (id: string) => `${NETLIFY_API}/sites/${SITE}/deploys/${id}`;
+
+  it('reports what production serves as the site’s own published deployment, read over HTTPS', async () => {
+    const h = http([['GET', deployPath('deploy_1'), () => ({ json: DEPLOY })]]);
+    const ctx = testCtx({ exec: cli().run, http: h.http, tokens, state: linkedState() });
+    expect(await release.production(ctx)).toEqual({ id: 'deploy_1', url: DEPLOY_SSL, ready: true });
+    expect(h.calls.map(c => [c.method, c.url])).toEqual([['GET', `${NETLIFY_API}/user`], ['GET', deployPath('deploy_1')]]);
+    expect(h.calls[1]!.headers.authorization).toBe(`Bearer ${TOKEN}`);
+
+    // A site that was never published reports none: golive never guesses what production serves.
+    const unpublished = testCtx({ exec: cli({ getSite: { ...SITE_RAW, published_deploy: null } }).run, http: http().http, tokens, state: linkedState() });
+    expect(await release.production(unpublished)).toBeNull();
+  });
+
+  it('re-reads one deployment by id, reporting only a 404 as gone and never echoing the response', async () => {
+    const h = http([['GET', deployPath('deploy_9'), () => ({ json: { ...DEPLOY, id: 'deploy_9', state: 'building' } })]]);
+    const ctx = testCtx({ exec: cli().run, http: h.http, tokens, state: linkedState() });
+    expect(await release.read(ctx, 'deploy_9')).toMatchObject({ id: 'deploy_9', ready: false });
+
+    const gone = http([['GET', deployPath('deploy_9'), () => ({ status: 404, text: `{"code":404,"message":"${RAW.dbUrl}"}` })]]);
+    expect(await release.read(testCtx({ exec: cli().run, http: gone.http, tokens, state: linkedState() }), 'deploy_9')).toBeNull();
+
+    const broken = http([['GET', deployPath('deploy_9'), () => ({ status: 500, text: `{"code":500,"message":"${RAW.dbUrl}"}` })]]);
+    const failed = testCtx({ exec: cli().run, http: broken.http, tokens, state: linkedState() });
+    const message = await release.read(failed, 'deploy_9').then(() => '', (e: Error) => e.message);
+    expect(message).toMatch(/HTTP 500/);
+    expect(message).not.toContain(RAW.dbUrl);
+
+    const foreign = http([['GET', deployPath('deploy_1'), () => ({ json: { ...DEPLOY, site_id: OTHER } })]]);
+    await expect(release.read(testCtx({ exec: cli().run, http: foreign.http, tokens, state: linkedState() }), 'deploy_1')).rejects.toThrow(/different deployment/);
+  });
+
+  it('restores an earlier deployment with one HTTPS POST: no rebuild, no secret in argv', async () => {
+    const earlier = { ...DEPLOY, id: 'deploy_0', context: 'deploy-preview', draft: true };
+    const h = http([
+      ['GET', deployPath('deploy_0'), () => ({ json: earlier })],
+      ['POST', `${deployPath('deploy_0')}/restore`, () => ({ json: { ...earlier, context: 'production' } })],
+    ]);
+    const ex = cli();
+    const ctx = testCtx({ exec: ex.run, http: h.http, tokens, state: linkedState() });
+    await release.promote!(ctx, 'deploy_0');
+    expect(h.calls.map(c => [c.method, c.url])).toEqual([
+      ['GET', `${NETLIFY_API}/user`],
+      ['GET', deployPath('deploy_0')],
+      ['POST', `${deployPath('deploy_0')}/restore`],
+    ]);
+    expect(h.calls[2]!.headers.authorization).toBe(`Bearer ${TOKEN}`);
+    expect(h.calls[2]!.body).toBeUndefined();
+    // Nothing was deployed again, and the token never reached a command line.
+    expect(ex.calls.some(c => c.args[0] === 'deploy')).toBe(false);
+    for (const call of ex.calls) expect(JSON.stringify(call)).not.toContain(TOKEN);
+
+    // The provider's own read afterwards is what proves the switch.
+    const after = http([['GET', deployPath('deploy_0'), () => ({ json: { ...earlier, context: 'production' } })]]);
+    const afterCtx = testCtx({ exec: cli({ getSite: { ...SITE_RAW, published_deploy: { id: 'deploy_0' } } }).run, http: after.http, tokens, state: linkedState() });
+    expect(await release.production(afterCtx)).toMatchObject({ id: 'deploy_0' });
+  });
+
+  it('refuses a deployment that is gone or not ready, writing nothing', async () => {
+    const gone = http([['GET', deployPath('deploy_9'), () => ({ status: 404, text: '{"code":404}' })]]);
+    await expect(release.promote!(testCtx({ exec: cli().run, http: gone.http, tokens, state: linkedState() }), 'deploy_9')).rejects.toThrow(/no longer has deployment deploy_9/);
+    expect(gone.calls.some(c => c.method === 'POST')).toBe(false);
+
+    const building = http([['GET', deployPath('deploy_9'), () => ({ json: { ...DEPLOY, id: 'deploy_9', state: 'building' } })]]);
+    await expect(release.promote!(testCtx({ exec: cli().run, http: building.http, tokens, state: linkedState() }), 'deploy_9')).rejects.toThrow(/not ready/);
+    expect(building.calls.some(c => c.method === 'POST')).toBe(false);
+  });
+});

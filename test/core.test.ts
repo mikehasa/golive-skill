@@ -145,15 +145,18 @@ auth: { e2e: true, testEmail: "you+go-live@example.com", protectedPath: /dashboa
   it('parses the opt-in release block', () => {
     const c = parseConfig(`version: 1
 stack: { hosting: vercel }
-release: { preview: true }
+release: { preview: true, promote: true, rollback: false }
 `);
-    expect(c.release).toEqual({ preview: true });
+    expect(c.release).toEqual({ preview: true, promote: true, rollback: false });
     expect(parseConfig('version: 1\nrelease: { preview: false }\n').release).toEqual({ preview: false });
+    expect(parseConfig('version: 1\nrelease: { rollback: true }\n').release).toEqual({ rollback: true });
     expect(parseConfig('version: 1\n').release).toBeUndefined();
   });
 
   it.each([
     ['version: 1\nrelease: { preview: yes-please }\n', /release\.preview must be true or false/],
+    ['version: 1\nrelease: { promote: yes-please }\n', /release\.promote must be true or false/],
+    ['version: 1\nrelease: { rollback: yes-please }\n', /release\.rollback must be true or false/],
     ['version: 1\nrelease: { promotion: true }\n', /unknown release setting/],
     ['version: 1\nrelease: true\n', /release must be a mapping/],
   ])('rejects a bad release setting %#', (text, re) => {

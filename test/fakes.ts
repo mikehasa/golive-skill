@@ -5,7 +5,7 @@
  */
 import { Secret } from '../src/core/secret.js';
 import { modeFor } from '../src/core/config.js';
-import type { Adapter, AuthLoginOutcome, AuthRecoveryOutcome, AuthSettings, AuthSignupOutcome, AuthUserView, Ctx, DnsRecord, EnvTarget, Mode, OutputKey, Outputs, ProjectRef, Value } from '../src/core/types.js';
+import type { Adapter, AuthLoginOutcome, AuthRecoveryOutcome, AuthSettings, AuthSignupOutcome, AuthUserView, Ctx, DeploymentInfo, DnsRecord, EnvTarget, Mode, OutputKey, Outputs, ProjectRef, Value } from '../src/core/types.js';
 
 export interface Call {
   adapter: string;
@@ -71,6 +71,30 @@ export function fakeWorld() {
     deployError: null as string | null,
     /** The deployment identity the fake host reports; null = a provider that reports none. */
     deployId: 'dpl_fake1' as string | null,
+    /**
+     * The provider side of promotion/rollback (`ReleaseControl`): what the fake host reports as the
+     * deployment production serves now, the deployments it can re-read by id, and the re-point call.
+     * `deploy` keeps this in step, like a real host: a production deploy makes that deployment what
+     * production serves, and `promote` makes a deployment production.
+     */
+    release: {
+      /** false = the fake exposes no release capability at all (a host golive cannot re-read or re-point). */
+      available: true,
+      /** false = the fake can read production but has no re-point call. */
+      canPromote: true,
+      /** What the fake host reports for production now; null = it reports none. */
+      production: null as DeploymentInfo | null,
+      /** Deployments the fake can re-read by id. */
+      deploys: new Map<string, DeploymentInfo>(),
+      /** When set, a read throws this (a provider/transport failure). */
+      readError: null as string | null,
+      /** When set, promote() throws this (a provider-side refusal, unlike a no-op). */
+      promoteError: null as string | null,
+      /** When true, promote() reports success but production keeps serving what it served (a write that did not stick). */
+      promoteHasNoEffect: false,
+      /** Ids promote() was called with, in order. */
+      promoted: [] as string[],
+    },
     /** Whether the fake host exposes DomainAttach.verify, and what it returns. */
     withDomainVerify: true,
     verifyResult: 'pending' as 'verified' | 'pending',
@@ -163,8 +187,43 @@ export function fakeWorld() {
           // the production deployment.
           const url = t === 'preview' ? 'https://shop-preview-abc123.fakehost.app' : 'https://shop-abc123.fakehost.app';
           if (!host.deployId) return { url };
-          return { url, id: t === 'preview' ? `${host.deployId}_preview` : host.deployId };
+          const id = t === 'preview' ? `${host.deployId}_preview` : host.deployId;
+          // A real host can re-read the deployment it just reported, and a production deploy is what
+          // production serves from then on.
+          const info: DeploymentInfo = { id, url, ready: true };
+          host.release.deploys.set(id, info);
+          if (t === 'production') host.release.production = info;
+          return { url, id };
         },
+      },
+      get release() {
+        if (!host.release.available) return undefined;
+        const r = host.release;
+        return {
+          production: async () => {
+            rec('fakehost', 'release.production');
+            if (r.readError) throw new Error(r.readError);
+            return r.production;
+          },
+          read: async (_c: unknown, id: string) => {
+            rec('fakehost', 'release.read', id);
+            if (r.readError) throw new Error(r.readError);
+            return r.deploys.get(id) ?? null;
+          },
+          get promote() {
+            return r.canPromote
+              ? async (_c: unknown, id: string): Promise<void> => {
+                  rec('fakehost', 'release.promote', id);
+                  if (r.promoteError) throw new Error(r.promoteError);
+                  const deploy = r.deploys.get(id);
+                  if (!deploy) throw new Error(`no such deployment ${id}`);
+                  if (!deploy.ready) throw new Error(`deployment ${id} is not ready`);
+                  r.promoted.push(id);
+                  if (!r.promoteHasNoEffect) r.production = deploy;
+                }
+              : undefined;
+          },
+        };
       },
       domain: {
         add: async (_c, d) => {

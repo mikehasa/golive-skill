@@ -8,8 +8,8 @@ Built-in adapters use CLI/API transports; users do not need to install provider 
 
 | Provider | Implemented operations | Limits and evidence |
 | --- | --- | --- |
-| Vercel | Project selection/creation, env wiring, deployment and supported domain attachment | Vercel + Supabase passed disposable E2E; domain attachment passed separately in the disposable Vercel + Porkbun and Vercel + GoDaddy custom-domain runs. Vercel CLI is required even with token fallback. |
-| Netlify | Free-team project selection/creation, env wiring, CLI build/deploy and public-access checks | Netlify + Neon passed disposable E2E. Custom-domain attachment remains guided; project visibility may require an approved UI change. |
+| Vercel | Project selection/creation, env wiring, deployment and supported domain attachment | Vercel + Supabase passed disposable E2E; domain attachment passed separately in the disposable Vercel + Porkbun and Vercel + GoDaddy custom-domain runs. Vercel CLI is required even with token fallback. No read of what production serves and no promote/rollback call, so the opt-in promotion and rollback steps are not supported here (see below). |
+| Netlify | Free-team project selection/creation, env wiring, CLI build/deploy, public-access checks and (opt-in) production re-points | Netlify + Neon passed disposable E2E. Custom-domain attachment remains guided; project visibility may require an approved UI change. |
 | Supabase | Project selection/creation, database output, Auth policy and redirect settings, read-only access/security checks | Vercel pairing passed with an explicit token. Existing macOS CLI login reuse separately passed read-only checks, and the auth validation then created one project and wrote its auth policy through that same reused login (no token, no Keychain prompt); fresh-login UX remains unverified. The Auth policy settings (signup, email confirmation, minimum password length, mailer) passed that disposable live run: the policy write was confirmed by the read-back (`password minimum length: 6 → 12`) and `auth-policy` ended with the built-in-mailer advisory as its only finding. |
 | Neon | Free-organization project selection/creation, Postgres URLs and a read-only connection probe | Netlify pairing passed. No Neon Auth, app migrations, new branches on existing projects or per-target branch creation. |
 
@@ -36,6 +36,23 @@ host can confirm differs, and golive reports the difference instead of guessing:
   left to the human in Vercel's own dashboard or CLI.
 - Both hosts deploy the **current working tree**, not a commit; the plan names the branch when local
   `git` can report one.
+
+### Opt-in promotion and rollback
+
+`release.promote: true` (with `release.preview: true`) releases by promotion; `release.rollback: true`
+asks for a rollback and needs no preview opt-in. Both are **implemented and mock-covered, not
+live-validated**, and both need a host that can re-read what production serves — golive refuses rather
+than acting blind. What each host supports, from the code:
+
+| Host | What production serves (read) | Re-point an earlier deployment | Promotion / rollback |
+| --- | --- | --- | --- |
+| Netlify | Yes: the site read's `published_deploy.id`, re-read through the deploy API over HTTPS (`src/adapters/netlify.ts`) | Yes: `POST /sites/{site_id}/deploys/{deploy_id}/restore`, Netlify's documented "restore deploy (rollback)", through the same HTTPS transport the adapter already writes env with. No rebuild and no env change | Supported: `promote:production` and `release:rollback` re-read the target deployment and production before the write, re-point, then re-read production and record what it serves |
+| Vercel | No: the adapter reads project aliases, not which deployment production currently serves (`src/adapters/vercel.ts`) | No call golive has exercised | Not supported: with `release.promote` set, golive plans no promotion and says so — Vercel's preview steps still run. Reviewing or rolling back production stays with Vercel's own dashboard/CLI |
+
+Both hosts deploy what is on disk, so a promotion re-points production at an already-built deployment:
+it does not rebuild, and the deployment keeps the env it was built with. A deployment Vercel or Netlify
+built from a Git push, a pull request or its dashboard is never a promotion or rollback target; golive
+names it as a handoff instead of touching it.
 
 ### Account connection
 

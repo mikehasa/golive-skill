@@ -98,7 +98,7 @@ and `apply` needs `--confirm-live` too when a live-mode value fills a preview en
   current working tree — the preview names the branch when local `git` reports one, because both hosts
   build what is on disk, not a commit — to the host's preview target. It depends on `project:hosting`
   and `env:preview`, and records the provider's own identity for the deployment it made as
-  `deployed:preview:id` (the same shape production records, so a later promotion can name it). Its
+  `deployed:preview:id` (the same shape production records, so a promotion can name it). Its
   preview names the provider and project, the env target, the preview URL the provider reports per
   deployment, and whether the preview shares production's source project: golive fills preview env from
   the same db/auth project as production, so a preview reads and writes production's data. It is
@@ -108,10 +108,41 @@ and `apply` needs `--confirm-live` too when a live-mode value fills a preview en
 - `release:check` writes nothing (`risk: { writes: false }`) and depends on that deploy. It runs two
   checks as its inline verification and **fails the step when one fails**, which stops the plan: that is
   the gate. Its intent is the deploy's intent plus the previous attempt, so a re-plan checks again
-  (the `domain:verify` idiom).
+  (the `domain:verify` idiom). It has a second mode: as the promotion's prerequisite it depends only on
+  `project:hosting` and re-reads the preview deployment golive already recorded — the exact deployment
+  `promote:production` would make production.
 
-Promotion is not built: a promotion step would depend on `release:check`. Adding these step ids changes
-a plan's id, so an approval that was not applied must be re-planned.
+Adding these step ids changes a plan's id, so an approval that was not applied must be re-planned.
+
+**Promotion and rollback (`release: { preview: true, promote: true }`, or `release: { rollback: true }`).**
+Two production re-points, both **implemented and mock-covered, not live-validated**, and both planned
+only when the human opted in:
+
+- `promote:production` (`kind: 'deploy'`, `risk: { writes: true }`, `dependsOn: ['release:check']`)
+  re-points production at the preview deployment golive recorded and that check just re-read. Its
+  preview names the provider's own deployment id and URL, when golive recorded it, the env target it
+  was built for, what production serves before, the gate, and that production will change. There is
+  **no extra confirmation flag**: the plan id, the named deployment and the fresh gate are the
+  approval. Because the provider reports a deployment's id only once the deployment is made, the plan
+  that can name it is a different plan from the one that deploys it — with the opt-in set, a plan is
+  either **cut** (`preview:deploy` + `release:check`) or **release** (`release:check` +
+  `promote:production`), and its preview says which. While `release.promote` is set, every plan asks
+  for a release; remove the flag to stop planning releases. `run` re-reads the target deployment and
+  what production serves before writing, refuses when the provider cannot answer either read (or the
+  deployment is gone/not ready), then re-reads production after the write and records nothing unless
+  the provider confirms the switch. Production already serving the target is a no-op.
+- `release:rollback` (`kind: 'deploy'`, `risk: { writes: true }`) re-points production at an earlier
+  deployment from golive's own trail (`deployed:history`). Its target is never a deployment golive did
+  not create: a dashboard, Git or PR-built one stays with that provider. While `release.rollback` is
+  set, a plan contains the rollback and no preview steps, and it stops planning one once golive has
+  rolled production back to that deployment. It is not a `destroy` step
+  (nothing is deleted) and not `replayable` (a production re-point keeps the cross-release stop, so a
+  rollback recorded under an older release is refused and reconciled instead of repeated). It is never
+  automatic — a failed check never triggers one — and once golive has rolled production back, a later
+  plan reports that instead of planning the same rollback again.
+- Both hosts differ: **Netlify** re-reads `published_deploy` and can restore an earlier deploy, so both
+  steps work there; **Vercel** has no production-deployment read and no promote/rollback call, so no
+  promotion or rollback is planned and a warning names the missing capability.
 
 **Production URL before the first deploy.** Without a custom domain, the host's production URL is used
 for the webhook, the auth site URL and `SITE_URL`-style vars only after golive has deployed production
@@ -323,6 +354,7 @@ state — and a protected preview skips instead of being reported as scanned.
 | `email-verified` | the provider marks the domain verified | guided email; `blocked by: email:domain` |
 | `preview-deploy` | the hosting provider's own read confirms the preview deployment golive recorded (`deployed:preview:id`) is ready, belongs to the project this repo links and is not the production deployment | no recorded preview deployment; the recording belongs to another provider; a guided or logged-out host; a host with no per-deployment preview read (Vercel). **Warns** when the host reports a different preview deployment than the recorded one; **fails** when the recorded "preview" is the production deployment |
 | `preview-bundle` | the HTML/JavaScript served by the provider-confirmed preview URL is scanned completely and holds no known credential patterns | no provider-confirmed preview URL; **skips** a 401/403 protection wall (a private preview is normal and is never a pass); **warns** on an incomplete scan or a page that did not load; **fails critical** on a leaked pattern |
+| `production-release` | the provider's own read of what production serves is the deployment golive promoted or rolled back to (`deployed:release`), with what production served before named. Runs while `release.promote`/`release.rollback` is set, and afterwards for as long as a release is recorded (the opt-in can be removed and the evidence stays readable) | no recorded release; a guided or logged-out host; a host with no read of what production serves (Vercel); the provider reports no production deployment; another provider's recording. **Warns** when the provider read fails, or when production serves a deployment golive never recorded (a dashboard/Git/PR-built one — a handoff for the human); **fails** when production serves another deployment golive recorded (something moved production after the release) |
 
 Details that trip people up:
 - `env-parity` doesn't require `STRIPE_WEBHOOK_SECRET` (or other webhook-secret names) outside
