@@ -117,6 +117,12 @@ describe('auth:recovery step', () => {
     const handoff = plan.handoffs.find((h) => h.id === 'auth:recovery-email')!;
     expect(handoff).toMatchObject({ blocking: false, verifiedBy: 'auth-recovery' });
     expect(handoff.action).toMatch(/click the link/);
+    // One static text is served after a run that rotated the password AND after one whose step failed
+    // or never ran, so it names both outcomes instead of claiming the rotation happened.
+    expect(handoff.action).not.toContain("golive rotated that account's password");
+    expect(handoff.action).toMatch(/depends on the run/);
+    expect(handoff.action).toMatch(/if the `auth:recovery` step is recorded as done, it has been/);
+    expect(handoff.action).toMatch(/if that step failed or never ran, nothing was rotated/);
 
     const off = setup({ config: { auth: { e2e: true, testEmail: EMAIL, protectedPath: '/dashboard' } } });
     const offPlan = await build(off.ctx);
@@ -449,17 +455,17 @@ describe('golive handoff and the recovery handoff', () => {
   }
 
   /** A repo whose state records the seeded test account, but no password: a `handoff` after apply. */
-  function writeRepo(w: FakeWorld): void {
+  function writeRepo(w: FakeWorld, steps: ShipState['steps'] = {}): void {
     w.db.authUsers.users.push({ id: 'usr_1', email: EMAIL, confirmed: true, pass: 'never-in-this-process' });
     mocks.adapters.push(...w.adapters);
     writeFileSync(join(root, 'golive.yaml'), JSON.stringify({ version: 1, stack: { hosting: 'fakehost', db: 'fakedb', auth: 'fakedb' }, targets: ['production'], auth: { e2e: true, testEmail: EMAIL, protectedPath: '/dashboard', recovery: true } }));
     mkdirSync(join(root, '.golive'), { recursive: true });
-    const state: ShipState = { ...emptyState(), resources: { [TEST_USER_ID]: 'usr_1', [TEST_USER_EMAIL]: EMAIL }, secrets: {}, steps: {} };
+    const state: ShipState = { ...emptyState(), resources: { [TEST_USER_ID]: 'usr_1', [TEST_USER_EMAIL]: EMAIL }, secrets: {}, steps };
     writeFileSync(join(root, '.golive/state.json'), JSON.stringify(state));
   }
 
   const handoffItem = (output: string) =>
-    (JSON.parse(output) as { handoffs: Array<{ id: string; done: boolean | null; evidence: string[] }> }).handoffs.find((h) => h.id === 'auth:recovery-email')!;
+    (JSON.parse(output) as { handoffs: Array<{ id: string; done: boolean | null; evidence: string[]; action: string }> }).handoffs.find((h) => h.id === 'auth:recovery-email')!;
 
   it('keeps the recovery handoff open and unverifiable, and says what closes it', async () => {
     writeRepo(fakeWorld());
@@ -470,5 +476,22 @@ describe('golive handoff and the recovery handoff', () => {
     expect(item.done).toBeNull();
     expect(item.evidence.join('\n')).toMatch(/this run holds none of what the recovery check needs/);
     expect(code).toBe(0);
+  });
+
+  it('serves the same text after a failed rotation: the step never claimed to have rotated anything', async () => {
+    // The live failure, as the run recorded it: the step failed at the mint after its request was
+    // accepted, so the rotation did not happen. The handoff text must not say that it did.
+    writeRepo(fakeWorld(), {
+      'auth:recovery': { status: 'failed', at: '2026-09-24T11:35:26.738Z', planId: 'd530562d5d67', error: `Supabase answered the recovery link for ${EMAIL} without a user id, so golive cannot use it.` },
+    });
+    const { output, code } = await runCli();
+    const item = handoffItem(output);
+    expect(code).toBe(0);
+    expect(item.done).toBeNull();
+    expect(item.action).not.toContain("golive rotated that account's password");
+    expect(item.action).toMatch(/depends on the run/);
+    expect(item.action).toMatch(/if the `auth:recovery` step is recorded as done, it has been/);
+    expect(item.action).toMatch(/if that step failed or never ran, nothing was rotated/);
+    expect(item.action).toMatch(/re-run `plan` \+ `apply`\.$/);
   });
 });

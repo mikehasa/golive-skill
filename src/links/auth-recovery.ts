@@ -159,10 +159,12 @@ export const authRecoveryLink: Link = {
       },
     });
 
+    // The text is built here, when the plan is: it is read after a run that rotated the password AND
+    // after one whose auth:recovery step failed or never ran, so it may claim neither outcome.
     const handoff: HandoffItem = {
       id: 'auth:recovery-email',
       why: `${au.adapter.title} sends the recovery link for ${address} to that inbox, and golive cannot read an inbox: only the account owner can click it. A captcha on the project blocks a scripted request before a link even exists.`,
-      action: `Open the recovery email for ${address} (check the spam folder; the built-in mailer is rate-limited) and click the link, then set a password on the page it opens. golive rotated that account's password through the recovery path already and the \`auth-recovery\` check proves it — the click is how you confirm the same link works for a human.`,
+      action: `Open the recovery email for ${address} (check the spam folder; the built-in mailer is rate-limited) and click the link, then set a password on the page it opens: that click is the one leg golive cannot make for you, and it is how you confirm the same link works for a human. Whether that account's password has been rotated through the recovery path yet depends on the run — if the \`auth:recovery\` step is recorded as done, it has been, and the \`auth-recovery\` check proves it; if that step failed or never ran, nothing was rotated, so fix the error that run reported and re-run \`plan\` + \`apply\`.`,
       blocking: false,
       verifiedBy: 'auth-recovery',
     };
