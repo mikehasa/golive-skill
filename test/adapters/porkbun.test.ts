@@ -319,9 +319,22 @@ describe('Porkbun record normalization and writes', () => {
     await expect(porkbunDns.upsert(f.ctx, 'example.com', want())).rejects.toThrow(/write may already have been saved/);
     expect(f.ctx.logs).toEqual([]);
   });
-  it('refuses malformed record responses and a create response with no ID', async () => {
+  it('refuses malformed record responses, and confirms or refuses a create whose response carries no id', async () => {
     await expect(porkbunDns.list(fake({ recordResponse: { status: 'SUCCESS', records: [{}] } }).ctx, 'example.com')).rejects.toThrow(/record shape/);
     await expect(porkbunDns.list(fake({ recordResponse: { status: 'SUCCESS' } }).ctx, 'example.com')).rejects.toThrow(/record list/);
-    await expect(porkbunDns.upsert(fake({ createResponse: { status: 'SUCCESS' } }).ctx, 'example.com', want())).rejects.toThrow(/no valid record ID/);
+    // Never blind-retry the POST: an unparsed id is settled by re-reading the zone.
+    const confirmed = fake({ createResponse: { status: 'SUCCESS' } }); // the fake stored the row the POST carried
+    expect(await porkbunDns.upsert(confirmed.ctx, 'example.com', want())).toBe('created');
+    expect(confirmed.writes()).toHaveLength(1);
+    expect(confirmed.calls.filter((c) => c.url === `${API}/dns/retrieve/example.com`)).toHaveLength(2); // the confirmation read
+    const unconfirmed = fake({ createResponse: { status: 'SUCCESS' }, saveBeforeError: false });
+    await expect(porkbunDns.upsert(unconfirmed.ctx, 'example.com', want())).rejects.toThrow(/could not be confirmed/);
+    expect(unconfirmed.writes()).toHaveLength(1);
+  });
+
+  it('accepts a numeric id, which the live API returned where the documented mock shows a digit string', async () => {
+    const f = fake({ createResponse: { status: 'SUCCESS', id: 253333167 } });
+    expect(await porkbunDns.upsert(f.ctx, 'example.com', want())).toBe('created');
+    expect(f.calls.filter((c) => c.url === `${API}/dns/retrieve/example.com`)).toHaveLength(1); // no extra read needed
   });
 });

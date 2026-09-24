@@ -12298,6 +12298,10 @@ async function records2(ctx, zone) {
 }
 var owned2 = (r) => r.notes?.startsWith(OWNED) ?? false;
 var returnPath = (value) => /^feedback-smtp(\.[a-z0-9-]+)?\.amazonses\.com$/.test(value);
+function createdId(value) {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) return String(value);
+  return typeof value === "string" && /^\d+$/.test(value) ? value : null;
+}
 function body(zone, want, notes) {
   return {
     name: want.name === zone ? "" : want.name.slice(0, -(zone.length + 1)),
@@ -12385,7 +12389,12 @@ var porkbunDns = {
     }
     try {
       const result2 = await api4(ctx, "POST", `/dns/create/${encodeURIComponent(zone)}`, body(zone, want, "golive: managed"));
-      if (typeof result2.id !== "string" || !/^\d+$/.test(result2.id)) throw new Error("Porkbun created a record but returned no valid record ID; re-plan before retrying.");
+      if (!createdId(result2.id)) {
+        const saved = (await records2(ctx, zone)).filter((r) => matches(r, want));
+        if (saved.length !== 1) throw new Error("Porkbun accepted the create but the record could not be confirmed by re-reading the zone; re-plan before retrying.");
+        ctx.log.info(`porkbun: created ${want.type} ${want.name} (unparsed id; confirmed by re-reading the zone)`);
+        return "created";
+      }
     } catch (e) {
       const duplicate = e instanceof PorkbunError && e.code === "DUPLICATE_RECORD";
       if (!duplicate && !ambiguous(e)) throw e;
