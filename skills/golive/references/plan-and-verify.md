@@ -390,7 +390,7 @@ state — and a protected preview skips instead of being reported as scanned.
 | `webhook-registered` | an enabled endpoint for the production URL covers the configured events | guided payments; no production URL |
 | `stripe-live-ready` | the account has `charges_enabled` | production isn't live mode |
 | `email-dns` | the provider's listed records (or common locations) and DMARC are in public DNS | no sending domain |
-| `email-verified` | the provider marks the domain verified | guided email; `blocked by: email:domain` |
+| `email-verified` | the provider marks the domain verified **and** the records it lists for that domain resolve in public DNS (a provider that cannot list them, lists none, or a lookup that failed, warns or skips — never a pass) | guided email; `blocked by: email:domain`; the provider exposes no record list, or lists none golive can resolve |
 | `preview-deploy` | the hosting provider's own read confirms the preview deployment golive recorded (`deployed:preview:id`) is ready, belongs to the project this repo links and is not the production deployment | no recorded preview deployment; the recording belongs to another provider; a guided or logged-out host; a host with no per-deployment preview read (Vercel). **Warns** when the host reports a different preview deployment than the recorded one; **fails** when the recorded "preview" is the production deployment |
 | `preview-bundle` | the HTML/JavaScript served by the provider-confirmed preview URL is scanned completely and holds no known credential patterns | no provider-confirmed preview URL; **skips** a 401/403 protection wall (a private preview is normal and is never a pass); **warns** on an incomplete scan or a page that did not load; **fails critical** on a leaked pattern |
 | `production-release` | the provider's own read of what production serves is the deployment golive promoted or rolled back to (`deployed:release`), with what production served before named. Runs while `release.promote`/`release.rollback` is set, and afterwards for as long as a release is recorded (the opt-in can be removed and the evidence stays readable) | no recorded release; a guided or logged-out host; a host with no read of what production serves (Vercel); the provider reports no production deployment; another provider's recording. **Warns** when the provider read fails, or when production serves a deployment golive never recorded (a dashboard/Git/PR-built one — a handoff for the human); **fails** when production serves another deployment golive recorded (something moved production after the release) |
@@ -407,6 +407,16 @@ Details that trip people up:
   not write DMARC. Without that list it uses each provider's usual layout: a missing SPF fails only
   for Resend's `send.<domain>`; Postmark / SES DKIM selectors can't be found over DNS, so not finding
   one is a low warning (confirm DKIM in the provider dashboard). Details in `guided.md`.
+- `email-verified` corroborates the flag instead of trusting it: it resolves exactly the records the
+  provider lists for the domain and **fails** when they are gone — a zone cleaned up, moved between
+  accounts or restored from a backup leaves the domain reading `verified` while nothing in DNS
+  carries its SPF/DKIM ([#52](https://github.com/mikehasa/golive-skill/issues/52)). It **warns** when
+  a record golive wrote is still inside the 48 h propagation window (a cached answer or a zone
+  wildcard can answer first) or when a lookup failed; it **skips** when the provider exposes no record
+  list, lists none, or the read failed. A warn or a skip is never a pass. The email link keeps its DNS
+  work for such a domain too: the `email:dns` step (or the blocking handoff when golive cannot write
+  DNS) stays planned, and the step's intent carries the unresolved records, so `apply` writes them
+  again rather than skipping a step it recorded done when they matched.
 
 ## 5. Status (drift): what changed behind golive's back
 

@@ -246,9 +246,13 @@ separately. The recovery run's own output contained two defects, both fixed here
 regressions: `teardown` reported the owner's *adopted* sending domain as created by golive (an empty
 creation-marker list made `[].every()` true, so every recorded domain read as golive's), and the
 `auth:recovery-email` handoff showed a standalone `verify` skip as its evidence while state recorded
-that step done. Its third finding is open as [issue #52](https://github.com/mikehasa/golive-skill/issues/52):
-Resend kept reporting that domain verified while the records it lists were absent from the zone's
-authoritative nameserver, so `email-verified` can pass on a domain whose mail cannot authenticate.
+that step done. Its third finding — Resend kept reporting that domain verified while the records it
+listed were absent from the zone's authoritative nameserver — is fixed by
+[#52](https://github.com/mikehasa/golive-skill/issues/52): `email-verified` now resolves the records
+the provider itself lists for the domain before passing (a verified domain whose records are gone
+fails, a record golive wrote inside the propagation window only warns, and a provider that cannot list
+them skips rather than passing), and the email plan keeps the `email:dns` step or handoff for records
+that do not resolve, so a stale flag can no longer hide them. Mock-covered; not re-exercised live.
 The DNS, email and test-mode payment paths listed above are the tested ones, with the custom-domain
 runs using Porkbun and GoDaddy record writes; **Cloudflare DNS specifically is not a validated alpha
 path yet**, and other auth providers stay guided. See [provider scope](docs/PROVIDERS.md) and

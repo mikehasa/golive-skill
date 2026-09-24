@@ -1,6 +1,8 @@
 import type { Check, Ctx, DnsRecord, Severity } from '../core/types.js';
 import { lookup, type RRType } from '../core/doh.js';
+import { readDnsBaselines } from '../core/dns-baseline.js';
 import { authBlock, blocked, cap, errMsg, isFailing, pass, prereq, result, sendingDomainOf, skip, worst } from './util.js';
+import { PROPAGATION_MS } from './domain.js';
 
 /** Selectors tried for DKIM, provider-specific first. Newer Resend domains use per-domain tokens. */
 const DKIM_SELECTORS: Record<string, string[]> = {
@@ -55,14 +57,55 @@ function satisfies(rec: DnsRecord, published: string[]): boolean {
   return published.some((p) => p.trim() === rec.content.trim());
 }
 
+/** Record types `lookup()` resolves; a provider may list types golive can't observe (they are ignored). */
+const RESOLVABLE_TYPES: ReadonlySet<DnsRecord['type']> = new Set<DnsRecord['type']>(['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'CAA']);
+
+/** The provider's records golive can resolve over DoH, in the provider's own order. */
+export function resolvableRecords(records: DnsRecord[]): DnsRecord[] {
+  return records.filter((r) => RESOLVABLE_TYPES.has(r.type));
+}
+
+/** One record the provider lists, as public DNS answers it now. */
+export interface ObservedRecord {
+  record: DnsRecord;
+  /** `TYPE name`, the label every evidence line and plan preview uses. */
+  label: string;
+  state: 'present' | 'missing' | 'mismatch' | 'unread';
+  /** What public DNS answered at that name (empty for `missing` and `unread`). */
+  published: string[];
+}
+
+/**
+ * Resolve exactly the records the provider says the domain needs (incl. per-domain DKIM token names)
+ * and say, per record, what public DNS carries. The provider's own flag can outlive its records — a
+ * zone cleaned up, restored from a backup or moved between accounts keeps the domain `verified` (#52)
+ * — so nothing that claims a domain works may trust the flag alone. A lookup that fails is `unread`:
+ * never missing, and never present either. Lookup failures are appended to `errors` for the caller.
+ */
+export async function observeProviderRecords(ctx: Ctx, records: DnsRecord[], errors: string[] = []): Promise<ObservedRecord[]> {
+  const out: ObservedRecord[] = [];
+  for (const record of records) {
+    const label = `${record.type} ${record.name}`;
+    let published: string[];
+    try {
+      published = await lookup(ctx, record.name, record.type as RRType);
+    } catch (e) {
+      errors.push(`${label}: ${errMsg(e)}`);
+      out.push({ record, label, state: 'unread', published: [] });
+      continue;
+    }
+    const state: ObservedRecord['state'] = satisfies(record, published) ? 'present' : published.length ? 'mismatch' : 'missing';
+    out.push({ record, label, state, published });
+  }
+  return out;
+}
+
 /** Check exactly the records the provider says the domain needs (incl. per-domain DKIM token names). */
 async function checkProviderRecords(ctx: Ctx, records: DnsRecord[], issues: Issue[], ok: string[], errors: string[]): Promise<void> {
-  for (const rec of records) {
-    const published = await q(ctx, rec.name, rec.type as RRType, errors);
-    const label = `${rec.type} ${rec.name}`;
-    if (satisfies(rec, published)) ok.push(`${label}: matches ${short(rec.content)}`);
-    else if (published.length) issues.push({ severity: 'high', line: `${label} is ${short(published[0]!)} but the provider expects ${short(rec.content)}` });
-    else issues.push({ severity: 'high', line: `${label} is missing (the provider expects ${short(rec.content)})` });
+  for (const o of await observeProviderRecords(ctx, records, errors)) {
+    if (o.state === 'present') ok.push(`${o.label}: matches ${short(o.record.content)}`);
+    else if (o.state === 'mismatch') issues.push({ severity: 'high', line: `${o.label} is ${short(o.published[0]!)} but the provider expects ${short(o.record.content)}` });
+    else issues.push({ severity: 'high', line: `${o.label} is missing (the provider expects ${short(o.record.content)})` });
   }
 }
 
@@ -192,7 +235,31 @@ export const emailDnsCheck: Check = {
   },
 };
 
-/** The email provider reports the sending domain as verified. */
+/**
+ * Was a record golive itself wrote published recently enough that public DNS may legitimately still
+ * differ? Returns the write time while inside the window (the same rule `domain-live` applies to
+ * `domain:dns` and drift applies per record), else undefined. The per-record baselines say when
+ * golive's own write landed; the `email:dns` step's time is the fallback for state written before
+ * baselines existed.
+ */
+function writeWindow(ctx: Ctx): (rec: DnsRecord) => string | undefined {
+  const baselines = readDnsBaselines(ctx.state.get());
+  const step = ctx.state.get().steps['email:dns'];
+  const stepAt = step?.status === 'done' ? step.at : undefined;
+  return (rec) => {
+    const at = baselines.filter((b) => b.type === rec.type && b.name === bareHost(rec.name)).map((b) => b.at).sort().at(-1) ?? stepAt;
+    return at && Date.now() - Date.parse(at) < PROPAGATION_MS ? at : undefined;
+  };
+}
+
+const gone = (o: ObservedRecord): boolean => o.state === 'missing' || o.state === 'mismatch';
+
+/**
+ * The email provider reports the sending domain as verified — and, when the provider can list the
+ * records that domain needs, those records are corroborated in DNS. The flag alone is not evidence: a
+ * domain Resend still calls `verified` can have no records at all left in its zone (#52), and a
+ * shipped app sending through it has mail nothing can authenticate (no SPF, no DKIM).
+ */
 export const emailVerifiedCheck: Check = {
   id: 'email-verified',
   title: 'Email sending domain is verified',
@@ -215,9 +282,55 @@ export const emailVerifiedCheck: Check = {
       return result('fail', 'high', [`could not read ${provider} domain ${id}: ${errMsg(e)}`], 'Re-run verify; if it persists, check the email provider with `golive doctor`.');
     }
     const ev = [`${provider} domain ${d} (${id}): ${st}`];
-    if (st === 'verified') return pass(ev);
     if (st === 'pending') return result('warn', 'medium', ev, 'DNS checks are still running at the provider (can take minutes to hours after records are added). Re-run verify later.');
     if (st === 'not_started') return result('warn', 'medium', ev, 'Verification has not been requested yet: re-run apply (the email-domain step triggers it) once the DNS records exist.');
-    return result('fail', 'high', ev, `The provider could not find the DNS records. Compare the records for ${d} in the provider dashboard with your DNS (see the \`email-dns\` check), fix them, then re-run apply.`);
+    if (st !== 'verified') return result('fail', 'high', ev, `The provider could not find the DNS records. Compare the records for ${d} in the provider dashboard with your DNS (see the \`email-dns\` check), fix them, then re-run apply.`);
+
+    // The provider's flag alone never passes this check: name what it could not be corroborated with.
+    if (!sd.records) {
+      return result('skip', 'info', [...ev, `${provider} exposes no read of the records a domain needs, so the flag is not corroborated against DNS (\`email-dns\` checks the records it can locate)`]);
+    }
+    let listed: DnsRecord[];
+    try {
+      listed = resolvableRecords(await sd.records(ctx, id));
+    } catch (e) {
+      return result('skip', 'info', [...ev, `the records ${provider} lists for it could not be read (${errMsg(e)}), so the flag is not corroborated against DNS`]);
+    }
+    if (!listed.length) {
+      return result('skip', 'info', [...ev, `${provider} lists no resolvable DNS records for it, so the flag is not corroborated against DNS`]);
+    }
+
+    const errors: string[] = [];
+    const observed = await observeProviderRecords(ctx, listed, errors);
+    const lines = [
+      ...observed.filter((o) => o.state === 'present').map((o) => `${o.label} resolves as ${provider} expects (${short(o.record.content)})`),
+      ...observed.filter(gone).map((o) => (o.published.length ? `${o.label} resolves to ${short(o.published[0]!)} but ${provider} expects ${short(o.record.content)}` : `${o.label} does not resolve (${provider} expects ${short(o.record.content)})`)),
+    ];
+    if (errors.length) lines.push(`some DNS lookups failed: ${errors.slice(0, 3).join('; ')}`);
+    const unresolved = observed.filter(gone);
+    if (!unresolved.length && !errors.length) return pass([...ev, ...lines]);
+
+    if (unresolved.length) {
+      const fresh = writeWindow(ctx);
+      const written = unresolved.map((o) => fresh(o.record));
+      if (written.every((at) => at !== undefined)) {
+        return result(
+          'warn',
+          'medium',
+          [...ev, ...lines, `golive wrote these records at ${[...new Set(written)].join(', ')}: DNS may still be propagating (a cached answer or a zone wildcard can answer first), so this is not a failure yet`],
+          'Wait for DNS to propagate (usually minutes, up to 48h), then re-run `verify --only email-verified`.',
+        );
+      }
+    }
+    if (!unresolved.length) {
+      return result('warn', 'medium', [...ev, ...lines], `Re-run verify in a moment: a DNS lookup failed, so ${d}'s records could not all be confirmed. If it persists, check DNS resolution for ${d}.`);
+    }
+    const missing = unresolved.map((o) => o.label).join(', ');
+    return result(
+      'fail',
+      'high',
+      [...ev, ...lines],
+      `Restore the DNS records ${provider} lists for ${d} (${missing} — absent, or not the value ${provider} expects): run \`golive plan\`, then \`apply --confirm-dns\` to write them when your DNS host is automated, or add them by hand where ${d}'s DNS lives. The provider still reports the domain verified, but without them mail from ${d} cannot authenticate (no SPF/DKIM) and will be rejected or land in spam. Then re-run \`verify --only email-verified\`.`,
+    );
   },
 };

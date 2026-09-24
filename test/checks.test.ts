@@ -16,6 +16,7 @@ import { authRedirectsCheck } from '../src/checks/auth-redirects.js';
 import { authPolicyCheck } from '../src/checks/auth.js';
 import { authSignupCheck } from '../src/checks/auth-signup.js';
 import { emailDnsCheck, emailVerifiedCheck } from '../src/checks/email.js';
+import { dnsBaselineKey } from '../src/core/dns-baseline.js';
 import { domainLiveCheck } from '../src/checks/domain.js';
 import { siteHeadersCheck } from '../src/checks/site-headers.js';
 import { addressDomain, confirmedProductionUrl, globMatch, hostVariants } from '../src/checks/util.js';
@@ -894,28 +895,122 @@ describe('email-dns', () => {
 });
 
 describe('email-verified', () => {
-  const verCtx = (status: 'verified' | 'pending' | 'failed' | 'not_started', withId = true) =>
-    testCtx({
-      config: { stack: { email: 'resend' }, email: { from: 'a@example.com' } },
-      state: { version: 1, resources: withId ? { 'resend.domainId': 'dom_1' } : {}, secrets: {}, steps: {} },
-      adapters: [
-        fakeAdapter({
-          id: 'resend',
-          axes: ['email'],
-          capabilities: { sendingDomain: { ensure: async () => { throw new Error('must not write'); }, verify: async () => { throw new Error('must not write'); }, status: async (_c, id) => (id === 'dom_1' ? status : 'failed') } },
-        }),
-      ],
+  const D = 'example.com';
+  /** What the provider says the domain needs (the Resend shape: SPF, return-path MX, per-domain DKIM). */
+  const LISTED: DnsRecord[] = [
+    { type: 'TXT', name: `send.${D}`, content: 'v=spf1 include:amazonses.com ~all' },
+    { type: 'MX', name: `send.${D}`, content: 'feedback-smtp.us-east-1.amazonses.com', priority: 10 },
+    { type: 'TXT', name: `resend._domainkey.${D}`, content: 'p=MIGfMA0GCSqGSIb3DQEB' },
+  ];
+  const RESOLVES = {
+    [`TXT send.${D}`]: ['v=spf1 include:amazonses.com ~all'],
+    [`MX send.${D}`]: ['10 feedback-smtp.us-east-1.amazonses.com.'],
+    [`TXT resend._domainkey.${D}`]: ['p=MIGfMA0GCSqGSIb3DQEB'],
+  };
+  /** A baseline as the DNS step records one, so a write's propagation window can be arranged. */
+  const dnsWrite = (rec: DnsRecord, at: string): Record<string, string> => ({
+    [dnsBaselineKey(D, rec)]: JSON.stringify({ provider: 'fakedns', zone: D, type: rec.type, name: rec.name, content: rec.content, at }),
+  });
+
+  const verCtx = (
+    status: 'verified' | 'pending' | 'failed' | 'not_started',
+    opts: { withId?: boolean; records?: DnsRecord[] | null | 'error'; dns?: Record<string, string[]> | 'down'; resources?: Record<string, string> } = {},
+  ) => {
+    const listed = opts.records === undefined ? LISTED : opts.records;
+    const sendingDomain = {
+      ensure: async () => {
+        throw new Error('must not write');
+      },
+      verify: async () => {
+        throw new Error('must not write');
+      },
+      status: async (_c: unknown, id: string) => (id === 'dom_1' ? status : 'failed'),
+      ...(listed === null
+        ? {}
+        : {
+            records: async (): Promise<DnsRecord[]> => {
+              if (listed === 'error') throw new Error('Resend get domain dom_1 failed (HTTP 500)');
+              return listed;
+            },
+          }),
+    };
+    return testCtx({
+      http: mockHttp([opts.dns === 'down' ? ['GET', /^https:\/\/cloudflare-dns\.com\/dns-query\?/, () => { throw new Error('network down'); }] : dohRoute(opts.dns ?? {})]).http,
+      config: { stack: { email: 'resend' }, email: { from: `a@${D}` } },
+      state: { version: 1, resources: { ...(opts.withId === false ? {} : { 'resend.domainId': 'dom_1' }), ...(opts.resources ?? {}) }, secrets: {}, steps: {} },
+      adapters: [fakeAdapter({ id: 'resend', axes: ['email'], capabilities: { sendingDomain } })],
     });
+  };
+
+  it('passes when the provider is verified and the records it lists resolve', async () => {
+    const r = await run(emailVerifiedCheck, verCtx('verified', { dns: RESOLVES }));
+    expect(r.status).toBe('pass');
+    expect(r.evidence.join('\n')).toContain(`TXT resend._domainkey.${D} resolves as resend expects`);
+  });
+
+  it('fails when the provider is verified but its records are absent from DNS', async () => {
+    const r = await run(emailVerifiedCheck, verCtx('verified', { dns: {} }));
+    expect(r.status).toBe('fail');
+    expect(r.severity).toBe('high');
+    expect(r.evidence.join('\n')).toMatch(new RegExp(`TXT resend\\._domainkey\\.${D} does not resolve`));
+    expect(r.fix).toMatch(/apply --confirm-dns/);
+    expect(r.fix).toContain(`TXT resend._domainkey.${D}`);
+  });
+
+  it('counts an answer that is not the provider\'s record as unresolved (a zone wildcard)', async () => {
+    const r = await run(emailVerifiedCheck, verCtx('verified', { dns: { ...RESOLVES, [`TXT resend._domainkey.${D}`]: ['pixie.porkbun.com'] } }));
+    expect(r.status).toBe('fail');
+    expect(r.evidence.join('\n')).toMatch(new RegExp(`TXT resend\\._domainkey\\.${D} resolves to pixie\\.porkbun\\.com but resend expects`));
+  });
+
+  it('fails when only some of the records resolve (mail cannot authenticate without them)', async () => {
+    const { [`TXT resend._domainkey.${D}`]: _dkim, ...spfOnly } = RESOLVES;
+    const r = await run(emailVerifiedCheck, verCtx('verified', { dns: spfOnly }));
+    expect(r.status).toBe('fail');
+    expect(r.evidence.join('\n')).toContain(`TXT send.${D} resolves as resend expects`);
+    expect(r.fix).toContain(`TXT resend._domainkey.${D}`);
+    expect(r.fix).not.toContain(`MX send.${D}`);
+  });
+
+  it('warns, not fails, while the missing record is inside its propagation window', async () => {
+    const { [`TXT resend._domainkey.${D}`]: _dkim, ...spfOnly } = RESOLVES;
+    const written = LISTED[2]!;
+    const r = await run(emailVerifiedCheck, verCtx('verified', { dns: spfOnly, resources: dnsWrite(written, new Date().toISOString()) }));
+    expect(r.status).toBe('warn');
+    expect(r.evidence.join('\n')).toMatch(/propagat/i);
+
+    // The same record, written long ago: the window has passed and it is a failure again.
+    const stale = await run(emailVerifiedCheck, verCtx('verified', { dns: spfOnly, resources: dnsWrite(written, new Date(Date.now() - 49 * 60 * 60 * 1000).toISOString()) }));
+    expect(stale.status).toBe('fail');
+  });
+
+  it('skips — never passes — when the provider cannot list the records it needs', async () => {
+    const r = await run(emailVerifiedCheck, verCtx('verified', { records: null }));
+    expect(r.status).toBe('skip');
+    expect(r.evidence.join('\n')).toMatch(/not corroborated against DNS/);
+
+    expect((await run(emailVerifiedCheck, verCtx('verified', { records: [] }))).status).toBe('skip');
+    const failed = await run(emailVerifiedCheck, verCtx('verified', { records: 'error' }));
+    expect(failed.status).toBe('skip');
+    expect(failed.evidence.join('\n')).toMatch(/could not be read/);
+  });
+
+  it('warns when the record lookups fail, and never passes on a lookup it could not make', async () => {
+    const r = await run(emailVerifiedCheck, verCtx('verified', { dns: 'down' }));
+    expect(r.status).toBe('warn');
+    expect(r.evidence.join('\n')).toMatch(/some DNS lookups failed/);
+  });
+
   it.each([
-    ['verified', 'pass'],
     ['pending', 'warn'],
     ['not_started', 'warn'],
     ['failed', 'fail'],
   ] as const)('%s → %s', async (st, want) => {
     expect((await run(emailVerifiedCheck, verCtx(st))).status).toBe(want);
   });
+
   it('skips (blocked by email:domain) with a next step when no domain id is recorded', async () => {
-    const r = await run(emailVerifiedCheck, verCtx('verified', false));
+    const r = await run(emailVerifiedCheck, verCtx('verified', { withId: false }));
     expect(r.status).toBe('skip');
     expect(r.evidence[0]).toMatch(/^blocked by: email:domain .*golive plan/);
   });

@@ -7,8 +7,10 @@ written to an automated DNS provider, domain verified, sending-scoped keys issue
 and a send using that environment key was delivered (spam folder; fresh subdomain, no DMARC). Auth
 SMTP is wired from a sending key golive issues (`auth:smtp`, with `auth.smtp: resend`) and that write
 is live-validated (2026-09-24: the settings and the raised auth email rate limit read back; the
-password itself is write-only); bounce handling remains open, and a sending domain's `verified` flag
-can be stale — see [#52](https://github.com/mikehasa/golive-skill/issues/52) before trusting it.
+password itself is write-only); bounce handling remains open. A sending domain's `verified` flag can
+be stale — a zone cleaned up, moved or restored leaves it reading `verified` with its records gone
+([#52](https://github.com/mikehasa/golive-skill/issues/52)) — so `email-verified` resolves the records
+Resend itself lists before passing, and the plan keeps writing them when they are missing.
 
 ## 1. Logging in (least friction first)
 
@@ -45,7 +47,9 @@ golive automates (after plan approval; DNS writes need `--confirm-dns`):
   key once, so "adopt" means "issue a new one". Older golive keys are **left active**: the change log
   names them, and the human revokes them in Resend once nothing uses them.
 - Verifies: `email-dns` (the exact records Resend lists for the domain, plus DMARC, in public DNS; a
-  missing DKIM record fails) and `email-verified` (Resend marks the domain verified).
+  missing DKIM record fails) and `email-verified` (Resend marks the domain verified **and** the records
+  it lists for that domain resolve in public DNS — a stale `verified` whose records are gone fails
+  with the records named, #52).
 
 Not automated yet: the from-address env var (the human sets it if the code reads one) and a test send.
 Resend as Supabase Auth's SMTP server is written by the `auth:smtp` step when `auth.smtp: resend` is
@@ -90,6 +94,7 @@ Stays with the human (and why):
 | `401 restricted_api_key` on setup | A sending-only key is in use. Use `resend login` or a Full access key in the credentials file (§1). |
 | `403 validation_error` "has been registered already" | Another Resend team owns the domain. Claim flow, with the human's OK. |
 | Domain stuck `pending` / `failed` | Records missing, proxied, or entered with the domain twice (`send.example.com.example.com`). Compare with `verify`'s `email-dns` evidence. |
+| Domain reads `verified` but mail fails SPF/DKIM | The flag is stale: the records Resend lists are not in DNS (a cleaned-up zone, a domain moved between teams or a restored backup). `email-verified` fails on exactly this, naming the records. Re-run `plan` + `apply --confirm-dns` to write them, or add them by hand at your DNS host; the verified flag itself stays as it is. |
 | "multiple-regions" verification error | MX records on the `send` host point at different regions. Keep only the one Resend listed. |
 | Cloudflare conflict at `send.<domain>` or a `_domainkey` name | Another record holds that name. Delete it if unused, or recreate the Resend domain with another return path. |
 | `403` sending from `onboarding@resend.dev` | Only the owner's address works. Send from the verified domain. |

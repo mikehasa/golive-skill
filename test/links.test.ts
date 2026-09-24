@@ -9,6 +9,7 @@ import { previewBundleCheck, previewDeployCheck, productionReleaseCheck } from '
 import { ALL_LINKS } from '../src/links/all.js';
 import { availableKeys, forgetDeployFacts, previousProductionDeploy, readDeployHistory, readRelease, recordDeploy, step } from '../src/links/util.js';
 import { emailDomain } from '../src/links/email.js';
+import { dohRoute } from './check-fakes.js';
 import { TEST_RELEASE, mockExec, mockHttp, testCtx } from './helpers.js';
 import { ALL_RAW_SECRETS, FAKE_STACK, PUBLIC, RAW, fakeWorld, type FakeWorld } from './fakes.js';
 
@@ -644,6 +645,49 @@ describe('dns + email', () => {
     expect(emailDomain(c({ email: { from: 'Shop <hi@shop.io>' }, domain: 'x.com' }))).toBe('shop.io');
     expect(emailDomain(c({ domain: 'x.com' }))).toBe('x.com');
     expect(emailDomain(c({}))).toBeNull();
+  });
+
+  // The records the fake provider lists, as public DNS would answer them (see mailRecords in fakes.ts).
+  const MAIL_DNS = {
+    'MX send.example.com': ['10 feedback-smtp.fakemail.com.'],
+    'TXT send.example.com': ['v=spf1 include:fakemail.com ~all'],
+    'TXT fm._domainkey.example.com': ['p=MIGfMA0GFAKEdkim'],
+  };
+  const verifiedDomain = (w: FakeWorld) => w.mail.domains.set('example.com', { id: 'dom_example.com', status: 'verified' });
+
+  it('leaves a verified domain whose records still resolve alone (#52)', async () => {
+    const { ctx } = setup({
+      state: stateWith([], { 'fakemail.domainId': 'dom_example.com' }),
+      arrange: verifiedDomain,
+      http: mockHttp([dohRoute(MAIL_DNS)]).http,
+    });
+    const plan = await build(ctx);
+    expect(ids(plan).filter((i) => ['email:domain', 'email:dns', 'email:verify'].includes(i))).toEqual([]);
+    expect(hIds(plan)).not.toContain('email:dns');
+  });
+
+  it('keeps the blocking email:dns handoff for a verified domain whose records are gone', async () => {
+    const { ctx } = setup({
+      config: { stack: { ...FAKE_STACK, dns: 'porkbun' } }, // guided DNS: the records are the human's job
+      state: stateWith([], { 'fakemail.domainId': 'dom_example.com' }),
+      arrange: verifiedDomain,
+      http: mockHttp([dohRoute({})]).http,
+    });
+    const plan = await build(ctx);
+    expect(plan.handoffs.find((h) => h.id === 'email:dns')).toMatchObject({ blocking: true, verifiedBy: 'email-dns' });
+    expect(ids(plan)).toContain('email:domain');
+  });
+
+  it('re-writes the records of a verified domain after they disappear, instead of skipping the step as done', async () => {
+    const { w, ctx } = setup({
+      state: stateWith([], { 'fakemail.domainId': 'dom_example.com' }),
+      arrange: verifiedDomain,
+      http: mockHttp([dohRoute({})]).http,
+    });
+    const plan = await build(ctx);
+    expect(ids(plan)).toContain('email:dns');
+    await apply(ctx, plan);
+    expect(w.dns.records.map((r) => `${r.type} ${r.name}`)).toEqual(expect.arrayContaining(['MX send.example.com', 'TXT send.example.com', 'TXT fm._domainkey.example.com']));
   });
 
   it('skips email with a warning when no domain can be derived', async () => {

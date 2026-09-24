@@ -1,6 +1,7 @@
 import type { Link } from '../core/plan.js';
 import type { Adapter, Ctx, DnsRecord, DnsZone, EnvStore, EnvTarget, HandoffItem, KeyIssuer, SendingDomain, Step, StepContext } from '../core/types.js';
 import { rememberDnsWrite } from '../core/dns-baseline.js';
+import { observeProviderRecords, resolvableRecords } from '../checks/email.js';
 import { axisStatus, decideEnv, deps, envPreview, errMsg, intentOf, memo, namesFor, observeNames, projectIntent, ready, secretBlocked, step, track, verifyEnvWritten, writeEnv, writesProduction } from './util.js';
 
 type Target = Exclude<EnvTarget, 'development'>;
@@ -35,7 +36,13 @@ export const emailDomainLink: Link = {
     const sd = r.cap;
     const idKey = `${r.adapter.id}.domainId`;
     const known = ctx.state.resource(idKey);
-    if (known && (await sd.status(ctx, known).catch(() => null)) === 'verified') return null;
+    const verified = known ? (await sd.status(ctx, known).catch(() => null)) === 'verified' : false;
+    // A `verified` flag is not evidence that the records still exist: it can outlive them (#52), so a
+    // verified domain whose records no longer resolve is still work. Only a verified domain whose
+    // records are published is "already done"; otherwise the DNS step below is planned again (and the
+    // blocking `email:dns` handoff stays in the plan when golive cannot write DNS).
+    const unpublished = verified ? await unpublishedRecords(ctx, sd, known!) : [];
+    if (verified && !unpublished.length) return null;
 
     // The provider's domain id (and, below, its records and the previous verify request) identify
     // each run, so a re-created domain or a still-pending verification runs again instead of being
@@ -48,7 +55,11 @@ export const emailDomainLink: Link = {
     const dns = await dnsFor(ctx, domain);
     if (dns.kind === 'ready') {
       const records = known && sd.records ? await sd.records(ctx, known).catch(() => null) : null;
-      steps.push(...track(ctx, [dnsStep(ctx, r.adapter, sd, domain, dns.adapter, dns.zone, intentOf({ id: idIntent, zone: `${dns.adapter.id}:${domain}`, records: records ? records.map(formatRecord) : ['(from ensure)'] }))]));
+      // Records that are not resolving yet (a stale flag, or a write inside its propagation window) go
+      // into the intent: the step was recorded done when they matched, so without this apply would skip
+      // a write that is exactly what is needed.
+      const restore = unpublished.length ? { restore: unpublished } : {};
+      steps.push(...track(ctx, [dnsStep(ctx, r.adapter, sd, domain, dns.adapter, dns.zone, intentOf({ id: idIntent, zone: `${dns.adapter.id}:${domain}`, records: records ? records.map(formatRecord) : ['(from ensure)'], ...restore }))]));
     }
     else if (dns.kind === 'handoff') handoffs.push(dnsHandoff(r.adapter, domain, dns.where));
     else if (dns.kind === 'error') warnings.push(`${r.adapter.title} sending records for ${domain}: ${dns.message}`);
@@ -56,6 +67,25 @@ export const emailDomainLink: Link = {
     return { steps, handoffs, warnings };
   },
 };
+
+/**
+ * Labels of the records the provider lists for a verified domain that public DNS does not carry, so
+ * the plan keeps the DNS work instead of trusting a flag that can outlive its records (#52). A
+ * provider that cannot list its records, and a lookup that fails, answer none: absence golive cannot
+ * see is never invented here — the `email-verified` check reports what it could not corroborate.
+ */
+async function unpublishedRecords(ctx: Ctx, sd: SendingDomain, id: string): Promise<string[]> {
+  if (!sd.records) return [];
+  let listed: DnsRecord[];
+  try {
+    listed = resolvableRecords(await sd.records(ctx, id));
+  } catch {
+    return [];
+  }
+  if (!listed.length) return [];
+  const observed = await observeProviderRecords(ctx, listed);
+  return observed.filter((o) => o.state === 'missing' || o.state === 'mismatch').map((o) => o.label);
+}
 
 function domainStep(adapter: Adapter, sd: SendingDomain, domain: string, idKey: string, idIntent: string): Step {
   return step({
