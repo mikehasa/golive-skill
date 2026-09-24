@@ -57,8 +57,8 @@ Never update between a plan and its apply. A changed release requires a new plan
    chat. Never `sk_`, `rk_` or `whsec_`.
 3. **No provider/account writes until the human approves the plan.** Local credential setup and
    human-submitted credential entry, `init`, and report files can be prepared during onboarding. Explain `plan` and get a
-   clear yes before `apply`. Pass `--confirm-live` (live payments) or `--confirm-dns` (DNS records)
-   only if the human explicitly approved those categories.
+   clear yes before `apply`. Pass `--confirm-live` (live payments), `--confirm-dns` (DNS records) or
+   `--confirm-destroy` (deletions) only if the human explicitly approved those categories.
 4. **Never buy anything or create accounts for them.** Signups, payment methods, identity checks
    (KYC) and domain purchases are handoffs the human does in their browser.
 5. **A handoff is closed only by a passing check**, not by anyone saying "done". `done: false` is
@@ -204,7 +204,7 @@ Full access token. A passing account check doesn't prove every later endpoint pe
 
 ### 4. Plan: `plan --json`
 Explain the steps by provider, in plain language, and call out:
-- which steps **write**, and which `needs` `--confirm-live` / `--confirm-dns`
+- which steps **write**, and which `needs` `--confirm-live` / `--confirm-dns` / `--confirm-destroy`
 - `project:hosting` / `project:db`: which project and account every write goes to. If a step
   **creates** a project, its preview lists existing projects; ask whether to use one of those instead
   (`init --project <axis>=<name>`, then `plan` again). Creating a project can cost money.
@@ -228,7 +228,7 @@ A long document, a slug alone, or "looks ready" is not a substitute for this sum
 or cost needs resolution before asking for approval; never infer consent from "what's next?".
 Remember the approved `planId`; changing destination requires a fresh plan and approval.
 
-### 5. Apply: `apply --plan <planId> --yes [--confirm-live] [--confirm-dns] --json`
+### 5. Apply: `apply --plan <planId> --yes [--confirm-live] [--confirm-dns] [--confirm-destroy] --json`
 Report each outcome. For a `failed` or `blocked` step, read its `error`/`next`, fix the cause, and
 run `apply` again (completed steps are skipped). If a write may have reached the provider, first
 follow `references/troubleshooting.md` to reconcile its remote outcome; missing local state alone
@@ -236,6 +236,16 @@ is not permission to repeat creation. If `apply` says the plan changed, or `doma
 says the records the host requires changed since approval, run `plan` again and get approval again
 (with `--confirm-dns` for DNS). Some things only appear after the first deploy (webhook, site URL): run
 `plan` again after a successful apply until it shows only the zero-write project pins.
+
+### 5b. Teardown: `teardown --json`, then `apply --plan <teardown planId> --yes --confirm-destroy [--confirm-dns] --json`
+
+`teardown` is the inverse plan: it lists ONLY resources golive can prove it created — golive-owned DNS
+records at the configured provider, recorded webhook endpoints, issued sending keys, and the host
+project whose creation marker matches. Adopted projects, records golive did not write, and anything
+without a capability become non-blocking `manual` handoffs (Supabase/Neon projects, the Resend sending
+domain). Show the list, get explicit approval, then apply with `--confirm-destroy`; DNS deletions also
+need `--confirm-dns` and live-mode endpoints `--confirm-live`. An already-removed resource is a
+harmless no-op, and a blocked deletion step deleted nothing — resolve and re-run.
 
 ### 6. Verify: `verify --json`
 Runs the live checks and writes `GOLIVE_REPORT.md`. A **`skip` means blocked or not applicable, never

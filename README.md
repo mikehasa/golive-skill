@@ -220,10 +220,12 @@ live-tested milestones**, not a finished category or a completed checklist for y
 - [ ] 🗺️ **CI/CD and safe releases:** previews, release checks, promotion, rollback and drift
   detection, building on today's approved CLI deployments.
 - [ ] 🗺️ **Backups and recovery:** retention, restore drills, incident steps and approved cleanup.
-  Current test cleanup is supervised; there is no general cloud teardown command.
-- [ ] 🗺️ **Uninstall / teardown:** an approved inventory of golive-created resources (host projects,
-  DNS records, webhook endpoints, env names) and their removal, with ownership re-verification before
-  every deletion ([#9](https://github.com/mikehasa/golive-skill/issues/9)).
+  Approved `teardown` removes what golive created; backups and any restore remain manual, supervised work.
+- [x] ✅ **Uninstall / teardown:** ~~an approved inventory of golive-created resources and their removal.~~
+  `golive teardown` plans the removal, deletes only what golive provably created (ownership proofs and
+  `--confirm-destroy`), confirms DNS records are gone by re-reading the zone, and hands back
+  everything else. Supabase/Neon projects and the Resend sending domain remain manual handoffs
+  ([#9](https://github.com/mikehasa/golive-skill/issues/9)).
 - [ ] 🗺️ **Costs and quotas:** plan choices, budgets, alerts and capacity checks.
   Scoped Free-plan guards exist today; ongoing cost management is planned.
 - [ ] 🗺️ **Launch essentials:** metadata, share previews, indexing, accessibility, support links
@@ -268,12 +270,14 @@ signup and the app's business flows need functional tests. **Skipped is not pass
 
 Your app gets `golive.yaml`, `.golive/state.json`, `.golive/report.json` and `GOLIVE_REPORT.md`.
 State preserves resource IDs and step evidence for recovery; it is not a credential store.
-GoLive does not provide a general cloud teardown or cross-provider rollback command.
+`golive teardown` removes what golive created after its own approval and `--confirm-destroy`;
+there is no cross-provider rollback, restore or general reconciliation command.
 
 ## Credentials and control
 
 - **Approve before account changes.** Plans name the destinations and intended writes. Changing
-  the installed release invalidates old approvals. DNS and live-payment steps have extra gates.
+  the installed release invalidates old approvals. DNS, live-payment and deletion steps have extra
+  gates (`--confirm-dns`, `--confirm-live`, `--confirm-destroy`).
 - **Keep secrets out of chat.** Supported vendor logins are reused. On macOS, a native hidden-input
   dialog can save a needed API key; your own editor is the fallback. Keys live in
   `~/.config/golive/credentials`, a local plaintext file with restricted POSIX permissions.

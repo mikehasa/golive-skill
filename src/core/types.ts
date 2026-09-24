@@ -203,6 +203,12 @@ export interface ProjectLinker {
    * the link then emits a handoff instead.
    */
   create?(ctx: Ctx, name: string, approvedTarget?: ProjectCreateTarget): Promise<ProjectRef>;
+  /**
+   * Delete the currently linked project — ONLY one golive itself created (a creation marker in
+   * state must match the current project). Adopted/selected projects return removed:false with a
+   * reason. Only teardown steps call this.
+   */
+  remove?(ctx: Ctx): Promise<{ removed: boolean; reason?: string }>;
 }
 
 export interface EnvStore {
@@ -248,6 +254,13 @@ export interface DnsZone {
   list(ctx: Ctx, domain: string): Promise<DnsRecord[]>;
   /** Create or update to match `record`. Must never silently delete an unrelated record. */
   upsert(ctx: Ctx, domain: string, record: DnsRecord): Promise<'created' | 'updated' | 'unchanged'>;
+  /** Records golive provably owns (provider-side marker or tracked fingerprint) — teardown candidates. */
+  listOwned?(ctx: Ctx, domain: string): Promise<DnsRecord[]>;
+  /**
+   * Delete the owned record matching `record` exactly (type/name/content). Refuses an unowned or
+   * ambiguous match; 'unchanged' when it is already gone. Only teardown steps call this.
+   */
+  remove?(ctx: Ctx, domain: string, record: DnsRecord): Promise<'removed' | 'unchanged'>;
 }
 
 /**
@@ -342,8 +355,14 @@ export interface SendingDomain {
  */
 export interface KeyIssuer {
   issue(ctx: Ctx, target: EnvTarget, scope: { domain?: string }): Promise<{ key: OutputKey; id: string; secret: Secret }>;
-  /** Revoke a key previously issued (by id), e.g. when rotating. */
-  revoke?(ctx: Ctx, id: string): Promise<void>;
+  /**
+   * Revoke a key previously issued (by id), e.g. when rotating or tearing down. A key the provider no
+   * longer has is NOT an error: report `revoked: false` with the reason (`'key not found'` for a key
+   * that is already gone), the way the webhook/DNS removals report an already-gone resource. Anything
+   * the provider cannot undo, and every real failure (auth, network, 5xx), throws. Only teardown steps
+   * call this.
+   */
+  revoke?(ctx: Ctx, id: string): Promise<{ revoked: boolean; reason?: string }>;
 }
 
 export interface TestSend {
@@ -391,6 +410,8 @@ export interface Risk {
   live?: boolean;
   /** Creates/changes DNS records. Needs --confirm-dns. */
   dns?: boolean;
+  /** Deletes a resource golive previously created. Needs --confirm-destroy. */
+  destroy?: boolean;
   /** May cost money. golive never does this itself; such steps are always handoffs. */
   spend?: boolean;
 }
@@ -413,7 +434,7 @@ export interface Step {
   /** Stable across runs, e.g. "link:payments-webhook:production". */
   id: string;
   title: string;
-  kind: 'provision' | 'wire' | 'deploy' | 'handoff';
+  kind: 'provision' | 'wire' | 'deploy' | 'handoff' | 'destroy';
   risk: Risk;
   dependsOn: string[];
   /** What will happen, secret-free. Shown to the human for approval; part of the plan id. */

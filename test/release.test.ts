@@ -226,6 +226,22 @@ describe('release-bound approvals and state', () => {
     expect((await applyPlan(ctx, p, new Map(), approve(p.id)))[0]?.status).toBe('skipped');
     expect(ctx.state.get()).toEqual(old); expect(run).not.toHaveBeenCalled();
   });
+  it('re-runs a failed destroy step from another release: deletion is idempotent and re-observed', async () => {
+    const oldCtx = testCtx();
+    const run = vi.fn(async () => ({ changes: ['deleted the synthetic record'] }));
+    const s = action(run, { id: 'teardown:test:record', kind: 'destroy', risk: { writes: true, destroy: true }, preview: ['delete the synthetic record'] });
+    const oldPlan = await makePlan(oldCtx, [s]);
+    await applyPlan(oldCtx, oldPlan, new Map(), { ...approve(oldPlan.id), confirmDestroy: true });
+    run.mockClear();
+    const historical = structuredClone(oldCtx.state.get());
+    historical.steps[s.id]!.status = 'failed';
+    const ctx = testCtx({ state: historical, release: nextRelease() });
+    const p = await makePlan(ctx, [s]);
+    const out = await applyPlan(ctx, p, new Map(), { ...approve(p.id), confirmDestroy: true });
+    expect(out[0]?.status).toBe('done');
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(ctx.state.get().steps[s.id]?.status).toBe('done');
+  });
   it('rejects incompatible historical schemas before plan observation and preserves evidence', async () => {
     const state = emptyState(); state.release = { ...structuredClone(TEST_RELEASE), schemas: { config: 1, state: 2, approval: 1 } };
     const ctx = testCtx({ state }); const observe = vi.fn(async () => ({ steps: [], handoffs: [] }));

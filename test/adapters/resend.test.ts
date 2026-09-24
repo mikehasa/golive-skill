@@ -291,7 +291,7 @@ describe('resend keys (REST)', () => {
     expect(ctx.logs.join('\n')).toMatch(/k_old/);
     assertUA(h.calls);
 
-    await keys.revoke!(ctx, 'k_old');
+    expect(await keys.revoke!(ctx, 'k_old')).toEqual({ revoked: true });
     expect(h.calls.at(-1)).toMatchObject({ method: 'DELETE', url: `${API}/api-keys/k_old` });
   });
 
@@ -304,6 +304,25 @@ describe('resend keys (REST)', () => {
     const h = mockHttp([['GET', `${API}/domains`, () => ({ json: { data: [] } })]]);
     const ctx2 = testCtx({ exec: noCli().run, http: h.http, tokens: { RESEND_API_KEY: ADMIN } });
     await expect(keys.issue(ctx2, 'preview', { domain: 'example.com' })).rejects.toThrow(/no domain example.com yet/);
+  });
+
+  it('treats a 404 on delete as an already-revoked key, while auth failures and 5xx throw', async () => {
+    const h = mockHttp([
+      ['DELETE', `${API}/api-keys/k_gone`, () => ({ status: 404, json: { statusCode: 404, name: 'not_found', message: 'API key not found' } })],
+      ['DELETE', `${API}/api-keys/k_500`, () => ({ status: 500, json: { statusCode: 500, name: 'internal_server_error', message: 'internal error' } })],
+      ['DELETE', `${API}/api-keys/k_401`, () => ({ status: 401, json: { statusCode: 401, name: 'invalid_api_key', message: 'Invalid API key' } })],
+    ]);
+    const ctx = testCtx({ exec: noCli().run, http: h.http, tokens: { RESEND_API_KEY: ADMIN } });
+
+    expect(await keys.revoke!(ctx, 'k_gone')).toEqual({ revoked: false, reason: 'key not found' });
+    await expect(keys.revoke!(ctx, 'k_500')).rejects.toThrow(/HTTP 500/);
+    await expect(keys.revoke!(ctx, 'k_401')).rejects.toThrow(/HTTP 401/);
+    expect(h.calls.map((c) => [c.method, c.url])).toEqual([
+      ['DELETE', `${API}/api-keys/k_gone`],
+      ['DELETE', `${API}/api-keys/k_500`],
+      ['DELETE', `${API}/api-keys/k_401`],
+    ]);
+    assertUA(h.calls);
   });
 
   it('refuses to fabricate a key when the response has no token', async () => {
@@ -481,6 +500,20 @@ describe('resend CLI transport', () => {
     const err2 = (await keys.issue(testCtx({ exec: ex2.run }), 'preview', { domain: 'example.com' }).catch((e: Error) => e)) as Error;
     expect(err2.message).toMatch(/expected JSON/);
     expect(err2.message).not.toContain(MINTED);
+  });
+
+  it('revokes via the CLI; a CLI delete failure still throws (its not-found is not classified)', async () => {
+    const ex = mockExec([whoami, ['resend api-keys delete', { stdout: JSON.stringify({ object: 'api_key', id: 'k_cli', deleted: true }) }]]);
+    const ctx = testCtx({ exec: ex.run });
+    expect(await keys.revoke!(ctx, 'k_cli')).toEqual({ revoked: true });
+    expect(ex.calls[1]!.args).toEqual(['api-keys', 'delete', 'k_cli', '--yes', '--json']);
+
+    // resend-cli 2.21.1 answers a failed `api-keys delete` with this envelope on stderr (exit 1), and
+    // every API-side failure carries the same generic `delete_error` code: an already-gone key is not
+    // distinguishable from a real failure, so it stays a thrown error. REST classifies its 404 instead.
+    const envelope = JSON.stringify({ error: { message: 'API key not found', code: 'delete_error', statusCode: 404 } }, null, 2);
+    const ex2 = mockExec([whoami, ['resend api-keys delete', { code: 1, stderr: envelope }]]);
+    await expect(keys.revoke!(testCtx({ exec: ex2.run }), 'k_gone')).rejects.toThrow(/api-keys delete failed \(exit 1\)/);
   });
 
   it('sends the CLI test email with an idempotency key when no app key is in the vault', async () => {

@@ -91,6 +91,11 @@ function remember(ctx: Ctx, p: NetlifySite): ProjectRef {
   });
   return ref(p);
 }
+/** Marks a site golive itself created; teardown deletes only a site carrying this marker. */
+function rememberCreated(ctx: Ctx, id: string): void {
+  ctx.state.save(s => void (s.resources['netlify.createdProjectId'] = id));
+}
+
 async function creationTarget(ctx: Ctx): Promise<ProjectCreateTarget> {
   const chosen = configuredAccount(ctx);
   let a: Account;
@@ -126,6 +131,26 @@ export const netlifyProject: ProjectLinker = {
     if ((await listSites(ctx, name, a)).some(p => p.name === name)) throw new NetlifyError('A Netlify site with this name already exists in the selected team. Re-plan to explicitly select it; it was not adopted or changed.');
     const p = siteInfo(await netlifyHttp(ctx, 'POST', `/${encodeURIComponent(a.slug)}/sites?configure_dns=false`, { name }));
     if (p.name !== name || p.accountId !== a.id || p.accountSlug !== a.slug) throw new NetlifyError('Netlify created a site with an unexpected destination. Stop and inspect that account; no environment variables or deployment were changed.');
-    return remember(ctx, p);
+    const created = remember(ctx, p);
+    rememberCreated(ctx, p.id);
+    return created;
+  },
+  async remove(ctx) {
+    const id = ctx.state.resource('netlify.siteId');
+    if (!id) return { removed: false, reason: 'no Netlify project is linked in state' };
+    if (ctx.state.resource('netlify.createdProjectId') !== id) {
+      return { removed: false, reason: 'the project was adopted or selected, not created by golive' };
+    }
+    try {
+      await netlifyHttp(ctx, 'DELETE', `/sites/${encodeURIComponent(id)}`);
+    } catch (e) {
+      // Already gone: the outcome teardown asked for.
+      if (!(e instanceof NetlifyError && e.status === 404)) throw e;
+    }
+    ctx.state.save(s => {
+      delete s.resources['netlify.siteId']; delete s.resources['netlify.siteName'];
+      delete s.resources['netlify.createdProjectId'];
+    });
+    return { removed: true };
   },
 };

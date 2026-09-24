@@ -40,7 +40,8 @@ detected events against the handler the same way you check the path.
 
 `plan --json` → `planId`, `steps[]` (`id`, `title`, `kind`, `writes`, `needs`, `preview`,
 `dependsOn`), `handoffs[]`, `unmappedEnv`, `warnings`, `findings`. Previews are deterministic: the
-same state gives the same `planId`.
+same state gives the same `planId`. `teardown --json` returns the same shape; its steps carry
+`kind: 'destroy'` and `needs` includes `--confirm-destroy`.
 
 **Step intent.** A step may also carry a secret-free `intent`: what it writes beyond its preview text
 (source project ids, key fingerprints, endpoint ids, the hosting project, a previous attempt's time).
@@ -48,6 +49,15 @@ It is part of the step's hash and the `planId`. `apply` skips a completed step o
 intent, risk, dependencies and kind are all unchanged, so a step with the same preview as last time
 but a different intent runs again: a db project switch, a Stripe key rotation or a domain re-attach
 really lands. The deploy step's intent includes the env writes it picks up.
+
+**Teardown.** `teardown` enumerates only golive-created resources with their ownership proofs
+(provider markers, state fingerprints, the host project's creation marker): DNS records golive owns,
+recorded webhook endpoints, issued sending keys and the created host project. A removal re-checks
+ownership before deleting; each deleted DNS record is confirmed by re-reading the zone, while the
+webhook, key and host-project removals rely on the provider's successful delete response and treat
+"already gone" as done. Resources it cannot remove — adopted projects, Supabase/Neon projects, the
+Resend sending domain — appear as non-blocking `manual` handoffs; records or endpoints a human
+created are never deleted.
 
 **Which project.** Every plan has a step `project:hosting` / `project:db` naming the provider,
 project name (id), team/org if known, where the choice came from, and the logged-in account.

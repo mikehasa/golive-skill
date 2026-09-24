@@ -7940,7 +7940,7 @@ function apiFailure(status, json2, what, path = "") {
       return new SupabaseError(`${what} failed: HTTP ${status}${tail}.`, status);
   }
 }
-function cap2(s) {
+function cap3(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 async function api(ctx, tok, method, path, what, body2, opts = {}) {
@@ -7973,7 +7973,7 @@ async function cli(ctx, args, what, stdin) {
   if (r.code !== 0) {
     const err = redact(r.stderr.trim()).slice(0, 300);
     if (/access token|not logged in|supabase login/i.test(err)) {
-      throw new SupabaseError(`${what}: the supabase CLI is not logged in. ${cap2(LOGIN_HELP)} (preferred), or set the token: ${tokenHelp()}`);
+      throw new SupabaseError(`${what}: the supabase CLI is not logged in. ${cap3(LOGIN_HELP)} (preferred), or set the token: ${tokenHelp()}`);
     }
     throw new SupabaseError(`${what} failed (supabase CLI exit ${r.code})${err ? `: ${err}` : ""}.`);
   }
@@ -8034,7 +8034,7 @@ __export(supabase_exports, {
   usesPrisma: () => usesPrisma
 });
 import { randomBytes as randomBytes2 } from "node:crypto";
-import { basename as basename4 } from "node:path";
+import { basename as basename5 } from "node:path";
 async function auth2(ctx) {
   let tok;
   try {
@@ -8116,18 +8116,18 @@ async function tokenNeeds(ctx) {
     try {
       if (await resolveRef(ctx)) needsCreate = false;
       else {
-        const name3 = repoName(ctx);
+        const name3 = repoName2(ctx);
         needsCreate = !(await adoptable(ctx)).some((p) => p.name.toLowerCase() === name3);
       }
     } catch {
       needsCreate = false;
     }
-    if (needsCreate) needs.push(`creating the Supabase project (none is linked and no project named "${repoName(ctx)}" can be adopted)`);
+    if (needsCreate) needs.push(`creating the Supabase project (none is linked and no project named "${repoName2(ctx)}" can be adopted)`);
   }
   return needs;
 }
-function repoName(ctx) {
-  const s = basename4(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
+function repoName2(ctx) {
+  const s = basename5(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
   return s || "app";
 }
 async function cliOrgs(ctx) {
@@ -8830,7 +8830,7 @@ __export(stripe_exports, {
   stripeKeyFor: () => stripeKeyFor
 });
 import { createHash as createHash6, randomUUID as randomUUID3 } from "node:crypto";
-import { basename as basename5 } from "node:path";
+import { basename as basename6 } from "node:path";
 function modesInUse(ctx) {
   const modes = new Set(ctx.config.targets.map((t) => modeFor(ctx.config, t)));
   if (modes.size === 0) modes.add("test");
@@ -8944,7 +8944,7 @@ function pick(raw2) {
   return { id: raw2.id, url: raw2.url, events: raw2.enabled_events ?? [], enabled: raw2.status === "enabled", metadata: raw2.metadata ?? {} };
 }
 function appName(ctx) {
-  return basename5(ctx.cwd) || "app";
+  return basename6(ctx.cwd) || "app";
 }
 function isGolive(e) {
   return e.metadata.managed_by === "golive";
@@ -8993,7 +8993,7 @@ async function listAll(ctx, mode) {
 function eventsForm(events) {
   return Object.fromEntries(events.map((e, i) => [`enabled_events[${i}]`, e]));
 }
-function uniq(xs) {
+function uniq2(xs) {
   return [...new Set(xs)];
 }
 function sameSet(a, b) {
@@ -9019,7 +9019,7 @@ function validateSpec(spec) {
 async function createEndpoint(ctx, mode, url, events) {
   const form = {
     url,
-    ...eventsForm(uniq(events)),
+    ...eventsForm(uniq2(events)),
     description: `Managed by golive for ${appName(ctx)} (${mode})`,
     "metadata[managed_by]": "golive",
     "metadata[golive_app]": appName(ctx)
@@ -9065,9 +9065,9 @@ async function ensure(ctx, spec) {
     return { id: c.id, created: true, secret: c.secret };
   }
   const owned3 = isGolive(match);
-  const wanted = uniq(spec.events);
+  const wanted = uniq2(spec.events);
   const covers = (e) => match.events.includes("*") || match.events.includes(e);
-  const events = owned3 ? wanted : uniq([...match.events, ...wanted]);
+  const events = owned3 ? wanted : uniq2([...match.events, ...wanted]);
   const eventsDrift = owned3 ? !sameSet(match.events, wanted) : !wanted.every(covers);
   if (eventsDrift || !match.enabled) {
     const form = eventsDrift ? eventsForm(events) : {};
@@ -9900,7 +9900,7 @@ function planView(plan) {
       title: s.title,
       kind: s.kind,
       writes: s.risk.writes,
-      needs: [s.risk.live && "--confirm-live", s.risk.dns && "--confirm-dns"].filter(Boolean),
+      needs: [s.risk.live && "--confirm-live", s.risk.dns && "--confirm-dns", s.risk.destroy && "--confirm-destroy"].filter(Boolean),
       preview: s.preview,
       dependsOn: s.dependsOn
     })),
@@ -9908,6 +9908,739 @@ function planView(plan) {
     unmappedEnv: plan.unmappedEnv,
     warnings: plan.warnings
   };
+}
+
+// src/core/teardown.ts
+init_secret();
+
+// src/links/util.ts
+init_secret();
+import { basename as basename2 } from "node:path";
+
+// src/core/caps.ts
+function adapterById(id2, list4) {
+  return list4.find((a) => a.id === id2);
+}
+function adapterFor(ctx, axis) {
+  const id2 = ctx.config.stack[axis];
+  return id2 ? adapterById(id2, ctx.adapters) : void 0;
+}
+function cap(ctx, axis, k) {
+  return adapterFor(ctx, axis)?.capabilities[k];
+}
+
+// src/links/util.ts
+async function axisStatus(ctx, axis) {
+  const id2 = ctx.config.stack[axis];
+  if (!id2) return { kind: "none" };
+  const adapter = adapterFor(ctx, axis);
+  if (!adapter || !adapter.automated) return { kind: "guided", provider: id2, title: adapter?.title ?? id2 };
+  const status = await authOf(ctx, adapter);
+  return status.ok ? { kind: "ready", adapter } : { kind: "unauthed", adapter, status };
+}
+async function ready(ctx, axis, k) {
+  const s = await axisStatus(ctx, axis);
+  if (s.kind !== "ready") return void 0;
+  const c = s.adapter.capabilities[k];
+  return c ? { adapter: s.adapter, cap: c } : void 0;
+}
+var memos = /* @__PURE__ */ new WeakMap();
+function memo(ctx) {
+  let m = memos.get(ctx);
+  if (!m) {
+    m = { auth: /* @__PURE__ */ new Map(), planned: /* @__PURE__ */ new Set(), steps: /* @__PURE__ */ new Map(), redeployAfter: /* @__PURE__ */ new Set(), pendingProjects: /* @__PURE__ */ new Map(), identity: /* @__PURE__ */ new Map() };
+    memos.set(ctx, m);
+  }
+  return m;
+}
+function resetMemo(ctx) {
+  memos.delete(ctx);
+}
+function authOf(ctx, adapter) {
+  const m = memo(ctx);
+  let p = m.auth.get(adapter.id);
+  if (!p) {
+    p = adapter.auth(ctx).catch((e) => ({ ok: false, howToFix: `checking ${adapter.title} access failed: ${errMsg(e)}` }));
+    m.auth.set(adapter.id, p);
+  }
+  return p;
+}
+function track(ctx, steps, opts = {}) {
+  const m = memo(ctx);
+  for (const s of steps) {
+    m.planned.add(s.id);
+    m.steps.set(s.id, s);
+    const redeploy = typeof opts.needsRedeploy === "function" ? opts.needsRedeploy(s) : opts.needsRedeploy;
+    if (redeploy) m.redeployAfter.add(s.id);
+  }
+  return steps;
+}
+var writesProduction = (s) => s.id.endsWith(":production");
+function deps(ctx, ids) {
+  const planned = memo(ctx).planned;
+  return [...new Set(ids)].filter((id2) => planned.has(id2));
+}
+function step(s) {
+  return { dependsOn: [], verifyWith: [], ...s };
+}
+function intentOf(parts) {
+  return Object.keys(parts).sort().map((k) => {
+    const v = parts[k];
+    return `${k}=${Array.isArray(v) ? [...v].sort().join(",") : v ?? ""}`;
+  }).join(";");
+}
+function errMsg(e) {
+  return redact(e instanceof Error ? e.message : String(e));
+}
+function repoName(ctx) {
+  const s = basename2(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
+  return s || "app";
+}
+async function productionUrl(ctx) {
+  if (ctx.config.domain) return `https://${ctx.config.domain}`;
+  if (!lastDeployAt(ctx)) return null;
+  return hostUrl(ctx, "production");
+}
+var DEPLOYED_KEY = "deployed:production";
+var REDEPLOY_KEY = "redeploy:production";
+function lastDeployAt(ctx) {
+  const at = ctx.state.resource(DEPLOYED_KEY);
+  if (at) return at;
+  const steps = ctx.state.get().steps;
+  const done = ["deploy:production", "deploy:production:final"].map((id2) => steps[id2]).filter((r) => r?.status === "done");
+  return done.map((r) => r.at).sort().at(-1);
+}
+function pendingRedeploy(ctx) {
+  return ctx.state.resource(REDEPLOY_KEY);
+}
+async function hostUrl(ctx, target) {
+  const h = await ready(ctx, "hosting", "url");
+  if (!h) return null;
+  try {
+    const u = await h.cap.get(ctx, target);
+    return u ? u.replace(/\/+$/, "") : null;
+  } catch {
+    return null;
+  }
+}
+function joinUrl(base, path) {
+  if (/^https?:\/\//.test(path)) return path;
+  return `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+}
+function uniq(xs) {
+  return [...new Set(xs)];
+}
+var SECRET_KEYS = /* @__PURE__ */ new Set(["supabase.secretKey", "db.url", "db.directUrl", "stripe.secretKey", "stripe.webhookSecret", "resend.apiKey"]);
+function mappedEnv(ctx) {
+  return mapEnv(ctx.detect.envRefs).mapped;
+}
+function namesFor(ctx, key) {
+  return mappedEnv(ctx).filter((m) => m.key === key).map((m) => m.name);
+}
+function isManaged(ctx, name3, target) {
+  return Boolean(ctx.state.get().secrets[`${name3}@${target}`]);
+}
+async function observeNames(ctx, env, target, hostPending) {
+  if (hostPending) return null;
+  try {
+    return new Set(await env.listNames(ctx, target));
+  } catch {
+    return null;
+  }
+}
+var envSourceKey = (name3, target) => `env:${name3}@${target}`;
+function decideEnv(ctx, target, names, present, sourceOf) {
+  const out = { write: [], keep: [], recheck: present === null };
+  for (const name3 of uniq(names)) {
+    if (!present || !present.has(name3)) out.write.push({ name: name3, action: "add" });
+    else if (!isManaged(ctx, name3, target)) out.keep.push(name3);
+    else if (!sourceOf || ctx.state.resource(envSourceKey(name3, target)) !== sourceOf(name3)) out.write.push({ name: name3, action: "update" });
+  }
+  return out;
+}
+function envPreview(d, describe2) {
+  const lines = d.write.map((w) => `${w.action === "add" ? "add" : "update (managed by golive)"} ${w.name} \u2190 ${describe2(w.name)}`);
+  for (const k of d.keep) lines.push(`keep ${k} (already set, not managed by golive)`);
+  if (d.recheck) lines.push("host project not observable yet: names found already set (and not managed by golive) at apply time are kept");
+  return lines;
+}
+function asSecret(name3, value) {
+  return value instanceof Secret ? value : new Secret(name3, value);
+}
+async function writeEnv(sctx, env, target, entries, recheck) {
+  const changes = [];
+  const written = [];
+  const present = recheck ? new Set(await env.listNames(sctx, target)) : null;
+  for (const e of entries) {
+    if (present?.has(e.name) && !isManaged(sctx, e.name, target)) {
+      changes.push(`kept ${e.name} (${target}): already set, not managed by golive`);
+      continue;
+    }
+    const secret = SECRET_KEYS.has(e.key) || e.value instanceof Secret;
+    const value = secret ? asSecret(e.name, e.value) : e.value;
+    await env.set(sctx, e.name, value, [target], { sensitive: secret });
+    if (target === "production") sctx.remember(REDEPLOY_KEY, (/* @__PURE__ */ new Date()).toISOString());
+    if (value instanceof Secret) sctx.rememberSecret(e.name, target, value);
+    else sctx.rememberValue(e.name, target, value);
+    if (e.source) sctx.remember(envSourceKey(e.name, target), e.source);
+    written.push(e.name);
+    changes.push(`set ${e.name} (${target})${value instanceof Secret ? ` fp:${value.fingerprint}` : ""}`);
+  }
+  return { changes, written };
+}
+async function verifyEnvWritten(ctx, env, target, names, stepId, hostTitle) {
+  if (!names.length) return [];
+  const id2 = `${stepId}:env-written`;
+  const title = `${hostTitle} ${target} env has the names this step set`;
+  let present;
+  try {
+    present = new Set(await env.listNames(ctx, target));
+  } catch (e) {
+    return [{ id: id2, title, status: "fail", severity: "high", evidence: [`could not list ${target} env names: ${errMsg(e)}`], fix: "Check the hosting login, then re-run apply." }];
+  }
+  const missing = names.filter((n) => !present.has(n));
+  if (missing.length) {
+    return [{ id: id2, title, status: "fail", severity: "high", evidence: [`${target}: still missing after the write: ${missing.join(", ")}`], fix: `${hostTitle} did not keep ${missing.join(", ")} (${target}); check its dashboard, then re-run apply.` }];
+  }
+  return [{ id: id2, title, status: "pass", severity: "info", evidence: [`${target}: ${names.join(", ")} present`] }];
+}
+async function availableKeys(ctx, outputs4, target, requestedKeys) {
+  const o = outputs4;
+  try {
+    if (o.provides) return new Set(await o.provides(ctx, target, requestedKeys));
+    const out = await o.outputs(ctx, target, requestedKeys);
+    return new Set(Object.keys(out).filter((k) => out[k] !== void 0));
+  } catch {
+    return null;
+  }
+}
+var OUTPUT_KEYS = ["supabase.url", "supabase.publishableKey", "supabase.secretKey", "db.url", "db.directUrl", "stripe.secretKey", "stripe.publishableKey", "stripe.webhookSecret", "resend.apiKey", "app.url"];
+function exposure(ctx) {
+  const seen = /* @__PURE__ */ new Set();
+  const findings = [];
+  for (const f of [...ctx.detect.findings ?? [], ...mapEnv(ctx.detect.envRefs).findings]) {
+    if (f.severity !== "critical") continue;
+    const k = `${f.id}|${f.title}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    findings.push(f);
+  }
+  const out = { findings, all: false, names: /* @__PURE__ */ new Set() };
+  if (!findings.length) return out;
+  const mapped = mappedEnv(ctx);
+  const known = /* @__PURE__ */ new Set([...ctx.detect.envRefs.map((r) => r.name), ...mapped.map((m) => m.name)]);
+  for (const f of findings) {
+    const text = [f.title, ...f.evidence].join(" ");
+    const tokens = new Set(text.split(/[^A-Za-z0-9_]+/).filter(Boolean));
+    const names = [...known].filter((n) => tokens.has(n));
+    const keys3 = OUTPUT_KEYS.filter((k) => text.includes(k));
+    for (const m of mapped) if (keys3.includes(m.key)) names.push(m.name);
+    if (!names.length && !keys3.length) out.all = true;
+    names.forEach((n) => out.names.add(n));
+  }
+  return out;
+}
+function secretBlocked(ctx, name3, key) {
+  if (!SECRET_KEYS.has(key)) return false;
+  const e = exposure(ctx);
+  return e.all || e.names.has(name3);
+}
+function projectAxisFor(ctx, adapter) {
+  return ["db", "hosting"].find((a) => adapterFor(ctx, a)?.id === adapter.id);
+}
+async function projectIdentity(ctx, adapter, opts) {
+  const linker = adapter.capabilities.project;
+  if (!linker) return "";
+  const axis = projectAxisFor(ctx, adapter);
+  if (opts.planning && axis && memo(ctx).pendingProjects.has(axis)) return "pending";
+  const read = () => linker.current(ctx).then(
+    (p2) => p2?.id ?? null,
+    () => null
+  );
+  if (!opts.planning) return read();
+  const m = memo(ctx);
+  let p = m.identity.get(adapter.id);
+  if (!p) m.identity.set(adapter.id, p = read());
+  return p;
+}
+async function projectIntent(ctx, adapter) {
+  return `${adapter.id}:${await projectIdentity(ctx, adapter, { planning: true }) ?? "?"}`;
+}
+
+// src/links/email.ts
+function emailDomain(ctx) {
+  const c = ctx.config.email;
+  if (c?.domain) return c.domain.toLowerCase();
+  const addr = c?.from?.replace(/^.*<|>$/g, "").trim();
+  const d = addr?.split("@")[1];
+  if (d) return d.toLowerCase();
+  return ctx.config.domain?.toLowerCase() ?? null;
+}
+function formatRecord(r) {
+  return `${r.type} ${r.name}${r.priority !== void 0 ? ` (priority ${r.priority})` : ""} = ${r.content}`;
+}
+var emailDomainLink = {
+  id: "email-domain",
+  async plan(ctx) {
+    const r = await ready(ctx, "email", "sendingDomain");
+    if (!r) return null;
+    const domain = emailDomain(ctx);
+    if (!domain) return { steps: [], handoffs: [], warnings: [`${r.adapter.title}: no sending domain (set email.from, email.domain or domain in golive.yaml); email setup left out of this plan`] };
+    const sd = r.cap;
+    const idKey = `${r.adapter.id}.domainId`;
+    const known = ctx.state.resource(idKey);
+    if (known && await sd.status(ctx, known).catch(() => null) === "verified") return null;
+    const idIntent = `${r.adapter.id}:${known ?? "new"}`;
+    const steps = [domainStep(r.adapter, sd, domain, idKey, idIntent)];
+    const handoffs = [];
+    const warnings = [];
+    track(ctx, steps);
+    const dns = await dnsFor(ctx, domain);
+    if (dns.kind === "ready") {
+      const records3 = known && sd.records ? await sd.records(ctx, known).catch(() => null) : null;
+      steps.push(...track(ctx, [dnsStep(ctx, r.adapter, sd, domain, dns.adapter, dns.zone, intentOf({ id: idIntent, zone: `${dns.adapter.id}:${domain}`, records: records3 ? records3.map(formatRecord) : ["(from ensure)"] }))]));
+    } else if (dns.kind === "handoff") handoffs.push(dnsHandoff(r.adapter, domain, dns.where));
+    else if (dns.kind === "error") warnings.push(`${r.adapter.title} sending records for ${domain}: ${dns.message}`);
+    steps.push(...track(ctx, [verifyStep(ctx, r.adapter, sd, domain, idKey, idIntent)]));
+    return { steps, handoffs, warnings };
+  }
+};
+function domainStep(adapter, sd, domain, idKey, idIntent) {
+  return step({
+    id: "email:domain",
+    title: `Set up sending domain ${domain} at ${adapter.title}`,
+    kind: "provision",
+    risk: { writes: true },
+    preview: [`ensure sending domain ${domain} at ${adapter.title} (adopted if it already exists); the DNS records it needs are listed in this step's changes`],
+    intent: intentOf({ id: idIntent, domain }),
+    async run(sctx) {
+      const d = await sd.ensure(sctx, domain);
+      sctx.remember(idKey, d.id);
+      return { changes: [`sending domain ${domain} (${d.id}) needs these DNS records:`, ...d.records.map(formatRecord)] };
+    }
+  });
+}
+function dnsStep(ctx, adapter, sd, domain, dnsAdapter, zone, intent) {
+  return step({
+    id: "email:dns",
+    title: `Publish ${adapter.title} DNS records for ${domain} at ${dnsAdapter.title}`,
+    kind: "wire",
+    risk: { writes: true, dns: true },
+    dependsOn: deps(ctx, ["email:domain"]),
+    preview: [`create/update the ${adapter.title} sending records for ${domain} (SPF, DKIM, MX \u2014 whatever ${adapter.title} returns; DMARC is left to you) at ${dnsAdapter.title}; unrelated records are never deleted`],
+    intent,
+    verifyWith: ["email-dns"],
+    async run(sctx) {
+      const { records: records3 } = await sd.ensure(sctx, domain);
+      const changes = [];
+      for (const rec of records3) changes.push(`${await zone.upsert(sctx, domain, { ...rec, proxied: false })}: ${formatRecord(rec)}`);
+      return { changes };
+    }
+  });
+}
+function verifyStep(ctx, adapter, sd, domain, idKey, idIntent) {
+  const prev = ctx.state.get().steps["email:verify"];
+  return step({
+    id: "email:verify",
+    title: `Ask ${adapter.title} to verify ${domain}`,
+    kind: "wire",
+    risk: { writes: true },
+    dependsOn: deps(ctx, ["email:domain", "email:dns"]),
+    preview: [`ask ${adapter.title} to verify ${domain} (DNS can take a while to propagate; a pending result is not a failure)`, ...prev ? [`previous request: ${prev.at}`] : []],
+    intent: intentOf({ id: idIntent, previous: prev?.at }),
+    verifyWith: ["email-verified"],
+    async run(sctx) {
+      const id2 = sctx.state.resource(idKey) ?? (await sd.ensure(sctx, domain)).id;
+      const changes = [];
+      try {
+        await sd.verify(sctx, id2);
+      } catch (e) {
+        changes.push(`verification request not accepted yet: ${errMsg(e)}`);
+      }
+      const status = await sd.status(sctx, id2).catch(() => "pending");
+      changes.push(`${domain}: ${status}${status === "verified" ? "" : " (DNS may still be propagating; run `verify --only email-verified` later)"}`);
+      return { changes };
+    }
+  });
+}
+async function dnsFor(ctx, domain) {
+  const s = await axisStatus(ctx, "dns");
+  if (s.kind === "unauthed") return { kind: "skip" };
+  if (s.kind === "none") return { kind: "handoff", where: `the DNS host for ${domain}` };
+  if (s.kind === "guided") return { kind: "handoff", where: s.title };
+  const zone = s.adapter.capabilities.dns;
+  if (!zone) return { kind: "handoff", where: `the DNS host for ${domain}` };
+  let hosts;
+  try {
+    hosts = await zone.hosts(ctx, domain);
+  } catch (e) {
+    return {
+      kind: "error",
+      message: `checking whether ${s.adapter.title} hosts ${domain} failed (${errMsg(e)}), so the DNS records are left out of this plan. Fix the ${s.adapter.title} access (token permissions, rate limit or network) and run \`plan\` again.`
+    };
+  }
+  return hosts ? { kind: "ready", adapter: s.adapter, zone } : { kind: "handoff", where: `the DNS host for ${domain} (${s.adapter.title} doesn't host this zone in this account)` };
+}
+function dnsHandoff(adapter, domain, where) {
+  return {
+    id: "email:dns",
+    why: `The ${adapter.title} sending records for ${domain} must be added at a DNS host golive can't write to.`,
+    action: `After apply runs the email:domain step, add the DNS records listed in its changes (or run \`handoff\` / \`plan\` again to print them) at ${where}. Turn proxying off for these records and merge SPF into a single TXT record.`,
+    blocking: true,
+    verifiedBy: "email-dns"
+  };
+}
+var emailKeysLink = {
+  id: "email-keys",
+  async plan(ctx) {
+    const names = namesFor(ctx, "resend.apiKey");
+    if (!names.length) return null;
+    const em = await ready(ctx, "email", "keys");
+    const host = await ready(ctx, "hosting", "env");
+    if (!em || !host) return null;
+    const domain = emailDomain(ctx);
+    if (!domain) return null;
+    const steps = [];
+    for (const target of ctx.config.targets) {
+      const s = await keyStep(ctx, em.adapter, em.cap, host.adapter, host.cap, domain, target, names);
+      if (s) steps.push(s);
+    }
+    return { steps: track(ctx, steps, { needsRedeploy: writesProduction }), handoffs: [] };
+  }
+};
+async function keyStep(ctx, adapter, keys3, hostAdapter, env, domain, target, names) {
+  if (names.some((n) => secretBlocked(ctx, n, "resend.apiKey"))) return null;
+  const keyIdKey = `${adapter.id}.keyId@${target}`;
+  const keyId = ctx.state.resource(keyIdKey);
+  const present = await observeNames(ctx, env, target, memo(ctx).pendingProjects.has("hosting"));
+  if (keyId && present && names.every((n) => present.has(n))) return null;
+  const decision = decideEnv(ctx, target, names, present);
+  if (!decision.write.length) return null;
+  let written = [];
+  const intent = intentOf({ host: await projectIntent(ctx, hostAdapter), domain, previousKey: keyId, write: decision.write.map((w) => w.name) });
+  return step({
+    id: `email:key:${target}`,
+    title: `Issue a ${adapter.title} sending key for ${target}`,
+    kind: "wire",
+    risk: { writes: true },
+    dependsOn: deps(ctx, ["email:domain", "project:hosting"]),
+    preview: [`issue a sending-only ${adapter.title} key scoped to ${domain} for ${target}`, ...envPreview(decision, () => `resend.apiKey (sensitive)`)],
+    intent,
+    async run(sctx) {
+      const k = await keys3.issue(sctx, target, { domain });
+      sctx.remember(keyIdKey, k.id);
+      const changes = [`issued ${adapter.title} key ${k.id} (${target}) fp:${k.secret.fingerprint}`];
+      if (keyId && keyId !== k.id) changes.push(`previous golive key ${keyId} was left active; revoke it in ${adapter.title} once nothing uses it`);
+      const w = await writeEnv(sctx, env, target, decision.write.map((x) => ({ name: x.name, key: k.key, value: k.secret, source: `${k.key}|${adapter.id}|${k.id}` })), decision.recheck);
+      written = w.written;
+      changes.push(...w.changes);
+      return { changes: changes.length ? changes : [`nothing written to ${hostAdapter.title}`] };
+    },
+    verifyInline: (vctx) => verifyEnvWritten(vctx, env, target, written, `email:key:${target}`, hostAdapter.title)
+  });
+}
+
+// src/core/teardown.ts
+var MODES = ["test", "live"];
+var ENV_TARGETS = ["development", "preview", "production"];
+var PROJECT_STATE = {
+  vercel: { id: "vercel.projectId", name: "vercel.projectName" },
+  netlify: { id: "netlify.siteId", name: "netlify.siteName" }
+};
+var createdKey = (provider) => `${provider}.createdProjectId`;
+async function buildTeardownPlan(ctx) {
+  assertCompatibleState(ctx.state.get(), ctx.release);
+  if (ctx.config.version !== ctx.release.schemas.config) {
+    throw new Error("Configuration schema is incompatible with this release. Preserve config and state; use a compatible release before planning.");
+  }
+  const webhooks2 = await webhookTeardown(ctx);
+  const dns = await dnsSteps(ctx);
+  const keys3 = await emailKeyTeardown(ctx);
+  const project = await projectTeardown(ctx);
+  const steps = [...webhooks2.steps, ...dns, ...keys3.steps, ...project.steps];
+  const stepIds = /* @__PURE__ */ new Set();
+  for (const s of steps) {
+    if (stepIds.has(s.id)) throw new Error(`teardown: two resources map to step ${s.id}, so golive cannot plan an unambiguous deletion. Resolve the duplicate and re-run.`);
+    stepIds.add(s.id);
+  }
+  const handoffs = [...dbHandoffs(ctx), ...emailHandoffs(ctx), ...webhooks2.handoffs, ...keys3.handoffs, ...project.handoffs];
+  const ordered = orderSteps(steps);
+  return { id: planId(ordered, handoffs, ctx.release), release: structuredClone(ctx.release), steps: ordered, handoffs, unmappedEnv: [], warnings: [] };
+}
+var WEBHOOK_KEY = /^([a-z0-9-]+)\.(test|live)\.webhookEndpointId$/;
+async function webhookTeardown(ctx) {
+  const s = await axisStatus(ctx, "payments");
+  const ready2 = s.kind === "ready" ? s : null;
+  const steps = [];
+  const handoffs = [];
+  const stateKeys = Object.keys(ctx.state.get().resources).sort();
+  for (const mode of MODES) {
+    for (const stateKey of stateKeys) {
+      const m = WEBHOOK_KEY.exec(stateKey);
+      if (!m || m[2] !== mode) continue;
+      const providerId = m[1];
+      const id2 = ctx.state.resource(stateKey);
+      if (!id2) continue;
+      const remove2 = ready2 && ready2.adapter.id === providerId ? ready2.adapter.capabilities.webhooks?.remove : void 0;
+      if (ready2 && remove2) {
+        steps.push(webhookStep(ready2.adapter, remove2, mode, id2));
+        continue;
+      }
+      handoffs.push({
+        id: `teardown:webhook:${providerId}:${mode}`,
+        why: `a ${providerId} ${mode}-mode webhook endpoint golive created (${id2}) is recorded, but golive cannot remove it right now (the provider is not signed in or has no removal support)`,
+        action: `Delete the endpoint ${id2} in the ${providerId} dashboard if intended; it still points at the URL it was registered with.`,
+        blocking: false,
+        manual: true
+      });
+    }
+  }
+  return { steps, handoffs };
+}
+function webhookStep(adapter, remove2, mode, id2) {
+  return step({
+    id: `teardown:webhook:${adapter.id}:${mode}`,
+    title: `Delete the ${adapter.title} ${mode}-mode webhook endpoint golive created`,
+    kind: "destroy",
+    risk: { writes: true, destroy: true, live: mode === "live" },
+    preview: [`delete the ${adapter.title} ${mode}-mode webhook endpoint golive created (${id2})`],
+    intent: intentOf({ provider: adapter.id, mode, endpoint: id2 }),
+    async run(sctx) {
+      const r = await remove2(sctx, id2, mode);
+      if (r.deleted) return { changes: [`deleted webhook ${id2}`] };
+      if (r.reason === "endpoint not found") return { changes: [`already gone: ${id2}`] };
+      if (r.reason === "not created by golive") return { changes: [`left as is: ${r.reason}`] };
+      throw new Error(`could not delete the ${adapter.title} ${mode}-mode webhook endpoint ${id2}: ${redact(r.reason ?? "the provider did not delete it")}`);
+    }
+  });
+}
+async function dnsSteps(ctx) {
+  const domains = teardownDomains(ctx);
+  if (!domains.length) return [];
+  const s = await axisStatus(ctx, "dns");
+  if (s.kind !== "ready") return [];
+  const zone = s.adapter.capabilities.dns;
+  const listOwned = zone?.listOwned;
+  const remove2 = zone?.remove;
+  if (!zone || !listOwned || !remove2) return [];
+  const candidates3 = [];
+  for (const domain of domains) {
+    for (const record2 of await listOwned(ctx, domain)) candidates3.push({ domain, record: record2 });
+  }
+  candidates3.sort((a, b) => {
+    const ka = recordKey(a.record);
+    const kb = recordKey(b.record);
+    if (ka !== kb) return ka < kb ? -1 : 1;
+    return a.domain === b.domain ? 0 : a.domain < b.domain ? -1 : 1;
+  });
+  const steps = [];
+  const seenCandidates = /* @__PURE__ */ new Set();
+  const byStepId = /* @__PURE__ */ new Map();
+  for (const c of candidates3) {
+    const unique = `${c.domain}|${recordKey(c.record)}`;
+    if (seenCandidates.has(unique)) continue;
+    seenCandidates.add(unique);
+    const id2 = `teardown:dns:${s.adapter.id}:${c.record.type}:${c.record.name.toLowerCase()}`;
+    const prior = byStepId.get(id2);
+    if (prior) {
+      throw new Error(
+        `teardown: ${formatRecord(prior.record)} in ${prior.domain} and ${formatRecord(c.record)} in ${c.domain} would both be step ${id2}, so golive cannot tell which record to delete. Delete the extra record yourself in the provider dashboard, then run teardown again.`
+      );
+    }
+    byStepId.set(id2, c);
+    steps.push(dnsStep2(s.adapter, c.domain, c.record, id2, listOwned, remove2));
+  }
+  return steps;
+}
+function teardownDomains(ctx) {
+  const byZone = /* @__PURE__ */ new Map();
+  for (const d of [ctx.config.domain, ctx.config.email?.domain]) {
+    if (d && !byZone.has(d.toLowerCase())) byZone.set(d.toLowerCase(), d);
+  }
+  return [...byZone.values()];
+}
+var recordKey = (r) => `${r.type} ${r.name} ${r.content}`;
+var sameRecord = (a, b) => a.type === b.type && a.content === b.content && a.name.toLowerCase() === b.name.toLowerCase();
+function dnsStep2(adapter, domain, record2, id2, listOwned, remove2) {
+  return step({
+    id: id2,
+    title: `Delete the ${adapter.title} record golive created (${record2.type} ${record2.name})`,
+    kind: "destroy",
+    risk: { writes: true, destroy: true, dns: true },
+    preview: [`delete the ${adapter.title} record golive created: ${formatRecord(record2)}`],
+    intent: intentOf({ provider: adapter.id, domain, type: record2.type, name: record2.name, content: record2.content }),
+    async run(sctx) {
+      const outcome = await remove2(sctx, domain, record2);
+      return { changes: [outcome === "removed" ? `deleted: ${formatRecord(record2)}` : `already gone: ${formatRecord(record2)}`] };
+    },
+    // A delete is only reported as done once the provider's own owned-record list no longer has it.
+    async verifyInline(vctx) {
+      const checkId = `${id2}:removed`;
+      const title = `${adapter.title} no longer lists the record golive created: ${formatRecord(record2)}`;
+      let owned3;
+      try {
+        owned3 = await listOwned(vctx, domain);
+      } catch (e) {
+        return [{
+          id: checkId,
+          title,
+          status: "warn",
+          severity: "medium",
+          evidence: [`could not re-read the records ${adapter.title} reports as golive-owned in ${domain}: ${errMsg(e)}`],
+          fix: `Check ${adapter.title} access, then confirm ${formatRecord(record2)} is gone.`
+        }];
+      }
+      if (owned3.some((r) => sameRecord(r, record2))) {
+        return [{
+          id: checkId,
+          title,
+          status: "fail",
+          severity: "high",
+          evidence: [`${adapter.title} still lists ${formatRecord(record2)} in ${domain} after the delete`],
+          fix: `Delete it in the ${adapter.title} dashboard; golive does not report a delete it cannot confirm.`
+        }];
+      }
+      return [{ id: checkId, title, status: "pass", severity: "info", evidence: [`${formatRecord(record2)} is gone from the records ${adapter.title} reports as golive-owned in ${domain}`] }];
+    }
+  });
+}
+var KEY_STATE = /^([a-z0-9-]+)\.keyId@([a-z-]+)$/;
+async function emailKeyTeardown(ctx) {
+  const s = await axisStatus(ctx, "email");
+  const ready2 = s.kind === "ready" ? s : null;
+  const steps = [];
+  const handoffs = [];
+  for (const stateKey of Object.keys(ctx.state.get().resources).sort()) {
+    const m = KEY_STATE.exec(stateKey);
+    if (!m) continue;
+    const providerId = m[1];
+    const target = m[2];
+    const id2 = ctx.state.resource(stateKey);
+    if (!id2 || !isEnvTarget(target)) continue;
+    const revoke = ready2 && ready2.adapter.id === providerId ? ready2.adapter.capabilities.keys?.revoke : void 0;
+    if (ready2 && revoke) {
+      steps.push(emailKeyStep(ready2.adapter, target, id2, revoke));
+      continue;
+    }
+    handoffs.push({
+      id: `teardown:key:${providerId}:${target}`,
+      why: `a ${providerId} sending key golive issued for ${target} (${id2}) is recorded, but golive cannot revoke it right now (the provider is not signed in or has no revoke support)`,
+      action: `Revoke the key ${id2} in the ${providerId} dashboard if intended.`,
+      blocking: false,
+      manual: true
+    });
+  }
+  return { steps, handoffs };
+}
+var isEnvTarget = (v) => ENV_TARGETS.includes(v);
+function emailKeyStep(adapter, target, id2, revoke) {
+  return step({
+    id: `teardown:key:${adapter.id}:${target}`,
+    title: `Revoke the ${adapter.title} sending key golive issued for ${target}`,
+    kind: "destroy",
+    risk: { writes: true, destroy: true },
+    preview: [`revoke the ${adapter.title} sending key golive issued for ${target} (${id2})`],
+    intent: intentOf({ provider: adapter.id, target, key: id2 }),
+    async run(sctx) {
+      const r = await revoke(sctx, id2);
+      if (r.revoked) return { changes: [`revoked ${id2}`] };
+      if (r.reason === "key not found") return { changes: [`already gone: ${id2}`] };
+      throw new Error(`could not revoke the ${adapter.title} sending key ${id2}: ${redact(r.reason ?? "the provider did not revoke it")}`);
+    }
+  });
+}
+async function projectTeardown(ctx) {
+  const s = await axisStatus(ctx, "hosting");
+  if (s.kind !== "ready") return { steps: [], handoffs: [] };
+  const adapter = s.adapter;
+  const remove2 = adapter.capabilities.project?.remove;
+  if (!remove2) return { steps: [], handoffs: [] };
+  const keys3 = PROJECT_STATE[adapter.id] ?? { id: `${adapter.id}.projectId`, name: `${adapter.id}.projectName` };
+  const current3 = ctx.state.resource(keys3.id);
+  if (!current3) return { steps: [], handoffs: [] };
+  const name3 = ctx.state.resource(keys3.name);
+  if (ctx.state.resource(createdKey(adapter.id)) !== current3) {
+    return {
+      steps: [],
+      handoffs: [{
+        id: "teardown:project:hosting",
+        why: `the ${adapter.title} project ${current3} was adopted (not created by golive), so golive will not delete it`,
+        action: `If the project should go away, delete it in the ${adapter.title} dashboard; keep it if the app continues elsewhere.`,
+        blocking: false,
+        manual: true
+      }]
+    };
+  }
+  return { steps: [projectStep(adapter, current3, name3, keys3, remove2)], handoffs: [] };
+}
+function projectStep(adapter, current3, name3, keys3, remove2) {
+  const label2 = name3 ? `${name3} (${current3})` : current3;
+  return step({
+    id: "teardown:project:hosting",
+    title: `Delete the ${adapter.title} project golive created`,
+    kind: "destroy",
+    risk: { writes: true, destroy: true },
+    preview: [`delete the ${adapter.title} project ${label2} \u2014 golive created it`],
+    intent: intentOf({ provider: adapter.id, project: current3 }),
+    async run(sctx) {
+      const r = await remove2(sctx);
+      if (r.removed) return { changes: [`deleted project ${current3}`] };
+      const reason = r.reason ?? "the provider kept the project";
+      if (sctx.state.resource(keys3.id) !== current3 || sctx.state.resource(createdKey(adapter.id)) !== current3) return { changes: [`left as is: ${reason}`] };
+      throw new Error(`could not delete the ${adapter.title} project ${current3}: ${redact(reason)}`);
+    }
+  });
+}
+function dbHandoffs(ctx) {
+  const out = [];
+  const supabaseRef = ctx.state.resource("supabase.ref");
+  if (supabaseRef && ctx.state.resource("supabase.createdByGolive") === supabaseRef) {
+    out.push({
+      id: "teardown:db:supabase",
+      why: `the Supabase project ${supabaseRef} was created by golive, and deleting it needs the Supabase dashboard`,
+      action: `Delete the Supabase project ${supabaseRef} in the dashboard if intended.`,
+      blocking: false,
+      manual: true
+    });
+  }
+  const neonProject = ctx.state.resource("neon.projectId");
+  if (neonProject && ctx.state.resource("neon.createdProjectId") === neonProject) {
+    out.push({
+      id: "teardown:db:neon",
+      why: `the Neon project ${neonProject} was created by golive, and deleting it needs the Neon console`,
+      action: `Delete the Neon project ${neonProject} in the Neon console if intended; Neon may keep a recovery window.`,
+      blocking: false,
+      manual: true
+    });
+  }
+  return out;
+}
+function emailHandoffs(ctx) {
+  const domainId = ctx.state.resource("resend.domainId");
+  if (!domainId) return [];
+  const label2 = ctx.config.email?.domain ?? domainId;
+  return [{
+    id: "teardown:email:resend",
+    why: `the Resend sending domain ${label2} was created by golive, and deleting it needs the Resend dashboard`,
+    action: `Delete the sending domain ${label2} in the Resend dashboard if intended; any keys golive issued are revoked in the steps of this plan when applicable.`,
+    blocking: false,
+    manual: true
+  }];
+}
+async function approvedPlan(ctx, approvedId, forward) {
+  let plan = null;
+  let failure2 = null;
+  try {
+    plan = await forward();
+  } catch (e) {
+    failure2 = e;
+  }
+  if (!plan || plan.id !== approvedId) {
+    const teardown = await buildTeardownPlan(ctx).catch(() => null);
+    if (teardown && teardown.id === approvedId) plan = teardown;
+  }
+  if (!plan) throw failure2;
+  return plan;
 }
 
 // src/core/runner.ts
@@ -9950,7 +10683,7 @@ async function applyPlan(ctx, plan, checks, opts) {
     if (!visited.has(step2.id)) continue;
     const rec = ctx.state.get().steps[step2.id];
     const selected = !opts.only || opts.only.includes(step2.id);
-    if (step2.risk.writes && rec && !sameRelease(rec.release, ctx.release) && (rec.status !== "done" || rec.hash !== stepHash(step2) || opts.force && selected)) {
+    if (step2.risk.writes && !step2.risk.destroy && rec && !sameRelease(rec.release, ctx.release) && (rec.status !== "done" || rec.hash !== stepHash(step2) || opts.force && selected)) {
       throw new PlanMismatchError(`historical step ${step2.id} belongs to another or unknown release. Preserve state and reconcile its remote outcome before a new plan; automatic write replay is blocked.`);
     }
     if (!selected && !requiredPins.has(step2.id) && (rec?.status !== "done" || rec.hash !== stepHash(step2))) {
@@ -10022,6 +10755,7 @@ function gateFlags(step2, o) {
   const missing = [];
   if (step2.risk.live && !o.confirmLive) missing.push("--confirm-live");
   if (step2.risk.dns && !o.confirmDns) missing.push("--confirm-dns");
+  if (step2.risk.destroy && !o.confirmDestroy) missing.push("--confirm-destroy");
   if (step2.risk.spend) missing.push("(spend steps are never automated \u2014 this should be a handoff)");
   return missing;
 }
@@ -10085,7 +10819,7 @@ import {
   writeFileSync as writeFileSync5
 } from "node:fs";
 import { platform } from "node:os";
-import { basename as basename2, dirname as dirname6, join as join7, resolve as resolve4 } from "node:path";
+import { basename as basename3, dirname as dirname6, join as join7, resolve as resolve4 } from "node:path";
 var MAX_VALUE_BYTES = 16 * 1024;
 var MAX_FILE_BYTES = 1024 * 1024;
 var DIALOG_SECONDS = 180;
@@ -10376,7 +11110,7 @@ function saveAtomically(path, before, name3, value) {
     const current3 = snapshot(path);
     if (changed(before, current3)) throw new SafeFailure("concurrent-change");
     const content3 = updated(before, name3, value);
-    const tempPath = join7(dirname6(path), `.${basename2(path)}-${randomBytes(12).toString("hex")}.tmp`);
+    const tempPath = join7(dirname6(path), `.${basename3(path)}-${randomBytes(12).toString("hex")}.tmp`);
     const fd = openSync5(tempPath, constants5.O_CREAT | constants5.O_EXCL | constants5.O_WRONLY | constants5.O_NOFOLLOW, 384);
     temp = { path: tempPath, fd };
     temp.info = fstatSync5(fd);
@@ -10426,18 +11160,6 @@ function saveAtomically(path, before, name3, value) {
 
 // src/cli.ts
 init_types();
-
-// src/core/caps.ts
-function adapterById(id2, list4) {
-  return list4.find((a) => a.id === id2);
-}
-function adapterFor(ctx, axis) {
-  const id2 = ctx.config.stack[axis];
-  return id2 ? adapterById(id2, ctx.adapters) : void 0;
-}
-function cap(ctx, axis, k) {
-  return adapterFor(ctx, axis)?.capabilities[k];
-}
 
 // src/adapters/vercel.ts
 init_credentials();
@@ -10523,6 +11245,7 @@ async function vercelApi(ctx, method, path, body2, opts) {
 }
 async function viaCli(ctx, user, method, path, body2, opts) {
   const args = ["api", path, "-X", method, "--raw", "--non-interactive"];
+  if (method === "DELETE") args.push("--dangerously-skip-permissions");
   if (body2 !== void 0) args.push("--input", "-");
   const scope = opts?.scopeId ? opts.scopeId.startsWith("team_") ? opts.scopeId : user.username : cliScope(ctx, user);
   if (scope) args.push("--scope", scope);
@@ -10624,7 +11347,7 @@ async function lookup(ctx, name3, type) {
 }
 
 // src/adapters/vercel-project.ts
-import { basename as basename3 } from "node:path";
+import { basename as basename4 } from "node:path";
 function toInfo(raw2) {
   if (!raw2?.id || !raw2.name) return null;
   const alias = raw2.targets?.production?.alias;
@@ -10642,6 +11365,9 @@ function remember(ctx, p) {
     s.resources["vercel.projectName"] = p.name;
     if (p.accountId) s.resources["vercel.orgId"] = p.accountId;
   });
+}
+function rememberCreated(ctx, id2) {
+  ctx.state.save((s) => void (s.resources["vercel.createdProjectId"] = id2));
 }
 async function requireProjectId(ctx) {
   const p = await vercelProject.current(ctx);
@@ -10707,7 +11433,7 @@ var vercelProject = {
     }
   },
   async candidates(ctx) {
-    const q2 = encodeURIComponent(basename3(ctx.cwd));
+    const q2 = encodeURIComponent(basename4(ctx.cwd));
     const res = await vercelApi(ctx, "GET", `/v10/projects?search=${q2}&limit=20`);
     return (res.projects ?? []).map(toInfo).filter((p) => p !== null).map(({ id: id2, name: name3 }) => ({ id: id2, name: name3 }));
   },
@@ -10747,8 +11473,28 @@ var vercelProject = {
     if (!p) throw new VercelError(`Vercel did not return the new project "${name3}"; check the dashboard before retrying.`);
     if (approvedTarget && p.accountId !== approvedTarget.scope.id) throw new VercelError("Vercel returned an unexpected project owner; inspect the created resource before continuing.");
     remember(ctx, p);
+    rememberCreated(ctx, p.id);
     ctx.log.info(`vercel: created project ${p.name} (${p.id})`);
     return { id: p.id, name: p.name, ...approvedTarget ? { scope: approvedTarget.scope } : {} };
+  },
+  async remove(ctx) {
+    const id2 = ctx.state.resource("vercel.projectId");
+    if (!id2) return { removed: false, reason: "no Vercel project is linked in state" };
+    if (ctx.state.resource("vercel.createdProjectId") !== id2) {
+      return { removed: false, reason: "the project was adopted or selected, not created by golive" };
+    }
+    try {
+      await vercelApi(ctx, "DELETE", `/v9/projects/${encodeURIComponent(id2)}`);
+    } catch (e) {
+      if (!isNotFound(e)) throw e;
+    }
+    ctx.state.save((s) => {
+      delete s.resources["vercel.projectId"];
+      delete s.resources["vercel.projectName"];
+      delete s.resources["vercel.createdProjectId"];
+    });
+    ctx.log.info(`vercel: deleted project ${id2}`);
+    return { removed: true };
   }
 };
 async function scopeSlug(ctx) {
@@ -11166,7 +11912,7 @@ init_secret();
 init_http();
 init_credentials();
 import { createHash as createHash7 } from "node:crypto";
-import { basename as basename6 } from "node:path";
+import { basename as basename7 } from "node:path";
 
 // src/adapters/resend-records.ts
 var TYPES = /* @__PURE__ */ new Set(["A", "AAAA", "CNAME", "TXT", "MX", "CAA"]);
@@ -11275,7 +12021,13 @@ function restTransport(ctx, key) {
       return keyFrom(r, name3);
     },
     deleteKey: async (id2) => {
-      await call(ctx, key, `delete API key ${id2}`, "DELETE", `/api-keys/${encodeURIComponent(id2)}`);
+      try {
+        await call(ctx, key, `delete API key ${id2}`, "DELETE", `/api-keys/${encodeURIComponent(id2)}`);
+        return { revoked: true };
+      } catch (e) {
+        if (e instanceof HttpError && e.status === 404) return { revoked: false, reason: "key not found" };
+        throw e;
+      }
     },
     sendEmail: async (msg, idem) => sendRest(ctx, key, msg, idem),
     getEmail: async (id2) => call(ctx, key, `get email ${id2}`, "GET", `/emails/${encodeURIComponent(id2)}`)
@@ -11327,6 +12079,7 @@ function cliTransport(ctx, profile) {
     createKey: async (name3, domainId) => keyFrom(await cli2(ctx, ["api-keys", "create", "--name", name3, "--permission", "sending_access", "--domain-id", domainId]), name3),
     deleteKey: async (id2) => {
       await cli2(ctx, ["api-keys", "delete", id2, "--yes"]);
+      return { revoked: true };
     },
     sendEmail: async (msg, idem) => {
       const r = await cli2(ctx, ["emails", "send", "--from", msg.from, "--to", msg.to, "--subject", msg.subject, "--text", msg.text, "--idempotency-key", idem]);
@@ -11462,7 +12215,7 @@ var sendingDomain = {
   }
 };
 function appSlug(ctx) {
-  const raw2 = basename6(ctx.detect.root || ctx.cwd) || "app";
+  const raw2 = basename7(ctx.detect.root || ctx.cwd) || "app";
   return raw2.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "app";
 }
 function keyName(ctx, target) {
@@ -11489,8 +12242,9 @@ var keys = {
   },
   async revoke(ctx, id2) {
     const t = await transport(ctx);
-    await t.deleteKey(id2);
-    ctx.log.info(`revoked Resend API key ${id2}`);
+    const r = await t.deleteKey(id2);
+    if (r.revoked) ctx.log.info(`revoked Resend API key ${id2}`);
+    return r;
   }
 };
 function idempotencyKey(msg, keyFp) {
@@ -11719,19 +12473,24 @@ function toDnsRecord(r) {
 var isOwned = (r) => (r.comment ?? "").startsWith(OWNED_PREFIX);
 var describe = (r) => `${r.type} ${short(r.content)}${r.proxied ? " (proxied)" : ""}`;
 var short = (s) => s.length > 80 ? `${s.slice(0, 77)}...` : s;
-function recordKey(want) {
+function recordKey2(want) {
   if (ADDRESS.has(want.type)) return `cloudflare.recordId:${want.type}:${want.name}`;
   if (want.type === "TXT" && isSpf(want.content)) return `cloudflare.recordId:TXT:${want.name}:spf`;
   return `cloudflare.recordId:${want.type}:${want.name}:${fingerprint(want.content)}`;
 }
 function remember3(ctx, want, id2) {
-  if (ctx.state.resource(recordKey(want)) !== id2) ctx.state.save((s) => void (s.resources[recordKey(want)] = id2));
+  if (ctx.state.resource(recordKey2(want)) !== id2) ctx.state.save((s) => void (s.resources[recordKey2(want)] = id2));
 }
 function forgetStale(ctx, want, id2) {
   const prefix = `cloudflare.recordId:${want.type}:${want.name}:`;
-  const keep = recordKey(want);
+  const keep = recordKey2(want);
   ctx.state.save((s) => {
     for (const [k, v] of Object.entries(s.resources)) if (k.startsWith(prefix) && k !== keep && v === id2) delete s.resources[k];
+  });
+}
+function forgetId(ctx, id2) {
+  ctx.state.save((s) => {
+    for (const [k, v] of Object.entries(s.resources)) if (k.startsWith("cloudflare.recordId:") && v === id2) delete s.resources[k];
   });
 }
 var RETURN_PATH_MX = /^feedback-smtp(\.[a-z0-9-]+)?\.amazonses\.com$/;
@@ -11845,6 +12604,42 @@ var cloudflareDns = {
   },
   async list(ctx, domain) {
     return withZone(ctx, domain, async (zone) => (await fetchRecords(ctx, zone)).filter((r) => TYPES2.has(r.type)).map(toDnsRecord));
+  },
+  async listOwned(ctx, domain) {
+    return withZone(
+      ctx,
+      domain,
+      async (zone) => (await fetchRecords(ctx, zone)).filter((r) => isOwned(r) && TYPES2.has(r.type)).map(toDnsRecord)
+    );
+  },
+  async remove(ctx, domain, record2) {
+    return withZone(ctx, domain, async (zone) => {
+      const want = normalizeWanted(record2);
+      if (!inZone(want.name, zone.name)) throw new Error(`Cloudflare DNS: ${want.name} is not inside the zone ${zone.name}; nothing was deleted.`);
+      const here = (await fetchRecords(ctx, zone, `name.exact=${encodeURIComponent(want.name)}`)).filter((r) => normName(r.name) === want.name);
+      const matches3 = here.filter((r) => r.type === want.type && normContent(r.type, r.content) === want.content);
+      if (!matches3.length) return "unchanged";
+      if (matches3.length > 1) {
+        throw new Error(
+          `Cloudflare DNS: ${want.name} has ${matches3.length} records matching ${describe(want)} (${matches3.map((r) => r.id).join(", ")}), so golive cannot tell which one it created; nothing was deleted. Delete the duplicate in the Cloudflare dashboard (DNS -> Records), then re-run.`
+        );
+      }
+      const have = matches3[0];
+      if (!isOwned(have)) {
+        throw new Error(
+          `Cloudflare DNS: refusing to delete ${describe(want)} at ${want.name}: golive did not create it (its comment does not start with "${OWNED_PREFIX}"), so nothing was deleted. Delete it in the Cloudflare dashboard (DNS -> Records) if it is no longer used, or set its comment to start with "${OWNED_PREFIX}" to let golive manage it.`
+        );
+      }
+      try {
+        await api2(ctx, "DELETE", `/zones/${zone.id}/dns_records/${encodeURIComponent(have.id)}`, `delete ${want.type} ${want.name}`, void 0, true);
+      } catch (e) {
+        if (e instanceof CloudflareError && e.status === 404) return "unchanged";
+        throw e;
+      }
+      forgetId(ctx, have.id);
+      ctx.log.info(`cloudflare: deleted ${want.type} ${want.name} -> ${short(want.content)}`);
+      return "removed";
+    });
   },
   async upsert(ctx, domain, record2) {
     return withZone(ctx, domain, async (zone) => {
@@ -12180,6 +12975,7 @@ var same = (a, b) => sameValue(a, b) && (a.type !== "MX" || a.priority === b.pri
 var ownedKey = (zone, id2) => `godaddy.recordFingerprint:${zone}:${id2}`;
 var snapshot2 = (r) => fingerprint(JSON.stringify(r));
 var owned = (ctx, zone, r) => ctx.state.resource(ownedKey(zone, r.recordId)) === snapshot2(r);
+var brief = (s) => s.length > 80 ? `${s.slice(0, 77)}...` : s;
 function remember4(ctx, zone, r) {
   ctx.state.save((s) => {
     s.resources[ownedKey(zone, r.recordId)] = snapshot2(r);
@@ -12225,6 +13021,41 @@ var godaddyDns = {
     const found = await zoneAndRecords(ctx, domain);
     if (!found) throw new GoDaddyError("GoDaddy does not serve accessible authoritative DNS for this domain. Use its current DNS provider.");
     return found.records.filter((r) => TYPES3.has(r.type)).map((r) => publicRecord(r, found.zone));
+  },
+  async listOwned(ctx, domain) {
+    const found = await zoneAndRecords(ctx, domain);
+    if (!found) throw new GoDaddyError("GoDaddy does not serve accessible authoritative DNS for this domain. Use its current DNS provider.");
+    return found.records.filter((r) => TYPES3.has(r.type) && owned(ctx, found.zone, r)).map((r) => publicRecord(r, found.zone));
+  },
+  async remove(ctx, domain, record2) {
+    const found = await zoneAndRecords(ctx, domain);
+    if (!found) throw new GoDaddyError("GoDaddy does not serve accessible authoritative DNS for this domain. Use its current DNS provider.");
+    const { zone } = found;
+    const want = desired(record2, zone);
+    const fqdn = want.name === "@" ? zone : `${want.name}.${zone}`;
+    const matching = found.records.filter((r) => same(r, want));
+    if (!matching.length) return "unchanged";
+    if (matching.length > 1) {
+      throw new GoDaddyError(
+        `GoDaddy DNS: ${fqdn} has ${matching.length} identical ${want.type} records (${matching.map((r) => r.recordId).join(", ")}), so golive cannot tell which one it created; nothing was deleted. Remove the duplicate in the GoDaddy dashboard, then re-run.`
+      );
+    }
+    const have = matching[0];
+    if (!owned(ctx, zone, have)) {
+      throw new GoDaddyError(
+        `GoDaddy DNS: refusing to delete ${want.type} ${fqdn} -> ${brief(content(want.type, want.data))}: golive did not create it (no matching ownership fingerprint in state), so nothing was deleted. Delete it in the GoDaddy DNS dashboard if it is no longer used; golive can only remove records it wrote itself.`
+      );
+    }
+    try {
+      await api3(ctx, "DELETE", `${pathFor(zone)}/${encodeURIComponent(have.recordId)}`);
+    } catch (e) {
+      if (e instanceof GoDaddyError && e.status === 404) return "unchanged";
+      throw e;
+    }
+    ctx.state.save((s) => {
+      delete s.resources[ownedKey(zone, have.recordId)];
+    });
+    return "removed";
   },
   async upsert(ctx, domain, record2) {
     const found = await zoneAndRecords(ctx, domain);
@@ -12460,6 +13291,31 @@ var matches = (r, want) => r.name === want.name && r.type === want.type && r.con
 function conflict2(want) {
   throw new Error(`Porkbun DNS conflict at ${want.name}: existing records cannot safely become the required ${want.type}. Review them in Porkbun; golive only replaces a single record marked with notes starting "golive:" and never deletes unrelated records.`);
 }
+async function prepare(ctx, domain, record2) {
+  if (!TYPES4.has(record2.type)) throw new Error(`Porkbun DNS does not support ${String(record2.type)} in golive.`);
+  if (record2.proxied) throw new Error("Porkbun DNS adapter cannot enable a proxy. Set proxied=false.");
+  const want = {
+    ...record2,
+    name: name2(record2.name, true),
+    content: content2(record2.type, record2.content),
+    // Neutral DNS records may use Cloudflare's automatic TTL sentinel. Porkbun uses zero.
+    ttl: record2.ttl === 1 ? 0 : record2.ttl,
+    ...record2.type === "MX" ? { priority: record2.priority ?? 10 } : {}
+  };
+  if (want.ttl !== void 0 && (!Number.isInteger(want.ttl) || want.ttl < 0)) throw new Error("Porkbun DNS TTL must be a non-negative integer.");
+  if (want.priority !== void 0 && (!Number.isInteger(want.priority) || want.priority < 0 || want.priority > 65535)) throw new Error("Porkbun DNS priority must be an integer from 0 to 65535.");
+  const zone = await requireZone2(ctx, domain);
+  if (!inside(want.name, zone)) throw new Error(`Porkbun DNS record ${want.name} is outside ${zone}; nothing was changed.`);
+  if (!await withinAuthority(ctx, want.name, zone)) throw new Error(`Porkbun DNS record ${want.name} is beneath a delegated child zone; nothing was changed.`);
+  if (want.type === "CNAME" && want.name === zone) throw new Error("Porkbun apex CNAME is unsafe; use the host-provided A/AAAA record. golive does not substitute ALIAS automatically.");
+  const all = await records2(ctx, zone);
+  if (all.some((r) => r.type === "NS" && r.name !== zone && inside(want.name, r.name))) {
+    throw new Error(`Porkbun DNS record ${want.name} is beneath a delegated child zone in the parent records; nothing was changed.`);
+  }
+  return { zone, want, all };
+}
+var gone = (e) => e instanceof PorkbunError && (e.status === 404 || e.code === "NOT_FOUND" || e.code === "INVALID_RECORD_ID");
+var brief2 = (s) => s.length > 80 ? `${s.slice(0, 77)}...` : s;
 var porkbunDns = {
   async hosts(ctx, domain) {
     return await findZone2(ctx, domain) !== null;
@@ -12468,27 +13324,37 @@ var porkbunDns = {
     const zone = await requireZone2(ctx, domain);
     return (await records2(ctx, zone)).filter((r) => TYPES4.has(r.type)).map((r) => ({ type: r.type, name: r.name, content: r.content, ttl: r.ttl, priority: r.priority, proxied: false }));
   },
-  async upsert(ctx, domain, record2) {
-    if (!TYPES4.has(record2.type)) throw new Error(`Porkbun DNS does not support ${String(record2.type)} in golive.`);
-    if (record2.proxied) throw new Error("Porkbun DNS adapter cannot enable a proxy. Set proxied=false.");
-    const want = {
-      ...record2,
-      name: name2(record2.name, true),
-      content: content2(record2.type, record2.content),
-      // Neutral DNS records may use Cloudflare's automatic TTL sentinel. Porkbun uses zero.
-      ttl: record2.ttl === 1 ? 0 : record2.ttl,
-      ...record2.type === "MX" ? { priority: record2.priority ?? 10 } : {}
-    };
-    if (want.ttl !== void 0 && (!Number.isInteger(want.ttl) || want.ttl < 0)) throw new Error("Porkbun DNS TTL must be a non-negative integer.");
-    if (want.priority !== void 0 && (!Number.isInteger(want.priority) || want.priority < 0 || want.priority > 65535)) throw new Error("Porkbun DNS priority must be an integer from 0 to 65535.");
+  async listOwned(ctx, domain) {
     const zone = await requireZone2(ctx, domain);
-    if (!inside(want.name, zone)) throw new Error(`Porkbun DNS record ${want.name} is outside ${zone}; nothing was changed.`);
-    if (!await withinAuthority(ctx, want.name, zone)) throw new Error(`Porkbun DNS record ${want.name} is beneath a delegated child zone; nothing was changed.`);
-    if (want.type === "CNAME" && want.name === zone) throw new Error("Porkbun apex CNAME is unsafe; use the host-provided A/AAAA record. golive does not substitute ALIAS automatically.");
-    const all = await records2(ctx, zone);
-    if (all.some((r) => r.type === "NS" && r.name !== zone && inside(want.name, r.name))) {
-      throw new Error(`Porkbun DNS record ${want.name} is beneath a delegated child zone in the parent records; nothing was changed.`);
+    return (await records2(ctx, zone)).filter((r) => TYPES4.has(r.type) && owned2(r)).map((r) => ({ type: r.type, name: r.name, content: r.content, ttl: r.ttl, priority: r.priority, proxied: false }));
+  },
+  async remove(ctx, domain, record2) {
+    const { zone, want, all } = await prepare(ctx, domain, record2);
+    const here = all.filter((r) => r.name === want.name);
+    const matching = here.filter((r) => r.type === want.type && r.content === want.content && (want.type !== "MX" || r.priority === want.priority));
+    if (!matching.length) return "unchanged";
+    if (matching.length > 1) {
+      throw new Error(
+        `Porkbun DNS: ${want.name} has ${matching.length} identical ${want.type} records (${matching.map((r) => r.id).join(", ")}), so golive cannot tell which one it created; nothing was deleted. Remove the duplicate in Porkbun, then re-run.`
+      );
     }
+    const have = matching[0];
+    if (!owned2(have)) {
+      throw new Error(
+        `Porkbun DNS: refusing to delete ${want.type} ${want.name} -> ${brief2(have.content)}: golive did not create it (its notes do not start with "${OWNED}"), so nothing was deleted. Delete it in Porkbun if it is no longer used, or set its notes to start with "${OWNED}" to let golive manage it.`
+      );
+    }
+    try {
+      await api4(ctx, "POST", `/dns/delete/${encodeURIComponent(zone)}/${encodeURIComponent(have.id)}`);
+    } catch (e) {
+      if (gone(e)) return "unchanged";
+      throw e;
+    }
+    ctx.log.info(`porkbun: deleted ${want.type} ${want.name}`);
+    return "removed";
+  },
+  async upsert(ctx, domain, record2) {
+    const { zone, want, all } = await prepare(ctx, domain, record2);
     const here = all.filter((r) => r.name === want.name);
     const equal = here.filter((r) => r.type === want.type && r.content === want.content);
     if (here.some((r) => r.type === "ALIAS" || (r.type === "CNAME" || want.type === "CNAME") && r.type !== want.type)) conflict2(want);
@@ -12732,7 +13598,7 @@ async function netlifyRead(ctx, operation, path, params) {
 init_secret();
 
 // src/adapters/netlify-project.ts
-import { basename as basename7, join as join13 } from "node:path";
+import { basename as basename8, join as join13 } from "node:path";
 import { readFileSync as readFileSync11 } from "node:fs";
 var num = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null;
 function publicOrigin(value) {
@@ -12830,6 +13696,9 @@ function remember5(ctx, p) {
   });
   return ref(p);
 }
+function rememberCreated2(ctx, id2) {
+  ctx.state.save((s) => void (s.resources["netlify.createdProjectId"] = id2));
+}
 async function creationTarget3(ctx) {
   const chosen = configuredAccount(ctx);
   let a;
@@ -12851,7 +13720,7 @@ var netlifyProject = {
   },
   async candidates(ctx) {
     const owner = configuredAccount(ctx);
-    return (await listSites(ctx, basename7(ctx.cwd), owner ? await accountInfo(ctx, owner) : void 0)).map(ref);
+    return (await listSites(ctx, basename8(ctx.cwd), owner ? await accountInfo(ctx, owner) : void 0)).map(ref);
   },
   async resolve(ctx, idOrName) {
     return ref(await resolveSite(ctx, idOrName));
@@ -12868,7 +13737,27 @@ var netlifyProject = {
     if ((await listSites(ctx, name3, a)).some((p2) => p2.name === name3)) throw new NetlifyError("A Netlify site with this name already exists in the selected team. Re-plan to explicitly select it; it was not adopted or changed.");
     const p = siteInfo(await netlifyHttp(ctx, "POST", `/${encodeURIComponent(a.slug)}/sites?configure_dns=false`, { name: name3 }));
     if (p.name !== name3 || p.accountId !== a.id || p.accountSlug !== a.slug) throw new NetlifyError("Netlify created a site with an unexpected destination. Stop and inspect that account; no environment variables or deployment were changed.");
-    return remember5(ctx, p);
+    const created = remember5(ctx, p);
+    rememberCreated2(ctx, p.id);
+    return created;
+  },
+  async remove(ctx) {
+    const id2 = ctx.state.resource("netlify.siteId");
+    if (!id2) return { removed: false, reason: "no Netlify project is linked in state" };
+    if (ctx.state.resource("netlify.createdProjectId") !== id2) {
+      return { removed: false, reason: "the project was adopted or selected, not created by golive" };
+    }
+    try {
+      await netlifyHttp(ctx, "DELETE", `/sites/${encodeURIComponent(id2)}`);
+    } catch (e) {
+      if (!(e instanceof NetlifyError && e.status === 404)) throw e;
+    }
+    ctx.state.save((s) => {
+      delete s.resources["netlify.siteId"];
+      delete s.resources["netlify.siteName"];
+      delete s.resources["netlify.createdProjectId"];
+    });
+    return { removed: true };
   }
 };
 
@@ -13024,7 +13913,7 @@ var netlifyAdapter = {
 // src/adapters/neon.ts
 init_secret();
 init_http();
-import { basename as basename8 } from "node:path";
+import { basename as basename9 } from "node:path";
 
 // src/adapters/neon-api.ts
 init_secret();
@@ -13180,7 +14069,7 @@ async function current2(ctx) {
 async function candidates2(ctx) {
   const o = await freeOrg2(ctx);
   const all = await projects(ctx, id(o.id));
-  const name3 = basename8(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63) || "app";
+  const name3 = basename9(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63) || "app";
   const matches3 = all.filter((p) => p.name.toLowerCase() === name3);
   if (matches3.length) {
     if (matches3.length !== 1 || !cfg(ctx).branchId || !cfg(ctx).database || !cfg(ctx).role) throw new NeonError("A same-named Neon project already exists. Select its exact projects.db ID and set neon.branchId, neon.database and neon.role before re-planning. No defaults were assumed.");
@@ -13403,248 +14292,6 @@ var ADAPTERS = [cloudflareAdapter, godaddyAdapter, neonAdapter, netlifyAdapter, 
 
 // src/links/accounts.ts
 init_types();
-
-// src/links/util.ts
-init_secret();
-import { basename as basename9 } from "node:path";
-async function axisStatus(ctx, axis) {
-  const id2 = ctx.config.stack[axis];
-  if (!id2) return { kind: "none" };
-  const adapter = adapterFor(ctx, axis);
-  if (!adapter || !adapter.automated) return { kind: "guided", provider: id2, title: adapter?.title ?? id2 };
-  const status = await authOf(ctx, adapter);
-  return status.ok ? { kind: "ready", adapter } : { kind: "unauthed", adapter, status };
-}
-async function ready(ctx, axis, k) {
-  const s = await axisStatus(ctx, axis);
-  if (s.kind !== "ready") return void 0;
-  const c = s.adapter.capabilities[k];
-  return c ? { adapter: s.adapter, cap: c } : void 0;
-}
-var memos = /* @__PURE__ */ new WeakMap();
-function memo(ctx) {
-  let m = memos.get(ctx);
-  if (!m) {
-    m = { auth: /* @__PURE__ */ new Map(), planned: /* @__PURE__ */ new Set(), steps: /* @__PURE__ */ new Map(), redeployAfter: /* @__PURE__ */ new Set(), pendingProjects: /* @__PURE__ */ new Map(), identity: /* @__PURE__ */ new Map() };
-    memos.set(ctx, m);
-  }
-  return m;
-}
-function resetMemo(ctx) {
-  memos.delete(ctx);
-}
-function authOf(ctx, adapter) {
-  const m = memo(ctx);
-  let p = m.auth.get(adapter.id);
-  if (!p) {
-    p = adapter.auth(ctx).catch((e) => ({ ok: false, howToFix: `checking ${adapter.title} access failed: ${errMsg(e)}` }));
-    m.auth.set(adapter.id, p);
-  }
-  return p;
-}
-function track(ctx, steps, opts = {}) {
-  const m = memo(ctx);
-  for (const s of steps) {
-    m.planned.add(s.id);
-    m.steps.set(s.id, s);
-    const redeploy = typeof opts.needsRedeploy === "function" ? opts.needsRedeploy(s) : opts.needsRedeploy;
-    if (redeploy) m.redeployAfter.add(s.id);
-  }
-  return steps;
-}
-var writesProduction = (s) => s.id.endsWith(":production");
-function deps(ctx, ids) {
-  const planned = memo(ctx).planned;
-  return [...new Set(ids)].filter((id2) => planned.has(id2));
-}
-function step(s) {
-  return { dependsOn: [], verifyWith: [], ...s };
-}
-function intentOf(parts) {
-  return Object.keys(parts).sort().map((k) => {
-    const v = parts[k];
-    return `${k}=${Array.isArray(v) ? [...v].sort().join(",") : v ?? ""}`;
-  }).join(";");
-}
-function errMsg(e) {
-  return redact(e instanceof Error ? e.message : String(e));
-}
-function repoName2(ctx) {
-  const s = basename9(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
-  return s || "app";
-}
-async function productionUrl(ctx) {
-  if (ctx.config.domain) return `https://${ctx.config.domain}`;
-  if (!lastDeployAt(ctx)) return null;
-  return hostUrl(ctx, "production");
-}
-var DEPLOYED_KEY = "deployed:production";
-var REDEPLOY_KEY = "redeploy:production";
-function lastDeployAt(ctx) {
-  const at = ctx.state.resource(DEPLOYED_KEY);
-  if (at) return at;
-  const steps = ctx.state.get().steps;
-  const done = ["deploy:production", "deploy:production:final"].map((id2) => steps[id2]).filter((r) => r?.status === "done");
-  return done.map((r) => r.at).sort().at(-1);
-}
-function pendingRedeploy(ctx) {
-  return ctx.state.resource(REDEPLOY_KEY);
-}
-async function hostUrl(ctx, target) {
-  const h = await ready(ctx, "hosting", "url");
-  if (!h) return null;
-  try {
-    const u = await h.cap.get(ctx, target);
-    return u ? u.replace(/\/+$/, "") : null;
-  } catch {
-    return null;
-  }
-}
-function joinUrl(base, path) {
-  if (/^https?:\/\//.test(path)) return path;
-  return `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
-}
-function uniq2(xs) {
-  return [...new Set(xs)];
-}
-var SECRET_KEYS = /* @__PURE__ */ new Set(["supabase.secretKey", "db.url", "db.directUrl", "stripe.secretKey", "stripe.webhookSecret", "resend.apiKey"]);
-function mappedEnv(ctx) {
-  return mapEnv(ctx.detect.envRefs).mapped;
-}
-function namesFor(ctx, key) {
-  return mappedEnv(ctx).filter((m) => m.key === key).map((m) => m.name);
-}
-function isManaged(ctx, name3, target) {
-  return Boolean(ctx.state.get().secrets[`${name3}@${target}`]);
-}
-async function observeNames(ctx, env, target, hostPending) {
-  if (hostPending) return null;
-  try {
-    return new Set(await env.listNames(ctx, target));
-  } catch {
-    return null;
-  }
-}
-var envSourceKey = (name3, target) => `env:${name3}@${target}`;
-function decideEnv(ctx, target, names, present, sourceOf) {
-  const out = { write: [], keep: [], recheck: present === null };
-  for (const name3 of uniq2(names)) {
-    if (!present || !present.has(name3)) out.write.push({ name: name3, action: "add" });
-    else if (!isManaged(ctx, name3, target)) out.keep.push(name3);
-    else if (!sourceOf || ctx.state.resource(envSourceKey(name3, target)) !== sourceOf(name3)) out.write.push({ name: name3, action: "update" });
-  }
-  return out;
-}
-function envPreview(d, describe2) {
-  const lines = d.write.map((w) => `${w.action === "add" ? "add" : "update (managed by golive)"} ${w.name} \u2190 ${describe2(w.name)}`);
-  for (const k of d.keep) lines.push(`keep ${k} (already set, not managed by golive)`);
-  if (d.recheck) lines.push("host project not observable yet: names found already set (and not managed by golive) at apply time are kept");
-  return lines;
-}
-function asSecret(name3, value) {
-  return value instanceof Secret ? value : new Secret(name3, value);
-}
-async function writeEnv(sctx, env, target, entries, recheck) {
-  const changes = [];
-  const written = [];
-  const present = recheck ? new Set(await env.listNames(sctx, target)) : null;
-  for (const e of entries) {
-    if (present?.has(e.name) && !isManaged(sctx, e.name, target)) {
-      changes.push(`kept ${e.name} (${target}): already set, not managed by golive`);
-      continue;
-    }
-    const secret = SECRET_KEYS.has(e.key) || e.value instanceof Secret;
-    const value = secret ? asSecret(e.name, e.value) : e.value;
-    await env.set(sctx, e.name, value, [target], { sensitive: secret });
-    if (target === "production") sctx.remember(REDEPLOY_KEY, (/* @__PURE__ */ new Date()).toISOString());
-    if (value instanceof Secret) sctx.rememberSecret(e.name, target, value);
-    else sctx.rememberValue(e.name, target, value);
-    if (e.source) sctx.remember(envSourceKey(e.name, target), e.source);
-    written.push(e.name);
-    changes.push(`set ${e.name} (${target})${value instanceof Secret ? ` fp:${value.fingerprint}` : ""}`);
-  }
-  return { changes, written };
-}
-async function verifyEnvWritten(ctx, env, target, names, stepId, hostTitle) {
-  if (!names.length) return [];
-  const id2 = `${stepId}:env-written`;
-  const title = `${hostTitle} ${target} env has the names this step set`;
-  let present;
-  try {
-    present = new Set(await env.listNames(ctx, target));
-  } catch (e) {
-    return [{ id: id2, title, status: "fail", severity: "high", evidence: [`could not list ${target} env names: ${errMsg(e)}`], fix: "Check the hosting login, then re-run apply." }];
-  }
-  const missing = names.filter((n) => !present.has(n));
-  if (missing.length) {
-    return [{ id: id2, title, status: "fail", severity: "high", evidence: [`${target}: still missing after the write: ${missing.join(", ")}`], fix: `${hostTitle} did not keep ${missing.join(", ")} (${target}); check its dashboard, then re-run apply.` }];
-  }
-  return [{ id: id2, title, status: "pass", severity: "info", evidence: [`${target}: ${names.join(", ")} present`] }];
-}
-async function availableKeys(ctx, outputs4, target, requestedKeys) {
-  const o = outputs4;
-  try {
-    if (o.provides) return new Set(await o.provides(ctx, target, requestedKeys));
-    const out = await o.outputs(ctx, target, requestedKeys);
-    return new Set(Object.keys(out).filter((k) => out[k] !== void 0));
-  } catch {
-    return null;
-  }
-}
-var OUTPUT_KEYS = ["supabase.url", "supabase.publishableKey", "supabase.secretKey", "db.url", "db.directUrl", "stripe.secretKey", "stripe.publishableKey", "stripe.webhookSecret", "resend.apiKey", "app.url"];
-function exposure(ctx) {
-  const seen = /* @__PURE__ */ new Set();
-  const findings = [];
-  for (const f of [...ctx.detect.findings ?? [], ...mapEnv(ctx.detect.envRefs).findings]) {
-    if (f.severity !== "critical") continue;
-    const k = `${f.id}|${f.title}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    findings.push(f);
-  }
-  const out = { findings, all: false, names: /* @__PURE__ */ new Set() };
-  if (!findings.length) return out;
-  const mapped = mappedEnv(ctx);
-  const known = /* @__PURE__ */ new Set([...ctx.detect.envRefs.map((r) => r.name), ...mapped.map((m) => m.name)]);
-  for (const f of findings) {
-    const text = [f.title, ...f.evidence].join(" ");
-    const tokens = new Set(text.split(/[^A-Za-z0-9_]+/).filter(Boolean));
-    const names = [...known].filter((n) => tokens.has(n));
-    const keys3 = OUTPUT_KEYS.filter((k) => text.includes(k));
-    for (const m of mapped) if (keys3.includes(m.key)) names.push(m.name);
-    if (!names.length && !keys3.length) out.all = true;
-    names.forEach((n) => out.names.add(n));
-  }
-  return out;
-}
-function secretBlocked(ctx, name3, key) {
-  if (!SECRET_KEYS.has(key)) return false;
-  const e = exposure(ctx);
-  return e.all || e.names.has(name3);
-}
-function projectAxisFor(ctx, adapter) {
-  return ["db", "hosting"].find((a) => adapterFor(ctx, a)?.id === adapter.id);
-}
-async function projectIdentity(ctx, adapter, opts) {
-  const linker = adapter.capabilities.project;
-  if (!linker) return "";
-  const axis = projectAxisFor(ctx, adapter);
-  if (opts.planning && axis && memo(ctx).pendingProjects.has(axis)) return "pending";
-  const read = () => linker.current(ctx).then(
-    (p2) => p2?.id ?? null,
-    () => null
-  );
-  if (!opts.planning) return read();
-  const m = memo(ctx);
-  let p = m.identity.get(adapter.id);
-  if (!p) m.identity.set(adapter.id, p = read());
-  return p;
-}
-async function projectIntent(ctx, adapter) {
-  return `${adapter.id}:${await projectIdentity(ctx, adapter, { planning: true }) ?? "?"}`;
-}
-
-// src/links/accounts.ts
 var accountsLink = {
   id: "accounts",
   async plan(ctx) {
@@ -13749,7 +14396,7 @@ async function planAxis(ctx, axis, adapter, linker) {
     const resolved = linker.resolve ? await linker.resolve(ctx, chosen) : void 0;
     return { step: selectStep(ctx, axis, adapter, linker, resolved?.id ?? chosen, resolved?.name ?? chosen, account2, resolved) };
   }
-  const name3 = repoName2(ctx);
+  const name3 = repoName(ctx);
   const candidates3 = await linker.candidates(ctx).catch((e) => {
     throw new Error(`listing ${adapter.title} project candidates failed: ${errMsg(e)}`);
   });
@@ -14024,7 +14671,7 @@ function guidedHost(ctx, title, mapped) {
   const handoffs = [];
   for (const t of ctx.config.targets) {
     const forTarget = mapped.filter((m) => !(m.key === "stripe.webhookSecret" && t !== "production"));
-    const names = uniq2(forTarget.map((m) => m.name));
+    const names = uniq(forTarget.map((m) => m.name));
     if (!names.length) continue;
     const mode = modeFor(ctx.config, t);
     const label2 = (n) => {
@@ -14043,179 +14690,6 @@ function guidedHost(ctx, title, mapped) {
     });
   }
   return { steps: [], handoffs };
-}
-
-// src/links/email.ts
-function emailDomain(ctx) {
-  const c = ctx.config.email;
-  if (c?.domain) return c.domain.toLowerCase();
-  const addr = c?.from?.replace(/^.*<|>$/g, "").trim();
-  const d = addr?.split("@")[1];
-  if (d) return d.toLowerCase();
-  return ctx.config.domain?.toLowerCase() ?? null;
-}
-function formatRecord(r) {
-  return `${r.type} ${r.name}${r.priority !== void 0 ? ` (priority ${r.priority})` : ""} = ${r.content}`;
-}
-var emailDomainLink = {
-  id: "email-domain",
-  async plan(ctx) {
-    const r = await ready(ctx, "email", "sendingDomain");
-    if (!r) return null;
-    const domain = emailDomain(ctx);
-    if (!domain) return { steps: [], handoffs: [], warnings: [`${r.adapter.title}: no sending domain (set email.from, email.domain or domain in golive.yaml); email setup left out of this plan`] };
-    const sd = r.cap;
-    const idKey = `${r.adapter.id}.domainId`;
-    const known = ctx.state.resource(idKey);
-    if (known && await sd.status(ctx, known).catch(() => null) === "verified") return null;
-    const idIntent = `${r.adapter.id}:${known ?? "new"}`;
-    const steps = [domainStep(r.adapter, sd, domain, idKey, idIntent)];
-    const handoffs = [];
-    const warnings = [];
-    track(ctx, steps);
-    const dns = await dnsFor(ctx, domain);
-    if (dns.kind === "ready") {
-      const records3 = known && sd.records ? await sd.records(ctx, known).catch(() => null) : null;
-      steps.push(...track(ctx, [dnsStep(ctx, r.adapter, sd, domain, dns.adapter, dns.zone, intentOf({ id: idIntent, zone: `${dns.adapter.id}:${domain}`, records: records3 ? records3.map(formatRecord) : ["(from ensure)"] }))]));
-    } else if (dns.kind === "handoff") handoffs.push(dnsHandoff(r.adapter, domain, dns.where));
-    else if (dns.kind === "error") warnings.push(`${r.adapter.title} sending records for ${domain}: ${dns.message}`);
-    steps.push(...track(ctx, [verifyStep(ctx, r.adapter, sd, domain, idKey, idIntent)]));
-    return { steps, handoffs, warnings };
-  }
-};
-function domainStep(adapter, sd, domain, idKey, idIntent) {
-  return step({
-    id: "email:domain",
-    title: `Set up sending domain ${domain} at ${adapter.title}`,
-    kind: "provision",
-    risk: { writes: true },
-    preview: [`ensure sending domain ${domain} at ${adapter.title} (adopted if it already exists); the DNS records it needs are listed in this step's changes`],
-    intent: intentOf({ id: idIntent, domain }),
-    async run(sctx) {
-      const d = await sd.ensure(sctx, domain);
-      sctx.remember(idKey, d.id);
-      return { changes: [`sending domain ${domain} (${d.id}) needs these DNS records:`, ...d.records.map(formatRecord)] };
-    }
-  });
-}
-function dnsStep(ctx, adapter, sd, domain, dnsAdapter, zone, intent) {
-  return step({
-    id: "email:dns",
-    title: `Publish ${adapter.title} DNS records for ${domain} at ${dnsAdapter.title}`,
-    kind: "wire",
-    risk: { writes: true, dns: true },
-    dependsOn: deps(ctx, ["email:domain"]),
-    preview: [`create/update the ${adapter.title} sending records for ${domain} (SPF, DKIM, MX \u2014 whatever ${adapter.title} returns; DMARC is left to you) at ${dnsAdapter.title}; unrelated records are never deleted`],
-    intent,
-    verifyWith: ["email-dns"],
-    async run(sctx) {
-      const { records: records3 } = await sd.ensure(sctx, domain);
-      const changes = [];
-      for (const rec of records3) changes.push(`${await zone.upsert(sctx, domain, { ...rec, proxied: false })}: ${formatRecord(rec)}`);
-      return { changes };
-    }
-  });
-}
-function verifyStep(ctx, adapter, sd, domain, idKey, idIntent) {
-  const prev = ctx.state.get().steps["email:verify"];
-  return step({
-    id: "email:verify",
-    title: `Ask ${adapter.title} to verify ${domain}`,
-    kind: "wire",
-    risk: { writes: true },
-    dependsOn: deps(ctx, ["email:domain", "email:dns"]),
-    preview: [`ask ${adapter.title} to verify ${domain} (DNS can take a while to propagate; a pending result is not a failure)`, ...prev ? [`previous request: ${prev.at}`] : []],
-    intent: intentOf({ id: idIntent, previous: prev?.at }),
-    verifyWith: ["email-verified"],
-    async run(sctx) {
-      const id2 = sctx.state.resource(idKey) ?? (await sd.ensure(sctx, domain)).id;
-      const changes = [];
-      try {
-        await sd.verify(sctx, id2);
-      } catch (e) {
-        changes.push(`verification request not accepted yet: ${errMsg(e)}`);
-      }
-      const status = await sd.status(sctx, id2).catch(() => "pending");
-      changes.push(`${domain}: ${status}${status === "verified" ? "" : " (DNS may still be propagating; run `verify --only email-verified` later)"}`);
-      return { changes };
-    }
-  });
-}
-async function dnsFor(ctx, domain) {
-  const s = await axisStatus(ctx, "dns");
-  if (s.kind === "unauthed") return { kind: "skip" };
-  if (s.kind === "none") return { kind: "handoff", where: `the DNS host for ${domain}` };
-  if (s.kind === "guided") return { kind: "handoff", where: s.title };
-  const zone = s.adapter.capabilities.dns;
-  if (!zone) return { kind: "handoff", where: `the DNS host for ${domain}` };
-  let hosts;
-  try {
-    hosts = await zone.hosts(ctx, domain);
-  } catch (e) {
-    return {
-      kind: "error",
-      message: `checking whether ${s.adapter.title} hosts ${domain} failed (${errMsg(e)}), so the DNS records are left out of this plan. Fix the ${s.adapter.title} access (token permissions, rate limit or network) and run \`plan\` again.`
-    };
-  }
-  return hosts ? { kind: "ready", adapter: s.adapter, zone } : { kind: "handoff", where: `the DNS host for ${domain} (${s.adapter.title} doesn't host this zone in this account)` };
-}
-function dnsHandoff(adapter, domain, where) {
-  return {
-    id: "email:dns",
-    why: `The ${adapter.title} sending records for ${domain} must be added at a DNS host golive can't write to.`,
-    action: `After apply runs the email:domain step, add the DNS records listed in its changes (or run \`handoff\` / \`plan\` again to print them) at ${where}. Turn proxying off for these records and merge SPF into a single TXT record.`,
-    blocking: true,
-    verifiedBy: "email-dns"
-  };
-}
-var emailKeysLink = {
-  id: "email-keys",
-  async plan(ctx) {
-    const names = namesFor(ctx, "resend.apiKey");
-    if (!names.length) return null;
-    const em = await ready(ctx, "email", "keys");
-    const host = await ready(ctx, "hosting", "env");
-    if (!em || !host) return null;
-    const domain = emailDomain(ctx);
-    if (!domain) return null;
-    const steps = [];
-    for (const target of ctx.config.targets) {
-      const s = await keyStep(ctx, em.adapter, em.cap, host.adapter, host.cap, domain, target, names);
-      if (s) steps.push(s);
-    }
-    return { steps: track(ctx, steps, { needsRedeploy: writesProduction }), handoffs: [] };
-  }
-};
-async function keyStep(ctx, adapter, keys3, hostAdapter, env, domain, target, names) {
-  if (names.some((n) => secretBlocked(ctx, n, "resend.apiKey"))) return null;
-  const keyIdKey = `${adapter.id}.keyId@${target}`;
-  const keyId = ctx.state.resource(keyIdKey);
-  const present = await observeNames(ctx, env, target, memo(ctx).pendingProjects.has("hosting"));
-  if (keyId && present && names.every((n) => present.has(n))) return null;
-  const decision = decideEnv(ctx, target, names, present);
-  if (!decision.write.length) return null;
-  let written = [];
-  const intent = intentOf({ host: await projectIntent(ctx, hostAdapter), domain, previousKey: keyId, write: decision.write.map((w) => w.name) });
-  return step({
-    id: `email:key:${target}`,
-    title: `Issue a ${adapter.title} sending key for ${target}`,
-    kind: "wire",
-    risk: { writes: true },
-    dependsOn: deps(ctx, ["email:domain", "project:hosting"]),
-    preview: [`issue a sending-only ${adapter.title} key scoped to ${domain} for ${target}`, ...envPreview(decision, () => `resend.apiKey (sensitive)`)],
-    intent,
-    async run(sctx) {
-      const k = await keys3.issue(sctx, target, { domain });
-      sctx.remember(keyIdKey, k.id);
-      const changes = [`issued ${adapter.title} key ${k.id} (${target}) fp:${k.secret.fingerprint}`];
-      if (keyId && keyId !== k.id) changes.push(`previous golive key ${keyId} was left active; revoke it in ${adapter.title} once nothing uses it`);
-      const w = await writeEnv(sctx, env, target, decision.write.map((x) => ({ name: x.name, key: k.key, value: k.secret, source: `${k.key}|${adapter.id}|${k.id}` })), decision.recheck);
-      written = w.written;
-      changes.push(...w.changes);
-      return { changes: changes.length ? changes : [`nothing written to ${hostAdapter.title}`] };
-    },
-    verifyInline: (vctx) => verifyEnvWritten(vctx, env, target, written, `email:key:${target}`, hostAdapter.title)
-  });
 }
 
 // src/links/domain.ts
@@ -14239,7 +14713,7 @@ var domainLink = {
     const handoffs = [];
     const warnings = [];
     const dns = await dnsFor(ctx, domain);
-    if (dns.kind === "ready") steps.push(...track(ctx, [dnsStep2(ctx, host.adapter, attach, domain, dns.adapter, dns.zone, records3, project)]));
+    if (dns.kind === "ready") steps.push(...track(ctx, [dnsStep3(ctx, host.adapter, attach, domain, dns.adapter, dns.zone, records3, project)]));
     else if (dns.kind === "handoff") handoffs.push(dnsHandoff2(host.adapter, domain, dns.where, records3));
     else if (dns.kind === "error") warnings.push(`${domain}: ${dns.message}`);
     if (attach.verify) steps.push(...track(ctx, [verifyStep2(ctx, host.adapter, attach.verify.bind(attach), attach, domain, project)]));
@@ -14268,10 +14742,10 @@ function normContent2(r) {
   if (r.type === "CNAME" || r.type === "MX") return r.content.trim().replace(/\.$/, "").toLowerCase();
   return r.content.trim().replace(/\s+/g, " ").toLowerCase();
 }
-var recordKey2 = (r) => `${r.type} ${normName2(r.name)} ${normContent2(r)}${r.priority !== void 0 ? ` ${r.priority}` : ""}`;
+var recordKey3 = (r) => `${r.type} ${normName2(r.name)} ${normContent2(r)}${r.priority !== void 0 ? ` ${r.priority}` : ""}`;
 var sameRecords = (a, b) => {
-  const ka = [...new Set(a.map(recordKey2))].sort();
-  const kb = [...new Set(b.map(recordKey2))].sort();
+  const ka = [...new Set(a.map(recordKey3))].sort();
+  const kb = [...new Set(b.map(recordKey3))].sort();
   return ka.length === kb.length && ka.every((k, i) => k === kb[i]);
 };
 var spfTerms = (c) => c.split(/\s+/).filter((t) => t && t !== "v=spf1" && !/^[-~?+]?all$/.test(t));
@@ -14282,7 +14756,7 @@ function satisfies(have, want) {
   if (h === w) return true;
   return want.type === "TXT" && w.startsWith("v=spf1") && h.startsWith("v=spf1") && spfTerms(w).every((t) => spfTerms(h).includes(t));
 }
-function dnsStep2(ctx, adapter, attach, domain, dnsAdapter, zone, planned, project) {
+function dnsStep3(ctx, adapter, attach, domain, dnsAdapter, zone, planned, project) {
   let wrote = [];
   return step({
     id: "domain:dns",
@@ -14291,7 +14765,7 @@ function dnsStep2(ctx, adapter, attach, domain, dnsAdapter, zone, planned, proje
     risk: { writes: true, dns: true },
     dependsOn: deps(ctx, ["domain:attach"]),
     preview: planned?.length ? planned.map((r) => `upsert at ${dnsAdapter.title}: ${formatRecord(r)} (not proxied)`) : [`upsert at ${dnsAdapter.title} the records ${adapter.title} requires for ${domain} (known after attaching)`],
-    intent: intentOf({ project, zone: `${dnsAdapter.id}:${domain}`, records: planned?.length ? planned.map(recordKey2) : ["(after attach)"] }),
+    intent: intentOf({ project, zone: `${dnsAdapter.id}:${domain}`, records: planned?.length ? planned.map(recordKey3) : ["(after attach)"] }),
     async run(sctx) {
       const records3 = await attach.requiredRecords(sctx, domain);
       if (planned?.length && !sameRecords(planned, records3)) {
@@ -14422,7 +14896,7 @@ var paymentsLink = {
       }
     }
     if (webhooks2 && prod) {
-      const r = await webhookStep(ctx, adapter, webhooks2, host);
+      const r = await webhookStep2(ctx, adapter, webhooks2, host);
       if (r.step) steps.push(r.step);
       handoffs.push(...r.handoffs);
       warnings.push(...r.warnings);
@@ -14576,7 +15050,7 @@ async function guidedWebhookHandoff(ctx, adapter, hostTitle) {
     verifiedBy: "webhook-registered"
   };
 }
-async function webhookStep(ctx, adapter, wh, host) {
+async function webhookStep2(ctx, adapter, wh, host) {
   const warnings = [];
   const handoffs = [];
   const cfg2 = ctx.config.payments?.webhook;
@@ -14792,7 +15266,7 @@ var authRedirectsLink = {
       verifyWith: ["auth-redirects"],
       async run(sctx) {
         const cur = await authConfig.get(sctx);
-        const redirectUrls = uniq2([...cur.redirectUrls, ...wanted]);
+        const redirectUrls = uniq([...cur.redirectUrls, ...wanted]);
         const added = redirectUrls.filter((u) => !cur.redirectUrls.includes(u));
         await authConfig.set(sctx, { siteUrl: prod, redirectUrls });
         return { changes: [...cur.siteUrl !== prod ? [`site URL ${cur.siteUrl ?? "(unset)"} \u2192 ${prod}`] : [], ...added.map((u) => `added redirect URL ${u}`)] };
@@ -14808,7 +15282,7 @@ async function desiredRedirects(ctx, prod) {
     const h = await ready(ctx, "hosting", "url");
     patterns = h?.cap.previewPatterns ? await h.cap.previewPatterns(ctx).catch(() => []) : [];
   }
-  return { urls: uniq2([own[0], ...patterns, ...own.slice(1)]), preview: new Set(patterns.filter((p) => !own.includes(p))) };
+  return { urls: uniq([own[0], ...patterns, ...own.slice(1)]), preview: new Set(patterns.filter((p) => !own.includes(p))) };
 }
 function projectAxisOf(ctx, adapterId) {
   return ["db", "hosting"].find((a) => adapterFor(ctx, a)?.id === adapterId);
@@ -17356,8 +17830,9 @@ Commands (add --json for machine output; --cwd <dir> to target another repo):
        [--stripe-publishable test=pk_test_\u2026,live=pk_live_\u2026]   (public keys only)
   doctor                     Is each chosen provider reachable/logged in? What must the human do?
   plan                       Show the steps golive would take (read-only). Prints a planId.
+  teardown                   Inverse plan: only resources golive created, for removal. Prints a planId.
   apply --plan <id> --yes    Execute the approved plan. Risky steps also need --confirm-live /
-        [--confirm-live] [--confirm-dns] [--only id,id] [--force]
+        [--confirm-live] [--confirm-dns] [--confirm-destroy] [--only id,id] [--force]
   verify [--only id,id]      Run live checks; writes .golive/report.json and GOLIVE_REPORT.md.
   handoff                    What only the human can do (logins, KYC, payments), and whether it's done.
 `;
@@ -17441,9 +17916,15 @@ async function main(argv) {
       emit({ ok: true, ...planView(plan), findings }, { json: json2 });
       return 0;
     }
+    case "teardown": {
+      const plan = await buildTeardownPlan(ctx);
+      const note = plan.steps.length || plan.handoffs.length ? void 0 : "nothing golive created was found to remove";
+      emit({ ok: true, ...planView(plan), ...note ? { note } : {} }, { json: json2 });
+      return 0;
+    }
     case "apply": {
-      if (typeof flags.plan !== "string") throw new UsageError("apply needs --plan <planId> (from `plan`, approved by the human)");
-      const plan = await buildPlan(ctx, linkList(), { unmappedEnv: env.unmapped, warnings: [] });
+      if (typeof flags.plan !== "string") throw new UsageError("apply needs --plan <planId> (from `plan` or `teardown`, approved by the human)");
+      const plan = await approvedPlan(ctx, flags.plan, () => buildPlan(ctx, linkList(), { unmappedEnv: env.unmapped, warnings: [] }));
       const only = typeof flags.only === "string" ? flags.only.split(",").map((s) => s.trim()).filter(Boolean) : void 0;
       const unknown = (only ?? []).filter((id2) => !plan.steps.some((s) => s.id === id2));
       if (unknown.length) throw new UsageError(`unknown step id(s): ${unknown.join(", ")}. Steps in this plan: ${plan.steps.map((s) => s.id).join(", ") || "(none)"}`);
@@ -17452,6 +17933,7 @@ async function main(argv) {
         yes: flags.yes === true,
         confirmLive: flags["confirm-live"] === true,
         confirmDns: flags["confirm-dns"] === true,
+        confirmDestroy: flags["confirm-destroy"] === true,
         only,
         force: flags.force === true
       });

@@ -4,7 +4,8 @@ Automated database provider with mock coverage and an approved Netlify + Neon th
 on 2026-09-23. New Free-project creation, connection transfer to both hosting environments and
 read-only database/role verification passed after the `--data=-` parser fix. Separately approved
 schema, two-session API and browser CRUD/refresh checks also passed. Exact-resource cleanup later
-passed under its own approval using a supervised fixture helper, not a built-in teardown command.
+passed under its own approval using a supervised fixture helper (Neon projects remain a manual
+handoff in `golive teardown`).
 This validates the tested Free organization and app, not every account or workload. It supplies
 server-only pooled `db.url` and direct `db.directUrl`. It does not supply Supabase keys or migrate a
 Supabase SDK application, and it does not provision Neon Auth, Data API or application schemas.

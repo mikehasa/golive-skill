@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { godaddyAdapter, godaddyDns } from '../../src/adapters/godaddy.js';
-import { Secret } from '../../src/core/secret.js';
+import { Secret, fingerprint } from '../../src/core/secret.js';
 import type { DnsRecord, HttpRequest } from '../../src/core/types.js';
 import { mockExec, mockHttp, testCtx } from '../helpers.js';
 
@@ -11,6 +11,7 @@ const cname: DnsRecord = { type: 'CNAME', name: 'app.example.com', content: 'cna
 function fake(opts: {
   zone?: string; records?: Record[]; nameservers?: string[]; delegations?: { [domain: string]: string[] };
   authStatus?: number; readStatus?: number; dnsStatus?: number; badPage?: unknown; createStatus?: number; lostCreate?: boolean;
+  deleteStatus?: number;
   onRead?: (records: Record[], count: number) => void;
 } = {}) {
   const zone = opts.zone ?? 'example.com';
@@ -49,6 +50,14 @@ function fake(opts: {
       const changed = { ...(call.body as Omit<Record, 'recordId'>), recordId: id };
       data[index] = changed;
       return { json: changed };
+    }],
+    ['DELETE', new RegExp(`^${API}/zones/${zone}/dns-records/`), (call) => {
+      if (opts.deleteStatus) return { status: opts.deleteStatus, json: { message: TOKEN } };
+      const id = decodeURIComponent(new URL(call.url).pathname.split('/').at(-1)!);
+      const index = data.findIndex((r) => r.recordId === id);
+      if (index < 0) return { status: 404, json: { message: TOKEN } };
+      data.splice(index, 1);
+      return { status: 204 };
     }],
   ]);
   const ctx = testCtx({ tokens: { GODADDY_API_TOKEN: TOKEN }, http: async (req) => { requests.push(req); return http.http(req); } });
@@ -319,6 +328,80 @@ describe('GoDaddy DNS records', () => {
   });
 });
 
+describe('GoDaddy DNS ownership (listOwned / remove)', () => {
+  const fingerprintKey = (id: string) => `godaddy.recordFingerprint:example.com:${id}`;
+  /** The value the adapter stores for a record it wrote (see remember()). */
+  const snapshotOf = (r: unknown) => fingerprint(JSON.stringify(r));
+
+  it('listOwned returns only fingerprint-owned records of supported types', async () => {
+    // Shaped and ordered like the records the adapter parses, so the fingerprints below are the real ones.
+    const nsRow = { recordId: 'ns1', name: 'sub', type: 'NS', data: 'ns.other.test', ttl: 600 };
+    const txtRow = { recordId: 't1', name: '@', type: 'TXT', data: 'owned-verification', ttl: 600 };
+    const f = fake({ records: [nsRow, txtRow, rec({ recordId: 'foreign', data: 'human-edited' })] });
+    f.ctx.state.save((s) => {
+      s.resources[fingerprintKey('ns1')] = snapshotOf(f.data[0]!);
+      s.resources[fingerprintKey('t1')] = snapshotOf(f.data[1]!);
+    });
+    expect(await godaddyDns.listOwned!(f.ctx, 'example.com')).toEqual([
+      { type: 'TXT', name: 'example.com', content: 'owned-verification', ttl: 600, proxied: false },
+    ]);
+    expect(f.writes()).toEqual([]);
+  });
+
+  it('remove deletes the owned record by ID over REST and forgets its fingerprint', async () => {
+    const f = fake();
+    expect(await godaddyDns.upsert(f.ctx, 'example.com', cname)).toBe('created');
+    expect(f.ctx.state.resource(fingerprintKey('r1'))).toBeDefined();
+    expect(await godaddyDns.remove!(f.ctx, 'example.com', cname)).toBe('removed');
+    const deletes = f.calls.filter((c) => c.method === 'DELETE');
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]!.url).toBe(`${API}/zones/example.com/dns-records/r1`);
+    expect(f.data).toEqual([]);
+    expect(f.ctx.state.resource(fingerprintKey('r1'))).toBeUndefined();
+    expect(await godaddyDns.remove!(f.ctx, 'example.com', cname)).toBe('unchanged');
+    expect(f.calls.filter((c) => c.method === 'DELETE')).toHaveLength(1);
+  });
+
+  it('remove refuses an identical record golive did not create', async () => {
+    const f = fake({ records: [rec({ recordId: 'foreign', type: 'CNAME', name: 'app', data: 'cname.vercel-dns.com' })] });
+    await expect(godaddyDns.remove!(f.ctx, 'example.com', cname)).rejects.toThrow(/golive did not create it/);
+    await expect(godaddyDns.remove!(f.ctx, 'example.com', cname)).rejects.toThrow(/app\.example\.com/);
+    expect(f.writes()).toEqual([]);
+    expect(f.data).toHaveLength(1);
+  });
+
+  it('remove is unchanged when nothing matches, and treats a 404 as already gone', async () => {
+    const empty = fake();
+    expect(await godaddyDns.remove!(empty.ctx, 'example.com', cname)).toBe('unchanged');
+    expect(empty.writes()).toEqual([]);
+
+    const gone = fake({ deleteStatus: 404 });
+    await godaddyDns.upsert(gone.ctx, 'example.com', cname);
+    expect(await godaddyDns.remove!(gone.ctx, 'example.com', cname)).toBe('unchanged');
+    expect(gone.calls.filter((c) => c.method === 'DELETE')).toHaveLength(1);
+    expect(gone.data).toHaveLength(1);
+  });
+
+  it('remove refuses an ambiguous match instead of guessing which duplicate to delete', async () => {
+    const f = fake();
+    await godaddyDns.upsert(f.ctx, 'example.com', cname);
+    f.data.push({ recordId: 'dup', type: 'CNAME', name: 'app', data: 'cname.vercel-dns.com', ttl: 600 });
+    await expect(godaddyDns.remove!(f.ctx, 'example.com', cname)).rejects.toThrow(/2 identical CNAME records/);
+    expect(f.calls.filter((c) => c.method === 'DELETE')).toEqual([]);
+    expect(f.data).toHaveLength(2);
+  });
+
+  it('matches an MX only when the priority is equal too', async () => {
+    const f = fake();
+    const mx: DnsRecord = { type: 'MX', name: 'send.example.com', content: 'feedback-smtp.us-east-1.amazonses.com', priority: 10 };
+    expect(await godaddyDns.upsert(f.ctx, 'example.com', mx)).toBe('created');
+    expect(await godaddyDns.remove!(f.ctx, 'example.com', { ...mx, priority: 20 })).toBe('unchanged');
+    expect(f.calls.filter((c) => c.method === 'DELETE')).toEqual([]);
+    expect(await godaddyDns.remove!(f.ctx, 'example.com', mx)).toBe('removed');
+    expect(f.data).toEqual([]);
+  });
+});
+
 describe('GoDaddy CLI (gddy) transport', () => {
   const version = (v: string) => ({ stdout: `gddy version ${v} (commit test, built 2026-09-18)\n` });
   const session = (over: { [key: string]: unknown } = {}) => ({
@@ -374,6 +457,22 @@ describe('GoDaddy CLI (gddy) transport', () => {
       'api', 'call', '/v3/domains/zones/example.com/dns-records', '-X', 'POST', '-o', 'json', '-d',
       JSON.stringify({ name: 'app', type: 'CNAME', data: 'cname.vercel-dns.com', ttl: 600 }),
     ]);
+  });
+
+  it('removes an owned record through gddy api call with -X DELETE', async () => {
+    const made = { name: 'app', type: 'CNAME', data: 'cname.vercel-dns.com', ttl: 600, recordId: 'r-cli-1' };
+    let lists = 0;
+    const exec = mockExec([
+      ['gddy --version', () => version('0.2.21')],
+      ['gddy auth status', () => session()],
+      [new RegExp('^gddy api call '), (c) => (c.args.includes('POST') ? envelope(made, 201) : c.args.includes('DELETE') ? envelope(null, 204) : envelope(++lists === 1 ? { items: [], links: [] } : { items: [made], links: [] }))],
+    ]);
+    const ctx = testCtx({ tokens: { GODADDY_API_TOKEN: TOKEN }, exec: exec.run, http: doh().http });
+    expect(await godaddyDns.upsert(ctx, 'example.com', cname)).toBe('created');
+    expect(await godaddyDns.remove!(ctx, 'example.com', cname)).toBe('removed');
+    const deletion = exec.calls.filter((c) => c.args[0] === 'api').at(-1)!;
+    expect(deletion.args).toEqual(['api', 'call', '/v3/domains/zones/example.com/dns-records/r-cli-1', '-X', 'DELETE', '-o', 'json']);
+    expect(JSON.stringify(exec.calls)).not.toContain(TOKEN);
   });
 
   it('falls back to the PAT when the cached CLI session is expired', async () => {

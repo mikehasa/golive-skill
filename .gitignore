@@ -8,3 +8,5 @@ dist/
 .DS_Store
 # local test fixtures that may hold real credentials
 .fixtures-local/
+# private local agent handoff notes, never published
+HANDOFF.local.md

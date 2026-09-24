@@ -42,6 +42,11 @@ function remember(ctx: Ctx, p: ProjectInfo): void {
   });
 }
 
+/** Marks a project golive itself created; teardown deletes only a project carrying this marker. */
+function rememberCreated(ctx: Ctx, id: string): void {
+  ctx.state.save((s) => void (s.resources['vercel.createdProjectId'] = id));
+}
+
 /** The project id to operate on, or an actionable error when none is linked yet. */
 export async function requireProjectId(ctx: Ctx): Promise<string> {
   const p = await vercelProject.current(ctx);
@@ -157,8 +162,30 @@ export const vercelProject: ProjectLinker = {
     if (!p) throw new VercelError(`Vercel did not return the new project "${name}"; check the dashboard before retrying.`);
     if (approvedTarget && p.accountId !== approvedTarget.scope.id) throw new VercelError('Vercel returned an unexpected project owner; inspect the created resource before continuing.');
     remember(ctx, p);
+    rememberCreated(ctx, p.id);
     ctx.log.info(`vercel: created project ${p.name} (${p.id})`);
     return { id: p.id, name: p.name, ...(approvedTarget ? { scope: approvedTarget.scope } : {}) };
+  },
+
+  async remove(ctx) {
+    const id = ctx.state.resource('vercel.projectId');
+    if (!id) return { removed: false, reason: 'no Vercel project is linked in state' };
+    if (ctx.state.resource('vercel.createdProjectId') !== id) {
+      return { removed: false, reason: 'the project was adopted or selected, not created by golive' };
+    }
+    try {
+      await vercelApi(ctx, 'DELETE', `/v9/projects/${encodeURIComponent(id)}`);
+    } catch (e) {
+      // Already gone: the outcome teardown asked for.
+      if (!isNotFound(e)) throw e;
+    }
+    ctx.state.save((s) => {
+      delete s.resources['vercel.projectId'];
+      delete s.resources['vercel.projectName'];
+      delete s.resources['vercel.createdProjectId'];
+    });
+    ctx.log.info(`vercel: deleted project ${id}`);
+    return { removed: true };
   },
 };
 

@@ -152,6 +152,9 @@ export async function vercelApi<T = unknown>(ctx: Ctx, method: Method, path: str
 
 async function viaCli<T>(ctx: Ctx, user: WhoAmI, method: Method, path: string, body: unknown, opts?: ApiOpts): Promise<T> {
   const args = ['api', path, '-X', method, '--raw', '--non-interactive'];
+  // `vercel api` refuses DELETE non-interactively without this; golive's own gates (creation marker,
+  // approved teardown plan, --confirm-destroy) are the human confirmation for this exact call.
+  if (method === 'DELETE') args.push('--dangerously-skip-permissions');
   if (body !== undefined) args.push('--input', '-');
   const scope = opts?.scopeId ? (opts.scopeId.startsWith('team_') ? opts.scopeId : user.username) : cliScope(ctx, user);
   if (scope) args.push('--scope', scope);

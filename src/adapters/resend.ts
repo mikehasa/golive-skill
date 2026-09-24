@@ -65,7 +65,8 @@ interface Transport {
   verifyDomain(id: string): Promise<void>;
   listKeys(): Promise<Array<{ id: string; name: string }>>;
   createKey(name: string, domainId: string): Promise<{ id: string; token: Secret }>;
-  deleteKey(id: string): Promise<void>;
+  /** `revoked: false, reason: 'key not found'` when the provider no longer has the key (already gone). */
+  deleteKey(id: string): Promise<{ revoked: boolean; reason?: string }>;
   sendEmail(msg: EmailMsg, idempotencyKey: string): Promise<{ id: string }>;
   getEmail(id: string): Promise<{ last_event?: string }>;
 }
@@ -139,7 +140,14 @@ function restTransport(ctx: Ctx, key: Secret): Transport {
       return keyFrom(r, name);
     },
     deleteKey: async (id) => {
-      await call(ctx, key, `delete API key ${id}`, 'DELETE', `/api-keys/${encodeURIComponent(id)}`);
+      try {
+        await call(ctx, key, `delete API key ${id}`, 'DELETE', `/api-keys/${encodeURIComponent(id)}`);
+        return { revoked: true };
+      } catch (e) {
+        // Already gone (revoked by hand, or by an earlier run): the outcome teardown asked for.
+        if (e instanceof HttpError && e.status === 404) return { revoked: false, reason: 'key not found' };
+        throw e;
+      }
     },
     sendEmail: async (msg, idem) => sendRest(ctx, key, msg, idem),
     getEmail: async (id) => call<{ last_event?: string }>(ctx, key, `get email ${id}`, 'GET', `/emails/${encodeURIComponent(id)}`),
@@ -205,7 +213,11 @@ function cliTransport(ctx: Ctx, profile: string | undefined): Transport {
     createKey: async (name, domainId) =>
       keyFrom(await cli<{ id?: string; token?: string }>(ctx, ['api-keys', 'create', '--name', name, '--permission', 'sending_access', '--domain-id', domainId]), name),
     deleteKey: async (id) => {
+      // Every API-side failure of `api-keys delete` carries the same generic `delete_error` code (its
+      // documented codes are auth_error / confirmation_required / delete_error), so an already-gone key
+      // cannot be told apart here the way REST tells its 404 apart. It stays a thrown error.
       await cli(ctx, ['api-keys', 'delete', id, '--yes']);
+      return { revoked: true };
     },
     sendEmail: async (msg, idem) => {
       const r = await cli<{ id?: string }>(ctx, ['emails', 'send', '--from', msg.from, '--to', msg.to, '--subject', msg.subject, '--text', msg.text, '--idempotency-key', idem]);
@@ -399,8 +411,9 @@ const keys: KeyIssuer = {
   },
   async revoke(ctx, id) {
     const t = await transport(ctx);
-    await t.deleteKey(id);
-    ctx.log.info(`revoked Resend API key ${id}`);
+    const r = await t.deleteKey(id);
+    if (r.revoked) ctx.log.info(`revoked Resend API key ${id}`);
+    return r;
   },
 };
 

@@ -20,6 +20,7 @@ function fake(opts: {
   credentialsValid?: boolean; failure?: { status: number; json: unknown }; warnings?: string[];
   recordResponse?: unknown; createResponse?: unknown; duplicate?: boolean; sandbox?: boolean;
   writeError?: 'timeout' | 'server'; saveBeforeError?: boolean;
+  deleteFailure?: { status: number; json: unknown };
 } = {}) {
   const zone = opts.zone ?? 'example.com';
   const rows = structuredClone(opts.rows ?? []);
@@ -54,6 +55,13 @@ function fake(opts: {
       if (b.notes !== undefined) row.notes = b.notes;
       if (opts.writeError === 'timeout') throw new HttpError('request timed out', 0, '');
       if (opts.writeError === 'server') return { status: 503, json: { status: 'ERROR' } };
+      return { json: { status: 'SUCCESS' } };
+    }],
+    ['POST', new RegExp(`${API}/dns/delete/${zone}/\\d+$`), (c) => {
+      if (opts.deleteFailure) return opts.deleteFailure;
+      const index = rows.findIndex((r) => r.id === c.url.split('/').at(-1));
+      if (index < 0) return { status: 400, json: { status: 'ERROR', code: 'NOT_FOUND' } };
+      rows.splice(index, 1);
       return { json: { status: 'SUCCESS' } };
     }],
   ]);
@@ -345,5 +353,74 @@ describe('Porkbun record normalization and writes', () => {
     const f = fake({ createResponse: { status: 'SUCCESS', id: 253333167 } });
     expect(await porkbunDns.upsert(f.ctx, 'example.com', want())).toBe('created');
     expect(f.calls.filter((c) => c.url === `${API}/dns/retrieve/example.com`)).toHaveLength(1); // no extra read needed
+  });
+});
+
+describe('Porkbun ownership (listOwned / remove)', () => {
+  const ownedRow = a({ notes: 'golive: managed' });
+
+  it('listOwned returns only records whose notes mark golive ownership', async () => {
+    const f = fake({ rows: [ownedRow, a({ id: '2', content: '192.0.2.9' }), a({ id: '3', type: 'NS', name: 'sub.example.com', content: 'ns1.other.net', notes: 'golive: managed' })] });
+    expect(await porkbunDns.listOwned!(f.ctx, 'example.com')).toEqual([
+      { type: 'A', name: 'www.example.com', content: '192.0.2.1', ttl: 600, priority: undefined, proxied: false },
+    ]);
+    expect(f.writes()).toEqual([]);
+  });
+
+  it('remove deletes the owned record by ID and leaves other rows alone', async () => {
+    const f = fake({ rows: [ownedRow, a({ id: '2', content: '192.0.2.9' })] });
+    expect(await porkbunDns.remove!(f.ctx, 'example.com', want({ content: '192.0.2.1' }))).toBe('removed');
+    const deletes = f.writes().filter((c) => c.url.includes('/dns/delete/'));
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]!.url).toBe(`${API}/dns/delete/example.com/1`);
+    expect(f.rows.map((r) => r.id)).toEqual(['2']);
+    for (const key of [API_KEY, SECRET_KEY]) expect(JSON.stringify([f.ctx.logs, f.ctx.state.get()])).not.toContain(key);
+  });
+
+  it('refuses to delete an identical record golive did not create', async () => {
+    const f = fake({ rows: [a()] });
+    await expect(porkbunDns.remove!(f.ctx, 'example.com', want({ content: '192.0.2.1' }))).rejects.toThrow(/golive did not create it/);
+    await expect(porkbunDns.remove!(f.ctx, 'example.com', want({ content: '192.0.2.1' }))).rejects.toThrow(/www\.example\.com/);
+    expect(f.writes()).toEqual([]);
+    expect(f.rows).toHaveLength(1);
+  });
+
+  it('is unchanged when the record is already gone, and on a provider not-found', async () => {
+    const absent = fake();
+    expect(await porkbunDns.remove!(absent.ctx, 'example.com', want())).toBe('unchanged');
+    expect(absent.writes()).toEqual([]);
+
+    const notFound = fake({ rows: [ownedRow], deleteFailure: { status: 404, json: { status: 'ERROR', code: 'NOT_FOUND' } } });
+    expect(await porkbunDns.remove!(notFound.ctx, 'example.com', want({ content: '192.0.2.1' }))).toBe('unchanged');
+    expect(notFound.writes()).toHaveLength(1);
+  });
+
+  it('matches an MX only when the priority is equal too', async () => {
+    const f = fake({ rows: [a({ type: 'MX', content: 'feedback-smtp.us-east-1.amazonses.com', prio: '10', notes: 'golive: managed' })] });
+    const record: DnsRecord = { type: 'MX', name: 'www.example.com', content: 'feedback-smtp.us-east-1.amazonses.com', priority: 20 };
+    expect(await porkbunDns.remove!(f.ctx, 'example.com', record)).toBe('unchanged');
+    expect(f.writes()).toEqual([]);
+    expect(await porkbunDns.remove!(f.ctx, 'example.com', { ...record, priority: 10 })).toBe('removed');
+  });
+
+  it('refuses an ambiguous match instead of guessing which duplicate to delete', async () => {
+    const f = fake({ rows: [ownedRow, a({ id: '2', notes: 'golive: managed' })] });
+    await expect(porkbunDns.remove!(f.ctx, 'example.com', want({ content: '192.0.2.1' }))).rejects.toThrow(/2 identical A records/);
+    expect(f.writes()).toEqual([]);
+    expect(f.rows).toHaveLength(2);
+  });
+
+  it('keeps the write preconditions: authority and delegation are rechecked before a delete', async () => {
+    const child = fake({ childNs: { 'app.example.com': ['ns1.other.test', 'ns2.other.test'] } });
+    await expect(porkbunDns.remove!(child.ctx, 'example.com', want({ name: 'app.example.com' }))).rejects.toThrow(/delegated child/);
+    expect(child.writes()).toEqual([]);
+
+    const elsewhere = fake({ notLocal: 1 });
+    await expect(porkbunDns.remove!(elsewhere.ctx, 'example.com', want())).rejects.toThrow(/authoritative DNS provider/);
+    expect(elsewhere.writes()).toEqual([]);
+
+    const outside = fake();
+    await expect(porkbunDns.remove!(outside.ctx, 'example.com', want({ name: 'www.other.org' }))).rejects.toThrow(/outside example\.com/);
+    expect(outside.writes()).toEqual([]);
   });
 });
