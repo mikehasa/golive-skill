@@ -138,10 +138,16 @@ golive automates (after plan approval):
   `auth:test-user` step seeds one test account through the project's own `/auth/v1` signup endpoint,
   `auth:confirm-email` hands the inbox click over, and the `auth-signup`/`auth-session` checks prove
   the rest.
+- **Rotates that account's password through recovery** when the human also opted in with
+  `auth.recovery: true` (see below): the `auth:recovery` step asks for a real recovery email, mints its
+  own recovery link through the Auth admin API, exchanges the token for a session and sets the new
+  password with that session. `auth-recovery-email` hands the inbox click over and `auth-recovery`
+  proves the outcome.
 - Verifies: `rls-probe` (tables not readable with the public key, plus security advisors, read-only),
   `auth-redirects` (production URLs, no `localhost`), `auth-policy` (signup/confirmation/password
   policy and the mailer, with the effective values as evidence), `auth-signup`/`auth-session` (the
-  journey above, when opted in), `env-parity` (names on the host).
+  journey above, when opted in), `auth-recovery` (the recovery journey above, when opted in),
+  `env-parity` (names on the host).
 
 Stays with the human (and why):
 - **The database password of an existing project.** Supabase only reveals it at creation, so a
@@ -151,7 +157,8 @@ Stays with the human (and why):
   Supabase client.
 - **Fixing RLS findings.** You (the agent) write the migration/policy change; the human approves it.
   golive never write-probes your application's data tables. With `auth.e2e: true` it does create auth
-  **test users** (see below) — that opt-in is exactly what covers them.
+  **test users** (see below) — that opt-in is exactly what covers them; with `auth.recovery: true` it
+  also sets a new password on that same recorded test account through the recovery path.
 - **Custom SMTP for auth emails.** Not automated yet. The human sets it in the Supabase dashboard
   (Authentication → SMTP), pasting a sending key straight from the email provider (see `resend.md`).
   Until then `auth-policy` warns that auth emails still use the built-in mailer (rate-limited, meant
@@ -223,6 +230,55 @@ Caveats to pass on before enabling it:
 - **One account per address.** If the address already has a Supabase account, signup sends nothing
   and answers with an obfuscated user: the step adopts that account (rotating its password) and says
   so. Delete the test account in the dashboard to start over, or use another `auth.testEmail`.
+- **Recovery spends auth emails too.** With `auth.recovery: true`, `auth:recovery` asks for one
+  recovery email and `auth-recovery` asks for up to two more (the recorded address, then a fresh
+  address with no account) every time it runs, against the same throttled mailer. A 429 warns instead
+  of failing for exactly that reason.
+
+### The password-recovery journey (`auth.recovery`)
+
+A second opt-in, on top of the signup journey's confirmed account — the account the recovery rotation
+touches is that same recorded test account, and no other:
+
+```yaml
+auth:
+  recovery: true                # rotate the recorded test account's password through recovery
+```
+
+What the `auth:recovery` step (`--confirm-live`) does, in the app's own order:
+
+- **Asks for the reset.** `POST /auth/v1/recover` for the recorded address, so a real recovery email
+  lands in that inbox. An address with no account is answered the same way — Supabase refuses to
+  reveal which addresses exist.
+- **Mints its own link.** `POST /auth/v1/admin/generate_link` with `type: recovery` answers the token
+  the email would have carried; it stays a `Secret` in that run's memory. That is what makes the
+  journey provable without reading an inbox.
+- **Exchanges it and sets the password.** `POST /auth/v1/verify` with `type: recovery` and the token
+  returns a session, and `PUT /auth/v1/user` with that session sets the new password — exactly the
+  calls a recovery page makes. Each of those requests carries `Bearer <token>`; a scheme-less header
+  was a live-found defect (#25), and the adapter tests now assert the scheme on every one of them.
+- **Keeps the rest of the run working.** The new password is stored under the key `auth:test-user`
+  uses, so `auth-signup`/`auth-session` prove the same run with it; the replaced password and the spent
+  token stay in that run's memory for the check to use.
+
+What `auth-recovery` proves, and what stays human:
+
+- **The request is accepted.** A 429 from the project's auth email limit warns, never fails: the mail
+  throttle decides what a run can prove (roughly one accepted send per window on the built-in mailer).
+- **No account enumeration.** The same request for an address with no account (a fresh
+  `+gl-recovery-…` plus-tag) must get the same answer. A different status or acceptance is a finding:
+  it answers "does this address have an account here?" for anyone who asks.
+- **The token is one-time.** Replaying the token this run spent must be refused.
+- **The password actually changed.** The new password signs in; the one it replaced is refused.
+- **The window is named, not assumed.** When the project reports `mailer_otp_exp` (golive's
+  `otpExpirySeconds`), the evidence says how long such a link stays usable; a project that does not
+  report it is named as not reporting it.
+- **The click stays human.** `auth:recovery-email` is non-blocking and closed by `auth-recovery`
+  passing; golive never reads the inbox. A captcha on the project blocks the scripted request, so the
+  check skips instead of claiming a pass.
+
+This is **implemented and mock-covered, not live-validated yet**: the live run that exercises it (and
+the `docs/VALIDATION.md` row recording it) comes separately, and account isolation is the next slice.
 
 ## 3. Explain these in plain words
 
@@ -287,6 +343,15 @@ Caveats to pass on before enabling it:
 | `auth:test-user` says the address already has an account | Supabase answers a duplicate signup without sending mail. golive adopts that account and rotates its password; delete it in the dashboard (Authentication → Users) or set another `auth.testEmail` to start clean. |
 | `auth-session` fails on the declared protected path (HTTP 200) | The route is served without a session. Make it redirect to sign-in or answer 401/403; if it renders a sign-in page with 200, choose a path that redirects in `auth.protectedPath`. A 404 there only warns: the path is probably wrong or not deployed. |
 | `auth-session` warns the signed-in user is denied by every table | The `authenticated` role has no `GRANT` (new projects stopped granting new tables automatically). Add the grant plus RLS policies in a migration, then re-run verify. |
+| `auth.recovery` check | Start with `auth.e2e: true`, `auth.testEmail` and `auth.recovery: true` in `golive.yaml`, seed and confirm the test account, then `plan` + `apply --confirm-live` (the `auth:recovery` step sends a real recovery email and rotates that account's password) and re-run `verify`. |
+| `plan` warns `auth.recovery is on … no test account is recorded yet` | The recovery rotation only touches the account `auth:test-user` seeds. Apply the plan that seeds it (`auth.e2e: true`, `auth.testEmail`), click the confirmation link, then run `plan` again. |
+| `plan` warns the test account `is not confirmed yet` (with `auth.recovery`) | A recovery of an unconfirmed address sends a confirmation, not a recovery link, so the rotation waits. Click the confirmation link in that inbox, then run `plan` again. |
+| `auth-recovery` skips with `this run holds none of what the recovery check needs` | The new password and the spent token exist only in the run that carries the `auth:recovery` step. Run `plan` + `apply --confirm-live`, then re-run verify: a plain `verify` cannot prove a rotation it did not perform. |
+| `auth-recovery` skips with `blocked by: auth:test-user` | No test account is recorded yet: run `plan` + `apply` with `auth.e2e: true` first, then the recovery journey. |
+| `auth-recovery` fails: an address with no account was answered differently | Something in front of `/auth/v1/recover` (a proxy, WAF, edge function or cached response) is leaking whether an address has an account. Answer an unknown address exactly like a known one. |
+| `auth-recovery` fails: the spent token resolved again | The verification endpoint accepted a one-time token twice. Check for anything answering `/auth/v1/verify` ahead of the project, then re-run verify. |
+| `auth-recovery` fails: the password set through recovery cannot sign in | The project's password policy may reject the generated password, or the account changed during the run. Check the user in the dashboard, then run `plan` + `apply` again (a fresh rotation) and re-run verify. |
+| `auth:recovery` or `auth-recovery` warns/errors with HTTP 429 | The project's auth email limit refused the send. Wait for the window to reset (the built-in mailer allows roughly one accepted send), configure custom SMTP (§2) and raise `rate_limit_email_sent`, then re-run. |
 
 ## Unverified
 

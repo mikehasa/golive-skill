@@ -137,9 +137,9 @@ auth: { redirectPaths: [/auth/callback], previewRedirects: true, signup: false, 
   it('parses the auth e2e opt-in: the journey switch, the inbox address and the protected path', () => {
     const c = parseConfig(`version: 1
 stack: { auth: supabase }
-auth: { e2e: true, testEmail: "you+go-live@example.com", protectedPath: /dashboard }
+auth: { e2e: true, testEmail: "you+go-live@example.com", protectedPath: /dashboard, recovery: true }
 `);
-    expect(c.auth).toEqual({ e2e: true, testEmail: 'you+go-live@example.com', protectedPath: '/dashboard' });
+    expect(c.auth).toEqual({ e2e: true, testEmail: 'you+go-live@example.com', protectedPath: '/dashboard', recovery: true });
   });
 
   it.each([
@@ -147,6 +147,7 @@ auth: { e2e: true, testEmail: "you+go-live@example.com", protectedPath: /dashboa
     ['version: 1\nauth: { testEmail: not-an-address }\n', /auth\.testEmail must be the address/],
     ['version: 1\nauth: { testEmail: "no-domain@example" }\n', /auth\.testEmail must be the address/],
     ['version: 1\nauth: { protectedPath: dashboard }\n', /auth\.protectedPath must be an app route starting with "\/"/],
+    ['version: 1\nauth: { recovery: always }\n', /auth\.recovery must be true or false/],
   ])('rejects a bad auth e2e setting %#', (text, re) => {
     expect(() => parseConfig(text)).toThrow(ConfigError);
     expect(() => parseConfig(text)).toThrow(re);

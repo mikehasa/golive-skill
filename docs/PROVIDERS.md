@@ -50,7 +50,7 @@ identities match. Neon delegates supported stored-login access to its CLI.
 
 | Area | Adapter | Scope |
 | --- | --- | --- |
-| Auth | Supabase Auth | Production Site URL and redirect configuration, plus the auth policy from golive.yaml; custom SMTP stays a manual dashboard step. The opt-in signup journey (`auth.e2e: true`) adds one approved step that seeds a real test account (`auth:test-user`, `--confirm-live`), the human's click in their inbox (`auth:confirm-email`) and the `auth-signup`/`auth-session` checks (confirmation email, enforced confirmation, session, declared protected path). Live-validated once on a disposable project: the policy write was confirmed by the read-back (`password minimum length: 6 → 12`), and the journey passed `auth-signup` and `auth-session` (probe signup, enforced confirmation, confirmed login, session token accepted, anonymous request refused). The confirmation came through the Auth admin API rather than the seeded email click. A later disposable run with a deployed Vercel fixture exercised both app-side legs: an anonymous GET of the declared protected path answered 401 and the signed-in probe read the project's one exposed RLS table as the authenticated user, so that probe is no longer mock-covered (the table line is a count, not a name; any 401 counts as protected — tracked in #30). |
+| Auth | Supabase Auth | Production Site URL and redirect configuration, plus the auth policy from golive.yaml; custom SMTP stays a manual dashboard step. The opt-in signup journey (`auth.e2e: true`) adds one approved step that seeds a real test account (`auth:test-user`, `--confirm-live`), the human's click in their inbox (`auth:confirm-email`) and the `auth-signup`/`auth-session` checks (confirmation email, enforced confirmation, session, declared protected path). Live-validated once on a disposable project: the policy write was confirmed by the read-back (`password minimum length: 6 → 12`), and the journey passed `auth-signup` and `auth-session` (probe signup, enforced confirmation, confirmed login, session token accepted, anonymous request refused). The confirmation came through the Auth admin API rather than the seeded email click. A later disposable run with a deployed Vercel fixture exercised both app-side legs: an anonymous GET of the declared protected path answered 401 and the signed-in probe read the project's one exposed RLS table as the authenticated user, so that probe is no longer mock-covered (the table line is a count, not a name; any 401 counts as protected — tracked in #30). Password recovery (`auth.recovery: true`) adds the `auth:recovery` step (`--confirm-live`, rotating that same recorded test account's password through the provider's own recovery calls), the human's inbox click (`auth:recovery-email`) and the `auth-recovery` check (accepted request, an unknown address answered the same way, the spent token refused on replay, the new password signing in and the replaced one refused). **Implemented and mock-covered, not live-validated yet**: its live run comes separately. |
 | Payments | Stripe | Test-mode env wiring, webhook registration and signed-event acceptance passed a disposable run; live-mode payments, refunds, entitlements and subscriptions remain open |
 | Email | Resend | Sending-domain setup, DNS wiring, scoped-key issuance and a real send through the app's environment key passed a disposable run (delivered; spam folder on a fresh subdomain); Auth SMTP and bounce handling remain open |
 | DNS | Cloudflare | Records in an existing authoritative zone; no domain purchase, renewal, transfer or nameserver changes. Live validation pending. |
@@ -88,6 +88,21 @@ A later disposable run supplied both: a deployed Vercel fixture whose declared `
 answered 401 anonymously, and one RLS-protected table the signed-in probe read as the authenticated
 user. The provider's auth email throttle and captcha settings can still block the
 journey, and the built-in mailer allowed roughly one accepted send per window in that run.
+
+Password recovery (`auth.recovery: true`, after `auth.e2e: true` has seeded the test account) turns
+that same account's password over through the provider's own recovery path: the `auth:recovery` step
+(`--confirm-live`, only ever on the recorded test account, only once it reads back confirmed) asks the
+provider to send a real recovery email, mints the link with the admin API, exchanges the token for a
+session and sets the new password with that session — the same calls the app's own recovery page
+makes — then stores the new password under the key `auth.e2e` uses, so `auth-signup`/`auth-session`
+keep working in the same run. The generated password, the one it replaced and the spent token live in
+that run's memory only. `auth-recovery` proves the outcome: the request is accepted for sending, an
+address with no account gets the **same** answer (a different answer is account enumeration, a failing
+finding), the spent token is refused on replay, the new password signs in and the replaced one is
+refused, and the token's window is named from `otpExpirySeconds` when the provider reports it. A 429
+only warns — the provider's mail throttle decides what a run can prove — and the inbox click and a
+captcha stay human steps (`auth:recovery-email`). This is **implemented and mock-covered, not
+live-validated yet**; account isolation is the next slice.
 
 ## Guided providers
 

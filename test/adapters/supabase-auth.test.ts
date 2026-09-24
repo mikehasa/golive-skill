@@ -113,7 +113,7 @@ describe('login', () => {
  * does, where the value after the `Bearer` scheme is the token and a scheme-less value is no token at
  * all. A request without the scheme gets the exact 401 the live project returned.
  */
-const gotrueUser = (body: Record<string, unknown>) => (c: HttpCall) =>
+const gotrueAuthed = (body: Record<string, unknown>) => (c: HttpCall) =>
   /^Bearer\s/i.test(c.headers.authorization ?? '')
     ? { json: body }
     : { status: 401, json: { code: 401, error_code: 'no_authorization', msg: 'This endpoint requires a valid Bearer token' } };
@@ -130,7 +130,7 @@ describe('user', () => {
     const token = new Secret('SUPABASE_AUTH_TOKEN', 'session-token-value-1234');
     // The route refuses a scheme-less header, so a token presented without `Bearer` fails here as it
     // did against the live project instead of passing as an anonymous request.
-    const { http, calls } = mockHttp([['GET', `${AUTH}/user`, gotrueUser({ id: 'usr_1', email: 'a@example.com', confirmed_at: '2026-09-23T00:00:00Z' })]]);
+    const { http, calls } = mockHttp([['GET', `${AUTH}/user`, gotrueAuthed({ id: 'usr_1', email: 'a@example.com', confirmed_at: '2026-09-23T00:00:00Z' })]]);
     expect(await cap().user(testCtx({ http }), token)).toEqual({ status: 200, id: 'usr_1', email: 'a@example.com', emailConfirmed: true });
     expect(calls[0]!.headers.apikey).toBe(PUB_KEY);
     expect(calls[0]!.headers.authorization).toBe(`Bearer ${token.reveal()}`);
@@ -179,6 +179,117 @@ describe('adminUser / setPassword', () => {
   });
 });
 
+// ── password recovery ────────────────────────────────────────────────────────────────────────────
+
+const RECOVERY_TOKEN = 'hashed-recovery-token-value';
+const recoveryToken = () => new Secret('SUPABASE_RECOVERY_TOKEN', RECOVERY_TOKEN);
+const sessionToken = () => new Secret('SUPABASE_AUTH_TOKEN', 'session-token-value-1234');
+
+describe('recover', () => {
+  it('asks for the recovery email and reads GoTrue\'s one 2xx answer as accepted for sending', async () => {
+    // The same answer is what an address WITH an account gets: GoTrue does not say which is which, so
+    // the adapter reports it as-is and the check compares two of these instead of trusting a flag.
+    const { http, calls } = mockHttp([['POST', `${AUTH}/recover`, () => ({ json: {} })]]);
+    const out = await cap().requestRecovery(testCtx({ http }), 'a@example.com');
+    expect(out).toEqual({ status: 200, accepted: true, emailSent: true, rateLimited: false, captchaRequired: false });
+    expect(calls[0]!.url).toBe(`${AUTH}/recover`);
+    expect(calls[0]!.body).toEqual({ email: 'a@example.com' });
+    expect(calls[0]!.headers.apikey).toBe(PUB_KEY);
+    expect(calls[0]!.headers.authorization).toBe(`Bearer ${PUB_KEY}`);
+  });
+
+  it('names a rate limit, a captcha and a refusal code', async () => {
+    const limited = mockHttp([['POST', `${AUTH}/recover`, () => ({ status: 429, json: { error_code: 'over_email_send_rate_limit', msg: 'Email rate limit exceeded' } })]]);
+    expect(await cap().requestRecovery(testCtx({ http: limited.http }), 'a@example.com')).toMatchObject({
+      status: 429,
+      accepted: false,
+      emailSent: false,
+      rateLimited: true,
+      code: expect.stringContaining('over_email_send_rate_limit'),
+    });
+
+    const captcha = mockHttp([['POST', `${AUTH}/recover`, () => ({ status: 400, json: { error_code: 'captcha_failed', msg: 'captcha protection: request disallowed' } })]]);
+    expect(await cap().requestRecovery(testCtx({ http: captcha.http }), 'a@example.com')).toMatchObject({ accepted: false, captchaRequired: true, rateLimited: false });
+
+    const closed = mockHttp([['POST', `${AUTH}/recover`, () => ({ status: 422, json: { error_code: 'email_address_invalid', msg: 'Email address is invalid' } })]]);
+    expect(await cap().requestRecovery(testCtx({ http: closed.http }), 'nope' )).toMatchObject({ status: 422, accepted: false, code: expect.stringContaining('email_address_invalid') });
+  });
+});
+
+describe('recoveryLink / recoverySession / updateOwnPassword', () => {
+  it('mints a link with the admin key and keeps the hashed token in a Secret', async () => {
+    const { http, calls } = mockHttp([
+      ['POST', `${AUTH}/admin/generate_link`, () => ({ json: { action_link: `https://${REF}.supabase.co/auth/v1/verify?token=${RECOVERY_TOKEN}&type=recovery`, hashed_token: RECOVERY_TOKEN, verification_type: 'recovery', user: { id: 'usr_1', email: 'a@example.com' } } })],
+    ]);
+    const link = await cap().recoveryLink!(testCtx({ http }), 'a@example.com');
+    expect(link).toMatchObject({ userId: 'usr_1' });
+    expect(link!.token).toBeInstanceOf(Secret);
+    expect(link!.token.name).toBe('SUPABASE_RECOVERY_TOKEN');
+    expect(link!.token.reveal()).toBe(RECOVERY_TOKEN);
+    expect(JSON.stringify(link)).not.toContain(RECOVERY_TOKEN);
+    expect(calls[0]!.url).toBe(`${AUTH}/admin/generate_link`);
+    expect(calls[0]!.body).toEqual({ type: 'recovery', email: 'a@example.com' });
+    expect(calls[0]!.headers.apikey).toBe(SECRET_KEY);
+    expect(calls[0]!.headers.authorization).toBe(`Bearer ${SECRET_KEY}`);
+  });
+
+  it('falls back to the token inside action_link when the answer carries no hashed_token', async () => {
+    const link = `${AUTH}/verify?token=token-from-action-link&type=recovery&redirect_to=https%3A%2F%2Fapp.example.com%2Freset`;
+    const { http } = mockHttp([['POST', `${AUTH}/admin/generate_link`, () => ({ json: { action_link: link, user: { id: 'usr_1' } } })]]);
+    expect((await cap().recoveryLink!(testCtx({ http }), 'a@example.com'))!.token.reveal()).toBe('token-from-action-link');
+  });
+
+  it('returns null when the provider has no account for the address, and refuses an unusable answer', async () => {
+    const missing = mockHttp([['POST', `${AUTH}/admin/generate_link`, () => ({ status: 404, json: { error_code: 'user_not_found', msg: 'User not found' } })]]);
+    expect(await cap().recoveryLink!(testCtx({ http: missing.http }), 'nobody@example.com')).toBeNull();
+
+    const unusable = mockHttp([['POST', `${AUTH}/admin/generate_link`, () => ({ json: { user: { id: 'usr_1' } } })]]);
+    const e = await cap().recoveryLink!(testCtx({ http: unusable.http }), 'a@example.com').catch((x: unknown) => x as Error);
+    expect(e).toBeInstanceOf(SupabaseError);
+    expect((e as Error).message).toMatch(/without a user id or a token/);
+    expectNoSecret((e as Error).message);
+  });
+
+  it('exchanges a recovery token for a session, and reports a used or expired one as a refusal', async () => {
+    const { http, calls } = mockHttp([
+      ['POST', `${AUTH}/verify`, () => ({ json: { access_token: 'recovery-session-value', user: { id: 'usr_1', email: 'a@example.com', email_confirmed_at: '2026-09-24T00:00:00Z' } } })],
+    ]);
+    const out = await cap().recoverySession(testCtx({ http }), recoveryToken());
+    expect(out.status).toBe(200);
+    expect(out.session).toMatchObject({ userId: 'usr_1', emailConfirmed: true });
+    expect(out.session!.accessToken).toBeInstanceOf(Secret);
+    expect(JSON.stringify(out)).not.toContain('recovery-session-value');
+    expect(JSON.stringify(out)).not.toContain(RECOVERY_TOKEN);
+    expect(calls[0]!.url).toBe(`${AUTH}/verify`);
+    expect(calls[0]!.body).toEqual({ type: 'recovery', token_hash: RECOVERY_TOKEN });
+    expect(calls[0]!.headers.authorization).toBe(`Bearer ${PUB_KEY}`);
+
+    // What a spent or expired token looks like: a refusal the check reads, never an exception.
+    const spent = mockHttp([['POST', `${AUTH}/verify`, () => ({ status: 403, json: { code: 403, error_code: 'otp_expired', msg: 'Token has expired or is invalid' } })]]);
+    const refused = await cap().recoverySession(testCtx({ http: spent.http }), recoveryToken());
+    expect(refused).toMatchObject({ status: 403, rateLimited: false });
+    expect(refused.session).toBeUndefined();
+    expect(refused.code).toContain('otp_expired');
+    expect(JSON.stringify(refused)).not.toContain(RECOVERY_TOKEN);
+  });
+
+  it('sets the signed-in user\'s own password with PUT /user, and never echoes it in an error', async () => {
+    const { http, calls } = mockHttp([['PUT', `${AUTH}/user`, () => ({ json: { id: 'usr_1' } })]]);
+    await cap().updateOwnPassword(testCtx({ http }), sessionToken(), secret());
+    expect(calls[0]!.url).toBe(`${AUTH}/user`);
+    expect(calls[0]!.body).toEqual({ password: PASSWORD });
+    // The session token, not the key, authenticates this write.
+    expect(calls[0]!.headers.apikey).toBe(PUB_KEY);
+    expect(calls[0]!.headers.authorization).toBe(`Bearer ${sessionToken().reveal()}`);
+
+    const bad = mockHttp([['PUT', `${AUTH}/user`, () => ({ status: 500, text: `boom ${PASSWORD}`, json: { msg: `failed for ${PASSWORD}` } })]]);
+    const e = await cap().updateOwnPassword(testCtx({ http: bad.http }), sessionToken(), secret()).catch((x: unknown) => x as Error);
+    expect(e).toBeInstanceOf(SupabaseError);
+    expect((e as Error).message).toMatch(/HTTP 500/);
+    expectNoSecret((e as Error).message);
+  });
+});
+
 // ── the Authorization scheme, pinned over all three token-bearing paths ──────────────────────────
 
 /**
@@ -210,6 +321,33 @@ describe('Authorization headers', () => {
     ]);
     // A session replaces the key on Authorization only; the key itself still rides on apikey.
     expect(calls.map((c) => c.headers.apikey)).toEqual([PUB_KEY, PUB_KEY, SECRET_KEY, SECRET_KEY]);
+    expect(calls.map((c) => c.headers.authorization)).not.toContain(token.reveal());
+  });
+
+  it('sends `Bearer <value>` on every recovery path too: request, mint, verify and the user write', async () => {
+    const token = recoveryToken();
+    const session = sessionToken();
+    const { http, calls } = mockHttp([
+      ['POST', `${AUTH}/recover`, gotrueAuthed({})],
+      ['POST', `${AUTH}/admin/generate_link`, gotrueAuthed({ hashed_token: RECOVERY_TOKEN, user: { id: 'usr_1' } })],
+      ['POST', `${AUTH}/verify`, gotrueAuthed({ access_token: 'recovery-session-value', user: { id: 'usr_1' } })],
+      ['PUT', `${AUTH}/user`, gotrueAuthed({ id: 'usr_1' })],
+    ]);
+    const api = cap();
+    const ctx = testCtx({ http });
+    const asked = await api.requestRecovery(ctx, 'a@example.com');
+    const link = (await api.recoveryLink!(ctx, 'a@example.com'))!;
+    const verified = await api.recoverySession(ctx, token);
+    await api.updateOwnPassword(ctx, session, secret());
+
+    // Every route above answers 401 `no_authorization` for a scheme-less header, so a regression to
+    // the bare value shows up as a refused recovery request or session, not only in these lines.
+    expect(asked.accepted).toBe(true);
+    expect(link.userId).toBe('usr_1');
+    expect(verified.session).toBeDefined();
+    expect(calls.map((c) => c.headers.authorization)).toEqual([`Bearer ${PUB_KEY}`, `Bearer ${SECRET_KEY}`, `Bearer ${PUB_KEY}`, `Bearer ${session.reveal()}`]);
+    expect(calls.map((c) => c.headers.apikey)).toEqual([PUB_KEY, SECRET_KEY, PUB_KEY, PUB_KEY]);
+    expect(calls.map((c) => c.headers.authorization)).not.toContain(session.reveal());
     expect(calls.map((c) => c.headers.authorization)).not.toContain(token.reveal());
   });
 });

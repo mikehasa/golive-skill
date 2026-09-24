@@ -5,7 +5,7 @@
  */
 import { Secret } from '../src/core/secret.js';
 import { modeFor } from '../src/core/config.js';
-import type { Adapter, AuthLoginOutcome, AuthSettings, AuthSignupOutcome, AuthUserView, Ctx, DnsRecord, EnvTarget, Mode, OutputKey, Outputs, ProjectRef, Value } from '../src/core/types.js';
+import type { Adapter, AuthLoginOutcome, AuthRecoveryOutcome, AuthSettings, AuthSignupOutcome, AuthUserView, Ctx, DnsRecord, EnvTarget, Mode, OutputKey, Outputs, ProjectRef, Value } from '../src/core/types.js';
 
 export interface Call {
   adapter: string;
@@ -221,6 +221,22 @@ export function fakeWorld() {
       loginError: null as string | null,
       /** Ids the provider no longer knows (a user deleted in the dashboard). */
       missing: new Set<string>(),
+      /** Addresses the fake was asked to send a recovery email to, in order. */
+      recoveryRequests: [] as string[],
+      /** Overrides the next recovery request for an address WITH an account (captcha, 429, a refusal). */
+      recovery: null as Partial<AuthRecoveryOutcome> | null,
+      /** Overrides the next recovery request for an address with NO account (a provider that enumerates). */
+      recoveryUnknown: null as Partial<AuthRecoveryOutcome> | null,
+      /** Minted recovery tokens, single-use like the real ones. */
+      recoveryTokens: new Map<string, { userId: string; used: boolean }>(),
+      /** The provider has no account for the address a recovery link was asked for (returns null). */
+      linkMissing: false,
+      /** The user id a minted recovery link claims; null = the account it was asked about. */
+      linkUserId: null as string | null,
+      /** A provider that keeps a spent token usable: the replay leg must catch it. */
+      recoveryReuse: false,
+      /** Throws on the next recovery-session call only (a transport failure mid-check). */
+      recoveryError: null as string | null,
       /** The human clicked the confirmation link in their inbox. */
       confirm(email: string): void {
         for (const u of db.authUsers.users) if (u.email === email) u.confirmed = true;
@@ -345,6 +361,54 @@ export function fakeWorld() {
           if (users.error) throw new Error(users.error);
           const u = users.missing.has(id) ? undefined : users.users.find((x) => x.id === id);
           if (!u) throw new Error(`no such user ${id}`);
+          u.pass = password.reveal();
+        },
+        requestRecovery: async (_c, email) => {
+          const users = db.authUsers;
+          rec('fakedb', 'authUsers.requestRecovery', email);
+          if (users.error) throw new Error(users.error);
+          const known = Boolean(users.byEmail(email));
+          const override = known ? users.recovery : users.recoveryUnknown;
+          if (known) users.recovery = null;
+          else users.recoveryUnknown = null;
+          users.recoveryRequests.push(email);
+          // Like GoTrue: an address with no account is answered exactly like one that has an account.
+          return { status: 200, accepted: true, emailSent: true, rateLimited: false, captchaRequired: false, ...override };
+        },
+        recoveryLink: async (_c, email) => {
+          const users = db.authUsers;
+          rec('fakedb', 'authUsers.recoveryLink', email);
+          if (users.error) throw new Error(users.error);
+          const u = users.linkMissing ? undefined : users.byEmail(email);
+          if (!u) return null;
+          const token = `recovery-token-${users.recoveryTokens.size + 1}-FAKErecoveryTOKENvalue`;
+          const userId = users.linkUserId ?? u.id;
+          users.recoveryTokens.set(token, { userId, used: false });
+          return { userId, token: new Secret('SUPABASE_RECOVERY_TOKEN', token) };
+        },
+        recoverySession: async (_c, token) => {
+          const users = db.authUsers;
+          rec('fakedb', 'authUsers.recoverySession', token);
+          if (users.error) throw new Error(users.error);
+          const failure = users.recoveryError;
+          users.recoveryError = null;
+          if (failure) throw new Error(failure);
+          const entry = users.recoveryTokens.get(token.reveal());
+          if (!entry || (entry.used && !users.recoveryReuse)) return { status: 403, code: 'otp_expired', rateLimited: false };
+          entry.used = true;
+          const u = users.users.find((x) => x.id === entry.userId);
+          if (!u) return { status: 403, code: 'otp_expired', rateLimited: false };
+          const session = `${RAW.authSession}:recovery:${u.id}`;
+          users.sessions.set(session, u.id);
+          return { status: 200, rateLimited: false, session: { accessToken: new Secret('SUPABASE_AUTH_TOKEN', session), userId: u.id, emailConfirmed: true } };
+        },
+        updateOwnPassword: async (_c, session, password) => {
+          const users = db.authUsers;
+          rec('fakedb', 'authUsers.updateOwnPassword', session, password);
+          if (users.error) throw new Error(users.error);
+          const id = users.sessions.get(session.reveal());
+          const u = id ? users.users.find((x) => x.id === id) : undefined;
+          if (!u) throw new Error('the session token was rejected');
           u.pass = password.reveal();
         },
       },

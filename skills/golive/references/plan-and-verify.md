@@ -140,6 +140,21 @@ opt-in, without `auth.testEmail`, without a usable provider credential, or when 
 scripted signup. `auth-session` also skips when this run holds no password for the seeded account:
 without one there is no session to inspect.
 
+**Auth password recovery (`auth.recovery: true`).** `auth:recovery` sends a real recovery email for the
+recorded test account, mints a recovery link through the provider's admin API (so golive never needs to
+read the inbox), exchanges its token for a session and sets a new password with that session, then
+keeps that password under the key `auth.e2e` uses — so `auth-signup`/`auth-session` keep working in the
+same run. Its risk is `{ writes, live, replayable }`: `--confirm-live` is required, it re-reads the
+recorded account and its provider state before acting (and waits at plan time until that account reads
+back confirmed, warning instead of planning), and it only ever touches that one account.
+`auth:recovery-email` (non-blocking, verified by `auth-recovery`) is the human's click. The check needs
+what that step left in the run's memory — the spent token and the two passwords — so a `verify` outside
+that run skips with `this run holds none of what the recovery check needs`; it asserts that an address
+with no account is answered like a known one (a different answer is account enumeration and fails),
+that the spent token is refused on replay, and that the new password signs in while the replaced one
+does not. A 429 anywhere in it warns, never fails: the provider's mail throttle decides what a run can
+prove.
+
 **Email.** `email:verify` is re-sent on each plan while the domain is pending; its preview shows
 `previous request: <time>`.
 
@@ -177,7 +192,9 @@ then `init --stripe-publishable <mode>=pk_<mode>_…`; or the human adds it to t
 dashboard; `env-parity` can't read a guided host, so it stays `done: null`),
 `stripe:webhook-env` / `stripe:webhook-guided` (see Webhook above), `auth:confirm-email` (non-blocking,
 verified by `auth-signup`: the human clicks the confirmation link in their own inbox, which golive
-cannot read), and `auth:redirects` for a guided auth provider (manual, non-blocking: confirm it with
+cannot read), `auth:recovery-email` (non-blocking, verified by `auth-recovery`: the same for the
+recovery link — golive requests it and mints its own copy, the human clicks theirs), and
+`auth:redirects` for a guided auth provider (manual, non-blocking: confirm it with
 the human, name it as unverified).
 
 **Ownership document.** `handoff --write --json` also writes `GOLIVE_HANDOVER.md` and
@@ -230,6 +247,7 @@ does resolve and GET `config.domain`.
 | `auth-policy` | the reported signup/confirmation/password policy matches golive.yaml `auth` (below 12 characters or a built-in mailer only warns); evidence lists the effective values | guided auth; `blocked by: login:<id>` / `project:<axis>`; the provider reports no policy fields |
 | `auth-signup` | a fresh probe address got a confirmation email, could not sign in before confirming, and the seeded account reads back confirmed (`email_confirmed_at`) — the confirmed account's own sign-in is extra evidence when this run holds its password (delivery stays human-confirmed) | `auth.e2e` off; no `auth.testEmail`; guided auth; `blocked by: login:<id>` / `auth:test-user`; a captcha blocks signup; **warns** on a 429 or while the account is still unconfirmed |
 | `auth-session` | the seeded account's session is accepted for the same user, an anonymous request is 401, and a declared `auth.protectedPath` is not publicly readable | `auth.e2e` off; guided auth; `blocked by: login:<id>` / `auth:test-user` / `no password for the test account in this run`; **warns** on a 429, an unconfirmed account, every exposed table denying the signed-in user, or an inconclusive protected-path answer |
+| `auth-recovery` | the recorded account's recovery request is accepted for sending, an address with no account gets the same answer (no account enumeration), the token this run spent is refused on replay, the new password signs in and the replaced one is refused, and the token window is named from `otpExpirySeconds` when reported | `auth.recovery` off; guided auth; `blocked by: login:<id>` / `auth:test-user`; no rotation in this run (`this run holds none of what the recovery check needs`); a captcha blocks a scripted request; **warns** on a 429 for either request or a login leg, never fails |
 | `webhook-unsigned` | an unsigned POST gets 4xx from the handler (a non-HTML 401/403 only warns — ambiguous between a rejection and an auth wall) | production URL not confirmed |
 | `webhook-registered` | an enabled endpoint for the production URL covers the configured events | guided payments; no production URL |
 | `stripe-live-ready` | the account has `charges_enabled` | production isn't live mode |
