@@ -12,10 +12,10 @@ Automate the parts providers expose. Guide you through the parts that need a hum
 can be observed, and make unfinished work clear. No GoLive account, hosted backend or product telemetry.
 
 > **Early alpha · 0.1.0-alpha.1**
-> We are starting with **hosting + database: two choices each**. Vercel + Supabase and Netlify +
-> Neon passed disposable live tests; custom-domain DNS, transactional email, test-mode payments,
-> Supabase authentication and the `teardown` uninstall path have since passed their own disposable
-> validations; the ownership document and the on-demand `golive status` drift check are implemented
+> Disposable live tests now cover six journeys: **hosting** (Vercel, Netlify), **database**
+> (Supabase, Neon), **custom-domain DNS** (Porkbun, GoDaddy), **transactional email** (Resend),
+> **test-mode payments** (Stripe) and **Supabase authentication**, plus the `teardown` uninstall
+> path. The ownership document and the on-demand `golive status` drift check are implemented
 > with test coverage (`golive status` also ran read-only in a live validation), while the broader
 > [roadmap](#the-full-go-live-checklist-and-roadmap) is our direction, not a claim that it is all built.
 
