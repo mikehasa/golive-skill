@@ -9172,7 +9172,7 @@ var init_stripe = __esm({
 
 // src/cli.ts
 import { writeFileSync as writeFileSync6, mkdirSync as mkdirSync6 } from "node:fs";
-import { join as join16, resolve as resolve8 } from "node:path";
+import { join as join17, resolve as resolve8 } from "node:path";
 import { dirname as dirname9, basename as basename11 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
@@ -11905,6 +11905,93 @@ init_secret();
 import { domainToASCII as domainToASCII2 } from "node:url";
 import { isIP } from "node:net";
 init_credentials();
+
+// src/adapters/godaddy-cli.ts
+import { homedir as homedir4 } from "node:os";
+import { join as join11 } from "node:path";
+var MIN_VERSION = [0, 2, 20];
+var EXPIRY_MARGIN_MS = 5 * 60 * 1e3;
+var CACHE_KEY = "godaddy.cli";
+var VERSION_TIMEOUT_MS = 15e3;
+var CALL_TIMEOUT_MS = 6e4;
+function cliLoginHelp() {
+  return "install and sign in once with the official GoDaddy CLI (`curl -fsSL https://github.com/godaddy/cli/releases/latest/download/install.sh | bash`, then `gddy auth login` in your terminal \u2014 the browser session is cached locally)";
+}
+async function godaddyCli(ctx) {
+  const cached = ctx.cache.get(CACHE_KEY);
+  if (cached !== void 0) return cached;
+  const found = await detect2(ctx);
+  ctx.cache.set(CACHE_KEY, found);
+  return found;
+}
+async function detect2(ctx) {
+  for (const bin of ["gddy", join11(homedir4(), ".local", "bin", "gddy")]) {
+    try {
+      const version = await ctx.exec(bin, ["--version"], { timeoutMs: VERSION_TIMEOUT_MS });
+      if (version.code !== 0) continue;
+      const parsed = parseVersion(version.stdout);
+      if (!parsed) continue;
+      const status = await ctx.exec(bin, ["auth", "status", "-o", "json"], { timeoutMs: VERSION_TIMEOUT_MS });
+      if (status.code !== 0) continue;
+      const identity = usableSession(status.stdout);
+      if (!identity) continue;
+      return { bin, version: parsed, identity };
+    } catch {
+    }
+  }
+  return null;
+}
+function parseVersion(out) {
+  const m = /gddy version (\d+)\.(\d+)\.(\d+)/.exec(out);
+  if (!m) return null;
+  const v = [Number(m[1]), Number(m[2]), Number(m[3])];
+  for (let i = 0; i < 3; i++) {
+    if (v[i] > MIN_VERSION[i]) return `${v[0]}.${v[1]}.${v[2]}`;
+    if (v[i] < MIN_VERSION[i]) return null;
+  }
+  return `${v[0]}.${v[1]}.${v[2]}`;
+}
+function usableSession(out) {
+  const parsed = safeJson(out);
+  const rows = parsed && typeof parsed === "object" && Array.isArray(parsed.data) ? parsed.data : null;
+  if (!rows) return null;
+  const prod = rows.find((r) => r && typeof r === "object" && r.env === "prod");
+  if (!prod || prod.expired !== false) return null;
+  const expires = typeof prod.expires_at === "string" ? Date.parse(prod.expires_at) : NaN;
+  if (Number.isFinite(expires) && expires - Date.now() < EXPIRY_MARGIN_MS && prod.refreshable !== true) return null;
+  return typeof prod.identity === "string" && prod.identity ? prod.identity : "signed in";
+}
+async function cliRequest(ctx, cli3, method, path, body2) {
+  const args = ["api", "call", `/v3/domains${path}`, "-X", method, "-o", "json"];
+  if (body2 !== void 0) args.push("-d", JSON.stringify(body2));
+  let res;
+  try {
+    res = await ctx.exec(cli3.bin, args, { timeoutMs: CALL_TIMEOUT_MS });
+  } catch {
+    return { status: 0 };
+  }
+  if (res.code === 0) {
+    const outer = safeJson(res.stdout);
+    const inner = outer && typeof outer === "object" ? outer.data : null;
+    const record2 = inner && typeof inner === "object" && !Array.isArray(inner) ? inner : null;
+    if (!record2 || !Number.isInteger(record2.status)) return { status: 0 };
+    return { status: record2.status, json: record2.data };
+  }
+  const failed = safeJson(res.stdout) ?? safeJson(res.stderr);
+  const error = failed && typeof failed === "object" ? failed.error : null;
+  const message = error && typeof error === "object" ? error.message : null;
+  const match = typeof message === "string" ? /HTTP error (\d{3})/.exec(message) : null;
+  return { status: match ? Number(match[1]) : 0 };
+}
+function safeJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return void 0;
+  }
+}
+
+// src/adapters/godaddy.ts
 var API4 = "https://api.godaddy.com/v3/domains";
 var TOKEN2 = "GODADDY_API_TOKEN";
 var TYPES3 = /* @__PURE__ */ new Set(["A", "AAAA", "CNAME", "TXT", "MX", "CAA"]);
@@ -11923,9 +12010,19 @@ function responseError(status) {
   const hint = status === 401 ? "The PAT is missing, expired or revoked." : status === 403 ? "Check PAT scopes and account eligibility (at least one domain or a plan granting management access)." : status === 404 ? "The zone or record is not accessible to this account." : status === 429 ? "Rate limited; wait before running golive again." : status === 409 ? "The record conflicts with the current zone state." : "Inspect the zone in the GoDaddy dashboard, then re-run.";
   return new GoDaddyError(`GoDaddy DNS request failed: HTTP ${status}. ${hint}`, status);
 }
+function accessHelp() {
+  return `Sign in once with the official GoDaddy CLI (${cliLoginHelp()}), or use a Personal Access Token. ${tokenHelp3()}`;
+}
 async function api3(ctx, method, path, body2) {
+  const cli3 = await godaddyCli(ctx);
+  if (cli3) {
+    const result2 = await cliRequest(ctx, cli3, method, path, body2);
+    if (result2.status === 0) throw new GoDaddyError("GoDaddy CLI request did not complete. Re-read the zone before retrying a write.");
+    if (result2.status < 200 || result2.status >= 300) throw responseError(result2.status);
+    return result2.json;
+  }
   const token2 = ctx.envToken(TOKEN2);
-  if (!token2) throw new GoDaddyError(`No ${TOKEN2} is available to golive. ${tokenHelp3()}`);
+  if (!token2) throw new GoDaddyError(`No GoDaddy access is available to golive. ${accessHelp()}`);
   let res;
   try {
     res = await ctx.http({
@@ -12168,13 +12265,14 @@ var godaddyDns = {
   }
 };
 async function auth6(ctx) {
-  if (!ctx.envToken(TOKEN2)) return { ok: false, howToFix: tokenHelp3() };
+  const cli3 = await godaddyCli(ctx);
+  if (!cli3 && !ctx.envToken(TOKEN2)) return { ok: false, howToFix: `No GoDaddy access is configured. ${accessHelp()}` };
   try {
     const data = await api3(ctx, "GET", "/domain-names?pageSize=1");
     if (!object2(data) || !Array.isArray(data.items) || !Array.isArray(data.links)) throw malformed();
-    return { ok: true, via: `${TOKEN2} (scoped Personal Access Token)` };
+    return { ok: true, via: cli3 ? `GoDaddy CLI (gddy ${cli3.version}, ${cli3.identity})` : `${TOKEN2} (scoped Personal Access Token)` };
   } catch (e) {
-    return { ok: false, howToFix: `${e instanceof GoDaddyError ? e.message : "GoDaddy authentication could not be verified."} ${tokenHelp3()}` };
+    return { ok: false, howToFix: `${e instanceof GoDaddyError ? e.message : "GoDaddy authentication could not be verified."} ${accessHelp()}` };
   }
 }
 var godaddyAdapter = {
@@ -12464,14 +12562,14 @@ init_secret();
 // src/adapters/netlify-credentials.ts
 init_secret();
 import { closeSync as closeSync7, constants as constants7, fstatSync as fstatSync7, lstatSync as lstatSync7, openSync as openSync7, readFileSync as readFileSync10 } from "node:fs";
-import { homedir as homedir4 } from "node:os";
-import { dirname as dirname8, join as join11 } from "node:path";
+import { homedir as homedir5 } from "node:os";
+import { dirname as dirname8, join as join12 } from "node:path";
 function netlifyConfigPath(options = {}) {
   const platform2 = options.platform ?? process.platform;
-  const home = options.home ?? homedir4();
-  if (platform2 === "darwin") return join11(home, "Library", "Preferences", "netlify", "config.json");
-  if (platform2 === "win32") return join11(options.appData ?? process.env.APPDATA ?? join11(home, "AppData", "Roaming"), "netlify", "Config", "config.json");
-  return join11(options.xdgConfigHome ?? process.env.XDG_CONFIG_HOME ?? join11(home, ".config"), "netlify", "config.json");
+  const home = options.home ?? homedir5();
+  if (platform2 === "darwin") return join12(home, "Library", "Preferences", "netlify", "config.json");
+  if (platform2 === "win32") return join12(options.appData ?? process.env.APPDATA ?? join12(home, "AppData", "Roaming"), "netlify", "Config", "config.json");
+  return join12(options.xdgConfigHome ?? process.env.XDG_CONFIG_HOME ?? join12(home, ".config"), "netlify", "config.json");
 }
 function readNetlifyCliToken(expectedUserId, path = netlifyConfigPath()) {
   let fd;
@@ -12630,7 +12728,7 @@ async function netlifyRead(ctx, operation, path, params) {
 init_secret();
 
 // src/adapters/netlify-project.ts
-import { basename as basename7, join as join12 } from "node:path";
+import { basename as basename7, join as join13 } from "node:path";
 import { readFileSync as readFileSync11 } from "node:fs";
 var num = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null;
 function publicOrigin(value) {
@@ -12708,7 +12806,7 @@ async function resolveSite(ctx, idOrName) {
 }
 function localSite(ctx) {
   try {
-    const raw2 = JSON.parse(readFileSync11(join12(ctx.cwd, ".netlify", "state.json"), "utf8"));
+    const raw2 = JSON.parse(readFileSync11(join13(ctx.cwd, ".netlify", "state.json"), "utf8"));
     return raw2.siteId ? identifier(raw2.siteId) : void 0;
   } catch {
     return void 0;
@@ -15522,13 +15620,13 @@ var dbConnectionCheck = {
 
 // src/checks/webhook.ts
 init_config();
-function join13(base, path) {
+function join14(base, path) {
   return /^https?:\/\//.test(path) ? path : `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
 }
 async function registeredUrl(ctx) {
   const path = ctx.config.payments?.webhook?.path;
   const base = await baseUrl(ctx);
-  return path && base ? join13(base, path) : null;
+  return path && base ? join14(base, path) : null;
 }
 var looksLikeHtml = (text) => /^\s*(<!doctype html|<html)/i.test(text);
 var webhookUnsignedCheck = {
@@ -15539,7 +15637,7 @@ var webhookUnsignedCheck = {
   async run(ctx) {
     const confirmed = await confirmedProductionUrl(ctx);
     if (!confirmed.ok) return confirmed.outcome;
-    const url = join13(confirmed.url, ctx.config.payments.webhook.path);
+    const url = join14(confirmed.url, ctx.config.payments.webhook.path);
     const notes = [];
     const registered = await registeredUrl(ctx);
     if (registered && new URL(registered).origin !== new URL(url).origin) {
@@ -15965,7 +16063,7 @@ import { resolve as resolve7 } from "node:path";
 
 // src/detect/fs.ts
 import { lstat, readdir, readFile } from "node:fs/promises";
-import { basename as basename10, join as join14 } from "node:path";
+import { basename as basename10, join as join15 } from "node:path";
 var SOURCE_RE = /\.(?:[cm]?[jt]sx?|vue|svelte|astro)$/;
 var SKIP_FILE_RE = /\.d\.[cm]?ts$|\.min\.js$|\.(?:test|spec)\.[cm]?[jt]sx?$/;
 var SKIP_DIRS = /* @__PURE__ */ new Set([
@@ -16031,7 +16129,7 @@ var Repo = class {
   cache = /* @__PURE__ */ new Map();
   async exists(rel) {
     try {
-      await lstat(join14(this.root, rel));
+      await lstat(join15(this.root, rel));
       return true;
     } catch {
       return false;
@@ -16039,7 +16137,7 @@ var Repo = class {
   }
   async mtime(rel) {
     try {
-      return (await lstat(join14(this.root, rel))).mtimeMs;
+      return (await lstat(join15(this.root, rel))).mtimeMs;
     } catch {
       return 0;
     }
@@ -16050,7 +16148,7 @@ var Repo = class {
     if (hit !== void 0) return hit;
     let text = null;
     try {
-      const abs = join14(this.root, rel);
+      const abs = join15(this.root, rel);
       const st = await lstat(abs);
       if (st.isFile() && st.size <= MAX_FILE_BYTES2) {
         this.opts.onRead?.(rel);
@@ -16074,7 +16172,7 @@ var Repo = class {
   /** Sorted names of the subdirectories of `rel` (no symlinks). */
   async dirs(rel) {
     try {
-      const entries = await readdir(join14(this.root, rel), { withFileTypes: true });
+      const entries = await readdir(join15(this.root, rel), { withFileTypes: true });
       return entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
     } catch {
       return [];
@@ -16087,7 +16185,7 @@ var Repo = class {
     const visit = async (dir) => {
       let entries;
       try {
-        entries = await readdir(dir ? join14(this.root, dir) : this.root, { withFileTypes: true });
+        entries = await readdir(dir ? join15(this.root, dir) : this.root, { withFileTypes: true });
       } catch {
         return;
       }
@@ -16970,7 +17068,7 @@ function stripeVerification(file, text) {
   return { ok: true };
 }
 var stripExt = (s) => s.replace(/\.[cm]?[jt]sx?$/, "");
-var join15 = (segs) => "/" + segs.filter(Boolean).join("/");
+var join16 = (segs) => "/" + segs.filter(Boolean).join("/");
 function nextAppPath(dir) {
   const out = [];
   for (const raw2 of dir.split("/").filter(Boolean)) {
@@ -16979,11 +17077,11 @@ function nextAppPath(dir) {
     if (seg.startsWith("_")) return null;
     out.push(seg.replace(/^%5F/i, "_"));
   }
-  return join15(out);
+  return join16(out);
 }
 function flatRoutePath(name3) {
   const segs = name3.replace(/\[\.\]/g, "\0").split(".").filter((s) => s !== "_index" && !s.startsWith("_")).map((s) => s.replace(/_$/, "").replace(/^\((.*)\)$/, "$1").replace(/^\$$/, "*").replace(/^\$/, ":").replace(/\u0000/g, "."));
-  return join15(segs);
+  return join16(segs);
 }
 function reactRouterConfigRoutes(text) {
   const ranges = [];
@@ -17005,7 +17103,7 @@ function reactRouterConfigRoutes(text) {
   for (const c of calls) {
     const parents = ranges.filter((r) => r.start < c.at && c.at < r.end).sort((a, b) => a.start - b.start);
     const file = "app/" + c.file.replace(/^\.\//, "");
-    out.set(file, join15([...parents.map((p) => p.path), c.path].flatMap((p) => p.split("/"))));
+    out.set(file, join16([...parents.map((p) => p.path), c.path].flatMap((p) => p.split("/"))));
   }
   return out;
 }
@@ -17029,7 +17127,7 @@ function routePath(file, text, fw, rrRoutes) {
   const byFramework = frameworkRoutePath(file, text, fw, rrRoutes);
   if (byFramework) return byFramework;
   const api5 = /^api\/(.+)\.[cm]?[jt]s$/.exec(file);
-  if (api5 && fw.framework !== "next") return join15(["api", ...api5[1].split("/")]).replace(/\/index$/, "");
+  if (api5 && fw.framework !== "next") return join16(["api", ...api5[1].split("/")]).replace(/\/index$/, "");
   return serverRoutePath(text);
 }
 function frameworkRoutePath(file, text, fw, rrRoutes) {
@@ -17041,11 +17139,11 @@ function frameworkRoutePath(file, text, fw, rrRoutes) {
         return p === null ? null : fw.basePath + p;
       }
       const pages = /^(?:src\/)?pages\/(api\/.+)\.[jt]sx?$/.exec(file);
-      return pages ? fw.basePath + join15(pages[1].split("/")).replace(/\/index$/, "") : null;
+      return pages ? fw.basePath + join16(pages[1].split("/")).replace(/\/index$/, "") : null;
     }
     case "sveltekit": {
       const m = /^src\/routes\/(?:(.*)\/)?\+server\.[jt]s$/.exec(file);
-      return m ? join15((m[1] ?? "").split("/").filter((s) => !/^\(.*\)$/.test(s))) : null;
+      return m ? join16((m[1] ?? "").split("/").filter((s) => !/^\(.*\)$/.test(s))) : null;
     }
     case "remix":
     case "react-router": {
@@ -17056,13 +17154,13 @@ function frameworkRoutePath(file, text, fw, rrRoutes) {
     }
     case "astro": {
       const m = /^src\/pages\/(.+)\.[jt]s$/.exec(file);
-      return m ? join15(m[1].split("/")).replace(/\/index$/, "") || "/" : null;
+      return m ? join16(m[1].split("/")).replace(/\/index$/, "") || "/" : null;
     }
     case "nuxt": {
       const m = /^(?:src\/)?server\/(api|routes)\/(.+)\.[jt]s$/.exec(file);
       if (!m) return null;
       const segs = stripExt(m[2]).replace(/\.(?:get|post|put|patch|delete)$/, "").split("/");
-      return join15([m[1] === "api" ? "api" : "", ...segs]).replace(/\/index$/, "");
+      return join16([m[1] === "api" ? "api" : "", ...segs]).replace(/\/index$/, "");
     }
     default:
       return null;
@@ -17107,7 +17205,7 @@ async function findWebhooks(repo, sources, fw, notes) {
 }
 
 // src/detect/index.ts
-async function detect2(cwd) {
+async function detect3(cwd) {
   return detectRepo(cwd);
 }
 async function detectRepo(cwd, opts = {}) {
@@ -17286,7 +17384,7 @@ async function main(argv) {
     emit({ ok: result2.status === "saved", ...result2 }, { json: json2 });
     return result2.status === "saved" && !result2.cleanupRequired ? 0 : 2;
   }
-  const d = await detect2(cwd);
+  const d = await detect3(cwd);
   const env = mapEnv(d.envRefs);
   const findings = [...d.findings, ...env.findings];
   if (cmd === "detect") {
@@ -17369,8 +17467,8 @@ async function main(argv) {
       };
       const plan = await buildPlan(ctx, linkList(), { unmappedEnv: env.unmapped, warnings: [] }).catch(() => null);
       const report = await makeReport(ctx, results, await handoffStatus(ctx, plan?.handoffs ?? [], results, false), verification);
-      const reportPaths = { json: join16(cwd, ".golive/report.json"), markdown: join16(cwd, "GOLIVE_REPORT.md") };
-      mkdirSync6(join16(cwd, ".golive"), { recursive: true });
+      const reportPaths = { json: join17(cwd, ".golive/report.json"), markdown: join17(cwd, "GOLIVE_REPORT.md") };
+      mkdirSync6(join17(cwd, ".golive"), { recursive: true });
       writeFileSync6(reportPaths.json, JSON.stringify(report, null, 2) + "\n");
       writeFileSync6(reportPaths.markdown, renderReport(report));
       emit({ ok: report.summary.fail === 0, report, reportPaths }, { json: json2 });

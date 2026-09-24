@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { godaddyAdapter, godaddyDns } from '../../src/adapters/godaddy.js';
 import { Secret } from '../../src/core/secret.js';
 import type { DnsRecord, HttpRequest } from '../../src/core/types.js';
-import { mockHttp, testCtx } from '../helpers.js';
+import { mockExec, mockHttp, testCtx } from '../helpers.js';
 
 const API = 'https://api.godaddy.com/v3/domains';
 const TOKEN = 'gd_' + 'pat_mock_only_not_a_real_token';
@@ -57,10 +57,11 @@ function fake(opts: {
 const rec = (over: Partial<Record> = {}): Record => ({ recordId: 'existing', type: 'TXT', name: '@', data: 'owner-verification', ttl: 600, ...over });
 
 describe('GoDaddy DNS authentication', () => {
-  it('requires the scoped PAT via the credentials file, never CLI or classic key', async () => {
+  it('explains both the gddy login and the scoped PAT when no access is configured', async () => {
     const ctx = testCtx();
     const result = await godaddyAdapter.auth(ctx);
     expect(result.ok).toBe(false);
+    expect(result.howToFix).toContain('gddy auth login');
     expect(result.howToFix).toContain('GODADDY_API_TOKEN');
     expect(result.howToFix).toContain('domains.dns:update');
     expect(result.howToFix).toContain('own editor');
@@ -315,5 +316,115 @@ describe('GoDaddy DNS records', () => {
     const f = fake({ records: [rec({ type: 'CAA', data: 'https://example.net/Report', flag: 0, tag: 'iodef' })] });
     expect(await godaddyDns.upsert(f.ctx, 'example.com', { type: 'CAA', name: 'example.com', content: '0 iodef "https://example.net/report"' })).toBe('created');
     expect(f.data.map((r) => r.data)).toEqual(['https://example.net/Report', 'https://example.net/report']);
+  });
+});
+
+describe('GoDaddy CLI (gddy) transport', () => {
+  const version = (v: string) => ({ stdout: `gddy version ${v} (commit test, built 2026-09-18)\n` });
+  const session = (over: { [key: string]: unknown } = {}) => ({
+    stdout: JSON.stringify({
+      data: [
+        { env: 'ote', expired: true, expires_at: '', identity: '', refreshable: false, scopes: [] },
+        { env: 'prod', expired: false, expires_at: new Date(Date.now() + 3_600_000).toISOString(), identity: 'customer:test-id', refreshable: true, scopes: ['domains.domain:read'], ...over },
+      ],
+    }),
+  });
+  const envelope = (data: unknown, status = 200) => ({ stdout: JSON.stringify({ data: { data, endpoint: '/x', method: 'GET', status, status_text: status === 200 ? 'OK' : 'ERR' } }) });
+  const doh = () => mockHttp([
+    ['GET', /dns-query/, (call) => {
+      const owner = new URL(call.url).searchParams.get('name')!;
+      const ns = owner === 'example.com' ? ['ns01.domaincontrol.com', 'ns02.domaincontrol.com'] : [];
+      return { json: { Status: ns.length ? 0 : 3, Answer: ns.map((n) => ({ name: `${owner}.`, type: 2, data: `${n}.`, TTL: 600 })) } };
+    }],
+  ]);
+
+  it('prefers an authenticated gddy session over the PAT and never sends the token through the CLI', async () => {
+    const exec = mockExec([
+      ['gddy --version', () => version('0.2.20')],
+      ['gddy auth status', () => session()],
+      [new RegExp('^gddy api call '), () => envelope({ items: [], links: [] })],
+    ]);
+    const ctx = testCtx({ tokens: { GODADDY_API_TOKEN: TOKEN }, exec: exec.run });
+    const status = await godaddyAdapter.auth(ctx);
+    expect(status).toMatchObject({ ok: true });
+    expect(status.via).toContain('gddy 0.2.20');
+    expect(status.via).toContain('customer:test-id');
+    const calls = exec.calls.filter((c) => c.args[0] === 'api');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ cmd: 'gddy' });
+    expect(calls[0]!.args).toEqual(['api', 'call', '/v3/domains/domain-names?pageSize=1', '-X', 'GET', '-o', 'json']);
+    expect(JSON.stringify(exec.calls)).not.toContain(TOKEN);
+  });
+
+  it('lists and creates records through gddy api call with the same bodies as the REST path', async () => {
+    const made = { name: 'app', type: 'CNAME', data: 'cname.vercel-dns.com', ttl: 600, recordId: 'r-cli-1' };
+    const exec = mockExec([
+      ['gddy --version', () => version('0.2.21')],
+      ['gddy auth status', () => session()],
+      [new RegExp('^gddy api call '), (c) => (c.args.includes('POST') ? envelope(made, 201) : envelope({ items: [], links: [] }))],
+    ]);
+    const ctx = testCtx({ tokens: { GODADDY_API_TOKEN: TOKEN }, exec: exec.run, http: doh().http });
+    expect(await godaddyDns.upsert(ctx, 'example.com', cname)).toBe('created');
+    const apiCalls = exec.calls.filter((c) => c.args[0] === 'api');
+    expect(apiCalls.map((c) => c.args[2])).toEqual([
+      '/v3/domains/zones/example.com/dns-records?page=1&pageSize=100',
+      '/v3/domains/zones/example.com/dns-records',
+    ]);
+    expect(apiCalls[1]!.args).toEqual([
+      'api', 'call', '/v3/domains/zones/example.com/dns-records', '-X', 'POST', '-o', 'json', '-d',
+      JSON.stringify({ name: 'app', type: 'CNAME', data: 'cname.vercel-dns.com', ttl: 600 }),
+    ]);
+  });
+
+  it('falls back to the PAT when the cached CLI session is expired', async () => {
+    const exec = mockExec([
+      ['gddy --version', () => version('0.2.20')],
+      ['gddy auth status', () => session({ expired: true })],
+    ]);
+    const http = mockHttp([['GET', `${API}/domain-names`, () => ({ json: { items: [], links: [] } })]]);
+    const status = await godaddyAdapter.auth(testCtx({ tokens: { GODADDY_API_TOKEN: TOKEN }, exec: exec.run, http: http.http }));
+    expect(status).toMatchObject({ ok: true });
+    expect(status.via).toContain('Personal Access Token');
+    expect(exec.calls.filter((c) => c.args[0] === 'api')).toHaveLength(0);
+    expect(http.calls).toHaveLength(1); // the REST probe ran instead
+  });
+
+  it('ignores an outdated gddy and uses the PAT', async () => {
+    const exec = mockExec([['gddy --version', () => version('0.2.19')]]);
+    const http = mockHttp([['GET', `${API}/domain-names`, () => ({ json: { items: [], links: [] } })]]);
+    const status = await godaddyAdapter.auth(testCtx({ tokens: { GODADDY_API_TOKEN: TOKEN }, exec: exec.run, http: http.http }));
+    expect(status.via).toContain('Personal Access Token');
+    expect(exec.calls.some((c) => c.args[0] === 'auth')).toBe(false); // never probed an unsupported version's session
+  });
+
+  it('maps CLI-reported HTTP errors to the same guidance without echoing provider bodies', async () => {
+    const exec = mockExec([
+      ['gddy --version', () => version('0.2.20')],
+      ['gddy auth status', () => session()],
+      [new RegExp('^gddy api call '), () => ({
+        code: 4,
+        stdout: JSON.stringify({
+          error: { code: 'NOT_FOUND', message: 'HTTP error 404: Not Found\n{"correlationId":"x","message":"zone not found","name":"ZONE_NOT_FOUND"}', system: 'api' },
+          fix: 'inspect the path',
+        }),
+      })],
+    ]);
+    const result = await godaddyAdapter.auth(testCtx({ exec: exec.run }));
+    expect(result.ok).toBe(false);
+    expect(result.howToFix).toContain('HTTP 404');
+    expect(result.howToFix).not.toContain('zone not found');
+    expect(result.howToFix).not.toContain('correlationId');
+  });
+
+  it('treats an unparseable CLI failure as ambiguous and does not retry it', async () => {
+    const exec = mockExec([
+      ['gddy --version', () => version('0.2.20')],
+      ['gddy auth status', () => session()],
+      [new RegExp('^gddy api call '), () => ({ code: 1, stdout: 'not json', stderr: 'boom' })],
+    ]);
+    const result = await godaddyAdapter.auth(testCtx({ exec: exec.run }));
+    expect(result.ok).toBe(false);
+    expect(result.howToFix).toContain('did not complete');
+    expect(exec.calls.filter((c) => c.args[0] === 'api')).toHaveLength(1);
   });
 });

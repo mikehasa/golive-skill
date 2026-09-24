@@ -5,6 +5,7 @@ import { Secret, fingerprint } from '../core/secret.js';
 import { resolve, normalizeTxt } from '../core/doh.js';
 import { tokenHowTo } from '../core/credentials.js';
 import { isSpf, mergeSpf } from './cloudflare-spf.js';
+import { cliLoginHelp, cliRequest, godaddyCli } from './godaddy-cli.js';
 
 const API = 'https://api.godaddy.com/v3/domains';
 const TOKEN = 'GODADDY_API_TOKEN';
@@ -40,9 +41,22 @@ function responseError(status: number): GoDaddyError {
   return new GoDaddyError(`GoDaddy DNS request failed: HTTP ${status}. ${hint}`, status);
 }
 
+/** What the human can do when neither the CLI session nor a PAT is available. */
+function accessHelp(): string {
+  return `Sign in once with the official GoDaddy CLI (${cliLoginHelp()}), or use a Personal Access Token. ${tokenHelp()}`;
+}
+
 async function api(ctx: Ctx, method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown): Promise<unknown> {
+  const cli = await godaddyCli(ctx);
+  if (cli) {
+    // Same endpoints, methods and bodies as the REST path; gddy supplies its own cached session.
+    const result = await cliRequest(ctx, cli, method, path, body);
+    if (result.status === 0) throw new GoDaddyError('GoDaddy CLI request did not complete. Re-read the zone before retrying a write.');
+    if (result.status < 200 || result.status >= 300) throw responseError(result.status);
+    return result.json;
+  }
   const token = ctx.envToken(TOKEN);
-  if (!token) throw new GoDaddyError(`No ${TOKEN} is available to golive. ${tokenHelp()}`);
+  if (!token) throw new GoDaddyError(`No GoDaddy access is available to golive. ${accessHelp()}`);
   let res: HttpResponse;
   try {
     res = await ctx.http({ method, url: API + path,
@@ -274,13 +288,14 @@ export const godaddyDns: DnsZone = {
 };
 
 async function auth(ctx: Ctx): Promise<AuthStatus> {
-  if (!ctx.envToken(TOKEN)) return { ok: false, howToFix: tokenHelp() };
+  const cli = await godaddyCli(ctx);
+  if (!cli && !ctx.envToken(TOKEN)) return { ok: false, howToFix: `No GoDaddy access is configured. ${accessHelp()}` };
   try {
     const data = await api(ctx, 'GET', '/domain-names?pageSize=1');
     if (!object(data) || !Array.isArray(data.items) || !Array.isArray(data.links)) throw malformed();
-    return { ok: true, via: `${TOKEN} (scoped Personal Access Token)` };
+    return { ok: true, via: cli ? `GoDaddy CLI (gddy ${cli.version}, ${cli.identity})` : `${TOKEN} (scoped Personal Access Token)` };
   } catch (e) {
-    return { ok: false, howToFix: `${e instanceof GoDaddyError ? e.message : 'GoDaddy authentication could not be verified.'} ${tokenHelp()}` };
+    return { ok: false, howToFix: `${e instanceof GoDaddyError ? e.message : 'GoDaddy authentication could not be verified.'} ${accessHelp()}` };
   }
 }
 

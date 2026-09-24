@@ -1,23 +1,30 @@
 # GoDaddy DNS
 
-Automated DNS-record adapter via REST v3. The Vercel-attached custom-domain journey (CNAME plus
-`_vercel` ownership TXT writes, ownership verification, HTTPS serving) passed a disposable live run;
-the update-by-ID path and other pairings await their live exercises. No CLI or MCP installation is
-needed for this adapter (GoDaddy also ships a beta `gddy` CLI; golive does not require it). The
-GoDaddy MCP cannot modify DNS.
+Automated DNS-record adapter with two transports — same endpoints and safety rules either way: the
+official GoDaddy CLI (`gddy`, the default when installed and logged in) and a scoped REST Personal
+Access Token (the fallback). The Vercel-attached custom-domain journey passed a disposable live run
+on the REST path; CLI reads passed a live read-only run; a CLI write (first-use browser scope
+consent) and the update-by-ID path await their exercises. The GoDaddy MCP cannot modify DNS.
 
 1. Use `dns=godaddy` only when the domain's **authoritative DNS** is hosted at GoDaddy. Buying a
    domain there is not enough if its nameservers point elsewhere. golive checks public delegation and
    zone access, including subdomain delegations; it never changes nameservers.
-2. Have the human create a Personal Access Token at `developer.godaddy.com` with
-   `domains.domain:read` and `domains.dns:update` only. No purchase or nameserver permissions.
-3. On macOS run `credentials --prompt GODADDY_API_TOKEN --json` for private native entry. Their own
-   editor is the fallback if unavailable, unsupported, or preferred; follow
+2. Preferred sign-in: install the official CLI and log in once —
+   `curl -fsSL https://github.com/godaddy/cli/releases/latest/download/install.sh | bash`, then
+   `gddy auth login` in the human's terminal (browser OAuth; the session stays in the CLI's own
+   store, never in chat, arguments or golive's files). golive detects `gddy` 0.2.20+ and prefers it
+   automatically; per gddy's documented scope step-up, a first write may ask for the DNS write scope
+   in the browser.
+3. Fallback when the CLI is unavailable (headless hosts, no extra binary): have the human create a
+   Personal Access Token at `developer.godaddy.com` with `domains.domain:read` and
+   `domains.dns:update` only. No purchase or nameserver permissions.
+4. PAT path only: on macOS run `credentials --prompt GODADDY_API_TOKEN --json` for private native
+   entry. Their own editor is the fallback if unavailable, unsupported, or preferred; follow
    [How the human connects accounts](../SKILL.md#how-the-human-connects-accounts) for fallback,
    replacement and cancellation. Never put the value in chat or arguments. Classic key/secret pairs are not used.
-4. Run `doctor`. Current GoDaddy documentation allows domain management when the account holds at
+5. Run `doctor`. Current GoDaddy documentation allows domain management when the account holds at
    least one domain, or has a qualifying plan; a 403 may indicate missing scope or account eligibility.
-5. Show the complete plan and obtain explicit DNS approval before `apply --confirm-dns`.
+6. Show the complete plan and obtain explicit DNS approval before `apply --confirm-dns`.
 
 golive preserves unrelated records. It can change records it created only while their stored
 fingerprints still match; existing matching records are accepted without taking ownership. An
