@@ -1,13 +1,11 @@
-# 🚀 GoLive
+# GoLive
 
-**Your agent wrote the code. GoLive helps you get it live.**
+**Take your agent-built product live: hosting, database, domain, email, payments — on your own accounts.**
 
-Coding agents can build an app fast. Getting it live still means setting up accounts, hosting,
-databases, secrets and all the services that make the app work for real users.
-
-GoLive is an open-source Agent Skill for that work. Our goal is to **handle or guide everything
-between “the code works” and a working live product**, then help you keep it running. One workflow
-in your coding agent, using your own accounts and the providers you choose.
+Your coding agent can build an app in minutes. Getting it to real users still means accounts,
+hosting, databases, domains, secrets and connected services. GoLive is the open-source Agent Skill
+for that work: it **detects what your app needs, plans the exact changes, asks for your approval,
+applies them with your own logins, and verifies what actually works**.
 
 Automate the parts providers expose. Guide you through the parts that need a human. Verify what
 can be observed, and make unfinished work clear. No GoLive account, hosted backend or product telemetry.
