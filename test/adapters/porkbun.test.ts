@@ -78,6 +78,10 @@ describe('Porkbun authentication and transport', () => {
     expect(f.requestObjects[0]!.headers!['X-Secret-API-Key']).toBeInstanceOf(Secret);
     for (const key of [API_KEY, SECRET_KEY]) expect(JSON.stringify([result, f.calls.map((c) => ({ url: c.url, body: c.body })), f.ctx.logs, f.ctx.state.get()])).not.toContain(key);
   });
+  it('accepts a SUCCESS ping without credentialsValid (the getting-started guide shape)', async () => {
+    const f = fake({ failure: { status: 200, json: { status: 'SUCCESS' } } });
+    expect((await porkbunAdapter.auth(f.ctx)).ok).toBe(true);
+  });
   it('requires the human-edited key pair without making a request', async () => {
     const ctx = testCtx({ tokens: { PORKBUN_API_KEY: API_KEY } });
     expect(await porkbunAdapter.auth(ctx)).toMatchObject({ ok: false, howToFix: expect.stringContaining('PORKBUN_SECRET_API_KEY') });

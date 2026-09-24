@@ -12403,7 +12403,7 @@ var porkbunDns = {
 async function auth7(ctx) {
   try {
     const response = await api4(ctx, "GET", "/ping");
-    if (response.credentialsValid !== true) return { ok: false, howToFix: `Porkbun did not confirm this key pair. ${help()}` };
+    if (response.credentialsValid === false) return { ok: false, howToFix: `Porkbun did not confirm this key pair. ${help()}` };
     return { ok: true, via: "PORKBUN_API_KEY + PORKBUN_SECRET_API_KEY (API headers)" };
   } catch (e) {
     return { ok: false, howToFix: redact(e instanceof Error ? e.message : String(e)) };

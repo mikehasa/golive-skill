@@ -274,7 +274,10 @@ export const porkbunDns: DnsZone = {
 async function auth(ctx: Ctx): Promise<AuthStatus> {
   try {
     const response = await api(ctx, 'GET', '/ping');
-    if (response.credentialsValid !== true) return { ok: false, howToFix: `Porkbun did not confirm this key pair. ${help()}` };
+    // The API reference documents `credentialsValid: true`, but the getting-started guide's own
+    // example omits it. A SUCCESS envelope already means the keys were read and accepted, so only an
+    // explicit `false` refuses — a missing field must not fail the very first live call.
+    if (response.credentialsValid === false) return { ok: false, howToFix: `Porkbun did not confirm this key pair. ${help()}` };
     return { ok: true, via: 'PORKBUN_API_KEY + PORKBUN_SECRET_API_KEY (API headers)' };
   } catch (e) { return { ok: false, howToFix: redact(e instanceof Error ? e.message : String(e)) }; }
 }
