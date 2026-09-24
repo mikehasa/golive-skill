@@ -148,17 +148,18 @@ you get the specific blocker and next action. See [guided provider scope](docs/P
 | **Vercel + Supabase** | Provisioning, environment wiring, deployment, authenticated CRUD and access isolation |
 | **Netlify + Neon** | Provisioning, environment wiring, deployment, Postgres connectivity, two-session API checks and browser CRUD |
 | **Vercel + Porkbun (custom domain)** | Domain attachment, an approved DNS record write under `--confirm-dns`, ownership verification and HTTPS serving on a disposable subdomain |
+| **Vercel + GoDaddy (custom domain)** | The same journey on a second subdomain, including the ownership TXT challenge Vercel requested after attaching |
 
 These were approved disposable runs on existing accounts; completed test resources were deleted
-afterward, and the custom-domain run's disposable project and record are queued for supervised
+afterward, and the custom-domain runs' disposable projects and records are queued for supervised
 cleanup. Cross-pairings have mocked coverage, not equivalent live proof. Supabase CLI-login reuse
 separately passed read-only verification; the complete deployment test used an explicit token.
 A new user's first-account setup and every application framework have not been validated.
 
-Experimental adapters also exist for Supabase Auth configuration, Stripe, Resend and Cloudflare/
-GoDaddy DNS. Their complete auth, payment, email and remaining domain journeys are **not validated
-alpha paths yet**; the Vercel + Porkbun custom domain is the first tested DNS path. See
-[provider scope](docs/PROVIDERS.md) and [observed validation](docs/VALIDATION.md).
+Experimental adapters also exist for Supabase Auth configuration, Stripe, Resend and Cloudflare
+DNS. Their complete auth, payment, email and remaining domain journeys are **not validated alpha
+paths yet**; the Vercel + Porkbun and Vercel + GoDaddy custom domains are the first tested DNS
+paths. See [provider scope](docs/PROVIDERS.md) and [observed validation](docs/VALIDATION.md).
 
 ## The full go-live checklist and roadmap
 
@@ -195,10 +196,10 @@ live-tested milestones**, not a finished category or a completed checklist for y
   readiness. Stripe wiring exists; transaction acceptance tests are still pending.
 - [ ] 🚧 **Transactional email:** sending identity, DNS, auth emails, inbox delivery and bounce
   handling. Resend/domain wiring exists; delivery and Auth SMTP are still pending.
-- [x] ✅ **Domains / DNS / HTTPS:** ~~Prove domain attachment, DNS wiring and HTTPS serving on one host+DNS pair.~~
-  Tested: Vercel attachment, Porkbun record writes under `--confirm-dns`, ownership verification and
-  HTTPS 200 on a disposable subdomain. GoDaddy and Cloudflare DNS adapters, redirects and further
-  host pairings still need live validation.
+- [x] ✅ **Domains / DNS / HTTPS:** ~~Prove domain attachment, DNS wiring and HTTPS serving on host+DNS pairs.~~
+  Tested: Vercel attachment with Porkbun and GoDaddy record writes under `--confirm-dns`, ownership
+  verification and HTTPS 200 on disposable subdomains. The Cloudflare DNS adapter, redirects and
+  further host pairings still need live validation.
 - [ ] 🗺️ **SMS and push notifications:** sender registration, credentials, permissions and delivery checks.
 - [ ] 🗺️ **Third-party and AI services:** API access, scopes, callbacks, quotas and functional tests.
   Missing environment variables are detected today; service-specific workflows are planned.

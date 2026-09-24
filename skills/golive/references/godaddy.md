@@ -1,7 +1,10 @@
 # GoDaddy DNS
 
-Automated DNS-record adapter via REST v3; covered by mocks, awaiting first live-account test. No CLI
-or MCP installation is needed. The GoDaddy MCP cannot modify DNS.
+Automated DNS-record adapter via REST v3. The Vercel-attached custom-domain journey (CNAME plus
+`_vercel` ownership TXT writes, ownership verification, HTTPS serving) passed a disposable live run;
+the update-by-ID path and other pairings await their live exercises. No CLI or MCP installation is
+needed for this adapter (GoDaddy also ships a beta `gddy` CLI; golive does not require it). The
+GoDaddy MCP cannot modify DNS.
 
 1. Use `dns=godaddy` only when the domain's **authoritative DNS** is hosted at GoDaddy. Buying a
    domain there is not enough if its nameservers point elsewhere. golive checks public delegation and
