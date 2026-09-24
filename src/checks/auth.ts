@@ -4,6 +4,10 @@ import { cap, errMsg, isFailing, pass, prereq, result, skip, worst } from './uti
 /** The minimum password length golive is comfortable with (provider defaults start at 6). */
 const MIN_PASSWORD = 12;
 
+/** Resend's SMTP host: the endpoint the `auth:smtp` step writes for `auth.smtp: resend`. */
+const RESEND_SMTP_HOST = 'smtp.resend.com';
+const isResendSmtp = (host: string | undefined): boolean => (host ?? '').trim().toLowerCase() === RESEND_SMTP_HOST;
+
 interface Issue {
   severity: Severity;
   line: string;
@@ -112,15 +116,29 @@ export const authPolicyCheck: Check = {
       }
     }
 
-    // Mailer: the provider's built-in mailer is rate-limited and meant for testing.
+    // Mailer: the provider's built-in mailer is rate-limited and meant for testing, and one run of the
+    // auth journeys needs four accepted sends (the seeding probe, the recovery request, the recovery
+    // check's pair) — more than that limit fits. Custom SMTP on the app's own email provider is the fix
+    // the `auth:smtp` step applies; a configured one is reported as such below.
     if (!cfg.smtp) missing.push('auth email (SMTP)');
     else {
-      evidence.push(cfg.smtp.configured ? `auth email: custom SMTP${cfg.smtp.host ? ` (${cfg.smtp.host})` : ''}` : 'auth email: provider built-in mailer');
-      if (!cfg.smtp.configured && ctx.config.auth?.smtp !== 'provider') {
+      evidence.push(cfg.smtp.configured ? `auth email: custom SMTP${isResendSmtp(cfg.smtp.host) ? ' via Resend' : ''}${cfg.smtp.host ? ` (${cfg.smtp.host})` : ''}` : 'auth email: provider built-in mailer');
+      if (cfg.smtp.configured) {
+        if (cfg.smtp.senderEmail) evidence.push(`auth email sender: ${cfg.smtp.senderEmail}`);
+        // The honest limit: `smtp_pass` is write-only (the provider answers a hash), so a custom SMTP
+        // that reads back as configured proves the settings, not that mail leaves the project.
+        evidence.push('the provider never returns the SMTP password, so this reads the settings back, not a delivery');
+      } else if (ctx.config.auth?.smtp === 'resend') {
         issues.push({
           severity: 'medium',
-          line: `auth emails go through ${provider}'s built-in mailer, which is rate-limited and meant for testing`,
-          fix: `Configure custom SMTP in the ${provider} dashboard, or accept the built-in mailer with \`auth.smtp: provider\` in golive.yaml.`,
+          line: `golive.yaml asks for the app's email provider (\`auth.smtp: resend\`) but auth emails still go through ${provider}'s built-in mailer, which allows roughly one accepted send per window — the recovery journey alone needs four`,
+          fix: `Re-run \`plan\` + \`apply\` (the \`auth:smtp\` step writes the custom SMTP from a sending key golive issues), then re-run verify.`,
+        });
+      } else if (ctx.config.auth?.smtp !== 'provider') {
+        issues.push({
+          severity: 'medium',
+          line: `auth emails go through ${provider}'s built-in mailer, which is rate-limited and meant for testing: its limit can refuse the sends an auth journey needs (HTTP 429, roughly one accepted send per window)`,
+          fix: `Set \`auth.smtp: resend\` in golive.yaml and re-run \`plan\` + \`apply\` (the \`auth:smtp\` step writes the custom SMTP from a sending key golive issues), configure custom SMTP in the ${provider} dashboard, or accept the built-in mailer with \`auth.smtp: provider\`.`,
         });
       }
     }

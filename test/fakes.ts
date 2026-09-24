@@ -3,8 +3,9 @@
  * without any provider, network or CLI. Each fake exposes its mutable state so tests can arrange
  * "what already exists" and inspect "what was written".
  */
-import { Secret } from '../src/core/secret.js';
+import { Secret, vaultPut } from '../src/core/secret.js';
 import { modeFor } from '../src/core/config.js';
+import { KEY_VAULT } from '../src/adapters/resend.js';
 import type { Adapter, AuthLoginOutcome, AuthRecoveryOutcome, AuthSettings, AuthSignupOutcome, AuthUserView, Ctx, DeploymentInfo, DnsRecord, EnvTarget, Mode, OutputKey, Outputs, ProjectRef, Value } from '../src/core/types.js';
 
 export interface Call {
@@ -364,6 +365,14 @@ export function fakeWorld() {
               delete after[key];
               continue;
             }
+            if (key === 'smtp') {
+              // Like the provider: a patch carries only the fields it changes, and `configured` is
+              // derived from the host on read.
+              const group = { ...((after.smtp as Record<string, unknown> | undefined) ?? {}), ...(value as Record<string, unknown>) };
+              after.smtp = { ...group, configured: Boolean(group.host) };
+              applied.push(...Object.keys(value as Record<string, unknown>).map((f) => `smtp.${f}`));
+              continue;
+            }
             after[key] = value;
             applied.push(key);
           }
@@ -598,6 +607,8 @@ export function fakeWorld() {
   // ── Email ───────────────────────────────────────────────────────────────────────────────────────
   const mail = {
     authed: true,
+    /** The provider id this fake answers as: `resend` lets a test exercise the Resend-only SMTP write. */
+    providerId: 'fakemail',
     domains: new Map<string, { id: string; status: 'verified' | 'pending' | 'failed' | 'not_started' }>(),
     verifyError: null as string | null,
     keys: 0,
@@ -616,7 +627,9 @@ export function fakeWorld() {
     { type: 'TXT', name: `fm._domainkey.${d}`, content: 'p=MIGfMA0GFAKEdkim' },
   ];
   const mailAdapter: Adapter = {
-    id: 'fakemail',
+    get id() {
+      return mail.providerId;
+    },
     title: 'FakeMail',
     axes: ['email'],
     automated: true,
@@ -624,14 +637,14 @@ export function fakeWorld() {
     capabilities: {
       sendingDomain: {
         ensure: async (_c, d) => {
-          rec('fakemail', 'sendingDomain.ensure', d);
+          rec(mail.providerId, 'sendingDomain.ensure', d);
           let e = mail.domains.get(d);
           if (!e) mail.domains.set(d, (e = { id: `dom_${d}`, status: 'not_started' }));
           return { id: e.id, records: mailRecords(d) };
         },
         status: async (_c, id) => [...mail.domains.values()].find((x) => x.id === id)?.status ?? 'not_started',
         verify: async (_c, id) => {
-          rec('fakemail', 'sendingDomain.verify', id);
+          rec(mail.providerId, 'sendingDomain.verify', id);
           if (mail.verifyError) throw new Error(mail.verifyError);
           const e = [...mail.domains.values()].find((x) => x.id === id);
           if (e) e.status = 'pending';
@@ -639,13 +652,17 @@ export function fakeWorld() {
       },
       keys: {
         issue: async (_c, target, scope) => {
-          rec('fakemail', 'keys.issue', target, scope);
-          return { key: 'resend.apiKey', id: `key_${++mail.keys}`, secret: new Secret('RESEND_API_KEY', `${RAW.resendKey}${mail.keys}`) };
+          rec(mail.providerId, 'keys.issue', target, scope);
+          // Like the adapter: the issued token goes into the run vault, where a later step (the
+          // custom-SMTP write) takes it from instead of minting a key of its own.
+          const secret = new Secret('RESEND_API_KEY', `${RAW.resendKey}${++mail.keys}`);
+          vaultPut(KEY_VAULT, secret);
+          return { key: 'resend.apiKey', id: `key_${mail.keys}`, secret };
         },
         get revoke() {
           return mail.withRevoke
             ? async (_c: unknown, id: string): Promise<{ revoked: boolean; reason?: string }> => {
-                rec('fakemail', 'keys.revoke', id);
+                rec(mail.providerId, 'keys.revoke', id);
                 if (mail.revokeError) throw new Error(mail.revokeError);
                 if (mail.revokeResult) return mail.revokeResult;
                 mail.revoked.push(id);

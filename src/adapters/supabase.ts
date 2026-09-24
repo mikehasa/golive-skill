@@ -911,6 +911,9 @@ function intOf(key: string, v: unknown): number {
   if (n === undefined) throw new SupabaseError(`Supabase ${key} must be a positive whole number (got ${JSON.stringify(v)}).`);
   return n;
 }
+/** The management API has answered `smtp_port` both as a number and as a numeric string. */
+const smtpPort = (v: unknown): number | undefined => int(typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v.trim()) : v);
+
 /** The SMTP password is write-only: it must arrive as a Secret and is never read back. */
 function smtpPasswordOf(v: unknown): Secret {
   if (!(v instanceof Secret)) throw new SupabaseError(`The Supabase SMTP password must be a Secret (got ${typeof v}).`);
@@ -937,6 +940,8 @@ const AUTH_FIELDS: AuthField[] = [
   { name: 'otpLength', key: 'mailer_otp_length', read: int, write: (v) => intOf('mailer_otp_length', v) },
   { name: 'emailRateLimitPerHour', key: 'rate_limit_email_sent', read: int, write: (v) => intOf('rate_limit_email_sent', v) },
   { name: 'smtp.host', key: 'smtp_host', read: optionalStr('smtp_host'), write: (v) => str(v) },
+  { name: 'smtp.port', key: 'smtp_port', read: smtpPort, write: (v) => intOf('smtp_port', v) },
+  { name: 'smtp.user', key: 'smtp_user', read: optionalStr('smtp_user'), write: (v) => str(v) },
   { name: 'smtp.senderEmail', key: 'smtp_admin_email', read: optionalStr('smtp_admin_email'), write: (v) => str(v) },
   { name: 'smtp.senderName', key: 'smtp_sender_name', read: optionalStr('smtp_sender_name'), write: (v) => str(v) },
   // Write-only: GET answers `smtp_pass` with a hash, never the value.
@@ -949,9 +954,17 @@ const AUTH_FIELDS: AuthField[] = [
  */
 function smtpOf(reported: AuthSmtp): AuthSmtp {
   const host = str(reported.host);
+  const user = str(reported.user);
   const senderEmail = str(reported.senderEmail);
   const senderName = str(reported.senderName);
-  return { configured: Boolean(host), ...(host ? { host } : {}), ...(senderEmail ? { senderEmail } : {}), ...(senderName ? { senderName } : {}) };
+  return {
+    configured: Boolean(host),
+    ...(host ? { host } : {}),
+    ...(reported.port ? { port: reported.port } : {}),
+    ...(user ? { user } : {}),
+    ...(senderEmail ? { senderEmail } : {}),
+    ...(senderName ? { senderName } : {}),
+  };
 }
 
 /** Dotted access (`smtp.host`) into the read or write shape. */

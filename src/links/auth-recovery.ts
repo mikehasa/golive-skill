@@ -78,7 +78,7 @@ export const authRecoveryLink: Link = {
       title: `Rotate the ${au.adapter.title} test account's password through password recovery`,
       kind: 'provision',
       risk: { writes: true, live: true, replayable: true },
-      dependsOn: deps(ctx, [...(axis ? [`project:${axis}`] : []), 'auth:settings', 'auth:test-user']),
+      dependsOn: deps(ctx, [...(axis ? [`project:${axis}`] : []), 'auth:smtp', 'auth:settings', 'auth:test-user']),
       preview: [
         `ask ${au.adapter.title} to send a real password-recovery email for ${address} in ${where}`,
         `mint the recovery link through the admin API and set a new password on ${address} (${seeded}) with it — the same calls the app's own recovery page makes`,

@@ -13,7 +13,7 @@
     "approval": 1
   },
   "files": {
-    "SKILL.md": "3fdc0f8674550c23475e1db6ad04240033285334ca9a41e6339ad1d8b7075cfd",
+    "SKILL.md": "406020535e968e4433d4763b10203590e2b676304e58a17d5e025bc1a329023a",
     "LICENSE": "b1546216882fd37b1602f3a004e8548b5f6c38ada73117308d4c3ac6968235e9",
     "THIRD_PARTY_NOTICES.md": "ad33f954a31c411cc667c07460859c77a014d6720e581a5ce5edd48c9c962781",
     "references/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -22,17 +22,17 @@
     "references/guided.md": "0c2c1b3938edf38d76f371af5159a155692628c032010eb2c1f0a8e7a8d2b0d4",
     "references/neon.md": "a5a85919d318b8f15fca6dd49a8a495a6aeb3e713ddac620978747c5a67bd400",
     "references/netlify.md": "fbfb69e41cf49ee263940a7b36d8f8c0a1552634d6a6581ef32a72379dea668f",
-    "references/plan-and-verify.md": "b9f0ac24e54147b8540e0edc323ece5e959204bc7be1ed49c5ac9269f0846d29",
+    "references/plan-and-verify.md": "f9f1670f5cceddca0a82c327e3dfca9cbb8bdd6f1b9e68780300f3d2d5785314",
     "references/porkbun.md": "8eaeb8890ce3c104e242ced33e77179253a9d8f3b9425be6692585254c6b6490",
-    "references/resend.md": "21166f08bbbbf3e0a9b19559f4f7bfe29024d38840ca7d37fab8aab5248d4fed",
+    "references/resend.md": "19b1df38c32990f3614819e037f30bcf1e1ca9a54b035ed51b4bc62cc8c915fa",
     "references/stripe.md": "ef06e9f2782919849b49dfa5145010a8b3017e2210c655c8af45e3683d105c32",
-    "references/supabase.md": "fdcd6e7d4b10a5bf07e3b0f27d8a8557139fa4d9e30d4d8c4644611c3240ae3f",
+    "references/supabase.md": "013fc0ff0e77a4b702d2f67e7a6cf255658f58ee1ea9b89c5b3aa2f17f6005f7",
     "references/troubleshooting.md": "8a9a8bd3a4c79e5fac00edbec3db0d6c47eaf36f4f6e7a5b92a46a92b21e50fd",
     "references/updates.md": "7405e981743ca3d4815449694f560ef91d80a16b1046451f56395fc75d68de58",
     "references/vercel.md": "83e98b61a1f16ba0e76327ccf01268a3a4c42be3ffecc0ab12bc8c6f061c18df",
-    "scripts/golive.mjs": "439eee7eb5ec1755005517d99e5c7ca6b10439a6003966bf237a21a726e65c41",
+    "scripts/golive.mjs": "577ade6151bb5717ce4076aa90fbab1147a625f1b0c95c86da103971e77efcff",
     "scripts/install-cli.mjs": "55e2a776892a9d34fa62d7ebf70bb101a0f54a3592ba9f87b77a1d43043e108a",
     "scripts/install-lib.mjs": "9d3de597acc711178e588247f3cc9b5b5445f90d492cd464018065f2cd25caec"
   },
-  "bundleDigest": "859278c33a8f6e3797dca70a949fdbfdd97be4c26e785ddcf4cc59a007f1a048"
+  "bundleDigest": "4a2c4677880000979a8c7027de52c67c41056d577e0c19333fdca2cd05e7d0fb"
 }

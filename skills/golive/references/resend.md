@@ -5,7 +5,8 @@ Load this when the plan uses `email=resend`.
 Status: the disposable live run passed end to end — domain created through the CLI transport, records
 written to an automated DNS provider, domain verified, sending-scoped keys issued into the app's env,
 and a send using that environment key was delivered (spam folder; fresh subdomain, no DMARC). Auth
-SMTP and bounce handling remain open.
+SMTP is wired from a sending key golive issues (`auth:smtp`, with `auth.smtp: resend` — implemented
+and mock-covered, not live-validated); bounce handling remains open.
 
 ## 1. Logging in (least friction first)
 
@@ -44,8 +45,12 @@ golive automates (after plan approval; DNS writes need `--confirm-dns`):
 - Verifies: `email-dns` (the exact records Resend lists for the domain, plus DMARC, in public DNS; a
   missing DKIM record fails) and `email-verified` (Resend marks the domain verified).
 
-Not automated yet: the from-address env var (the human sets it if the code reads one), Resend as
-Supabase Auth's SMTP server (a manual dashboard step, see `supabase.md`), and a test send.
+Not automated yet: the from-address env var (the human sets it if the code reads one) and a test send.
+Resend as Supabase Auth's SMTP server is written by the `auth:smtp` step when `auth.smtp: resend` is
+set (host `smtp.resend.com`, port 465, user `resend`): it takes the SMTP password from the key the
+email journey issued in the same run, or issues `golive-<app>-smtp` for that purpose alone and records
+it like every other key. See `supabase.md` for the step's read-back limit (the provider never returns
+the password).
 
 Stays with the human (and why):
 - **A domain already registered by another Resend team.** Claiming it needs a TXT record and gives
@@ -87,7 +92,7 @@ Stays with the human (and why):
 | `403` sending from `onboarding@resend.dev` | Only the owner's address works. Send from the verified domain. |
 | `429 daily_quota_exceeded` / `monthly_quota_exceeded` | Plan quota hit. Wait for the reset or the human upgrades. |
 | `429 rate_limit_exceeded` | 10 requests/second per team; retry after a moment. |
-| Supabase auth emails not arriving | Custom SMTP isn't wired by golive; check the Supabase SMTP settings, tracking off, and Supabase's email rate limit. |
+| Supabase auth emails not arriving | With `auth.smtp: resend`, check the `auth:smtp` step's changes and `auth-policy`'s `custom SMTP via Resend` evidence, that tracking is off, and Supabase's email rate limit. Without that opt-in the project still uses Supabase's built-in mailer, which is rate-limited. |
 
 ## Unverified
 

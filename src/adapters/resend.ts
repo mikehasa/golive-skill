@@ -19,8 +19,11 @@ import { normalizeRecords, type ResendRecord } from './resend-records.js';
 const API = 'https://api.resend.com';
 const UA = 'golive/0';
 const TOKEN = 'RESEND_API_KEY';
-/** Vault key for the most recently issued app sending key (used to prove it with a test send). */
-const VAULT_KEY = 'resend.apiKey';
+/**
+ * Vault key for the most recently issued app sending key: used to prove it with a test send, and as
+ * the auth project's SMTP password when the same run configures custom SMTP.
+ */
+export const KEY_VAULT = 'resend.apiKey';
 const REGIONS = new Set(['us-east-1', 'eu-west-1', 'sa-east-1', 'ap-northeast-1']);
 /** The CLI prefers RESEND_API_KEY over the logged-in profile; blank it so the profile is used. */
 const CLI_ENV = { RESEND_API_KEY: '' };
@@ -417,12 +420,15 @@ export function appSlug(ctx: Ctx): string {
   return raw.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'app';
 }
 
-export function keyName(ctx: Ctx, target: EnvTarget): string {
-  const suffix = `-${target}`;
+/** A sending key's name: `golive-<app>-<slot>`, the slot being an env target or `smtp`. */
+export function keyNameFor(ctx: Ctx, slot: string): string {
+  const suffix = `-${slot}`;
   const room = 50 - 'golive-'.length - suffix.length;
   const app = appSlug(ctx).slice(0, room).replace(/-$/, '') || 'app';
   return `golive-${app}${suffix}`;
 }
+
+export const keyName = (ctx: Ctx, target: EnvTarget): string => keyNameFor(ctx, target);
 
 const keys: KeyIssuer = {
   async issue(ctx, target, scope) {
@@ -431,12 +437,13 @@ const keys: KeyIssuer = {
     const t = await transport(ctx);
     const d = (await t.listDomains()).find((x) => sameName(x.name, domain));
     if (!d) throw new Error(`Resend has no domain ${domain} yet; run the sending-domain step first, then issue the key`);
-    const name = keyName(ctx, target);
+    // An SMTP-only key gets a name of its own: it is not rotated together with the app's key.
+    const name = scope.purpose === 'smtp' ? keyNameFor(ctx, 'smtp') : keyName(ctx, target);
     // Tokens can't be re-read, so "adopt" means rotate: mint a new key, leave old ones for an explicit revoke.
     const older = await t.listKeys().catch(() => []);
     const same = older.filter((k) => k.name === name).map((k) => k.id);
     const k = await t.createKey(name, d.id);
-    vaultPut(VAULT_KEY, k.token);
+    vaultPut(KEY_VAULT, k.token);
     ctx.log.info(`issued Resend sending key ${name} (${k.id}, domain ${d.name}, fp:${k.token.fingerprint})`);
     if (same.length) ctx.log.info(`older Resend keys named ${name} still exist (${same.join(', ')}); revoke them once the new key is live`);
     return { key: 'resend.apiKey', id: k.id, secret: k.token };
@@ -458,7 +465,7 @@ const testSend: TestSend = {
   async send(ctx, msg) {
     // An explicit credential (e.g. the app's key read back for this check) wins; then the key issued
     // this run. A successful send with it proves key + domain scope together.
-    const appKey = msg.key ?? vaultGet(VAULT_KEY);
+    const appKey = msg.key ?? vaultGet(KEY_VAULT);
     if (appKey) return sendRest(ctx, appKey, msg, idempotencyKey(msg, appKey.fingerprint));
     const t = await transport(ctx);
     return t.sendEmail(msg, idempotencyKey(msg, t.via));
