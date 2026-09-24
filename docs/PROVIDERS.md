@@ -50,8 +50,8 @@ identities match. Neon delegates supported stored-login access to its CLI.
 | Area | Adapter | Scope |
 | --- | --- | --- |
 | Auth | Supabase Auth | Production Site URL and redirect configuration; not complete signup or email-delivery acceptance |
-| Payments | Stripe | Mode-aware key/env wiring and production webhook registration/settings checks; real test payments and signed event delivery still need validation |
-| Email | Resend | Sending-domain setup, DNS wiring, key/env wiring and domain-verification checks; inbox delivery and Auth SMTP integration are separate |
+| Payments | Stripe | Test-mode env wiring, webhook registration and signed-event acceptance passed a disposable run; live-mode payments, refunds, entitlements and subscriptions remain open |
+| Email | Resend | Sending-domain setup, DNS wiring, scoped-key issuance and a real send through the app's environment key passed a disposable run (delivered; spam folder on a fresh subdomain); Auth SMTP and bounce handling remain open |
 | DNS | Cloudflare | Records in an existing authoritative zone; no domain purchase, renewal, transfer or nameserver changes. Live validation pending. |
 | DNS | Porkbun, GoDaddy | Same zone-only scope. The Vercel-paired custom-domain journey (attach, approved record writes, ownership verification, HTTPS) passed disposable live runs; other pairings remain open. |
 

@@ -2,6 +2,11 @@
 
 Load this when the plan uses `email=resend`.
 
+Status: the disposable live run passed end to end — domain created through the CLI transport, records
+written to an automated DNS provider, domain verified, sending-scoped keys issued into the app's env,
+and a send using that environment key was delivered (spam folder; fresh subdomain, no DMARC). Auth
+SMTP and bounce handling remain open.
+
 ## 1. Logging in (least friction first)
 
 1. **`resend login` (preferred).** Install (`npm i -g resend-cli` or `brew install resend/cli/resend`),

@@ -17,6 +17,8 @@ Public-channel installation acceptance was recorded later the same day; see
 | Vercel + Porkbun custom domain | Approved disposable Vercel project and a disposable subdomain of an existing Porkbun zone: project creation, production deploy, domain attachment, one approved Porkbun CNAME write under `--confirm-dns`, Vercel ownership verification and HTTPS 200 on the subdomain (final report: 4 pass, 0 fail) | Static fixture without app auth or data flows; attachment is Vercel-only (Netlify stays guided); one adapter fix from this run is mock-covered until its next live exercise |
 | Vercel + GoDaddy custom domain | Same approved journey on a second disposable subdomain (existing GoDaddy zone): project creation, deploy, attachment, two approved record writes under `--confirm-dns` (CNAME plus the `_vercel` ownership TXT), ownership verification and HTTPS 200 (final report: 4 pass, 0 fail) | Static fixture; the `_vercel` TXT sits at the zone's `_vercel` name; the update-by-ID path and redirects were not exercised |
 | Vercel + GoDaddy (CLI transport) | Same journey on a third disposable subdomain with DNS served by the official `gddy` CLI and the user's own OAuth session: one scope consent, both records created through `gddy api call`, inline read-back, ownership verification and HTTPS 200; the v3 update-by-ID (PUT) endpoint separately validated through the same session (status 200, mutation read back) | Static fixture; golive's owned-record update flows and the REST update-by-ID path remain mock-covered |
+| Vercel + Resend email | Disposable project and a subdomain of an existing Porkbun zone: Resend domain created through the CLI transport, DKIM/SPF/MX/return-path records written under `--confirm-dns`, domain verified, two sending-scoped keys issued and written into the app env, and a real send using the app's own environment key delivered to a personal inbox (report: 4 pass, 0 fail, 1 warn) | Fresh subdomain without sending history: the message landed in the recipient provider's spam folder (no DMARC, new reputation); Auth SMTP, bounce handling and richer message content not exercised |
+| Vercel + Stripe test payments | Disposable project: restricted operator key plus a standard app key, sandbox identity bound into approval; `STRIPE_SECRET_KEY` written and re-checked in both targets; a test-mode webhook endpoint registered and re-checked via the API; the unsigned probe rejected with 400; a real test-card payment delivered `checkout.session.completed`, signature-verified, HTTP 200 (report: 5 pass, 0 fail) | Test mode (sandbox) only; live-mode keys/charges, entitlements, refunds and subscriptions not exercised |
 | Cleanup | Separately approved exact test projects deleted; exact project reads and test URLs returned 404; unaffected scoped resources and login identities stayed unchanged | Normal provider deletion; Neon may retain a recovery window |
 
 Cleanup used supervised fixture helpers; GoLive does not yet expose a general teardown command.
@@ -65,6 +67,19 @@ and may trail the run that produced the evidence.
   non-interactive run; after one `gddy auth login -s domains.dns:update`, both creates and a `PUT`
   update-by-ID succeeded through the same session. The adapter's 403 hint now names that command
   for the CLI transport.
+- **Wildcard caches vs post-write checks (email run):** right after the sending records were written,
+  both public DoH resolvers answered the zone's catch-all wildcard CNAME for the just-created names
+  (cached for the record TTL, ten minutes in this run), so the inline `email-dns` check failed on the
+  first apply and passed on a re-run once the caches expired. Authoritative nameservers were correct
+  the whole time — a fresh write can legitimately disagree with public checks for minutes.
+- **Resend CLI transport (email run):** the tracking-disable follow-up added before the run was
+  confirmed live — the created domain's record set contained no tracking records — and the scoped
+  sending key read from the app's environment produced a delivered real send.
+- **Stripe sandbox flow (payments run):** the blocking handoff for a standard app key worked as
+  designed (a restricted operator key is never copied into the app); the sandbox identity and
+  operator fingerprint were bound into approval. The live `webhook-unsigned` probe received a 400
+  from the fixture and passed, and a real test-card payment delivered a signed
+  `checkout.session.completed` event that verified and returned 200 (deployment-log evidence).
 
 Provider fixes have offline mocked regressions. These implementation tests never use real accounts.
 The repaired behavior was subsequently exercised where described above; this is not blanket live
@@ -124,13 +139,15 @@ passed (see [Post-publication acceptance](#post-publication-acceptance)).
 
 ## Still unverified
 
-Stripe test/live payment behavior, Resend email delivery, and the Cloudflare DNS adapter still need
-live validation (the Vercel attachment passed disposable runs with both Porkbun and GoDaddy DNS;
-Netlify custom-domain attachment remains guided, and custom-domain redirects and certificate edge
-cases are not covered). Cross-provider pairings beyond the tested paths have mocked integration
-coverage. First-time account/login UX, other OS credential stores and framework-specific behavior
-need further coverage. A native Linux/Windows keyring path is not claimed by the Supabase reuse
-implementation; the own updater's Windows filesystem behavior is not a validated alpha channel.
+Live-mode Stripe payments (charges, refunds, entitlements, subscriptions), Resend Auth SMTP and
+bounce handling, and the Cloudflare DNS adapter still need live validation (test-mode checkout →
+signed webhook delivery, and a real Resend send → delivery, both passed disposable runs; the Vercel
+attachment passed disposable runs with both Porkbun and GoDaddy DNS; Netlify custom-domain
+attachment remains guided, and custom-domain redirects and certificate edge cases are not covered).
+Cross-provider pairings beyond the tested paths have mocked integration coverage. First-time
+account/login UX, other OS credential stores and framework-specific behavior need further coverage.
+A native Linux/Windows keyring path is not claimed by the Supabase reuse implementation; the own
+updater's Windows filesystem behavior is not a validated alpha channel.
 There is no nightly canary or published cross-agent compatibility matrix. Treat skipped and manual
 checks as unverified, and functionally test the application flows that matter to its owner.
 

@@ -2,6 +2,12 @@
 
 Load this when the plan uses `payments=stripe`.
 
+Status: a disposable test-mode run passed end to end — sandbox identity bound into approval (a
+restricted operator key plus a standard app key), env wiring verified, webhook endpoint registered
+and re-checked, the unsigned probe rejected with 400, and a real test-card payment delivered a
+signature-verified event (HTTP 200). Live-mode payments, refunds, entitlements and subscriptions
+remain open.
+
 ## 1. Giving golive Stripe keys
 
 Stripe has **no API that creates or hands out account API keys**, and golive does **not** use the

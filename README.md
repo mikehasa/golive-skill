@@ -12,8 +12,9 @@ can be observed, and make unfinished work clear. No GoLive account, hosted backe
 
 > **Early alpha · 0.1.0-alpha.1**
 > We are starting with **hosting + database: two choices each**. Vercel + Supabase and Netlify +
-> Neon have passed disposable live tests. The broader [roadmap](#the-full-go-live-checklist-and-roadmap)
-> is our direction, not a claim that it is all built.
+> Neon passed disposable live tests; custom-domain DNS, transactional email and test-mode payments
+> have since passed their own disposable validations. The broader
+> [roadmap](#the-full-go-live-checklist-and-roadmap) is our direction, not a claim that it is all built.
 
 [Install](#install) · [Use GoLive](#use-golive) · [See the workflow](#what-a-run-looks-like) · [Alpha scope](#what-this-alpha-supports) · [Roadmap](#the-full-go-live-checklist-and-roadmap) · [Contribute](CONTRIBUTING.md)
 
@@ -147,17 +148,19 @@ you get the specific blocker and next action. See [guided provider scope](docs/P
 | **Netlify + Neon** | Provisioning, environment wiring, deployment, Postgres connectivity, two-session API checks and browser CRUD |
 | **Vercel + Porkbun (custom domain)** | Domain attachment, an approved DNS record write under `--confirm-dns`, ownership verification and HTTPS serving on a disposable subdomain |
 | **Vercel + GoDaddy (custom domain)** | The same journey on a second subdomain, including the ownership TXT challenge Vercel requested after attaching |
+| **Vercel + Resend (email)** | Sending-domain setup, DNS records, domain verification and a real send through the app's own environment key (delivered; the fresh subdomain landed in spam) |
+| **Vercel + Stripe (test payments)** | Test-mode keys and webhook registration, an unsigned-request rejection, and a real test-card payment delivered as a signature-verified event |
 
 These were approved disposable runs on existing accounts; completed test resources were deleted
-afterward, and the custom-domain runs' disposable projects and records are queued for supervised
-cleanup. Cross-pairings have mocked coverage, not equivalent live proof. Supabase CLI-login reuse
-separately passed read-only verification; the complete deployment test used an explicit token.
-A new user's first-account setup and every application framework have not been validated.
+afterward, and recent runs' disposable projects and records are cleaned up under the same
+supervision. Cross-pairings have mocked coverage, not equivalent live proof. Supabase CLI-login
+reuse separately passed read-only verification; the complete deployment test used an explicit
+token. A new user's first-account setup and every application framework have not been validated.
 
-Experimental adapters also exist for Supabase Auth configuration, Stripe, Resend and Cloudflare
-DNS. Their complete auth, payment, email and remaining domain journeys are **not validated alpha
-paths yet**; the Vercel + Porkbun and Vercel + GoDaddy custom domains are the first tested DNS
-paths. See [provider scope](docs/PROVIDERS.md) and [observed validation](docs/VALIDATION.md).
+Experimental adapters also exist for Supabase Auth configuration and Cloudflare DNS. Their complete
+auth and domain journeys are **not validated alpha paths yet**; the DNS, email and test-mode
+payment paths listed above are the tested ones. See [provider scope](docs/PROVIDERS.md) and
+[observed validation](docs/VALIDATION.md).
 
 ## The full go-live checklist and roadmap
 
@@ -190,10 +193,12 @@ live-tested milestones**, not a finished category or a completed checklist for y
   Supabase configuration and some access checks exist; the complete journey still needs validation.
 - [ ] 🗺️ **OAuth / social login / SSO:** client registration, consent screens, scopes, callback
   URLs and provider reviews. Current auth-provider setup is guided.
-- [ ] 🚧 **Payments and subscriptions:** checkout, webhooks, entitlements, refunds and live-mode
-  readiness. Stripe wiring exists; transaction acceptance tests are still pending.
-- [ ] 🚧 **Transactional email:** sending identity, DNS, auth emails, inbox delivery and bounce
-  handling. Resend/domain wiring exists; delivery and Auth SMTP are still pending.
+- [x] ✅ **Payments and subscriptions:** ~~Prove test-mode checkout and webhook acceptance with Stripe.~~
+  A real test-card payment delivered a signature-verified `checkout.session.completed` event. Live-mode
+  readiness, entitlements, refunds and subscription events still need validation.
+- [x] ✅ **Transactional email:** ~~Prove sending-domain setup, verification and real delivery with Resend.~~
+  A send through the app's own environment key was delivered (to spam on a fresh subdomain, no DMARC yet).
+  Auth SMTP, bounce handling and richer message content still need validation.
 - [x] ✅ **Domains / DNS / HTTPS:** ~~Prove domain attachment, DNS wiring and HTTPS serving on host+DNS pairs.~~
   Tested: Vercel attachment with Porkbun and GoDaddy record writes under `--confirm-dns`, ownership
   verification and HTTPS 200 on disposable subdomains. The Cloudflare DNS adapter, redirects and
@@ -232,8 +237,8 @@ the right page, the right permissions, a check afterward, and a return to the sa
 When the app itself needs code changes, GoLive should give the coding agent a concrete task and
 recheck the result. It should not make you coordinate a dozen disconnected setup conversations.
 
-**Next up:** complete and live-test the common launch journeys—authentication, email, Stripe test
-payments and the remaining DNS adapters—then expand app architectures and ongoing operations.
+**Next up:** complete and live-test the remaining launch journeys—authentication, live-mode payment
+flows and the Cloudflare DNS adapter—then expand app architectures and ongoing operations.
 
 These are directions, not release dates. A capability should graduate from experimental only after
 its account setup, connection, verification and recovery have been exercised. Contributions toward
