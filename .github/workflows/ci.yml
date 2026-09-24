@@ -123,3 +123,110 @@ jobs:
             rmSync(scratch, { recursive: true, force: true });
           }
           JS
+
+  channels:
+    name: Install channels (Skills CLI and npm tarball)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 9.12.2
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install the Skills CLI channel from this checkout into isolated HOMEs
+        run: |
+          set -euo pipefail
+          root=$(mktemp -d)
+          root=$(cd "$root" && pwd -P)
+          echo "GOLIVE_CI_ROOT=$root" >> "$GITHUB_ENV"
+          mkdir -p "$root/home-codex" "$root/home-claude" "$root/empty-app"
+          HOME="$root/home-codex" npx --yes skills@1 add "$GITHUB_WORKSPACE/skills/golive" --skill golive --global --agent codex --yes < /dev/null
+          HOME="$root/home-claude" npx --yes skills@1 add "$GITHUB_WORKSPACE/skills/golive" --skill golive --global --agent claude-code --yes < /dev/null
+      - name: Pack and install the npm tarball channel into a temporary prefix
+        run: |
+          set -euo pipefail
+          root="$GOLIVE_CI_ROOT"
+          mkdir -p "$root/pack" "$root/prefix" "$root/home-npm"
+          export HOME="$root/home-npm" npm_config_cache="$root/npm-cache"
+          packed=$(cd "$GITHUB_WORKSPACE" && npm pack --pack-destination "$root/pack" 2>/dev/null | tail -n 1)
+          [ -f "$root/pack/$packed" ] || { echo "npm pack produced no tarball." >&2; exit 1; }
+          echo "GOLIVE_CI_TARBALL=$root/pack/$packed" >> "$GITHUB_ENV"
+          npm install --global "$root/pack/$packed" --prefix "$root/prefix" --no-audit --no-fund --offline
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          # Installed copies are exercised on the bundle's Node 20 runtime contract.
+          node-version: '20'
+      - name: Assert the Skills CLI installations on Node 20
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { execFileSync } from 'node:child_process';
+          import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+
+          const root = process.env.GOLIVE_CI_ROOT;
+          const committed = JSON.parse(readFileSync('skills/golive/release.json', 'utf8')).bundleDigest;
+          const manifestDigest = (path) => JSON.parse(readFileSync(path, 'utf8')).bundleDigest;
+          const installed = {
+            codex: join(root, 'home-codex', '.agents', 'skills', 'golive'),
+            'claude-code': join(root, 'home-claude', '.claude', 'skills', 'golive'),
+          };
+          assert.match(process.versions.node, /^20\./);
+          for (const [agent, skill] of Object.entries(installed)) {
+            const manifest = join(skill, 'release.json');
+            assert.ok(existsSync(manifest), `${agent} installation has no release manifest`);
+            assert.equal(manifestDigest(manifest), committed, `${agent} installation does not match the committed bundle`);
+          }
+          const app = join(root, 'empty-app');
+          mkdirSync(app, { recursive: true });
+          const cli = join(installed.codex, 'scripts', 'golive.mjs');
+          const run = (...args) => execFileSync(process.execPath, [cli, ...args], {
+            cwd: app,
+            encoding: 'utf8',
+            timeout: 60_000,
+            env: { PATH: process.env.PATH, HOME: join(root, 'home-codex') },
+          });
+          assert.match(JSON.parse(run('version', '--json')).version, /^\d+\.\d+\.\d+/);
+          assert.equal(JSON.parse(run('menu', '--json', '--cwd', app)).ok, true);
+          console.log('Skills CLI channel: codex and claude-code installations match the committed bundle on Node 20.');
+          JS
+      - name: Assert the npm tarball channel and its own installer on Node 20
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { execFileSync } from 'node:child_process';
+          import { mkdirSync, readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+
+          const root = process.env.GOLIVE_CI_ROOT;
+          const tarball = process.env.GOLIVE_CI_TARBALL;
+          const committed = JSON.parse(readFileSync('skills/golive/release.json', 'utf8')).bundleDigest;
+          assert.match(process.versions.node, /^20\./);
+          const entries = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' }).split('\n');
+          const required = ['package/bin/golive.mjs', 'package/skills/golive/SKILL.md', 'package/skills/golive/release.json', 'package/skills/golive/scripts/golive.mjs', 'package/skills/golive/scripts/install-cli.mjs', 'package/skills/golive/scripts/install-lib.mjs', 'package/LICENSE', 'package/THIRD_PARTY_NOTICES.md'];
+          assert.deepEqual(required.filter((entry) => !entries.includes(entry)), [], 'tarball is missing a required file');
+          const packed = JSON.parse(execFileSync('tar', ['-xzOf', tarball, 'package/skills/golive/release.json'], { encoding: 'utf8' }));
+          assert.equal(packed.bundleDigest, committed, 'packed release manifest does not match the committed bundle');
+          const env = { PATH: process.env.PATH, HOME: join(root, 'home-owned') };
+          mkdirSync(env.HOME, { recursive: true });
+          const golive = join(root, 'prefix', 'bin', 'golive');
+          execFileSync(golive, ['version', '--json'], { encoding: 'utf8', timeout: 60_000, env });
+          execFileSync(golive, ['--help'], { encoding: 'utf8', timeout: 60_000, env });
+          const result = JSON.parse(execFileSync(golive, ['install', '--agent', 'codex', '--global'], { encoding: 'utf8', timeout: 120_000, env }));
+          assert.equal(result.installed, true, 'own installer reported no installation');
+          assert.equal(JSON.parse(readFileSync(join(env.HOME, '.agents', 'skills', 'golive', 'release.json'), 'utf8')).bundleDigest, committed, 'own installer produced a different bundle');
+          console.log('npm tarball channel: contents, installed CLI and own installer passed on Node 20.');
+          JS
+      - name: Remove the temporary installation roots and require an unchanged checkout
+        run: |
+          set -euo pipefail
+          rm -rf "$GOLIVE_CI_ROOT"
+          [ -z "$(git status --porcelain --untracked-files=all)" ] || { echo "Install channel checks left files in the checkout." >&2; exit 1; }
