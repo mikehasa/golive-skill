@@ -913,6 +913,12 @@ function intOf(key: string, v: unknown): number {
 }
 /** The management API has answered `smtp_port` both as a number and as a numeric string. */
 const smtpPort = (v: unknown): number | undefined => int(typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v.trim()) : v);
+/**
+ * `smtp_port` is the one field the API documents as a string (its schema says `type: string`) and
+ * validates as one: a number is a 400, `smtp_port: Invalid input: expected string, received number`.
+ * The port stays a number everywhere golive shows it; only this request body value is a string.
+ */
+const smtpPortWire = (v: unknown): string => String(intOf('smtp_port', v));
 
 /** The SMTP password is write-only: it must arrive as a Secret and is never read back. */
 function smtpPasswordOf(v: unknown): Secret {
@@ -940,7 +946,7 @@ const AUTH_FIELDS: AuthField[] = [
   { name: 'otpLength', key: 'mailer_otp_length', read: int, write: (v) => intOf('mailer_otp_length', v) },
   { name: 'emailRateLimitPerHour', key: 'rate_limit_email_sent', read: int, write: (v) => intOf('rate_limit_email_sent', v) },
   { name: 'smtp.host', key: 'smtp_host', read: optionalStr('smtp_host'), write: (v) => str(v) },
-  { name: 'smtp.port', key: 'smtp_port', read: smtpPort, write: (v) => intOf('smtp_port', v) },
+  { name: 'smtp.port', key: 'smtp_port', read: smtpPort, write: smtpPortWire },
   { name: 'smtp.user', key: 'smtp_user', read: optionalStr('smtp_user'), write: (v) => str(v) },
   { name: 'smtp.senderEmail', key: 'smtp_admin_email', read: optionalStr('smtp_admin_email'), write: (v) => str(v) },
   { name: 'smtp.senderName', key: 'smtp_sender_name', read: optionalStr('smtp_sender_name'), write: (v) => str(v) },

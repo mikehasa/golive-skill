@@ -9041,7 +9041,7 @@ async function supabaseAuthedProbe(ctx, ref3, table, schema, publishableKey2, ac
 function detect(d) {
   return !!d.providers.db?.includes("supabase") || !!d.providers.auth?.includes("supabase") || Object.keys(d.configs).some((k) => k.startsWith("supabase/")) || d.envRefs.some((e) => e.name.includes("SUPABASE"));
 }
-var supabaseTiming, dbPassKey, STATE_CREATED, refOf, PAUSED, BROKEN, STARTING, CREATE_TIMEOUT_MS, usableKey, preferDefault, isStepRun, wantsDbUrls, LEVEL, str2, bool, int, flip, optionalStr, splitList, smtpPort, AUTH_FIELDS, sameValue, show, supabaseAdapter;
+var supabaseTiming, dbPassKey, STATE_CREATED, refOf, PAUSED, BROKEN, STARTING, CREATE_TIMEOUT_MS, usableKey, preferDefault, isStepRun, wantsDbUrls, LEVEL, str2, bool, int, flip, optionalStr, splitList, smtpPort, smtpPortWire, AUTH_FIELDS, sameValue, show, supabaseAdapter;
 var init_supabase = __esm({
   "src/adapters/supabase.ts"() {
     "use strict";
@@ -9070,6 +9070,7 @@ var init_supabase = __esm({
     optionalStr = (key) => (raw2, res) => Object.hasOwn(res, key) ? str2(raw2) ?? "" : void 0;
     splitList = (raw2) => raw2.split(",").map((s) => s.trim()).filter(Boolean);
     smtpPort = (v) => int(typeof v === "string" && /^\d+$/.test(v.trim()) ? Number(v.trim()) : v);
+    smtpPortWire = (v) => String(intOf("smtp_port", v));
     AUTH_FIELDS = [
       {
         name: "siteUrl",
@@ -9090,7 +9091,7 @@ var init_supabase = __esm({
       { name: "otpLength", key: "mailer_otp_length", read: int, write: (v) => intOf("mailer_otp_length", v) },
       { name: "emailRateLimitPerHour", key: "rate_limit_email_sent", read: int, write: (v) => intOf("rate_limit_email_sent", v) },
       { name: "smtp.host", key: "smtp_host", read: optionalStr("smtp_host"), write: (v) => str2(v) },
-      { name: "smtp.port", key: "smtp_port", read: smtpPort, write: (v) => intOf("smtp_port", v) },
+      { name: "smtp.port", key: "smtp_port", read: smtpPort, write: smtpPortWire },
       { name: "smtp.user", key: "smtp_user", read: optionalStr("smtp_user"), write: (v) => str2(v) },
       { name: "smtp.senderEmail", key: "smtp_admin_email", read: optionalStr("smtp_admin_email"), write: (v) => str2(v) },
       { name: "smtp.senderName", key: "smtp_sender_name", read: optionalStr("smtp_sender_name"), write: (v) => str2(v) },
