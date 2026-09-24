@@ -38,6 +38,17 @@ function store(content = TOKEN) {
   return { root, env: { SUPABASE_HOME: root, SUPABASE_NO_KEYRING: '1' } };
 }
 
+/**
+ * The macOS branch is selected from `process.platform`; fake it for one test, then restore it. The
+ * adapter entry points take no platform argument, so this is how a macOS failure is reached on a
+ * Linux CI runner — and the darwin branch must be exercised, or a platform guard could pass for it.
+ */
+async function withMacPlatform(run: () => Promise<void>): Promise<void> {
+  const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+  try { await run(); } finally { Object.defineProperty(process, 'platform', original); }
+}
+
 describe('Supabase CLI credential storage', () => {
   it.each([TOKEN, `go-keyring-base64:${Buffer.from(TOKEN).toString('base64')}`])('captures native or Go-encoded macOS keychain output into Secret', async (value) => {
     const root = home();
@@ -113,21 +124,25 @@ describe('Supabase CLI credential storage', () => {
   it('never degrades malformed stored output into the CLI path', async () => {
     const { root } = store(OTHER);
     const ex = mockExec([[...version], ['/usr/bin/security', { stdout: 'not-a-token' }]]);
-    const err = await supabaseCredentialOrUndefined(testCtx({ exec: ex.run, env: { SUPABASE_HOME: root } })).catch((e: Error) => e);
-    expect(err).not.toBeInstanceOf(SupabaseCredentialUnreadable);
-    expect(String((err as Error).message)).toMatch(/malformed/);
-    expect(ex.calls).toHaveLength(2);
+    await withMacPlatform(async () => {
+      const err = await supabaseCredentialOrUndefined(testCtx({ exec: ex.run, env: { SUPABASE_HOME: root } })).catch((e: Error) => e);
+      expect(err).not.toBeInstanceOf(SupabaseCredentialUnreadable);
+      expect(String((err as Error).message)).toMatch(/malformed/);
+      expect(ex.calls).toHaveLength(2);
+    });
   });
 
   it('hands the CLI-covered reads an absent credential and warns once, without ever exposing the store', async () => {
     const { root } = store(OTHER);
     const ex = mockExec([[...version], ['/usr/bin/security', { code: 1 }]]);
-    const ctx = testCtx({ exec: ex.run, env: { SUPABASE_HOME: root } });
-    expect(await supabaseCredentialOrUndefined(ctx)).toBeUndefined();
-    expect(await supabaseCredentialOrUndefined(ctx)).toBeUndefined();
-    expect(ctx.logs.filter((l) => /denied or unavailable/.test(l))).toHaveLength(1);
-    expect(ex.calls.filter((c) => c.cmd === '/usr/bin/security')).toHaveLength(1); // a refusal is never retried
-    expect(JSON.stringify([ctx.cache, ctx.logs, ex.calls])).not.toContain(OTHER);
+    await withMacPlatform(async () => {
+      const ctx = testCtx({ exec: ex.run, env: { SUPABASE_HOME: root } });
+      expect(await supabaseCredentialOrUndefined(ctx)).toBeUndefined();
+      expect(await supabaseCredentialOrUndefined(ctx)).toBeUndefined();
+      expect(ctx.logs.filter((l) => /denied or unavailable/.test(l))).toHaveLength(1);
+      expect(ex.calls.filter((c) => c.cmd === '/usr/bin/security')).toHaveLength(1); // a refusal is never retried
+      expect(JSON.stringify([ctx.cache, ctx.logs, ex.calls])).not.toContain(OTHER);
+    });
   });
 
   it.each(['not-a-token', '', 'go-keyring-base64:%%%'])('rejects malformed Keychain output without returning it or trying another account', async (raw) => {
@@ -377,13 +392,6 @@ describe('Supabase CLI fallback when only this machine cannot read the store', (
   const projects = ['supabase projects list', { stdout: JSON.stringify([{ id: REF, name: 'demo', organization_slug: 'acme', status: 'ACTIVE_HEALTHY' }]) }] as [string, { stdout: string }];
   const apiKeys = ['supabase projects api-keys', { stdout: JSON.stringify([{ name: 'default', type: 'publishable', api_key: PUB }, { name: 'default', type: 'secret', api_key: SECRET_KEY }]) }] as [string, { stdout: string }];
   const sqlRows = ['supabase db query', { stdout: JSON.stringify([{ schema: 'public', name: 'notes', rls: true, policies: [] }]) }] as [string, { stdout: string }];
-
-  /** The macOS branch is selected from `process.platform`; fake it for one test, then restore it. */
-  const withMacPlatform = async (run: () => Promise<void>): Promise<void> => {
-    const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
-    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
-    try { await run(); } finally { Object.defineProperty(process, 'platform', original); }
-  };
 
   it('keeps listing projects, reading API keys and the RLS query working through the CLI', async () => {
     const { root } = store(OTHER);
