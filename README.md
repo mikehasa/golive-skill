@@ -168,10 +168,14 @@ in before confirming (`email_not_confirmed`), and the `auth-signup`/`auth-sessio
 signup email, the enforced confirmation, the confirmed login, the session token and the anonymous
 refusal. Two limits stay: the confirmation was applied through the Auth admin API rather than the
 seeded account's own email click, and inbox delivery is human-confirmed by design — golive never sees
-the inbox. `auth.protectedPath` and the signed-in table probe were not exercised (that run had no app
-route and no exposed tables). The domain journey is **not a validated alpha path yet** either; the
-DNS, email and test-mode payment paths listed above are the tested ones, and other auth providers
-stay guided. See [provider scope](docs/PROVIDERS.md) and
+the inbox. A later approved run on a disposable fixture (a deployed Vercel site whose declared route
+answers 401 without a session, plus one RLS-protected table) exercised both app-side legs: an
+anonymous GET of `auth.protectedPath` answered 401 and the signed-in probe read that table as the
+authenticated user, so the probe's bearer fix is no longer mock-covered. What that evidence cannot
+show: the table line is a count rather than table names, and any 401 counts as protected — a WAF or
+maintenance page would read the same (both tracked in issue #30). The domain journey is **not a
+validated alpha path yet** either; the DNS, email and test-mode payment paths listed above are the
+tested ones, and other auth providers stay guided. See [provider scope](docs/PROVIDERS.md) and
 [observed validation](docs/VALIDATION.md).
 
 ## The full go-live checklist and roadmap
@@ -208,10 +212,11 @@ live-tested milestones**, not a finished category or a completed checklist for y
   policy write held at a twelve-character minimum. The opt-in journey (`auth.e2e: true`) passed the
   same run: the `auth:test-user` step seeded a real test account, that address could not sign in
   before confirming, and the `auth-signup`/`auth-session` checks proved the signup email, the enforced
-  confirmation, the confirmed login and the session token — **live-validated for Supabase on that
-  disposable project, where the confirmation came through the Auth admin API instead of the seeded
-  email click, inbox delivery stayed human-confirmed, and no declared protected path or exposed table
-  was available to probe**. Other auth providers stay guided; password recovery and account isolation
+  confirmation, the confirmed login and the session token — **live-validated for Supabase across
+  disposable projects, where the confirmation came through the Auth admin API instead of the seeded
+  email click, inbox delivery stayed human-confirmed, and a later run proved a declared protected
+  path (an anonymous 401) and a signed-in read of an RLS-protected table, reported as a count rather
+  than a table name**. Other auth providers stay guided; password recovery and account isolation
   still need work.
 - [ ] 🗺️ **OAuth / social login / SSO:** client registration, consent screens, scopes, callback
   URLs and provider reviews. Current auth-provider setup is guided.
