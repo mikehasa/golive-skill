@@ -427,4 +427,16 @@ describe('GoDaddy CLI (gddy) transport', () => {
     expect(result.howToFix).toContain('did not complete');
     expect(exec.calls.filter((c) => c.args[0] === 'api')).toHaveLength(1);
   });
+
+  it('points a CLI 403 at the scope step-up instead of the PAT wording', async () => {
+    const exec = mockExec([
+      ['gddy --version', () => version('0.2.20')],
+      ['gddy auth status', () => session()],
+      [new RegExp('^gddy api call '), () => ({ code: 4, stdout: JSON.stringify({ error: { code: 'FORBIDDEN', message: 'HTTP error 403: Forbidden' }, fix: 'x' }) })],
+    ]);
+    const result = await godaddyAdapter.auth(testCtx({ exec: exec.run }));
+    expect(result.ok).toBe(false);
+    expect(result.howToFix).toContain('HTTP 403');
+    expect(result.howToFix).toContain('gddy auth login -s domains.dns:update');
+  });
 });

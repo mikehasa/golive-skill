@@ -2,19 +2,21 @@
 
 Automated DNS-record adapter with two transports — same endpoints and safety rules either way: the
 official GoDaddy CLI (`gddy`, the default when installed and logged in) and a scoped REST Personal
-Access Token (the fallback). The Vercel-attached custom-domain journey passed a disposable live run
-on the REST path; CLI reads passed a live read-only run; a CLI write (first-use browser scope
-consent) and the update-by-ID path await their exercises. The GoDaddy MCP cannot modify DNS.
+Access Token (the fallback). The Vercel-attached custom-domain journey passed disposable live runs
+on both transports: the CLI path created both records through `gddy api call` with the user's OAuth
+session, and the v3 update-by-ID (PUT) endpoint was separately validated through that same session.
+golive's owned-record update flows (SPF merge, singleton replace, TTL drift) and the REST
+update-by-ID path remain mock-covered. The GoDaddy MCP cannot modify DNS.
 
 1. Use `dns=godaddy` only when the domain's **authoritative DNS** is hosted at GoDaddy. Buying a
    domain there is not enough if its nameservers point elsewhere. golive checks public delegation and
    zone access, including subdomain delegations; it never changes nameservers.
 2. Preferred sign-in: install the official CLI and log in once —
    `curl -fsSL https://github.com/godaddy/cli/releases/latest/download/install.sh | bash`, then
-   `gddy auth login` in the human's terminal (browser OAuth; the session stays in the CLI's own
-   store, never in chat, arguments or golive's files). golive detects `gddy` 0.2.20+ and prefers it
-   automatically; per gddy's documented scope step-up, a first write may ask for the DNS write scope
-   in the browser.
+   `gddy auth login -s domains.dns:update` in the human's terminal (browser OAuth; the session stays
+   in the CLI's own store, never in chat, arguments or golive's files). Include `domains.dns:update`
+   from the start: in a non-interactive run gddy does not prompt for the scope, and a write without
+   it fails with HTTP 403 (whose message names this command).
 3. Fallback when the CLI is unavailable (headless hosts, no extra binary): have the human create a
    Personal Access Token at `developer.godaddy.com` with `domains.domain:read` and
    `domains.dns:update` only. No purchase or nameserver permissions.

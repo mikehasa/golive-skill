@@ -12006,8 +12006,8 @@ var GoDaddyError = class extends Error {
   }
   status;
 };
-function responseError(status) {
-  const hint = status === 401 ? "The PAT is missing, expired or revoked." : status === 403 ? "Check PAT scopes and account eligibility (at least one domain or a plan granting management access)." : status === 404 ? "The zone or record is not accessible to this account." : status === 429 ? "Rate limited; wait before running golive again." : status === 409 ? "The record conflicts with the current zone state." : "Inspect the zone in the GoDaddy dashboard, then re-run.";
+function responseError(status, transport2 = "rest") {
+  const hint = status === 401 ? "The PAT is missing, expired or revoked." : status === 403 ? transport2 === "cli" ? "The cached gddy session may lack the DNS write scope: run `gddy auth login -s domains.dns:update` (browser), then re-run. Otherwise check account eligibility (at least one domain or a plan granting management access)." : "Check PAT scopes and account eligibility (at least one domain or a plan granting management access)." : status === 404 ? "The zone or record is not accessible to this account." : status === 429 ? "Rate limited; wait before running golive again." : status === 409 ? "The record conflicts with the current zone state." : "Inspect the zone in the GoDaddy dashboard, then re-run.";
   return new GoDaddyError(`GoDaddy DNS request failed: HTTP ${status}. ${hint}`, status);
 }
 function accessHelp() {
@@ -12018,7 +12018,7 @@ async function api3(ctx, method, path, body2) {
   if (cli3) {
     const result2 = await cliRequest(ctx, cli3, method, path, body2);
     if (result2.status === 0) throw new GoDaddyError("GoDaddy CLI request did not complete. Re-read the zone before retrying a write.");
-    if (result2.status < 200 || result2.status >= 300) throw responseError(result2.status);
+    if (result2.status < 200 || result2.status >= 300) throw responseError(result2.status, "cli");
     return result2.json;
   }
   const token2 = ctx.envToken(TOKEN2);

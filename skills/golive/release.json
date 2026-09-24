@@ -18,7 +18,7 @@
     "THIRD_PARTY_NOTICES.md": "ad33f954a31c411cc667c07460859c77a014d6720e581a5ce5edd48c9c962781",
     "references/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "references/cloudflare-dns.md": "1e2c3143d714590486d181befa0237f18e077328ab7fcd2151adaa0f68b898ff",
-    "references/godaddy.md": "3e680e5f36e9681f49ccbd7609ff77cb0ad8e6270ca1d6721e2a214ae73e3c52",
+    "references/godaddy.md": "b2198ec83fbeaa14b9005dab4c8d51515870ce6b9a96a8613a40a980b5fdd242",
     "references/guided.md": "43081b870baec23f67b5523c786ee109d647d3e36ef57d86cec7fe961e98662e",
     "references/neon.md": "221bc3134a22241fc6d61780ab4be3f1094a229175b7137c841375260819b4e5",
     "references/netlify.md": "7c1705f0bea0987d0a19c3be8f370e64c66f0d205f9fb963bbf923744f846f0a",
@@ -30,9 +30,9 @@
     "references/troubleshooting.md": "8a9a8bd3a4c79e5fac00edbec3db0d6c47eaf36f4f6e7a5b92a46a92b21e50fd",
     "references/updates.md": "f7e162ed69a3935ab6bd87896d54876345c39e59d305afdd9fae1950fe56fd37",
     "references/vercel.md": "83e98b61a1f16ba0e76327ccf01268a3a4c42be3ffecc0ab12bc8c6f061c18df",
-    "scripts/golive.mjs": "f7784bc5f985df902b13d40fbb8723b7a6b3d1678eb01bcd37d6bddf9ed59dba",
+    "scripts/golive.mjs": "5565b835c912e45ef0a7cce7eba66c4e1ea6f527164cca30909e582429a7e4f1",
     "scripts/install-cli.mjs": "55e2a776892a9d34fa62d7ebf70bb101a0f54a3592ba9f87b77a1d43043e108a",
     "scripts/install-lib.mjs": "9d3de597acc711178e588247f3cc9b5b5445f90d492cd464018065f2cd25caec"
   },
-  "bundleDigest": "2447575223413b5833a54258b1ab90792605c98f4cee32097398c3b37ac4b05e"
+  "bundleDigest": "357b8e4942245f060410085d87f5cb184db8e261372b492fa2920df126b57e00"
 }
