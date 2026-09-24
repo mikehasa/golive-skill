@@ -10399,7 +10399,7 @@ var redeployKey = (target) => `redeploy:${target}`;
 var deployedIdKey = (target) => `${deployedKey(target)}:id`;
 var DEPLOYED_KEY = deployedKey("production");
 var REDEPLOY_KEY = redeployKey("production");
-var DEPLOY_STEPS = ["deploy:production", "deploy:production:final"];
+var DEPLOY_STEPS = ["deploy:production", "deploy:production:final", "preview:deploy"];
 function recordDeploy(ctx, provider, target, deployment) {
   ctx.state.save((s) => {
     const at = (/* @__PURE__ */ new Date()).toISOString();
@@ -10415,6 +10415,12 @@ function lastDeployAt(ctx) {
   const steps = ctx.state.get().steps;
   const done = DEPLOY_STEPS.map((id2) => steps[id2]).filter((r) => r?.status === "done");
   return done.map((r) => r.at).sort().at(-1);
+}
+function readRecordedDeploy(ctx, target) {
+  const raw2 = ctx.state.resource(deployedIdKey(target));
+  if (!raw2) return null;
+  const [provider, id2, url, at] = raw2.split("|");
+  return provider && id2 && url && at ? { provider, id: id2, url, at } : null;
 }
 function forgetDeployFacts(ctx) {
   ctx.state.save((s) => {
@@ -17767,8 +17773,452 @@ var netlifyVisibilityLink = {
   }
 };
 
+// src/links/release.ts
+init_config();
+
+// src/checks/bundle.ts
+init_secret();
+init_http();
+var MAX_CHUNKS = 40;
+var MAX_BYTES = 8 * 1024 * 1024;
+var attr = (tag2, name3) => new RegExp(`\\b${name3}\\s*=\\s*["']([^"']+)["']`, "i").exec(tag2)?.[1];
+function scriptUrls(html, pageUrl) {
+  const origin = new URL(pageUrl).origin;
+  const out = [];
+  const add = (raw2) => {
+    if (!raw2) return;
+    try {
+      const u = new URL(raw2.replace(/&amp;/g, "&"), pageUrl);
+      if (u.origin === origin && !out.includes(u.href)) out.push(u.href);
+    } catch {
+    }
+  };
+  for (const tag2 of html.match(/<(script|link)\b[^>]*>/gi) ?? []) {
+    if (/^<script/i.test(tag2)) add(attr(tag2, "src"));
+    else {
+      const rel = (attr(tag2, "rel") ?? "").toLowerCase();
+      if (rel.split(/\s+/).includes("modulepreload") || rel === "preload" && (attr(tag2, "as") ?? "").toLowerCase() === "script") add(attr(tag2, "href"));
+    }
+  }
+  return out;
+}
+async function fetchBundle(ctx, base2) {
+  const allowed = new Set(hostVariants(new URL(base2).host));
+  for (const h of allowed) allowHost(h);
+  let page = `${base2}/`;
+  let res = await probe(ctx, page);
+  for (let hop = 0; hop < 3 && res.status >= 300 && res.status < 400 && res.headers.location; hop++) {
+    let next;
+    try {
+      next = new URL(res.headers.location, page);
+    } catch {
+      return { files: [], notes: [`GET ${page} redirected to an invalid location; not followed`], htmlStatus: res.status, complete: false, offsite: true };
+    }
+    if (next.protocol !== "https:" || !allowed.has(next.host.toLowerCase())) {
+      const where = `${next.protocol}//${next.host}${next.pathname}`;
+      const vercelWall = next.host.toLowerCase() === "vercel.com" && /^\/(sso-api|login)\b/.test(next.pathname);
+      const why = vercelWall ? "Vercel deployment protection is on for the production URL" : "auth wall / deployment protection / another site?";
+      return { files: [], notes: [`GET ${page} redirected to ${where} (${why}); not followed, nothing scanned`], htmlStatus: res.status, complete: false, offsite: true };
+    }
+    page = next.href;
+    res = await probe(ctx, page);
+  }
+  const pagePart = boundedText(res.text, MAX_BYTES);
+  const files = [{ path: new URL(page).pathname, text: pagePart.text }];
+  const notes = [];
+  if (res.status < 200 || res.status >= 300) return { files, notes: [`GET ${page} returned HTTP ${res.status}`], htmlStatus: res.status, complete: false };
+  if (pagePart.truncated) return { files, notes: [`HTML truncated at the ${MAX_BYTES / 1024 / 1024} MiB scan limit; scripts were not fetched`], htmlStatus: res.status, complete: false };
+  const urls = scriptUrls(pagePart.text, page);
+  let complete = true;
+  if (urls.length > MAX_CHUNKS) {
+    notes.push(`${urls.length} scripts found; scanned the first ${MAX_CHUNKS}`);
+    complete = false;
+  }
+  let total = pagePart.bytes;
+  for (const url of urls.slice(0, MAX_CHUNKS)) {
+    const path = new URL(url).pathname;
+    if (total >= MAX_BYTES) {
+      notes.push(`stopped at the ${MAX_BYTES / 1024 / 1024} MiB scan limit; remaining scripts were not fetched`);
+      complete = false;
+      break;
+    }
+    try {
+      const r = await probe(ctx, url);
+      if (r.status < 200 || r.status >= 300) {
+        notes.push(`${path}: HTTP ${r.status}`);
+        complete = false;
+        continue;
+      }
+      const part = boundedText(r.text, MAX_BYTES - total);
+      total += part.bytes;
+      files.push({ path, text: part.text });
+      if (part.truncated) {
+        notes.push(`${path}: truncated at the ${MAX_BYTES / 1024 / 1024} MiB scan limit; remaining content was not scanned`);
+        complete = false;
+        break;
+      }
+    } catch {
+      notes.push(`${path}: fetch failed`);
+      complete = false;
+    }
+  }
+  return { files, notes, htmlStatus: res.status, complete };
+}
+function boundedText(text, maximum) {
+  const encoded = Buffer.from(text, "utf8");
+  if (encoded.length <= maximum) return { text, bytes: encoded.length, truncated: false };
+  let prefix = encoded.subarray(0, maximum).toString("utf8");
+  while (Buffer.byteLength(prefix, "utf8") > maximum) prefix = prefix.slice(0, -1);
+  return { text: prefix, bytes: maximum, truncated: true };
+}
+var SIMPLE = [
+  [/\b(sk|rk)_(live|test)_[A-Za-z0-9]{10,}/g, (m) => `Stripe ${m[1] === "sk" ? "secret" : "restricted"} key (${m[2]})`],
+  [/\bwhsec_[A-Za-z0-9+/=]{16,}/g, () => "Stripe webhook signing secret"],
+  [/\bsb_secret_[A-Za-z0-9_-]{10,}/g, () => "Supabase secret key"],
+  [/\bsbp_[A-Za-z0-9_]{20,}/g, () => "Supabase personal access token"],
+  [/\bre_[A-Za-z0-9]{8,}_[A-Za-z0-9]{8,}/g, () => "Resend API key"],
+  [/\bAKIA[0-9A-Z]{16}\b/g, () => "AWS access key id"],
+  [/-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/g, () => "private key (PEM)"]
+];
+var JWT = /\beyJ[A-Za-z0-9_-]{5,}\.eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{10,}/g;
+function jwtPayload(token2) {
+  try {
+    const json2 = Buffer.from(token2.split(".")[1] ?? "", "base64url").toString("utf8");
+    const v = JSON.parse(json2);
+    return v && typeof v === "object" ? v : null;
+  } catch {
+    return null;
+  }
+}
+function scanSecrets(file) {
+  const hits = [];
+  const push = (kind, match) => {
+    if (match.length < 8) return;
+    hits.push({ kind, path: file.path, secret: new Secret(`bundle:${kind}`, match) });
+  };
+  for (const [re, kind] of SIMPLE) for (const m of file.text.matchAll(re)) push(kind(m), m[0]);
+  for (const m of file.text.matchAll(JWT)) {
+    if (jwtPayload(m[0])?.role === "service_role") push("Supabase service_role JWT", m[0]);
+  }
+  return hits;
+}
+function findPublicSupabaseKeys(files, ref3) {
+  const keys3 = [];
+  for (const f of files) {
+    for (const m of f.text.matchAll(/\bsb_publishable_[A-Za-z0-9_-]{10,}/g)) if (!keys3.includes(m[0])) keys3.push(m[0]);
+    for (const m of f.text.matchAll(JWT)) {
+      const p = jwtPayload(m[0]);
+      if (p?.role === "anon" && (!ref3 || p.ref === void 0 || p.ref === ref3) && !keys3.includes(m[0])) keys3.push(m[0]);
+    }
+  }
+  return keys3;
+}
+async function scanBundleAt(ctx, base2, copy = {}) {
+  const what = copy.what ?? "production";
+  let bundle;
+  try {
+    bundle = await fetchBundle(ctx, base2);
+  } catch (e) {
+    return result("warn", "medium", [`could not fetch ${base2}/: ${errMsg2(e)}`], `Make sure the ${what} deployment is reachable, then re-run verify.`);
+  }
+  if (copy.protected && (bundle.htmlStatus === 401 || bundle.htmlStatus === 403)) {
+    return skip(`GET ${base2}/ \u2192 HTTP ${bundle.htmlStatus}: the ${what} deployment is behind a protection wall (deployment protection, visitor access or an auth wall), so nothing was scanned; a protected ${what} is not a finding, and this is not a pass`);
+  }
+  const seen2 = /* @__PURE__ */ new Set();
+  const hits = [];
+  for (const f of bundle.files) {
+    for (const h of scanSecrets(f)) {
+      const key = `${h.secret.fingerprint}@${h.path}`;
+      if (!seen2.has(key)) {
+        seen2.add(key);
+        hits.push(h);
+      }
+    }
+  }
+  const scanned = `scanned ${bundle.files.length} file(s) from ${base2}`;
+  if (hits.length) {
+    const evidence = hits.map((h) => `${h.kind} in ${h.path} (fp:${h.secret.fingerprint})`);
+    return result(
+      "fail",
+      "critical",
+      [...evidence, scanned, ...bundle.notes],
+      "Treat these keys as leaked: rotate each one at its provider now, keep the replacement in a server-only env var (no NEXT_PUBLIC_/VITE_/PUBLIC_ prefix, never imported by client code), then redeploy."
+    );
+  }
+  if (bundle.offsite) {
+    return result(
+      "warn",
+      "medium",
+      [scanned, ...bundle.notes],
+      `The ${what} URL redirects away from your app (deployment protection, an auth wall or another site), so its scripts were not scanned. Make the ${what} URL publicly reachable (e.g. turn off deployment protection for ${what}), then re-run verify.`
+    );
+  }
+  if (bundle.htmlStatus < 200 || bundle.htmlStatus >= 300) {
+    return result("warn", "medium", [scanned, ...bundle.notes], `The ${what} page did not load, so its scripts were not scanned. Fix the deployment, then re-run verify.`);
+  }
+  if (!bundle.complete) {
+    return result(
+      "warn",
+      "medium",
+      [scanned, "scan incomplete: no credential patterns found in the scanned portion", ...bundle.notes],
+      "Some public JavaScript could not be scanned because an asset failed to load or the bounded scan limit was reached. Fix failed asset requests and re-run verify; review any content beyond the scan limit separately. This result does not establish that the complete bundle is free of credentials."
+    );
+  }
+  return pass([scanned, "no credential patterns found", ...bundle.notes]);
+}
+
+// src/checks/release.ts
+var TARGET = "preview";
+var trimSlash2 = (url) => url.replace(/\/+$/, "");
+async function readPreview(ctx) {
+  const recorded = readRecordedDeploy(ctx, TARGET);
+  if (!recorded) return { ok: false, outcome: skip(`golive recorded no preview deployment (no ${deployedIdKey(TARGET)} in .golive/state.json), so there is nothing to confirm`) };
+  const provider = ctx.config.stack.hosting;
+  if (!provider) return { ok: false, outcome: skip("no hosting provider is chosen") };
+  if (recorded.provider !== provider) return { ok: false, outcome: skip(`the recorded preview deployment belongs to ${recorded.provider}, not to the chosen hosting provider (${provider})`) };
+  const url = cap(ctx, "hosting", "url");
+  if (!url) return { ok: false, outcome: skip(`hosting provider ${provider} is guided and cannot report its URLs, so the recorded preview deployment cannot be read`) };
+  const pre = await prereq(ctx, "hosting");
+  if (pre) return { ok: false, outcome: pre };
+  const linker = cap(ctx, "hosting", "project");
+  const current3 = linker ? await linker.current(ctx).catch(() => null) : null;
+  let got;
+  try {
+    got = await url.get(ctx, TARGET);
+  } catch (e) {
+    return { ok: false, outcome: result("warn", "medium", [`could not read the ${provider} preview deployment: ${errMsg2(e)}`], "Check the hosting login with `golive doctor`, then re-run verify.") };
+  }
+  return { ok: true, read: { recorded, url: got ? trimSlash2(got) : null, ...current3 ? { project: `${current3.name} (${current3.id})` } : {} } };
+}
+function recordedProductionUrl(ctx) {
+  const prod = readRecordedDeploy(ctx, "production");
+  return prod ? trimSlash2(prod.url) : null;
+}
+var previewDeployCheck = {
+  id: "preview-deploy",
+  title: "The recorded preview deployment is provider-confirmed and is not production",
+  severity: "high",
+  applies: (ctx) => Boolean(ctx.config.stack.hosting),
+  async run(ctx) {
+    const r = await readPreview(ctx);
+    if (!r.ok) return r.outcome;
+    const { recorded, url, project } = r.read;
+    const where = `${recorded.provider} deployment ${recorded.id}`;
+    const recordedAt2 = `recorded by golive ${recorded.at} (${deployedIdKey(TARGET)})`;
+    const prod = recordedProductionUrl(ctx);
+    if (prod && recorded.url === prod) {
+      return result(
+        "fail",
+        "high",
+        [`golive recorded ${recorded.url} as both the preview deployment (${where}) and the production deployment it made`, recordedAt2],
+        "Deploy a preview that is not the production deployment: run `golive plan` and apply the preview:deploy step, then re-run this check. A gate over the production deployment would not cover a preview."
+      );
+    }
+    if (!url) {
+      return skip(
+        `no ${recorded.provider} read confirms ${where} (${recorded.url}): this adapter reports no preview URL for the project (it exposes no per-deployment preview read, or the recorded deployment is no longer a preview), and golive does not probe or guess one \u2014 previews are protected by default. Confirm it in ${recorded.provider}'s own dashboard or CLI; golive leaves it unverified`
+      );
+    }
+    if (prod && url === prod) {
+      return result(
+        "fail",
+        "high",
+        [`${recorded.provider} reports ${url} for the preview target, which is the URL golive recorded for the production deployment`, recordedAt2],
+        "Deploy a preview that is not the production deployment: run `golive plan` and apply the preview:deploy step, then re-run this check."
+      );
+    }
+    if (url === recorded.url) {
+      return pass([
+        `${where} is what ${recorded.provider} reports for the preview target${project ? ` of the project this repo links (${project})` : ""}`,
+        `that read confirms the deployment exists, is ready and belongs to this project, and that it is not the project's production deployment`,
+        recordedAt2,
+        "whether anyone else can reach the preview is not read here: a private preview is normal, and the production deployment is unchanged"
+      ]);
+    }
+    return result(
+      "warn",
+      "medium",
+      [
+        `${recorded.provider} reports ${url} for the preview target, while golive recorded ${recorded.url} (${where})`,
+        "a newer preview deployment exists: only the provider's latest preview is readable this way, so the recorded deployment was not re-read",
+        recordedAt2
+      ],
+      "Run `golive plan` and apply the preview steps so the recorded deployment and the release check cover the same preview."
+    );
+  }
+};
+var previewBundleCheck = {
+  id: "preview-bundle",
+  title: "Known credential patterns in the preview deployment HTML/JavaScript",
+  severity: "critical",
+  applies: (ctx) => Boolean(ctx.config.stack.hosting),
+  async run(ctx) {
+    const r = await readPreview(ctx);
+    if (!r.ok) return r.outcome;
+    const { recorded, url } = r.read;
+    if (!url) {
+      return skip(
+        `no ${recorded.provider} read confirms a preview URL to scan (the recorded ${recorded.provider} deployment ${recorded.id}, ${recorded.url}, is unverified by golive); golive never scans a URL it cannot attribute to this project`
+      );
+    }
+    const outcome = await scanBundleAt(ctx, url, { what: "preview", protected: true });
+    return {
+      ...outcome,
+      evidence: [...outcome.evidence, `${recorded.provider} reports ${url} for the preview deployment golive recorded (${recorded.id}); a preview that is protected or unreachable is never treated as clean`]
+    };
+  }
+};
+
+// src/links/release.ts
+var DEPLOY_STEP = "preview:deploy";
+var CHECK_STEP = "release:check";
+var releaseLink = {
+  id: "release",
+  async plan(ctx) {
+    if (ctx.config.release?.preview !== true) return null;
+    if (!ctx.config.targets.includes("preview")) {
+      return { steps: [], handoffs: [], warnings: ["release.preview is set, but `targets` in golive.yaml does not manage preview: no preview deployment is planned"] };
+    }
+    const h = await ready(ctx, "hosting", "deploy");
+    if (!h) {
+      return { steps: [], handoffs: [], warnings: [`release.preview is set, but golive cannot deploy a preview on ${ctx.config.stack.hosting ?? "the chosen hosting provider"}: the host is guided, not logged in, or exposes no deploy capability`] };
+    }
+    const m = memo(ctx);
+    const env = m.steps.get("env:preview");
+    const steps = ctx.state.get().steps;
+    const previous = readRecordedDeploy(ctx, "preview");
+    const reasons = [];
+    if (env) reasons.push(`the preview env changes in this plan (${env.id}) and only reaches a new deployment`);
+    if (steps[DEPLOY_STEP]?.status === "failed") reasons.push(`the last preview deploy failed (${steps[DEPLOY_STEP].at})`);
+    if (steps[CHECK_STEP]?.status === "failed") reasons.push(`the last release check failed (${steps[CHECK_STEP].at}); a new preview gets a fresh check`);
+    if (!previous) reasons.push("golive has never deployed a preview for this app");
+    if (!reasons.length) return null;
+    const live = livePreviewNames(ctx, [...m.steps.values()]);
+    const intent = intentOf({
+      project: await projectIntent(ctx, h.adapter),
+      env: env ? `${env.id}#${env.intent ?? ""}` : "",
+      live: live.join(","),
+      previous: previous?.at
+    });
+    const deploy2 = await deployStep(ctx, h.adapter, h.cap, { reasons, intent, live, previous });
+    const check = checkStep(ctx, h.adapter, { intent, project: await projectLabel(ctx, h.adapter) });
+    return { steps: track(ctx, [deploy2, check]), handoffs: [] };
+  }
+};
+async function deployStep(ctx, adapter, deploy2, facts) {
+  const { reasons, intent, live, previous } = facts;
+  return step({
+    id: DEPLOY_STEP,
+    title: `Deploy preview on ${adapter.title}`,
+    kind: "deploy",
+    // A preview is a create: never `replayable`, and live only when a live-mode source fills a preview name.
+    risk: { writes: true, ...live.length ? { live: true } : {} },
+    dependsOn: deps(ctx, ["project:hosting", "env:preview"]),
+    preview: [
+      `deploy a preview on ${adapter.title}: ${reasons.join("; ")}`,
+      `project: ${await projectLabel(ctx, adapter)}`,
+      `source: ${await treeLine(ctx)}`,
+      "env target: preview \u2014 the env:preview writes in this plan apply to the next preview deployment only, never to production",
+      `data: ${await sourceLine(ctx)}`,
+      `preview URL: ${adapter.title} reports this deployment's own URL and id, which golive records under deployed:preview:id${previous ? `; the preview it recorded before: ${previous.url} (${previous.at})` : " (golive has not deployed a preview yet)"}`,
+      ...live.length ? [`live-mode values behind preview env names (${live.join(", ")}): a preview built with them can reach live payments or live data, so approving this deploy needs --confirm-live`] : [],
+      "nothing is promoted: this deploys a preview and checks it, and production is unchanged \u2014 golive never replays or replaces a preview"
+    ],
+    intent,
+    verifyWith: [previewDeployCheck.id],
+    async run(sctx) {
+      const deployment = await deploy2.deploy(sctx, "preview");
+      recordDeploy(sctx, adapter.id, "preview", deployment);
+      return { changes: [`deployed preview on ${adapter.title}: ${deployment.url}`] };
+    }
+  });
+}
+function checkStep(ctx, adapter, facts) {
+  const prev = ctx.state.get().steps[CHECK_STEP];
+  return step({
+    id: CHECK_STEP,
+    title: `Release check for the preview deployment on ${adapter.title}`,
+    kind: "wire",
+    risk: { writes: false },
+    dependsOn: deps(ctx, [DEPLOY_STEP]),
+    preview: [
+      `check the preview deployment ${DEPLOY_STEP} records on ${adapter.title} (${facts.project}) without writing anything: the provider's own read (it exists, is ready, belongs to the project golive links, and is not the production deployment) and a scan of the HTML/JavaScript it serves for known credential patterns`,
+      ...prev ? [`previous release check: ${prev.at}`] : [],
+      "a failing check fails this step and stops the plan: that is the gate. Promoting a checked preview to production is not part of this plan"
+    ],
+    intent: intentOf({ deploy: facts.intent, previous: prev?.at }),
+    async run() {
+      return { changes: ["no writes: the checks re-read the preview deployment the provider reports and scan what it serves"] };
+    },
+    // The runner fails this step on any `fail` result here (skips and warns do not fail it), which is
+    // what stops the plan before any promotion: a promotion step would depend on release:check.
+    verifyInline: async (vctx) => await Promise.all([runCheck(vctx, previewDeployCheck), runCheck(vctx, previewBundleCheck)])
+  });
+}
+async function projectLabel(ctx, adapter) {
+  const linker = adapter.capabilities.project;
+  const current3 = linker ? await linker.current(ctx).catch(() => null) : null;
+  if (current3) return `${adapter.title} project ${current3.name} (${current3.id})`;
+  return memo(ctx).pendingProjects.has("hosting") ? `${adapter.title} project this plan creates or selects (see project:hosting)` : `${adapter.title} project is not linked yet (this plan's project:hosting step decides it)`;
+}
+async function treeLine(ctx) {
+  const where = "the current working tree on disk, uncommitted changes included (golive deploys no commit)";
+  let branch = null;
+  try {
+    const r = await ctx.exec("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: ctx.cwd, timeoutMs: 5e3 });
+    branch = r.code === 0 ? (r.stdout.trim().split("\n")[0] ?? "") || null : null;
+  } catch {
+    branch = null;
+  }
+  if (branch === "HEAD") return `${where}, on a detached HEAD`;
+  return branch ? `${where}, on branch ${branch}` : `${where}; golive could not read the git branch`;
+}
+async function sourceLine(ctx) {
+  const sources = [];
+  for (const axis of ["db", "auth"]) {
+    const s = await ready(ctx, axis, "outputs");
+    if (s && !sources.some((a) => a.id === s.adapter.id)) sources.push(s.adapter);
+  }
+  const parts = [];
+  if (!sources.length) parts.push("no database/auth provider is chosen, so there is no shared source project to report");
+  else {
+    const named = await Promise.all(sources.map(async (a) => `${a.title} ${await projectIdentity(ctx, a, { planning: true }) ?? "(project unreadable now)"}`));
+    parts.push(`golive fills the preview env from the same ${named.join(" and ")} that production uses (golive has one project per axis for the whole app), so a preview reads and writes the same database and auth project as production`);
+  }
+  const pay = await ready(ctx, "payments", "outputs");
+  if (pay) parts.push(`payments keys in preview come from ${pay.adapter.title} ${modeFor(ctx.config, "preview")} mode`);
+  return parts.join("; ");
+}
+function sourceMode(value) {
+  const parts = value.split("|");
+  if (parts.length !== 5 || !/^stripe\.(secretKey|publishableKey)$/.test(parts[0] ?? "")) return null;
+  return parts[2] === "test" || parts[2] === "live" ? parts[2] : null;
+}
+function liveWritesIn(intent) {
+  const part = intent?.split(";").find((p) => p.startsWith("write="));
+  if (!part) return [];
+  const out = [];
+  for (const entry of part.slice("write=".length).split(",")) {
+    const eq = entry.indexOf("=");
+    if (eq > 0 && sourceMode(entry.slice(eq + 1)) === "live") out.push(entry.slice(0, eq));
+  }
+  return out;
+}
+function livePreviewNames(ctx, planned) {
+  const names = /* @__PURE__ */ new Set();
+  for (const [key, value] of Object.entries(ctx.state.get().resources)) {
+    const m = /^env:(.+)@preview$/.exec(key);
+    if (m && sourceMode(value) === "live") names.add(m[1]);
+  }
+  for (const s of planned) {
+    if (!s.id.endsWith(":preview")) continue;
+    for (const name3 of liveWritesIn(s.intent)) names.add(name3);
+  }
+  return [...names].sort();
+}
+
 // src/links/all.ts
-var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, authE2eLink, authRecoveryLink, emailDomainLink, emailKeysLink, deployLink, netlifyVisibilityLink];
+var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, authE2eLink, authRecoveryLink, emailDomainLink, emailKeysLink, deployLink, netlifyVisibilityLink, releaseLink];
 
 // src/links/index.ts
 var LINKS = ALL_LINKS;
@@ -17918,144 +18368,6 @@ var envParityCheck = {
   }
 };
 
-// src/checks/bundle.ts
-init_secret();
-init_http();
-var MAX_CHUNKS = 40;
-var MAX_BYTES = 8 * 1024 * 1024;
-var attr = (tag2, name3) => new RegExp(`\\b${name3}\\s*=\\s*["']([^"']+)["']`, "i").exec(tag2)?.[1];
-function scriptUrls(html, pageUrl) {
-  const origin = new URL(pageUrl).origin;
-  const out = [];
-  const add = (raw2) => {
-    if (!raw2) return;
-    try {
-      const u = new URL(raw2.replace(/&amp;/g, "&"), pageUrl);
-      if (u.origin === origin && !out.includes(u.href)) out.push(u.href);
-    } catch {
-    }
-  };
-  for (const tag2 of html.match(/<(script|link)\b[^>]*>/gi) ?? []) {
-    if (/^<script/i.test(tag2)) add(attr(tag2, "src"));
-    else {
-      const rel = (attr(tag2, "rel") ?? "").toLowerCase();
-      if (rel.split(/\s+/).includes("modulepreload") || rel === "preload" && (attr(tag2, "as") ?? "").toLowerCase() === "script") add(attr(tag2, "href"));
-    }
-  }
-  return out;
-}
-async function fetchBundle(ctx, base2) {
-  const allowed = new Set(hostVariants(new URL(base2).host));
-  for (const h of allowed) allowHost(h);
-  let page = `${base2}/`;
-  let res = await probe(ctx, page);
-  for (let hop = 0; hop < 3 && res.status >= 300 && res.status < 400 && res.headers.location; hop++) {
-    let next;
-    try {
-      next = new URL(res.headers.location, page);
-    } catch {
-      return { files: [], notes: [`GET ${page} redirected to an invalid location; not followed`], htmlStatus: res.status, complete: false, offsite: true };
-    }
-    if (next.protocol !== "https:" || !allowed.has(next.host.toLowerCase())) {
-      const where = `${next.protocol}//${next.host}${next.pathname}`;
-      const vercelWall = next.host.toLowerCase() === "vercel.com" && /^\/(sso-api|login)\b/.test(next.pathname);
-      const why = vercelWall ? "Vercel deployment protection is on for the production URL" : "auth wall / deployment protection / another site?";
-      return { files: [], notes: [`GET ${page} redirected to ${where} (${why}); not followed, nothing scanned`], htmlStatus: res.status, complete: false, offsite: true };
-    }
-    page = next.href;
-    res = await probe(ctx, page);
-  }
-  const pagePart = boundedText(res.text, MAX_BYTES);
-  const files = [{ path: new URL(page).pathname, text: pagePart.text }];
-  const notes = [];
-  if (res.status < 200 || res.status >= 300) return { files, notes: [`GET ${page} returned HTTP ${res.status}`], htmlStatus: res.status, complete: false };
-  if (pagePart.truncated) return { files, notes: [`HTML truncated at the ${MAX_BYTES / 1024 / 1024} MiB scan limit; scripts were not fetched`], htmlStatus: res.status, complete: false };
-  const urls = scriptUrls(pagePart.text, page);
-  let complete = true;
-  if (urls.length > MAX_CHUNKS) {
-    notes.push(`${urls.length} scripts found; scanned the first ${MAX_CHUNKS}`);
-    complete = false;
-  }
-  let total = pagePart.bytes;
-  for (const url of urls.slice(0, MAX_CHUNKS)) {
-    const path = new URL(url).pathname;
-    if (total >= MAX_BYTES) {
-      notes.push(`stopped at the ${MAX_BYTES / 1024 / 1024} MiB scan limit; remaining scripts were not fetched`);
-      complete = false;
-      break;
-    }
-    try {
-      const r = await probe(ctx, url);
-      if (r.status < 200 || r.status >= 300) {
-        notes.push(`${path}: HTTP ${r.status}`);
-        complete = false;
-        continue;
-      }
-      const part = boundedText(r.text, MAX_BYTES - total);
-      total += part.bytes;
-      files.push({ path, text: part.text });
-      if (part.truncated) {
-        notes.push(`${path}: truncated at the ${MAX_BYTES / 1024 / 1024} MiB scan limit; remaining content was not scanned`);
-        complete = false;
-        break;
-      }
-    } catch {
-      notes.push(`${path}: fetch failed`);
-      complete = false;
-    }
-  }
-  return { files, notes, htmlStatus: res.status, complete };
-}
-function boundedText(text, maximum) {
-  const encoded = Buffer.from(text, "utf8");
-  if (encoded.length <= maximum) return { text, bytes: encoded.length, truncated: false };
-  let prefix = encoded.subarray(0, maximum).toString("utf8");
-  while (Buffer.byteLength(prefix, "utf8") > maximum) prefix = prefix.slice(0, -1);
-  return { text: prefix, bytes: maximum, truncated: true };
-}
-var SIMPLE = [
-  [/\b(sk|rk)_(live|test)_[A-Za-z0-9]{10,}/g, (m) => `Stripe ${m[1] === "sk" ? "secret" : "restricted"} key (${m[2]})`],
-  [/\bwhsec_[A-Za-z0-9+/=]{16,}/g, () => "Stripe webhook signing secret"],
-  [/\bsb_secret_[A-Za-z0-9_-]{10,}/g, () => "Supabase secret key"],
-  [/\bsbp_[A-Za-z0-9_]{20,}/g, () => "Supabase personal access token"],
-  [/\bre_[A-Za-z0-9]{8,}_[A-Za-z0-9]{8,}/g, () => "Resend API key"],
-  [/\bAKIA[0-9A-Z]{16}\b/g, () => "AWS access key id"],
-  [/-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/g, () => "private key (PEM)"]
-];
-var JWT = /\beyJ[A-Za-z0-9_-]{5,}\.eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{10,}/g;
-function jwtPayload(token2) {
-  try {
-    const json2 = Buffer.from(token2.split(".")[1] ?? "", "base64url").toString("utf8");
-    const v = JSON.parse(json2);
-    return v && typeof v === "object" ? v : null;
-  } catch {
-    return null;
-  }
-}
-function scanSecrets(file) {
-  const hits = [];
-  const push = (kind, match) => {
-    if (match.length < 8) return;
-    hits.push({ kind, path: file.path, secret: new Secret(`bundle:${kind}`, match) });
-  };
-  for (const [re, kind] of SIMPLE) for (const m of file.text.matchAll(re)) push(kind(m), m[0]);
-  for (const m of file.text.matchAll(JWT)) {
-    if (jwtPayload(m[0])?.role === "service_role") push("Supabase service_role JWT", m[0]);
-  }
-  return hits;
-}
-function findPublicSupabaseKeys(files, ref3) {
-  const keys3 = [];
-  for (const f of files) {
-    for (const m of f.text.matchAll(/\bsb_publishable_[A-Za-z0-9_-]{10,}/g)) if (!keys3.includes(m[0])) keys3.push(m[0]);
-    for (const m of f.text.matchAll(JWT)) {
-      const p = jwtPayload(m[0]);
-      if (p?.role === "anon" && (!ref3 || p.ref === void 0 || p.ref === ref3) && !keys3.includes(m[0])) keys3.push(m[0]);
-    }
-  }
-  return keys3;
-}
-
 // src/checks/bundle-secrets.ts
 var bundleSecretsCheck = {
   id: "bundle-secrets",
@@ -18065,54 +18377,7 @@ var bundleSecretsCheck = {
   async run(ctx) {
     const confirmed = await confirmedProductionUrl(ctx);
     if (!confirmed.ok) return confirmed.outcome;
-    const base2 = confirmed.url;
-    let bundle;
-    try {
-      bundle = await fetchBundle(ctx, base2);
-    } catch (e) {
-      return result("warn", "medium", [`could not fetch ${base2}/: ${errMsg2(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
-    }
-    const seen2 = /* @__PURE__ */ new Set();
-    const hits = [];
-    for (const f of bundle.files) {
-      for (const h of scanSecrets(f)) {
-        const key = `${h.secret.fingerprint}@${h.path}`;
-        if (!seen2.has(key)) {
-          seen2.add(key);
-          hits.push(h);
-        }
-      }
-    }
-    const scanned = `scanned ${bundle.files.length} file(s) from ${base2}`;
-    if (hits.length) {
-      const evidence = hits.map((h) => `${h.kind} in ${h.path} (fp:${h.secret.fingerprint})`);
-      return result(
-        "fail",
-        "critical",
-        [...evidence, scanned, ...bundle.notes],
-        "Treat these keys as leaked: rotate each one at its provider now, keep the replacement in a server-only env var (no NEXT_PUBLIC_/VITE_/PUBLIC_ prefix, never imported by client code), then redeploy."
-      );
-    }
-    if (bundle.offsite) {
-      return result(
-        "warn",
-        "medium",
-        [scanned, ...bundle.notes],
-        "The production URL redirects away from your app (deployment protection, an auth wall or another site), so its scripts were not scanned. Make the production URL publicly reachable (e.g. turn off deployment protection for production), then re-run verify."
-      );
-    }
-    if (bundle.htmlStatus < 200 || bundle.htmlStatus >= 300) {
-      return result("warn", "medium", [scanned, ...bundle.notes], "The production page did not load, so its scripts were not scanned. Fix the deployment, then re-run verify.");
-    }
-    if (!bundle.complete) {
-      return result(
-        "warn",
-        "medium",
-        [scanned, "scan incomplete: no credential patterns found in the scanned portion", ...bundle.notes],
-        "Some public JavaScript could not be scanned because an asset failed to load or the bounded scan limit was reached. Fix failed asset requests and re-run verify; review any content beyond the scan limit separately. This result does not establish that the complete bundle is free of credentials."
-      );
-    }
-    return pass([scanned, "no credential patterns found", ...bundle.notes]);
+    return scanBundleAt(ctx, confirmed.url);
   }
 };
 
@@ -19262,7 +19527,9 @@ var ALL_CHECKS = [
   webhookRegisteredCheck,
   stripeLiveReadyCheck,
   emailDnsCheck,
-  emailVerifiedCheck
+  emailVerifiedCheck,
+  previewDeployCheck,
+  previewBundleCheck
 ];
 
 // src/checks/index.ts

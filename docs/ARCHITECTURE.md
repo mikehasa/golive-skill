@@ -49,6 +49,30 @@ a public difference inside that window is `info`, and public DNS is only compare
 still matches the baseline. `handoff --write` records what golive created; `status` re-checks it, and
 neither claims the other's coverage.
 
+## The opt-in preview and its release gate
+
+With `release.preview: true` in `golive.yaml` (and `preview` in `targets`), `plan` emits two more steps
+at the end of the plan. `preview:deploy` is a CREATE — `kind: 'deploy'`, `risk: { writes: true }`, never
+`replayable` — that deploys the current working tree to the host's preview target, depends on the host
+project and `env:preview`, and records the provider's own identity as `deployed:preview:id` (the same
+shape production records; teardown forgets it with the project's other deploy facts). Its preview names
+what the approval covers: provider and project, the branch/working tree it deploys (both hosts build
+what is on disk, not a commit), the env target, the preview URL the provider reports per deployment,
+and whether the preview shares production's sources — golive fills preview env from the same db/auth
+project as production, so a preview reads and writes production's data — plus `--confirm-live` when a
+live-mode source (recorded in state, or written by this plan) fills a preview env name.
+
+`release:check` writes nothing (`risk: { writes: false }`) and depends on that deploy. It runs two
+checks as its inline verification: `preview-deploy` (the hosting provider's own read confirms the
+recorded deployment is ready, belongs to the project golive links, and is not the production
+deployment) and `preview-bundle` (the credential scan of the provider-confirmed preview URL, reusing
+the production scanner and its exact-host allowlist). A failing check fails the step, and the runner
+stops the plan there: that is the gate. Neither check invents a read: a host that exposes no
+per-deployment preview read (Vercel, whose preview URLs are also protected by default) makes them skip
+with that reason, a 401/403 wall on a preview skips the scan, and neither is ever a pass. Promotion is
+not built — a promotion step would depend on `release:check`. Both step ids are part of a plan's
+identity, so an approval that was not applied has to be re-planned.
+
 ## Adapters, capabilities and links
 
 An adapter speaks to a provider and exposes capabilities such as `EnvStore`, `PublicUrl`,
@@ -62,10 +86,9 @@ provider's own identity for that deployment (the id in Vercel's deploy output; t
 Netlify confirms). golive records both in `.golive/state.json`: the `deployed:<target>` time marker
 and, when there is one, the identity as `deployed:<target>:id` = `<provider>|<deployment id>|<url>|<time>`.
 An id derived from the URL would name nothing a promotion or rollback could act on, so a provider
-that cannot report one leaves it unset. Recording that identity is all this release does with it: it
-plans and writes no new deployment, `golive.yaml`'s opt-in `release.preview` flag plans nothing yet,
-and previews, promotion and rollback do not exist — see the CI/CD and safe-releases bullet in
-`README.md`.
+that cannot report one leaves it unset. Preview deployments and the release check that gates them are
+opt-in (`release.preview` in `golive.yaml`) and described above; promotion and rollback are still
+planned.
 
 | Source | Responsibility |
 | --- | --- |

@@ -19,6 +19,24 @@ Cross-pairings have mock coverage, not equivalent live proof. Test resources wer
 explicit approval — earlier runs with supervised fixture helpers, later ones through the approved
 `golive teardown` flow.
 
+### Opt-in preview deployments
+
+With `release.preview: true` in `golive.yaml` (and `preview` in `targets`), `plan` also deploys a
+preview and gates it: `preview:deploy` records the provider's own deployment identity as
+`deployed:preview:id`, and `release:check` re-reads that deployment and scans the bundle it serves
+(see [architecture](ARCHITECTURE.md)). **Implemented and mock-covered, not live-validated.** What each
+host can confirm differs, and golive reports the difference instead of guessing:
+
+- **Netlify** re-reads the deployment through the deploy API, so `preview-deploy` can confirm it is
+  ready, belongs to the linked site and is not the published production deployment. A member-only or
+  otherwise protected preview makes `preview-bundle` skip rather than fail.
+- **Vercel** exposes no per-deployment read golive could use for this (its CLI/API path reports the
+  deployment only at deploy time, and preview URLs are protected by default), so both release checks
+  skip with that reason: the preview deploy is supported and its identity recorded, its confirmation is
+  left to the human in Vercel's own dashboard or CLI.
+- Both hosts deploy the **current working tree**, not a commit; the plan names the branch when local
+  `git` can report one.
+
 ### Account connection
 
 The usual CLI logins are `vercel login`, `netlify login`, `supabase login` and `neon auth`. The

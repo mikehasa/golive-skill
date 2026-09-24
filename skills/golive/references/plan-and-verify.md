@@ -88,9 +88,30 @@ A successful deploy records the deployment the provider reported: the `deployed:
 marker plus, when the provider gives one, its own identity under `deployed:production:id` as
 `<provider>|<deployment id>|<url>|<time>` in `.golive/state.json` — the name a later promotion or
 rollback of exactly that deployment would use. A provider that reports no identity records the
-marker alone; golive never derives one from the URL. Opting into preview deployments is
-`release: { preview: true }` in `golive.yaml`; today it plans nothing and changes no plan, and the
-preview deploy, promotion and rollback are still to come.
+marker alone; golive never derives one from the URL.
+
+**Preview deployments (`release: { preview: true }` in `golive.yaml`).** With the opt-in — and
+`preview` in `targets` — `plan` adds two steps at the end (a stack without the opt-in is unchanged),
+and `apply` needs `--confirm-live` too when a live-mode value fills a preview env name:
+
+- `preview:deploy` is a **create** (`risk: { writes: true }`, never `replayable`): it deploys the
+  current working tree — the preview names the branch when local `git` reports one, because both hosts
+  build what is on disk, not a commit — to the host's preview target. It depends on `project:hosting`
+  and `env:preview`, and records the provider's own identity for the deployment it made as
+  `deployed:preview:id` (the same shape production records, so a later promotion can name it). Its
+  preview names the provider and project, the env target, the preview URL the provider reports per
+  deployment, and whether the preview shares production's source project: golive fills preview env from
+  the same db/auth project as production, so a preview reads and writes production's data. It is
+  planned for the same reasons a production deploy is (no preview deployed yet, preview env changes in
+  this plan, the last preview deploy failed) plus a failed release check — a re-planned preview deploy
+  always makes a new deployment, so the gate never re-checks a bundle golive did not replace.
+- `release:check` writes nothing (`risk: { writes: false }`) and depends on that deploy. It runs two
+  checks as its inline verification and **fails the step when one fails**, which stops the plan: that is
+  the gate. Its intent is the deploy's intent plus the previous attempt, so a re-plan checks again
+  (the `domain:verify` idiom).
+
+Promotion is not built: a promotion step would depend on `release:check`. Adding these step ids changes
+a plan's id, so an approval that was not applied must be re-planned.
 
 **Production URL before the first deploy.** Without a custom domain, the host's production URL is used
 for the webhook, the auth site URL and `SITE_URL`-style vars only after golive has deployed production
@@ -242,7 +263,9 @@ key `rls-probe` takes from the bundle) only target the production URL the hostin
 for the linked project, never `config.domain` directly. If the host can't confirm it, the check skips with `cannot confirm <url>
 belongs to your project yet`. If the host reports another origin than `config.domain` (e.g. the domain
 isn't verified at Vercel yet), `webhook-unsigned` probes the host's URL and says so. `domain-live`
-does resolve and GET `config.domain`.
+does resolve and GET `config.domain`. `preview-bundle` is the one probe outside production: it scans
+the preview URL the hosting adapter reports for the linked project — never a URL golive only has in
+state — and a protected preview skips instead of being reported as scanned.
 
 | id | passes when | skips when |
 |---|---|---|
@@ -262,6 +285,8 @@ does resolve and GET `config.domain`.
 | `stripe-live-ready` | the account has `charges_enabled` | production isn't live mode |
 | `email-dns` | the provider's listed records (or common locations) and DMARC are in public DNS | no sending domain |
 | `email-verified` | the provider marks the domain verified | guided email; `blocked by: email:domain` |
+| `preview-deploy` | the hosting provider's own read confirms the preview deployment golive recorded (`deployed:preview:id`) is ready, belongs to the project this repo links and is not the production deployment | no recorded preview deployment; the recording belongs to another provider; a guided or logged-out host; a host with no per-deployment preview read (Vercel). **Warns** when the host reports a different preview deployment than the recorded one; **fails** when the recorded "preview" is the production deployment |
+| `preview-bundle` | the HTML/JavaScript served by the provider-confirmed preview URL is scanned completely and holds no known credential patterns | no provider-confirmed preview URL; **skips** a 401/403 protection wall (a private preview is normal and is never a pass); **warns** on an incomplete scan or a page that did not load; **fails critical** on a leaked pattern |
 
 Details that trip people up:
 - `env-parity` doesn't require `STRIPE_WEBHOOK_SECRET` (or other webhook-secret names) outside

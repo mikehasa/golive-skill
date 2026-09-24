@@ -15,6 +15,7 @@ import { emailDnsCheck, emailVerifiedCheck } from './email.js';
 import { domainLiveCheck } from './domain.js';
 import { netlifyPublicAccessCheck } from './netlify-public-access.js';
 import { siteHeadersCheck } from './site-headers.js';
+import { previewBundleCheck, previewDeployCheck } from './release.js';
 
 /** Every verification check, in report order. Wire into checks/index.ts as CHECKS. */
 export const ALL_CHECKS: Check[] = [
@@ -36,4 +37,6 @@ export const ALL_CHECKS: Check[] = [
   stripeLiveReadyCheck,
   emailDnsCheck,
   emailVerifiedCheck,
+  previewDeployCheck,
+  previewBundleCheck,
 ];

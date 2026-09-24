@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Secret, _resetSecretRegistry } from '../src/core/secret.js';
-import { buildPlan, planView } from '../src/core/plan.js';
+import { buildPlan, planId, planView } from '../src/core/plan.js';
 import { applyPlan } from '../src/core/runner.js';
 import { emptyState } from '../src/core/state.js';
-import type { Check, Finding, Plan, ShipConfig, ShipState, Step } from '../src/core/types.js';
+import type { Check, Finding, Http, Plan, ShipConfig, ShipState, Step } from '../src/core/types.js';
 import { envParityCheck } from '../src/checks/env-parity.js';
+import { previewBundleCheck, previewDeployCheck } from '../src/checks/release.js';
 import { ALL_LINKS } from '../src/links/all.js';
-import { availableKeys, recordDeploy } from '../src/links/util.js';
+import { availableKeys, forgetDeployFacts, recordDeploy, step } from '../src/links/util.js';
 import { emailDomain } from '../src/links/email.js';
-import { mockExec, testCtx } from './helpers.js';
+import { mockExec, mockHttp, testCtx } from './helpers.js';
 import { ALL_RAW_SECRETS, FAKE_STACK, PUBLIC, RAW, fakeWorld, type FakeWorld } from './fakes.js';
 
 beforeEach(() => _resetSecretRegistry());
@@ -32,13 +33,14 @@ const BASE_CONFIG: Partial<ShipConfig> = {
   email: { from: 'Shop <hello@example.com>' },
 };
 
-function setup(opts: { config?: Partial<ShipConfig>; env?: string[]; state?: ShipState; findings?: Finding[]; arrange?: (w: FakeWorld) => void } = {}) {
+function setup(opts: { config?: Partial<ShipConfig>; env?: string[]; state?: ShipState; findings?: Finding[]; arrange?: (w: FakeWorld) => void; exec?: Parameters<typeof mockExec>[0]; http?: Http } = {}) {
   const w = fakeWorld();
   opts.arrange?.(w);
-  const exec = mockExec([]);
+  const exec = mockExec(opts.exec ?? []);
   const ctx = testCtx({
     cwd: '/work/shop',
     exec: exec.run,
+    http: opts.http,
     adapters: w.adapters,
     config: { ...BASE_CONFIG, ...opts.config },
     state: opts.state,
@@ -48,7 +50,7 @@ function setup(opts: { config?: Partial<ShipConfig>; env?: string[]; state?: Shi
 }
 
 const build = (ctx: Parameters<typeof buildPlan>[0]) => buildPlan(ctx, ALL_LINKS, { unmappedEnv: [], warnings: [] });
-const apply = (ctx: Parameters<typeof buildPlan>[0], plan: Plan) => applyPlan(ctx, plan, new Map(), { approvedPlanId: plan.id, yes: true, confirmLive: true, confirmDns: true });
+const apply = (ctx: Parameters<typeof buildPlan>[0], plan: Plan, checks: Map<string, Check> = new Map()) => applyPlan(ctx, plan, checks, { approvedPlanId: plan.id, yes: true, confirmLive: true, confirmDns: true });
 const ids = (p: Plan) => p.steps.map((s) => s.id);
 const byId = (p: Plan, id: string): Step => {
   const s = p.steps.find((x) => x.id === id);
@@ -682,12 +684,315 @@ describe('deploy', () => {
     expect(ctx.state.resource('deployed:production')).not.toBe('2026-01-01T00:00:00.000Z');
   });
 
-  it('the release.preview opt-in plans nothing yet and leaves the plan id unchanged', async () => {
+  it('plans nothing extra without the release.preview opt-in: same plan id, same steps', async () => {
     const plain = await build(setup().ctx);
+    for (const release of [undefined, {}, { preview: false }]) {
+      const p = await build(setup({ config: { release } }).ctx);
+      expect(ids(p), JSON.stringify(release)).toEqual(ids(plain));
+      expect(p.id, JSON.stringify(release)).toBe(plain.id);
+      expect(p.steps.map((s) => s.preview)).toEqual(plain.steps.map((s) => s.preview));
+      expect(p.steps.map((s) => s.intent)).toEqual(plain.steps.map((s) => s.intent));
+    }
     const optedIn = await build(setup({ config: { release: { preview: true } } }).ctx);
-    expect(ids(optedIn)).toEqual(ids(plain));
-    expect(optedIn.id).toBe(plain.id);
-    expect(optedIn.steps.map((s) => s.preview)).toEqual(plain.steps.map((s) => s.preview));
+    expect(ids(optedIn)).toEqual([...ids(plain), 'preview:deploy', 'release:check']);
+    expect(optedIn.id).not.toBe(plain.id);
+  });
+});
+
+// ── Opt-in preview deploy + the release check that gates it ─────────────────────────────────────────
+
+const PREVIEW_URL = 'https://shop-preview-abc123.fakehost.app';
+const PREVIEW_ID = 'dpl_fake1_preview';
+const PREVIEW_AT = '2026-01-01T00:00:00.000Z';
+const recordedPreviewId = (provider = 'fakehost', id = 'dpl_prev', url = PREVIEW_URL): string => `${provider}|${id}|${url}|${PREVIEW_AT}`;
+
+/**
+ * The golden-path stack with `release.preview: true`, the branch readable, and the host reporting the
+ * preview deployment a deploy would make (the fake host deploys to PREVIEW_URL).
+ */
+function previewSetup(opts: Parameters<typeof setup>[0] = {}) {
+  return setup({
+    ...opts,
+    config: { release: { preview: true }, ...opts.config },
+    exec: opts.exec ?? [['git rev-parse', { stdout: 'main\n' }]],
+    arrange: (w) => {
+      w.host.urls.preview = PREVIEW_URL;
+      opts.arrange?.(w);
+    },
+  });
+}
+const withRecordedPreview = (extra: Record<string, string> = {}, provider = 'fakehost'): ShipState =>
+  stateWith([], { 'deployed:preview': PREVIEW_AT, 'deployed:preview:id': recordedPreviewId(provider), ...extra });
+
+/** The two release checks, as the runtime registers them (the deploy step's own verification runs them). */
+const previewChecks = () =>
+  new Map<string, Check>([
+    ['preview-deploy', previewDeployCheck],
+    ['preview-bundle', previewBundleCheck],
+  ]);
+
+describe('opt-in preview deploy', () => {
+  it('plans preview:deploy last-named, with the risk and dependencies the approval needs', async () => {
+    const { ctx } = previewSetup();
+    const plan = await build(ctx);
+    expect(ids(plan).slice(-2)).toEqual(['preview:deploy', 'release:check']);
+
+    const deploy = byId(plan, 'preview:deploy');
+    expect(deploy.kind).toBe('deploy');
+    expect(deploy.risk).toEqual({ writes: true });
+    expect(deploy.risk.replayable).toBeUndefined(); // a preview is a create, never a replay
+    expect(deploy.dependsOn).toEqual(['project:hosting', 'env:preview']);
+    expect(deploy.verifyWith).toEqual(['preview-deploy']);
+
+    // What a human needs in order to approve: the provider and project, the env target, what tree it
+    // deploys, the URL, whether the preview shares production's source project, and no promotion.
+    const pv = deploy.preview.join('\n');
+    expect(pv).toMatch(/deploy a preview on FakeHost: the preview env changes in this plan \(env:preview\) and only reaches a new deployment; golive has never deployed a preview for this app/);
+    expect(pv).toContain('project: FakeHost project shop (prj_1)');
+    expect(pv).toContain('source: the current working tree on disk, uncommitted changes included (golive deploys no commit), on branch main');
+    expect(pv).toContain('env target: preview — the env:preview writes in this plan apply to the next preview deployment only, never to production');
+    expect(pv).toContain('data: golive fills the preview env from the same FakeDB db_1 that production uses (golive has one project per axis for the whole app), so a preview reads and writes the same database and auth project as production');
+    expect(pv).toMatch(/data: .*payments keys in preview come from FakePay test mode/);
+    expect(pv).toContain("preview URL: FakeHost reports this deployment's own URL and id, which golive records under deployed:preview:id (golive has not deployed a preview yet)");
+    expect(pv).toContain('nothing is promoted: this deploys a preview and checks it, and production is unchanged — golive never replays or replaces a preview');
+    expect(pv).not.toMatch(/--confirm-live/); // no live-mode source behind a preview name yet
+    expect(plan.warnings.join('\n')).not.toMatch(/release\.preview is set/);
+    expectNoRawSecrets([JSON.stringify(planView(plan)), ...ctx.logs]);
+  });
+
+  it('records the provider’s own preview deployment id, like production', async () => {
+    const { w, ctx } = previewSetup();
+    const plan = await build(ctx);
+    const out = await apply(ctx, plan, previewChecks());
+    expect(out.map((o) => [o.id, o.status])).toEqual(plan.steps.map((s) => [s.id, 'done']));
+    expect(w.host.deploys).toBe(3); // two production deploys (the first, then the final after the webhook secret), then the preview
+    const at = ctx.state.resource('deployed:preview')!;
+    expect(at).toMatch(/^\d{4}-/);
+    expect(ctx.state.resource('deployed:preview:id')).toBe(`fakehost|${PREVIEW_ID}|${PREVIEW_URL}|${at}`);
+    // The deploy step was verified by the provider's own read of the deployment it recorded.
+    const deploy = out.find((o) => o.id === 'preview:deploy')!;
+    expect(deploy.checks.map((c) => [c.id, c.status])).toEqual([['preview-deploy', 'pass']]);
+    // The gate ran both release checks (the preview bundle could not be fetched by the bare mock: warn).
+    const gate = out.find((o) => o.id === 'release:check')!;
+    expect(gate.checks.map((c) => c.id)).toEqual(['preview-deploy', 'preview-bundle']);
+    expect(gate.checks.every((c) => c.status !== 'fail')).toBe(true);
+    expect(gate.changes.join(' ')).toMatch(/no writes/);
+    expectNoRawSecrets([JSON.stringify(out), JSON.stringify(ctx.state.get()), ...ctx.logs]);
+  });
+
+  it('re-plans the preview with a live-mode source behind a preview name and needs --confirm-live', async () => {
+    // (a) recorded: golive already filled a preview name from live-mode keys.
+    const recorded = previewSetup({ state: withRecordedPreview({ 'env:STRIPE_SECRET_KEY@preview': 'stripe.secretKey|fakepay|live|fp123|acct_FakePay' }) });
+    const a = byId(await build(recorded.ctx), 'preview:deploy');
+    expect(a.risk).toEqual({ writes: true, live: true });
+    expect(a.preview.join('\n')).toMatch(/live-mode values behind preview env names \(STRIPE_SECRET_KEY\): a preview built with them can reach live payments or live data, so approving this deploy needs --confirm-live/);
+    expect(planView(await build(recorded.ctx)).steps.find((s) => s.id === 'preview:deploy')!.needs).toEqual(['--confirm-live']);
+
+    // (b) planned: this plan is about to write live-mode keys into preview.
+    const planned = previewSetup({ config: { payments: { ...BASE_CONFIG.payments, modes: { preview: 'live' } } } });
+    const b = byId(await build(planned.ctx), 'preview:deploy');
+    expect(b.risk).toEqual({ writes: true, live: true });
+    expect(b.preview.join('\n')).toMatch(/live-mode values behind preview env names \(NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY, STRIPE_SECRET_KEY\)/);
+
+    // A test-mode preview needs no live confirmation.
+    expect(byId(await build(previewSetup().ctx), 'preview:deploy').risk).toEqual({ writes: true });
+  });
+
+  it('says so when the opt-in cannot be honoured instead of planning nothing silently', async () => {
+    const noTarget = await build(setup({ config: { release: { preview: true }, targets: ['production'] } }).ctx);
+    expect(ids(noTarget)).not.toContain('preview:deploy');
+    expect(noTarget.warnings.join('\n')).toMatch(/release\.preview is set, but `targets` in golive\.yaml does not manage preview/);
+
+    const loggedOut = await build(setup({ config: { release: { preview: true } }, arrange: (w) => (w.host.authed = false) }).ctx);
+    expect(ids(loggedOut)).not.toContain('preview:deploy');
+    expect(loggedOut.warnings.join('\n')).toMatch(/release\.preview is set, but golive cannot deploy a preview on fakehost/);
+  });
+
+  it('the preview steps are the only difference: everything else in the plan is untouched', async () => {
+    const plain = await build(setup({ arrange: (w) => (w.host.urls.preview = PREVIEW_URL) }).ctx);
+    const opted = await build(previewSetup().ctx);
+    expect(ids(opted).slice(0, -2)).toEqual(ids(plain));
+    expect(opted.steps.slice(0, -2).map((s) => s.preview)).toEqual(plain.steps.map((s) => s.preview));
+  });
+
+  it('names the working tree even when the local git cannot report a branch', async () => {
+    const { ctx } = previewSetup({ exec: [] });
+    expect(byId(await build(ctx), 'preview:deploy').preview.join('\n')).toContain(
+      'source: the current working tree on disk, uncommitted changes included (golive deploys no commit); golive could not read the git branch',
+    );
+  });
+});
+
+describe('release:check is the gate', () => {
+  const KEY = 'sk_' + 'live_' + 'Z9'.repeat(12);
+  const previewHttp = (leak: () => boolean) =>
+    mockHttp([
+      ['GET', `${PREVIEW_URL}/`, () => ({ text: '<script src="/a.js"></script>' })],
+      ['GET', `${PREVIEW_URL}/a.js`, () => ({ text: leak() ? `const k="${KEY}"` : 'const ok=1' })],
+    ]).http;
+
+  it('fails the step and stops the plan: a step that depends on the gate never runs', async () => {
+    const { ctx } = previewSetup({ http: previewHttp(() => true) });
+    const plan = await build(ctx);
+    // A later slice's promotion step would depend on release:check exactly like this placeholder does.
+    plan.steps.push(step({ id: 'promote:preview', title: 'Promote the checked preview', kind: 'wire', risk: { writes: true }, dependsOn: ['release:check'], preview: ['a later slice would promote a checked preview here'], run: async () => ({ changes: ['promoted'] }) }));
+    plan.id = planId(plan.steps, plan.handoffs, ctx.release);
+
+    const out = await applyPlan(ctx, plan, previewChecks(), { approvedPlanId: plan.id, yes: true, confirmLive: true, confirmDns: true });
+    expect(out.map((o) => o.id)).not.toContain('promote:preview');
+    const gate = out.find((o) => o.id === 'release:check')!;
+    expect(gate.status).toBe('failed');
+    expect(gate.checks.find((c) => c.id === 'preview-bundle')).toMatchObject({ status: 'fail', severity: 'critical' });
+    expect(ctx.state.get().steps['release:check']?.status).toBe('failed');
+    expectNoRawSecrets([JSON.stringify(out), JSON.stringify(ctx.state.get())]);
+    expect(JSON.stringify(out)).not.toContain(KEY);
+  });
+
+  it('is re-planned after a failure and passed once the leak is gone', async () => {
+    let leak = true;
+    const { w, ctx } = previewSetup({ http: previewHttp(() => leak) });
+    const p1 = await build(ctx);
+    expect((await apply(ctx, p1)).find((o) => o.id === 'release:check')?.status).toBe('failed');
+
+    // The failure is recorded, so a fresh plan asks for the gate again — and for a new deployment of
+    // whatever fixed it (the recorded preview is the bundle that failed).
+    const p2 = await build(ctx);
+    expect(ids(p2)).toEqual(expect.arrayContaining(['preview:deploy', 'release:check']));
+    expect(byId(p2, 'release:check').preview.join('\n')).toMatch(/previous release check: 20/);
+    expect(byId(p2, 'release:check').intent).not.toBe(byId(p1, 'release:check').intent);
+    const out2 = await apply(ctx, p2, previewChecks());
+    expect(out2.find((o) => o.id === 'preview:deploy')?.status).toBe('done');
+    expect(out2.find((o) => o.id === 'release:check')?.status).toBe('failed');
+
+    // A retry builds a fresh preview of whatever was fixed (the gate checks the deployment golive made,
+    // and a re-planned preview deploy is a new deployment): the step's identity carries the preview
+    // before it, so it never resumes a bundle it did not replace.
+    leak = false;
+    const out3 = await apply(ctx, await build(ctx), previewChecks());
+    expect(out3.find((o) => o.id === 'preview:deploy')?.status).toBe('done');
+    expect(out3.find((o) => o.id === 'release:check')?.status).toBe('done');
+    expect(w.host.deploys).toBe(5);
+    // Nothing left to do: the preview is deployed and its gate passed (with the domain live, like the
+    // golden-path idempotency test).
+    w.host.domainStatus = 'ok';
+    w.mail.domains.get('example.com')!.status = 'verified';
+    expect(ids(await build(ctx))).toEqual(['project:hosting', 'project:db']);
+  });
+});
+
+describe('preview-deploy / preview-bundle status matrix', () => {
+  const runDeploy = (ctx: Parameters<typeof previewDeployCheck.run>[0]) => previewDeployCheck.run(ctx);
+  const runBundle = (ctx: Parameters<typeof previewBundleCheck.run>[0]) => previewBundleCheck.run(ctx);
+
+  it('passes when the provider confirms the recorded preview deployment', async () => {
+    const r = await runDeploy(previewSetup({ state: withRecordedPreview() }).ctx);
+    expect(r.status).toBe('pass');
+    const ev = r.evidence.join('\n');
+    expect(ev).toContain(`fakehost deployment dpl_prev is what fakehost reports for the preview target of the project this repo links (shop (prj_1))`);
+    expect(ev).toMatch(/confirms the deployment exists, is ready and belongs to this project, and that it is not the project's production deployment/);
+    expect(ev).toContain(`recorded by golive ${PREVIEW_AT} (deployed:preview:id)`);
+    expect(ev).toMatch(/a private preview is normal/);
+  });
+
+  it('skips with the honest reason when no preview deployment is recorded', async () => {
+    const r = await runDeploy(setup().ctx);
+    expect(r).toEqual({ status: 'skip', severity: 'info', evidence: ['golive recorded no preview deployment (no deployed:preview:id in .golive/state.json), so there is nothing to confirm'] });
+    expect((await runBundle(setup().ctx)).status).toBe('skip');
+  });
+
+  it('skips when the host reports no preview URL to confirm (a deployment URL is per deployment)', async () => {
+    const { ctx } = previewSetup({ state: withRecordedPreview(), arrange: (w) => (w.host.urls.preview = null), exec: [] });
+    const r = await runDeploy(ctx);
+    expect(r.status).toBe('skip');
+    expect(r.evidence[0]).toMatch(/no fakehost read confirms fakehost deployment dpl_prev/);
+    expect(r.evidence[0]).toMatch(/does not probe or guess one — previews are protected by default/);
+    expect((await runBundle(ctx)).evidence[0]).toMatch(/never scans a URL it cannot attribute to this project/);
+  });
+
+  it('skips a guided host and a logged-out host without failing them', async () => {
+    const guided = await runDeploy(previewSetup({ state: withRecordedPreview({}, 'fakeguided'), config: { stack: { ...FAKE_STACK, hosting: 'fakeguided' } } }).ctx);
+    expect(guided.status).toBe('skip');
+    expect(guided.evidence[0]).toMatch(/guided and cannot report its URLs/);
+    const out = await runDeploy(previewSetup({ state: withRecordedPreview(), arrange: (w) => (w.host.authed = false) }).ctx);
+    expect(out).toEqual({ status: 'skip', severity: 'info', evidence: ['blocked by: login:fakehost'] });
+  });
+
+  it('skips a recording that belongs to another hosting provider', async () => {
+    const r = await runDeploy(previewSetup({ state: withRecordedPreview(), config: { stack: { hosting: 'netlify', db: 'fakedb' } } }).ctx);
+    expect(r.status).toBe('skip');
+    expect(r.evidence[0]).toMatch(/belongs to fakehost, not to the chosen hosting provider \(netlify\)/);
+  });
+
+  it('warns when the provider reports a different preview deployment than the recorded one', async () => {
+    const r = await runDeploy(previewSetup({ state: withRecordedPreview(), arrange: (w) => (w.host.urls.preview = 'https://shop-other.fakehost.app') }).ctx);
+    expect(r.status).toBe('warn');
+    expect(r.evidence.join('\n')).toMatch(/reports https:\/\/shop-other\.fakehost\.app for the preview target, while golive recorded/);
+    expect(r.fix).toMatch(/Run `golive plan` and apply the preview steps/);
+  });
+
+  it('fails when the "preview" is the production deployment', async () => {
+    const r = await runDeploy(previewSetup({ state: withRecordedPreview({ 'deployed:production': PREVIEW_AT, 'deployed:production:id': `fakehost|dpl_prod|${PREVIEW_URL}|${PREVIEW_AT}` }) }).ctx);
+    expect(r).toEqual(expect.objectContaining({ status: 'fail', severity: 'high' }));
+    expect(r.evidence.join('\n')).toContain(`golive recorded ${PREVIEW_URL} as both the preview deployment (fakehost deployment dpl_prev) and the production deployment it made`);
+  });
+
+  it('preview-bundle skips a protected preview (401) with the reason, never as a pass', async () => {
+    const protectedPage = mockHttp([['GET', `${PREVIEW_URL}/`, () => ({ status: 401, text: '<html>protected</html>' })]]);
+    const { ctx } = previewSetup({ state: withRecordedPreview(), http: protectedPage.http });
+    const r = await runBundle(ctx);
+    expect(r.status).toBe('skip');
+    expect(r.evidence.join('\n')).toContain(`GET ${PREVIEW_URL}/ → HTTP 401: the preview deployment is behind a protection wall`);
+    expect(r.evidence.join('\n')).toMatch(/a protected preview is not a finding, and this is not a pass/);
+  });
+
+  it('preview-bundle fails a leaked key in the preview bundle without printing it', async () => {
+    const KEY = 'sk_' + 'live_' + 'Y7'.repeat(12);
+    const leaky = mockHttp([
+      ['GET', `${PREVIEW_URL}/`, () => ({ text: '<script src="/a.js"></script>' })],
+      ['GET', `${PREVIEW_URL}/a.js`, () => ({ text: `const k="${KEY}"` })],
+    ]);
+    const { ctx } = previewSetup({ state: withRecordedPreview(), http: leaky.http });
+    const r = await runBundle(ctx);
+    expect(r.status).toBe('fail');
+    expect(r.severity).toBe('critical');
+    expect(r.evidence.join('\n')).toMatch(/Stripe secret key \(live\) in \/a\.js \(fp:/);
+    expect(JSON.stringify(r)).not.toContain(KEY);
+  });
+
+  it('preview-bundle passes only a complete clean scan of the provider-confirmed preview', async () => {
+    const clean = mockHttp([
+      ['GET', `${PREVIEW_URL}/`, () => ({ text: '<script src="/a.js"></script>' })],
+      ['GET', `${PREVIEW_URL}/a.js`, () => ({ text: 'const ok=1' })],
+    ]);
+    const { ctx } = previewSetup({ state: withRecordedPreview(), http: clean.http });
+    const r = await runBundle(ctx);
+    expect(r.status).toBe('pass');
+    expect(r.evidence).toEqual([
+      `scanned 2 file(s) from ${PREVIEW_URL}`,
+      'no credential patterns found',
+      `fakehost reports ${PREVIEW_URL} for the preview deployment golive recorded (dpl_prev); a preview that is protected or unreachable is never treated as clean`,
+    ]);
+  });
+});
+
+describe('preview state is teardown-safe', () => {
+  it('uses the deployed:* family only, which teardown forgets with the removed project', async () => {
+    const { ctx } = previewSetup();
+    await apply(ctx, await build(ctx));
+    expect(ctx.state.resource('deployed:preview:id')).toBeDefined();
+    // One machine-readable key family: the preview deploy records nothing of its own shape (every other
+    // preview-named key is an ordinary per-target env source).
+    const keys = Object.keys(ctx.state.get().resources);
+    expect(keys).toContain('deployed:preview');
+    expect(keys).toContain('deployed:preview:id');
+    expect(keys.filter((k) => k.includes('preview') && !k.endsWith('@preview') && !k.startsWith('deployed:preview'))).toEqual([]);
+    expect(ctx.state.get().secrets['STRIPE_SECRET_KEY@preview']?.fp).toBeTruthy();
+
+    forgetDeployFacts(ctx);
+    for (const key of ['deployed:preview', 'deployed:preview:id', 'deployed:production', 'deployed:production:id']) expect(ctx.state.resource(key), key).toBeUndefined();
+    expect(ctx.state.get().steps['preview:deploy']).toBeUndefined();
+    expect(ctx.state.get().steps['release:check']?.status).toBe('done'); // other step evidence stays
+    expect(ctx.state.get().secrets['STRIPE_SECRET_KEY@preview']?.fp).toBeTruthy();
   });
 });
 

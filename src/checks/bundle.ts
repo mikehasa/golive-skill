@@ -1,7 +1,7 @@
 import type { Ctx } from '../core/types.js';
 import { Secret } from '../core/secret.js';
 import { allowHost } from '../core/http.js';
-import { hostVariants, probe } from './util.js';
+import { errMsg, hostVariants, pass, probe, result, skip, type CheckOutcome } from './util.js';
 
 /** Crawl limits: enough for real apps, bounded so a huge site can't stall verify. */
 export const MAX_CHUNKS = 40;
@@ -183,4 +183,78 @@ export function findPublicSupabaseKeys(files: BundleFile[], ref?: string): strin
     }
   }
   return keys;
+}
+
+// ── The scan: crawl what `base` serves, then look for credential patterns ────────────────────────
+
+/** How a scan names the origin it read. Production and a preview deployment differ only here. */
+export interface BundleScanCopy {
+  /** The word used in fix text: `production` by default, `preview` for a preview deployment. */
+  what?: string;
+  /**
+   * A 401/403 page is a protection wall rather than a broken deployment: skip with the reason instead
+   * of warning. Previews are private by default, so an unreadable one is not a finding.
+   */
+  protected?: boolean;
+}
+
+/**
+ * Fetch the HTML/JS `base` serves and scan it for known credential patterns. `base` must be a URL the
+ * provider confirmed belongs to this project (confirmedProductionUrl, or the preview deployment the
+ * hosting adapter reports): that origin and its www/apex counterpart are the only hosts allowlisted
+ * here, and hosts from redirects or HTML can never widen it.
+ */
+export async function scanBundleAt(ctx: Ctx, base: string, copy: BundleScanCopy = {}): Promise<CheckOutcome> {
+  const what = copy.what ?? 'production';
+  let bundle: Bundle;
+  try {
+    bundle = await fetchBundle(ctx, base);
+  } catch (e) {
+    return result('warn', 'medium', [`could not fetch ${base}/: ${errMsg(e)}`], `Make sure the ${what} deployment is reachable, then re-run verify.`);
+  }
+  if (copy.protected && (bundle.htmlStatus === 401 || bundle.htmlStatus === 403)) {
+    return skip(`GET ${base}/ → HTTP ${bundle.htmlStatus}: the ${what} deployment is behind a protection wall (deployment protection, visitor access or an auth wall), so nothing was scanned; a protected ${what} is not a finding, and this is not a pass`);
+  }
+
+  const seen = new Set<string>();
+  const hits: SecretHit[] = [];
+  for (const f of bundle.files) {
+    for (const h of scanSecrets(f)) {
+      const key = `${h.secret.fingerprint}@${h.path}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        hits.push(h);
+      }
+    }
+  }
+  const scanned = `scanned ${bundle.files.length} file(s) from ${base}`;
+  if (hits.length) {
+    const evidence = hits.map((h) => `${h.kind} in ${h.path} (fp:${h.secret.fingerprint})`);
+    return result(
+      'fail',
+      'critical',
+      [...evidence, scanned, ...bundle.notes],
+      'Treat these keys as leaked: rotate each one at its provider now, keep the replacement in a server-only env var (no NEXT_PUBLIC_/VITE_/PUBLIC_ prefix, never imported by client code), then redeploy.',
+    );
+  }
+  if (bundle.offsite) {
+    return result(
+      'warn',
+      'medium',
+      [scanned, ...bundle.notes],
+      `The ${what} URL redirects away from your app (deployment protection, an auth wall or another site), so its scripts were not scanned. Make the ${what} URL publicly reachable (e.g. turn off deployment protection for ${what}), then re-run verify.`,
+    );
+  }
+  if (bundle.htmlStatus < 200 || bundle.htmlStatus >= 300) {
+    return result('warn', 'medium', [scanned, ...bundle.notes], `The ${what} page did not load, so its scripts were not scanned. Fix the deployment, then re-run verify.`);
+  }
+  if (!bundle.complete) {
+    return result(
+      'warn',
+      'medium',
+      [scanned, 'scan incomplete: no credential patterns found in the scanned portion', ...bundle.notes],
+      'Some public JavaScript could not be scanned because an asset failed to load or the bounded scan limit was reached. Fix failed asset requests and re-run verify; review any content beyond the scan limit separately. This result does not establish that the complete bundle is free of credentials.',
+    );
+  }
+  return pass([scanned, 'no credential patterns found', ...bundle.notes]);
 }

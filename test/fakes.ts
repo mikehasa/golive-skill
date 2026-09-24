@@ -159,8 +159,11 @@ export function fakeWorld() {
           }
           host.deploys++;
           host.urls[t] ??= 'https://shop.fakehost.app';
-          const url = 'https://shop-abc123.fakehost.app';
-          return host.deployId ? { url, id: host.deployId } : { url };
+          // Each deployment gets its own URL and id, like the real hosts: a preview deployment is never
+          // the production deployment.
+          const url = t === 'preview' ? 'https://shop-preview-abc123.fakehost.app' : 'https://shop-abc123.fakehost.app';
+          if (!host.deployId) return { url };
+          return { url, id: t === 'preview' ? `${host.deployId}_preview` : host.deployId };
         },
       },
       domain: {
