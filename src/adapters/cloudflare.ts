@@ -113,31 +113,53 @@ interface Zone {
   name: string;
 }
 
-async function findZone(ctx: Ctx, domain: string): Promise<Zone | null> {
+async function findZone(ctx: Ctx, domain: string, ignoreCache = false): Promise<{ zone: Zone; cached: boolean } | null> {
   const names = zoneCandidates(domain);
-  for (const n of names) {
-    const id = ctx.state.resource(zoneKey(n));
-    if (id) return { id, name: n };
+  if (!ignoreCache) {
+    for (const n of names) {
+      const id = ctx.state.resource(zoneKey(n));
+      if (id) return { zone: { id, name: n }, cached: true };
+    }
   }
   for (const n of names) {
     const env = await api<Array<{ id: string; name: string; status?: string }>>(ctx, 'GET', `/zones?name=${encodeURIComponent(n)}&status=active&per_page=5`, `zone lookup for ${n}`);
     const z = (env.result ?? []).find((x) => normName(x.name) === n && (x.status ?? 'active') === 'active');
     if (z) {
       ctx.state.save((s) => void (s.resources[zoneKey(n)] = z.id));
-      return { id: z.id, name: n };
+      return { zone: { id: z.id, name: n }, cached: false };
     }
   }
   return null;
 }
 
-async function requireZone(ctx: Ctx, domain: string): Promise<Zone> {
-  const z = await findZone(ctx, domain);
-  if (z) return z;
+async function requireZone(ctx: Ctx, domain: string): Promise<{ zone: Zone; cached: boolean }> {
+  const found = await findZone(ctx, domain);
+  if (found) return found;
   throw new Error(
     `No active Cloudflare zone for ${normName(domain)} is visible to this API token (tried ${zoneCandidates(domain).join(', ')}). ` +
       'Either the domain is not in this Cloudflare account, its nameservers are not yet delegated to Cloudflare (zone status "pending": ' +
       'set the nameservers Cloudflare shows at your registrar), or the token is scoped to other zones (add this zone to its Zone Resources).',
   );
+}
+
+/**
+ * Run a zone-scoped operation, re-resolving once when a zone id cached in state went stale (the zone
+ * was deleted/recreated, or the token re-scoped). A 404/403 against a cached id means nothing was
+ * written there, so one re-resolution + retry is safe; a fresh lookup's failure is not retried.
+ */
+async function withZone<T>(ctx: Ctx, domain: string, run: (zone: Zone) => Promise<T>): Promise<T> {
+  const { zone, cached } = await requireZone(ctx, domain);
+  try {
+    return await run(zone);
+  } catch (e) {
+    if (!cached || !(e instanceof CloudflareError) || (e.status !== 404 && e.status !== 403)) throw e;
+    ctx.state.save((s) => {
+      delete s.resources[zoneKey(zone.name)];
+    });
+    const fresh = await findZone(ctx, domain, true);
+    if (!fresh) throw e;
+    return run(fresh.zone);
+  }
 }
 
 // ── Records ─────────────────────────────────────────────────────────────────────────────────────
@@ -269,17 +291,25 @@ async function create(ctx: Ctx, zone: Zone, want: DnsRecord): Promise<'created' 
   return 'created';
 }
 
-/** Same name+type+content already exists: adopt it; fix proxy/priority drift only on records we own. */
+/** Same name+type+content already exists: adopt it; fix proxy/priority/TTL drift only on records we own. */
 async function adopt(ctx: Ctx, zone: Zone, have: CfRecord, want: DnsRecord): Promise<'updated' | 'unchanged'> {
   remember(ctx, want, have.id);
   const fix: Record<string, unknown> = {};
   if (have.proxied && ADDRESS.has(have.type)) fix.proxied = false;
+  if (want.ttl !== undefined && have.ttl !== want.ttl) fix.ttl = want.ttl;
   if (want.type === 'MX' && want.priority !== undefined && have.priority !== want.priority) fix.priority = want.priority;
   if (!Object.keys(fix).length) return 'unchanged';
   if (!isOwned(have)) {
+    const drift = [
+      fix.proxied === false ? 'is proxied (orange cloud)' : null,
+      fix.priority !== undefined ? `has priority ${have.priority}` : null,
+      fix.ttl !== undefined ? `has TTL ${have.ttl}` : null,
+    ]
+      .filter(Boolean)
+      .join(' and ');
     ctx.log.warn(
-      `cloudflare: ${want.type} ${want.name} already has the right value but ${fix.proxied === false ? 'is proxied (orange cloud)' : `priority ${have.priority}`}; ` +
-        'golive did not create it, so it is left as is. Switch it to "DNS only" / the expected priority in the Cloudflare dashboard if the provider cannot verify it.',
+      `cloudflare: ${want.type} ${want.name} already has the right value but ${drift}; ` +
+        'golive did not create it, so it is left as is. Switch it to "DNS only" / the expected priority or TTL in the Cloudflare dashboard if the provider cannot verify it.',
     );
     return 'unchanged';
   }
@@ -346,31 +376,31 @@ export const cloudflareDns: DnsZone = {
   },
 
   async list(ctx, domain) {
-    const zone = await requireZone(ctx, domain);
-    return (await fetchRecords(ctx, zone)).filter((r) => TYPES.has(r.type)).map(toDnsRecord);
+    return withZone(ctx, domain, async (zone) => (await fetchRecords(ctx, zone)).filter((r) => TYPES.has(r.type)).map(toDnsRecord));
   },
 
   async upsert(ctx, domain, record) {
-    const zone = await requireZone(ctx, domain);
-    const want = normalizeWanted(record);
-    if (!inZone(want.name, zone.name)) throw new Error(`Cloudflare DNS: ${want.name} is not inside the zone ${zone.name}; nothing was changed.`);
+    return withZone(ctx, domain, async (zone) => {
+      const want = normalizeWanted(record);
+      if (!inZone(want.name, zone.name)) throw new Error(`Cloudflare DNS: ${want.name} is not inside the zone ${zone.name}; nothing was changed.`);
 
-    const here = (await fetchRecords(ctx, zone, `name.exact=${encodeURIComponent(want.name)}`)).filter((r) => normName(r.name) === want.name);
-    const same = here.find((r) => r.type === want.type && normContent(r.type, r.content) === want.content);
-    if (same) return adopt(ctx, zone, same, want);
-    cnameExclusivity(zone, here, want);
-    if (want.type === 'TXT' && isSpf(want.content)) return mergeSpfAt(ctx, zone, here, want);
-    if (ADDRESS.has(want.type)) {
-      const conflicts = here.filter((r) => conflictsWith(want.type, r.type));
-      if (conflicts.length) return replaceOwned(ctx, zone, conflicts, want);
-    }
-    const kind = singleKind(want.type, want.name, want.content);
-    if (kind) {
-      // A stale DKIM key / other-region return path (e.g. the Resend domain was recreated) is replaced, not added to.
-      const stale = here.filter((r) => r.type === want.type && singleKind(r.type, want.name, normContent(r.type, r.content)) === kind);
-      if (stale.length) return replaceOwned(ctx, zone, stale, want);
-    }
-    return create(ctx, zone, want); // other TXT / MX / CAA live alongside existing values
+      const here = (await fetchRecords(ctx, zone, `name.exact=${encodeURIComponent(want.name)}`)).filter((r) => normName(r.name) === want.name);
+      const same = here.find((r) => r.type === want.type && normContent(r.type, r.content) === want.content);
+      if (same) return adopt(ctx, zone, same, want);
+      cnameExclusivity(zone, here, want);
+      if (want.type === 'TXT' && isSpf(want.content)) return mergeSpfAt(ctx, zone, here, want);
+      if (ADDRESS.has(want.type)) {
+        const conflicts = here.filter((r) => conflictsWith(want.type, r.type));
+        if (conflicts.length) return replaceOwned(ctx, zone, conflicts, want);
+      }
+      const kind = singleKind(want.type, want.name, want.content);
+      if (kind) {
+        // A stale DKIM key / other-region return path (e.g. the Resend domain was recreated) is replaced, not added to.
+        const stale = here.filter((r) => r.type === want.type && singleKind(r.type, want.name, normContent(r.type, r.content)) === kind);
+        if (stale.length) return replaceOwned(ctx, zone, stale, want);
+      }
+      return create(ctx, zone, want); // other TXT / MX / CAA live alongside existing values
+    });
   },
 };
 

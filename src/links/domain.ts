@@ -112,7 +112,7 @@ function dnsStep(ctx: Ctx, adapter: Adapter, attach: DomainAttach, domain: strin
         );
       }
       const changes: string[] = [];
-      for (const rec of records) changes.push(`${await zone.upsert(sctx, domain, { proxied: false, ...rec })}: ${formatRecord(rec)}`);
+      for (const rec of records) changes.push(`${await zone.upsert(sctx, domain, { ...rec, proxied: false })}: ${formatRecord(rec)}`);
       wrote = records;
       return { changes };
     },

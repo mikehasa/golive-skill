@@ -1202,6 +1202,17 @@ describe('domain:dns writes only the records the human approved (#5)', () => {
     w.host.records = [{ type: 'CNAME', name: 'WWW.example.com.', content: 'cname.fakehost-dns.com.' }, { type: 'A', name: 'example.com', content: '76.76.21.21' }];
     expect(statusOf(await apply(ctx, plan), 'domain:dns')).toBe('done');
   });
+
+  it('forces proxied:false even when the host lists a record as proxied', async () => {
+    const { w, ctx } = setup({
+      state: stateWith([], DEPLOYED),
+      arrange: (x) => (x.host.records = [{ type: 'A', name: 'example.com', content: '76.76.21.21', proxied: true }]),
+    });
+    const plan = await build(ctx);
+    expect(statusOf(await apply(ctx, plan), 'domain:dns')).toBe('done');
+    expect(w.dns.records.filter((r) => r.type === 'A' && r.name === 'example.com')).toEqual([{ type: 'A', name: 'example.com', content: '76.76.21.21', proxied: false }]);
+    expect(w.dns.records.every((r) => r.proxied === false)).toBe(true);
+  });
 });
 
 describe('guided host + automated payments (#14)', () => {
