@@ -18,7 +18,7 @@
     "THIRD_PARTY_NOTICES.md": "ad33f954a31c411cc667c07460859c77a014d6720e581a5ce5edd48c9c962781",
     "references/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "references/cloudflare-dns.md": "1e2c3143d714590486d181befa0237f18e077328ab7fcd2151adaa0f68b898ff",
-    "references/godaddy.md": "79f0fc450f939a258eff829d02208ffcf08f3490b88c142580d2369fce8b63d4",
+    "references/godaddy.md": "fbca29ff48b3325422424a607814f9436ae6a7a6b92ce41a43b8786e912527e9",
     "references/guided.md": "43081b870baec23f67b5523c786ee109d647d3e36ef57d86cec7fe961e98662e",
     "references/neon.md": "221bc3134a22241fc6d61780ab4be3f1094a229175b7137c841375260819b4e5",
     "references/netlify.md": "7c1705f0bea0987d0a19c3be8f370e64c66f0d205f9fb963bbf923744f846f0a",
@@ -34,5 +34,5 @@
     "scripts/install-cli.mjs": "55e2a776892a9d34fa62d7ebf70bb101a0f54a3592ba9f87b77a1d43043e108a",
     "scripts/install-lib.mjs": "9d3de597acc711178e588247f3cc9b5b5445f90d492cd464018065f2cd25caec"
   },
-  "bundleDigest": "82a4dcb7282aae5aebae3631f02fbc16b83a9b87c57aad0ca6acd73cb84b3c30"
+  "bundleDigest": "39c2c4b33cdbba4ec7f0ffba4b30ed0b318da6d27105112dd72ff2dd94a9482b"
 }

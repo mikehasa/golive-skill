@@ -8,7 +8,7 @@ Built-in adapters use CLI/API transports; users do not need to install provider 
 
 | Provider | Implemented operations | Limits and evidence |
 | --- | --- | --- |
-| Vercel | Project selection/creation, env wiring, deployment and supported domain attachment | Vercel + Supabase passed disposable E2E; domain attachment passed separately in the disposable Vercel + Porkbun custom-domain run. Vercel CLI is required even with token fallback. |
+| Vercel | Project selection/creation, env wiring, deployment and supported domain attachment | Vercel + Supabase passed disposable E2E; domain attachment passed separately in the disposable Vercel + Porkbun and Vercel + GoDaddy custom-domain runs. Vercel CLI is required even with token fallback. |
 | Netlify | Free-team project selection/creation, env wiring, CLI build/deploy and public-access checks | Netlify + Neon passed disposable E2E. Custom-domain attachment remains guided; project visibility may require an approved UI change. |
 | Supabase | Project selection/creation, database output, Auth redirects and read-only access/security checks | Vercel pairing passed with an explicit token. Existing macOS CLI login reuse separately passed read-only checks; fresh-login UX and writes through that credential remain unverified. |
 | Neon | Free-organization project selection/creation, Postgres URLs and a read-only connection probe | Netlify pairing passed. No Neon Auth, app migrations, new branches on existing projects or per-target branch creation. |
@@ -52,8 +52,8 @@ identities match. Neon delegates supported stored-login access to its CLI.
 | Auth | Supabase Auth | Production Site URL and redirect configuration; not complete signup or email-delivery acceptance |
 | Payments | Stripe | Mode-aware key/env wiring and production webhook registration/settings checks; real test payments and signed event delivery still need validation |
 | Email | Resend | Sending-domain setup, DNS wiring, key/env wiring and domain-verification checks; inbox delivery and Auth SMTP integration are separate |
-| DNS | Cloudflare, GoDaddy | Records in an existing authoritative zone; no domain purchase, renewal, transfer or nameserver changes. Live validation pending. |
-| DNS | Porkbun | Same zone-only scope. The Vercel-paired custom-domain journey (attach, one approved CNAME write, verification, HTTPS) passed a disposable live run; other pairings remain open. |
+| DNS | Cloudflare | Records in an existing authoritative zone; no domain purchase, renewal, transfer or nameserver changes. Live validation pending. |
+| DNS | Porkbun, GoDaddy | Same zone-only scope. The Vercel-paired custom-domain journey (attach, approved record writes, ownership verification, HTTPS) passed disposable live runs; other pairings remain open. |
 
 DNS belongs to the authoritative DNS provider, which may differ from the registrar. Domain
 registration at GoDaddy or Porkbun alone does not prove the adapter can modify the active zone.

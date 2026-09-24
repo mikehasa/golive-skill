@@ -15,6 +15,7 @@ Public-channel installation acceptance was recorded later the same day; see
 | Netlify + Neon | Approved Free resources, environment wiring, deployment, database connection, separately approved schema, 149 two-session API assertions and real browser CRUD with refresh persistence | Postgres app, without an Auth provider; other frameworks and cross-pairings not live-tested |
 | Supabase native CLI credential reuse | Existing macOS production-profile login reused with explicit-token input disabled; profile/projects/organizations returned 200; CLI/API project inventories agreed | Read-only; no fresh browser login, project creation, Auth writes or deployment through that credential |
 | Vercel + Porkbun custom domain | Approved disposable Vercel project and a disposable subdomain of an existing Porkbun zone: project creation, production deploy, domain attachment, one approved Porkbun CNAME write under `--confirm-dns`, Vercel ownership verification and HTTPS 200 on the subdomain (final report: 4 pass, 0 fail) | Static fixture without app auth or data flows; attachment is Vercel-only (Netlify stays guided); one adapter fix from this run is mock-covered until its next live exercise |
+| Vercel + GoDaddy custom domain | Same approved journey on a second disposable subdomain (existing GoDaddy zone): project creation, deploy, attachment, two approved record writes under `--confirm-dns` (CNAME plus the `_vercel` ownership TXT), ownership verification and HTTPS 200 (final report: 4 pass, 0 fail) | Static fixture; the `_vercel` TXT sits at the zone's `_vercel` name; the update-by-ID path and redirects were not exercised |
 | Cleanup | Separately approved exact test projects deleted; exact project reads and test URLs returned 404; unaffected scoped resources and login identities stayed unchanged | Normal provider deletion; Neon may retain a recovery window |
 
 Cleanup used supervised fixture helpers; GoLive does not yet expose a general teardown command.
@@ -53,6 +54,11 @@ and may trail the run that produced the evidence.
   carries a focused hint.
 - **Porkbun ping:** a `SUCCESS` `/ping` without the documented `credentialsValid` field is now
   accepted (the getting-started guide's own example shape); only an explicit `false` refuses.
+- **GoDaddy live run:** endpoint shapes, PAT scopes, delegation detection, record-ID parsing and
+  value formatting all behaved as mocked. A CNAME value without a trailing dot was accepted (the
+  provider's troubleshooting page implies one is required), the `_vercel` ownership TXT Vercel asked
+  for after attaching was written and verified, and the follow-up run adopted both records as
+  `unchanged`.
 
 Provider fixes have offline mocked regressions. These implementation tests never use real accounts.
 The repaired behavior was subsequently exercised where described above; this is not blanket live
@@ -112,8 +118,8 @@ passed (see [Post-publication acceptance](#post-publication-acceptance)).
 
 ## Still unverified
 
-Stripe test/live payment behavior, Resend email delivery, and the GoDaddy/Cloudflare DNS adapters
-still need live validation (the Vercel attachment + Porkbun DNS journey passed one disposable run;
+Stripe test/live payment behavior, Resend email delivery, and the Cloudflare DNS adapter still need
+live validation (the Vercel attachment passed disposable runs with both Porkbun and GoDaddy DNS;
 Netlify custom-domain attachment remains guided, and custom-domain redirects and certificate edge
 cases are not covered). Cross-provider pairings beyond the tested paths have mocked integration
 coverage. First-time account/login UX, other OS credential stores and framework-specific behavior
