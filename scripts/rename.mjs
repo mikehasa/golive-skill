@@ -7,18 +7,19 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const execFileAsync = promisify(execFile);
-const USAGE = 'Usage: scripts/rename.sh <new-name> [old-name] [--apply]\nPreview is the default. Names must be lowercase letters/digits, starting with a letter (max 64).';
+const USAGE = 'Usage: scripts/rename.sh <new-name> <old-name> [--apply]\nPreview is the default. Names must be lowercase letters/digits, starting with a letter (max 64).';
 const ROOT_FILES = new Set(['README.md', 'AGENTS.md', 'LICENSE', 'package.json', 'pnpm-lock.yaml', 'build.mjs', 'tsconfig.json', 'vitest.config.ts', '.gitignore', '.npmignore', 'plugin.json']);
 const SOURCE_DIRS = new Set(['src', 'test', 'skills', 'docs', 'scripts', 'bin', '.github', '.claude-plugin', '.codex-plugin']);
 // These describe the transition or record real historical names. Do not rewrite history or
-// mutate this helper's source-name defaults and regression fixtures when renaming the product.
+// mutate this helper's regression fixtures when renaming the product.
 const PRESERVE = new Set(['scripts/rename.sh', 'scripts/rename.mjs', 'test/rename.test.ts', 'docs/HANDOFF.md', 'docs/LIVE-TEST-LOG.md', 'docs/RENAME.md', 'docs/DISTRIBUTION.md']);
 
 function parseArgs(argv) {
   if (argv.length === 1 && ['--help', '-h'].includes(argv[0])) return null;
   const positional = argv.filter((arg) => arg !== '--apply');
-  if (positional.length < 1 || positional.length > 2 || argv.filter((arg) => arg === '--apply').length > 1) throw new Error(USAGE);
-  const [newName, oldName = 'xship'] = positional;
+  // Both names are explicit: this source is already renamed, so there is no default old name.
+  if (positional.length !== 2 || argv.filter((arg) => arg === '--apply').length > 1) throw new Error(USAGE);
+  const [newName, oldName] = positional;
   for (const name of [newName, oldName]) {
     // The name also appears inside JS identifiers, so hyphens are intentionally unsupported.
     if (!/^[a-z][a-z0-9]*$/.test(name) || name.length > 64) throw new Error(`Invalid name. ${USAGE}`);

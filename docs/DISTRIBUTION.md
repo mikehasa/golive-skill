@@ -193,10 +193,11 @@ CI tests the already-renamed source and its generated artifacts; it does not ren
 ## Renaming a source fork
 
 The optional `scripts/rename.sh <new-name> <old-name>` helper is for maintainers, not installation
-or migration. Pass both names explicitly for a fork of this already-renamed source. Preview first;
-`--apply` changes inventoried source files and removes generated artifacts for rebuilding. It does
-not change credentials, app state, Git remotes or cloud resources. Preserve historical evidence.
-Review CI old-name exclusion guards independently; indiscriminate replacement can invert them.
+or migration. Both names are required: this source is already renamed, so there is no old-name
+default. Preview first; `--apply` changes inventoried source files and removes generated artifacts
+for rebuilding. It does not change credentials, app state, Git remotes or cloud resources. Preserve
+historical evidence. CI asserts the release source carries only this skill's directory; a fork
+updates that assertion for its own name.
 
 ## References
 

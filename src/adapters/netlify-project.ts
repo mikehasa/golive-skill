@@ -166,6 +166,9 @@ export const netlifyProject: ProjectLinker = {
     ctx.state.save(s => {
       delete s.resources['netlify.siteId']; delete s.resources['netlify.siteName'];
       delete s.resources['netlify.createdProjectId'];
+      // The recorded preview deployment belongs to the site that just went away; a site created
+      // again in this repo must not inherit it.
+      delete s.resources['netlify.previewDeployId'];
     });
     return { removed: true };
   },

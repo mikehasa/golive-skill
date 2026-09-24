@@ -305,7 +305,8 @@ describe('Netlify project removal', () => {
 
   it('remove() deletes a golive-created site and clears its state', async () => {
     const h = http([['DELETE', `${NETLIFY_API}/sites/${SITE}`, () => ({ status: 204 })]]);
-    const ctx = testCtx({ exec: cli().run, http: h.http, tokens, state: created() });
+    const state = created(); state.resources['netlify.previewDeployId'] = 'deploy_1';
+    const ctx = testCtx({ exec: cli().run, http: h.http, tokens, state });
     expect(await project.remove!(ctx)).toEqual({ removed: true });
     const call = h.calls.find(c => c.method === 'DELETE')!;
     expect(call.url).toBe(`${NETLIFY_API}/sites/${SITE}`);
@@ -313,6 +314,8 @@ describe('Netlify project removal', () => {
     expect(ctx.state.resource('netlify.siteId')).toBeUndefined();
     expect(ctx.state.resource('netlify.siteName')).toBeUndefined();
     expect(ctx.state.resource('netlify.createdProjectId')).toBeUndefined();
+    // The recorded preview deployment belonged to the deleted site and must not outlive it.
+    expect(ctx.state.resource('netlify.previewDeployId')).toBeUndefined();
     expect(JSON.stringify(ctx.state.get())).not.toContain(TOKEN);
   });
 
@@ -324,11 +327,14 @@ describe('Netlify project removal', () => {
     const state = linkedState();
     if (siteId === undefined) delete state.resources['netlify.siteId'];
     if (createdId !== undefined) state.resources['netlify.createdProjectId'] = createdId;
+    state.resources['netlify.previewDeployId'] = 'deploy_1';
     const h = http();
     const ctx = testCtx({ exec: cli().run, http: h.http, tokens, state });
     expect(await project.remove!(ctx)).toMatchObject({ removed: false });
     expect(h.calls).toEqual([]);
     expect(state.resources['netlify.siteId']).toBe(siteId);
+    // A refusal deletes nothing, so the site's recorded preview deployment stays too.
+    expect(state.resources['netlify.previewDeployId']).toBe('deploy_1');
   });
 
   it('remove() treats a site that is already gone as removed', async () => {

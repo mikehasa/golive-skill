@@ -63,23 +63,21 @@ jobs:
           node-version: '24'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Reject residual development names in runtime and skill files
+      - name: Reject foreign skill identities in the release source
         run: |
           python3 - <<'PY'
           from pathlib import Path
           roots = [Path('src'), Path('skills/golive')]
-          assert all(root.is_dir() for root in roots), 'Missing renamed source or skill'
-          matches = []
+          assert all(root.is_dir() for root in roots), 'Missing release source or skill'
           for root in roots:
               for path in root.rglob('*'):
                   if path.is_symlink():
                       raise SystemExit(f'Unexpected symlink in release source: {path}')
-                  if path.is_file() and ('xship' in str(path).lower() or b'xship' in path.read_bytes().lower()):
-                      matches.append(str(path))
-          if matches:
-              raise SystemExit('Residual development names in:\n' + '\n'.join(matches))
-          assert not Path('skills/xship').exists(), 'Old skill directory remains'
-          print('Runtime and GoLive skill contain no residual development names.')
+          # A literal development-name denylist would publish the name it guards, so assert the
+          # invariant instead: the release source carries exactly one skill directory, golive.
+          others = sorted(entry.name for entry in Path('skills').iterdir() if entry.is_dir())
+          assert others == ['golive'], f'skills/ holds another skill directory: {others}'
+          print('Release source carries the GoLive skill and no other skill directory.')
           PY
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
