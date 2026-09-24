@@ -1074,8 +1074,10 @@ export async function supabaseAuthedProbe(
   accessToken: Secret,
 ): Promise<{ status: number; rows: number; code?: string }> {
   assertRef(ref);
-  // The user's token replaces the key on Authorization; the key stays on apikey, as the JS client sends.
-  const headers: Record<string, string | Secret> = { apikey: publishableKey, Authorization: accessToken, Accept: 'application/json' };
+  // The user's token replaces the key on Authorization; the key stays on apikey, as the JS client
+  // sends. The token carries the `Bearer` scheme: PostgREST and GoTrue read the value after it, so a
+  // scheme-less header would resolve the request to the anonymous role instead of this user.
+  const headers: Record<string, string | Secret> = { apikey: publishableKey, Authorization: new Secret(accessToken.name, `Bearer ${accessToken.reveal()}`), Accept: 'application/json' };
   if (schema && schema !== 'public') headers['Accept-Profile'] = schema;
   const res = await ctx.http<unknown>({ url: `https://${ref}.supabase.co/rest/v1/${encodeURIComponent(table)}?select=*&limit=1`, headers });
   const rows = res.status === 200 && Array.isArray(res.json) ? res.json.length : 0;

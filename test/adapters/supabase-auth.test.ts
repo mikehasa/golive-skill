@@ -3,7 +3,7 @@
  * refusals the checks read. Offline only: scripted HTTP, no project, no account.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mockHttp, testCtx } from '../helpers.js';
+import { mockHttp, testCtx, type HttpCall } from '../helpers.js';
 import { Secret, _resetSecretRegistry } from '../../src/core/secret.js';
 import { SupabaseAuthPrereqError, supabaseAuthUsers, testPassword, type SupabaseAuthDeps } from '../../src/adapters/supabase-auth.js';
 import { SupabaseError } from '../../src/adapters/supabase-api.js';
@@ -108,6 +108,16 @@ describe('login', () => {
   });
 });
 
+/**
+ * A route shaped like the live GoTrue endpoint: it reads `Authorization` the way the real service
+ * does, where the value after the `Bearer` scheme is the token and a scheme-less value is no token at
+ * all. A request without the scheme gets the exact 401 the live project returned.
+ */
+const gotrueUser = (body: Record<string, unknown>) => (c: HttpCall) =>
+  /^Bearer\s/i.test(c.headers.authorization ?? '')
+    ? { json: body }
+    : { status: 401, json: { code: 401, error_code: 'no_authorization', msg: 'This endpoint requires a valid Bearer token' } };
+
 describe('user', () => {
   it('without a token asks as an anonymous client and reports the refusal', async () => {
     const { http, calls } = mockHttp([['GET', `${AUTH}/user`, () => ({ status: 401, json: { msg: 'invalid claim: missing sub claim' } })]]);
@@ -118,9 +128,17 @@ describe('user', () => {
 
   it('with a session token sends it as the bearer and returns the same user', async () => {
     const token = new Secret('SUPABASE_AUTH_TOKEN', 'session-token-value-1234');
-    const { http, calls } = mockHttp([['GET', `${AUTH}/user`, () => ({ json: { id: 'usr_1', email: 'a@example.com', confirmed_at: '2026-09-23T00:00:00Z' } })]]);
+    // The route refuses a scheme-less header, so a token presented without `Bearer` fails here as it
+    // did against the live project instead of passing as an anonymous request.
+    const { http, calls } = mockHttp([['GET', `${AUTH}/user`, gotrueUser({ id: 'usr_1', email: 'a@example.com', confirmed_at: '2026-09-23T00:00:00Z' })]]);
     expect(await cap().user(testCtx({ http }), token)).toEqual({ status: 200, id: 'usr_1', email: 'a@example.com', emailConfirmed: true });
-    expect(calls[0]!.headers.authorization).toBe(token.reveal());
+    expect(calls[0]!.headers.apikey).toBe(PUB_KEY);
+    expect(calls[0]!.headers.authorization).toBe(`Bearer ${token.reveal()}`);
+  });
+
+  it('turns the live `no_authorization` refusal into a 401 outcome the checks read, not an exception', async () => {
+    const { http } = mockHttp([['GET', `${AUTH}/user`, () => ({ status: 401, json: { code: 401, error_code: 'no_authorization', msg: 'This endpoint requires a valid Bearer token' } })]]);
+    expect(await cap().user(testCtx({ http }), new Secret('SUPABASE_AUTH_TOKEN', 'session-token-value-1234'))).toEqual({ status: 401 });
   });
 });
 
@@ -158,6 +176,41 @@ describe('adminUser / setPassword', () => {
     expect((e as Error).message).toMatch(/the project key was not allowed to do this \(403\)/);
     expect((e as Error).message).toMatch(/golive doctor/);
     expectNoSecret((e as Error).message);
+  });
+});
+
+// ── the Authorization scheme, pinned over all three token-bearing paths ──────────────────────────
+
+/**
+ * The fakes never validate the scheme themselves (they read the value golive hands them), so this
+ * asserts the exact header of every path at once: the publishable/anon key, a session token and the
+ * admin secret key. A bare value is what the live project answered with 401 `no_authorization`.
+ */
+describe('Authorization headers', () => {
+  it('sends `Bearer <value>` on the publishable-key, session-token and admin-secret paths', async () => {
+    const token = new Secret('SUPABASE_AUTH_TOKEN', 'session-token-value-1234');
+    const { http, calls } = mockHttp([
+      ['POST', `${AUTH}/signup`, () => ({ json: { id: 'usr_1', identities: [{}] } })],
+      ['GET', `${AUTH}/user`, () => ({ json: { id: 'usr_1', email_confirmed_at: '2026-09-23T00:00:00Z' } })],
+      ['GET', `${AUTH}/admin/users/usr_1`, () => ({ json: { id: 'usr_1' } })],
+      ['PUT', `${AUTH}/admin/users/usr_1`, () => ({ json: { id: 'usr_1' } })],
+    ]);
+    const api = cap();
+    const ctx = testCtx({ http });
+    await api.signup(ctx, 'a@example.com', secret());
+    await api.user(ctx, token);
+    await api.adminUser(ctx, 'usr_1');
+    await api.setPassword(ctx, 'usr_1', secret());
+
+    expect(calls.map((c) => c.headers.authorization)).toEqual([
+      `Bearer ${PUB_KEY}`,
+      `Bearer ${token.reveal()}`,
+      `Bearer ${SECRET_KEY}`,
+      `Bearer ${SECRET_KEY}`,
+    ]);
+    // A session replaces the key on Authorization only; the key itself still rides on apikey.
+    expect(calls.map((c) => c.headers.apikey)).toEqual([PUB_KEY, PUB_KEY, SECRET_KEY, SECRET_KEY]);
+    expect(calls.map((c) => c.headers.authorization)).not.toContain(token.reveal());
   });
 });
 
