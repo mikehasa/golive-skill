@@ -17,6 +17,7 @@ import { authPolicyCheck } from '../src/checks/auth.js';
 import { authSignupCheck } from '../src/checks/auth-signup.js';
 import { emailDnsCheck, emailVerifiedCheck } from '../src/checks/email.js';
 import { domainLiveCheck } from '../src/checks/domain.js';
+import { siteHeadersCheck } from '../src/checks/site-headers.js';
 import { addressDomain, confirmedProductionUrl, globMatch, hostVariants } from '../src/checks/util.js';
 import { restProbe, accountStatus } from '../src/checks/providers.js';
 
@@ -47,7 +48,7 @@ describe('ALL_CHECKS', () => {
     const ids = ALL_CHECKS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.sort()).toEqual(
-      ['accounts', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'rls-probe', 'stripe-live-ready', 'webhook-registered', 'webhook-unsigned'].sort(),
+      ['accounts', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'rls-probe', 'site-headers', 'stripe-live-ready', 'webhook-registered', 'webhook-unsigned'].sort(),
     );
   });
 });
@@ -956,6 +957,103 @@ describe('domain-live', () => {
     const r = await run(domainLiveCheck, testCtx({ http, config: { stack: { hosting: 'vercel' }, domain: D }, adapters: [h] }));
     expect(r.status).toBe('fail');
     expect(r.evidence.join('\n')).toContain('host reports domain misconfigured');
+  });
+});
+
+// ── site-headers ────────────────────────────────────────────────────────────────────────────────
+
+describe('site-headers', () => {
+  const ALL = {
+    'strict-transport-security': 'max-age=63072000; includeSubDomains',
+    'content-security-policy': "default-src 'self'; frame-ancestors 'none'",
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'strict-origin-when-cross-origin',
+    'permissions-policy': 'camera=(), microphone=()',
+  };
+  /** One read-only GET of the host-confirmed production URL, with these response headers. */
+  const probePage = async (headers: Record<string, string>, status = 200) => {
+    const { http, calls } = mockHttp([['GET', `${PROD}/`, () => ({ status, headers })]]);
+    const r = await run(siteHeadersCheck, testCtx({ http, config: { stack: { hosting: 'vercel' } }, adapters: [hosting()] }));
+    return { r, calls };
+  };
+
+  it('passes on the core set and reports every header value from one request', async () => {
+    const { r, calls } = await probePage({ ...ALL, server: 'Vercel' });
+    expect(r.status).toBe('pass');
+    expect(calls).toHaveLength(1); // one request for the whole header set
+    expect(calls[0]).toMatchObject({ method: 'GET', url: `${PROD}/` });
+    expect(calls[0]!.headers['user-agent']).toBe('golive-verify');
+    const ev = r.evidence.join('\n');
+    expect(ev).toContain(`GET ${PROD}/ → HTTP 200`);
+    expect(ev).toContain('strict-transport-security: max-age=63072000; includeSubDomains');
+    expect(ev).toContain("content-security-policy: default-src 'self'; frame-ancestors 'none'");
+    expect(ev).toContain('x-content-type-options: nosniff');
+    expect(ev).toContain('referrer-policy: strict-origin-when-cross-origin');
+    expect(ev).toContain('permissions-policy: camera=(), microphone=()');
+    expect(ev).toContain('clickjacking protection: content-security-policy frame-ancestors');
+    expect(ev).toContain('server: Vercel (names the stack; not a finding)');
+  });
+
+  it('accepts x-frame-options as clickjacking protection', async () => {
+    const { r } = await probePage({ ...ALL, 'content-security-policy': "default-src 'self'", 'x-frame-options': 'SAMEORIGIN' });
+    expect(r.status).toBe('pass');
+    expect(r.evidence.join('\n')).toContain('clickjacking protection: x-frame-options: SAMEORIGIN');
+  });
+
+  it('warns (low) naming the missing optional headers, and never fails for them', async () => {
+    const { r } = await probePage({ 'strict-transport-security': 'max-age=31536000', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY' });
+    expect(r).toMatchObject({ status: 'warn', severity: 'low' });
+    expect(r.evidence.join('\n')).toContain('missing (optional, not a failure): content-security-policy, referrer-policy, permissions-policy');
+    expect(r.fix).toContain('content-security-policy');
+  });
+
+  it('warns (medium) when the core set is missing, with the headers named and where to set them', async () => {
+    const { r } = await probePage({ 'content-security-policy': "default-src 'self'" });
+    expect(r).toMatchObject({ status: 'warn', severity: 'medium' });
+    expect(r.evidence.join('\n')).toContain('missing: strict-transport-security, x-content-type-options, clickjacking protection (x-frame-options or a CSP frame-ancestors)');
+    expect(r.fix).toContain('strict-transport-security');
+    expect(r.fix).toContain('x-content-type-options');
+    expect(r.fix).toMatch(/vercel\.json/);
+    expect(r.fix).toMatch(/netlify\.toml/);
+    expect(r.fix).toMatch(/golive deploys the app but does not set its response headers/);
+  });
+
+  it('skips without a host-confirmed production URL (no deployment, guided host, unreachable host)', async () => {
+    const none = await run(siteHeadersCheck, testCtx({ config: { stack: { hosting: 'vercel' } }, adapters: [hosting({}, null)] }));
+    expect(none.status).toBe('skip');
+    expect(none.evidence[0]).toMatch(/^blocked by: deploy:production/);
+
+    const guided = await run(siteHeadersCheck, testCtx({ config: { stack: { hosting: 'netlify' }, domain: 'shop.example.com' } }));
+    expect(guided.status).toBe('skip');
+    expect(guided.evidence[0]).toContain('cannot confirm https://shop.example.com belongs to your project yet');
+
+    const urlDown = fakeAdapter({ id: 'vercel', axes: ['hosting'], capabilities: { url: { get: async () => { throw new Error('vercel CLI not found'); } } } });
+    const hostDown = await run(siteHeadersCheck, testCtx({ config: { stack: { hosting: 'vercel' } }, adapters: [urlDown] }));
+    expect(hostDown.status).toBe('skip');
+    expect(hostDown.evidence[0]).toContain('the host could not report it: vercel CLI not found');
+  });
+
+  it.each([401, 403])('skips when production answers HTTP %i: the deployment may be private', async (status) => {
+    const { r, calls } = await probePage({ 'x-content-type-options': 'nosniff' }, status);
+    expect(r.status).toBe('skip');
+    expect(r.evidence.join('\n')).toContain(`GET ${PROD}/ → HTTP ${status}`);
+    expect(r.evidence.join('\n')).toMatch(/the deployment may be private/);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('skips on a redirect without following it', async () => {
+    const { r, calls } = await probePage({ location: 'https://app.example.com/login' }, 307);
+    expect(r.status).toBe('skip');
+    expect(r.evidence.join('\n')).toMatch(/redirect is not followed/);
+    expect(calls).toHaveLength(1);
+    expect(JSON.stringify(r)).not.toContain('/login'); // the supplied Location never enters evidence
+  });
+
+  it('warns (medium) like the other production-URL probes when the request never completes', async () => {
+    const { http } = mockHttp([['GET', `${PROD}/`, () => { throw new Error('fetch failed (CERT_HAS_EXPIRED)'); }]]);
+    const r = await run(siteHeadersCheck, testCtx({ http, config: { stack: { hosting: 'vercel' } }, adapters: [hosting()] }));
+    expect(r).toMatchObject({ status: 'warn', severity: 'medium' });
+    expect(r.evidence[0]).toBe(`could not fetch ${PROD}/: fetch failed (CERT_HAS_EXPIRED)`);
   });
 });
 
