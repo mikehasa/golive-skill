@@ -251,12 +251,17 @@ Explain the steps by provider, in plain language, and call out:
   working tree (the branch is named in its preview; the preview env is filled from the same
   database/auth project as production, so a preview touches production data), that it records the
   provider's own deployment id, and that `needs` includes `--confirm-live` when a live-mode value fills
-  a preview env name. `release:check` writes nothing; it re-reads that deployment from the provider and
-  scans the HTML/JavaScript it serves, and **fails the plan** when either fails — that failure is the
-  gate, and nothing is promoted by those two steps. A host with no per-deployment preview read (Vercel)
-  makes both checks skip: say that the preview is unverified rather than implying it passed, and point
-  the human at the provider's own dashboard or CLI. These steps are new step ids, so a plan approved
-  before the opt-in no longer matches: re-plan and get a fresh approval.
+  a preview env name. `release:check` writes nothing; it **depends on `preview:deploy`** and re-reads
+  that deployment from the provider and scans the HTML/JavaScript it serves, and **fails the plan** when
+  either fails — that failure is the gate, and nothing is promoted by those two steps. Say plainly what
+  that gate does and does not stop, because the step's own text does: it is the last step, so it stops
+  nothing that came before it — a production deploy this plan emits runs earlier and is not gated by it
+  — and what it gates is the promotion (a later plan, which re-runs the check before any production
+  write). `apply --only release:check` is refused while `preview:deploy` has no completed evidence, so
+  the gate is never run against a deployment the plan did not make. A host with no per-deployment
+  preview read (Vercel) makes both checks skip: say that the preview is unverified rather than implying
+  it passed, and point the human at the provider's own dashboard or CLI. These step ids are new, so a
+  plan approved before the opt-in no longer matches: re-plan and get a fresh approval.
 - `promote:production` / `release:rollback`: only with their own opt-ins (`release.promote: true` on
   top of the preview opt-in, or `release.rollback: true` on its own; both set means golive plans
   neither and says why). Say plainly, in the human's language:
@@ -266,8 +271,12 @@ Explain the steps by provider, in plain language, and call out:
     and `release:check` in the same plan (re-read from the provider, bundle scanned) are the approval.
     A failing check stops the plan before production changes.
   - Because the provider reports a deployment's id only once the deployment exists, a promotion is one
-    of two halves and the preview says which: **cut** (`preview:deploy` + `release:check`, a new
-    candidate) or **release** (`release:check` + `promote:production`). While `release.promote` is set,
+    of two halves and the preview says which: **cut** (`preview:deploy` + `release:check` at the end of
+    the plan, a new candidate) or **release** (`release:check` + `promote:production`). Say plainly
+    that in a **cut** plan the check gates the candidate, not the plan: everything else it does — a
+    production deploy included — runs before the preview steps, so nothing that came before the gate is
+    stopped by it, and the promotion stays in the next approved plan. In the **release** plan the check
+    is the promotion's prerequisite and a red gate stops the re-point. While `release.promote` is set,
     every plan asks for a release: run the plan the human actually asked for, and after a release tell
     them the flag is a standing request — remove it (or set it to `false`) when they do not want
     another release planned. Do not loop `plan`/`apply` for it.
@@ -309,12 +318,14 @@ is not permission to repeat creation. If `apply` says the plan changed, or `doma
 says the records the host requires changed since approval, run `plan` again and get approval again
 (with `--confirm-dns` for DNS). Some things only appear after the first deploy (webhook, site URL): run
 `plan` again after a successful apply until it shows only the zero-write project pins. If the gate
-`release:check` failed, fix the cause and run `plan` + `apply` again: a failed gate makes the next plan
-deploy a fresh preview of whatever was fixed and check that deployment. The two release checks can also
-be re-run against the current preview with `verify --only preview-deploy,preview-bundle`, whose result
-is evidence, not a new gate. A `promote:production` or `release:rollback` step in the plan is applied
-the same way — one approved plan, and its own `run` re-reads both sides around the write — and it needs
-no extra confirmation flag: the plan names the exact deployment id.
+`release:check` failed, fix the cause and run `plan` + `apply` again: the failure is recorded, so the
+next cut deploys a fresh preview of whatever was fixed and checks that deployment, and a promotion plan
+re-runs the check against the recorded candidate — a candidate whose check failed is never promoted.
+The two release checks can also be re-run against the current preview with `verify --only
+preview-deploy,preview-bundle`, whose result is evidence, not a new gate. A `promote:production` or
+`release:rollback` step in the plan is applied the same way — one approved plan, and its own `run`
+re-reads both sides around the write — and it needs no extra confirmation flag: the plan names the
+exact deployment id.
 
 ### 5b. Teardown: `teardown --json`, then `apply --plan <teardown planId> --yes --confirm-destroy [--confirm-dns] --json`
 

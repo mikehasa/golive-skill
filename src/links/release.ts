@@ -101,8 +101,6 @@ export const releaseLink: Link = {
         project: await projectLabel(ctx, h.adapter),
         promotes: true,
       });
-      // Tracked before the promotion is built so its dependency on the gate is planned, not filtered.
-      track(ctx, [check]);
       const promotion = promoteStep(ctx, h.adapter, {
         target: previous,
         built: builtForDeployment(ctx, previous),
@@ -139,8 +137,6 @@ export const releaseLink: Link = {
       previous: previous?.at,
     });
     const deploy = await deployStep(ctx, h.adapter, h.cap, { reasons, intent, live, previous, promotes: Boolean(rel) });
-    // Tracked before the gate is built so the gate's dependency on the deploy is planned, not filtered.
-    track(ctx, [deploy]);
     const check = checkStep(ctx, h.adapter, {
       deploy: intent,
       coveredId: 'this-plan',
@@ -246,32 +242,46 @@ interface CheckFacts {
   covers: string;
   /** The project golive links, as the human reads it. */
   project: string;
-  /** A promotion follows in this plan, so a failure must say it stopped that too. */
+  /** The promote opt-in is set: the plan text says whether the promotion is in this plan or a later one. */
   promotes: boolean;
 }
 
 /**
- * The gate. It runs in two plans:
- *   - after this plan's preview deploy: it re-reads the deployment that deploy recorded and scans the
- *     bundle it serves, so a red gate stops the plan before anything can build on it;
+ * The gate. It runs in two plans and stops a different thing in each:
+ *   - after this plan's own preview deploy (the cut plan): it re-reads the deployment that deploy made
+ *     and scans the bundle it serves. Nothing follows it there — the production deploy this plan emits
+ *     comes earlier — so what it gates is the promotion, and the plan that promotes re-runs this check
+ *     against the recorded deployment before it writes;
  *   - as the promotion's prerequisite: nothing is deployed here, it re-reads the preview deployment
- *     golive already recorded — the exact deployment `promote:production` would make production.
+ *     golive already recorded — the exact deployment `promote:production` would make production — and a
+ *     red gate stops that plan before production changes.
+ * Its edge on this plan's own deploy is declared, never filtered: `util.deps` keeps only step ids that
+ * are already tracked, so building the gate before its deploy was tracked declared no prerequisite at
+ * all, and `apply --only release:check` ran the check without the deployment it checks.
  * Its intent is that plus the previous attempt time, so a re-planned step runs again instead of being
  * skipped as "already done" (the `domain:verify` idiom).
  */
 function checkStep(ctx: Ctx, adapter: Adapter, facts: CheckFacts): Step {
   const prev = ctx.state.get().steps[CHECK_STEP];
+  // The production deploy(s) a cut plan emits before the preview steps (deploy.ts): the gate cannot stop
+  // them, so its text says so instead of implying the plan's production work waits on it.
+  const production = [...memo(ctx).steps.keys()].filter((id) => id.startsWith('deploy:production'));
   return step({
     id: CHECK_STEP,
     title: `Release check for the preview deployment on ${adapter.title}`,
     kind: 'wire',
     risk: { writes: false },
-    dependsOn: facts.deploy ? deps(ctx, [DEPLOY_STEP]) : deps(ctx, ['project:hosting']),
+    dependsOn: facts.deploy ? [DEPLOY_STEP] : deps(ctx, ['project:hosting']),
     preview: [
       `check ${facts.covers} on ${adapter.title} (${facts.project}) without writing anything: the provider's own read (it exists, is ready, belongs to the project golive links, and is not the production deployment) and a scan of the HTML/JavaScript it serves for known credential patterns`,
-      ...(facts.promotes ? [`this check gates ${PROMOTE_STEP} in this plan: it re-reads the exact deployment that step would make production, before production changes`] : []),
+      ...(facts.deploy ? [] : [`this check gates ${PROMOTE_STEP} in this plan: it re-reads the exact deployment that step would make production, before production changes`]),
+      ...(facts.deploy && facts.promotes
+        ? [`this check does not gate the promotion itself: ${PROMOTE_STEP} is a later plan's step (the provider reports a deployment's id only once the deployment is made) and that plan runs its own fresh ${CHECK_STEP} against the deployment this one records before any production write`]
+        : []),
       ...(prev ? [`previous release check: ${prev.at}`] : []),
-      facts.promotes ? `a failing check fails this step and stops the plan before ${PROMOTE_STEP}: that is the gate, and production stays as it is` : 'a failing check fails this step and stops the plan: that is the gate',
+      facts.deploy
+        ? `a failing check fails this step and stops the plan there — nothing follows the gate in this plan${production.length ? `, and the production deploy this plan emits earlier (${production.join(' and ')}) is not gated by it` : ''}. The failure is recorded, so a later plan does not treat this preview as checked`
+        : `a failing check fails this step and stops the plan before ${PROMOTE_STEP}: that is the gate, and production stays as it is`,
     ],
     intent: intentOf({ deploy: facts.deploy ?? '', covered: facts.coveredId, previous: prev?.at }),
     async run() {
@@ -324,7 +334,9 @@ function promoteStep(ctx: Ctx, adapter: Adapter, facts: PromoteFacts): Step {
     // A production re-point: a real write, no extra category flag (the plan names the exact deployment
     // and depends on the gate), never `replayable` and never a deletion.
     risk: { writes: true },
-    dependsOn: deps(ctx, [CHECK_STEP, 'project:hosting']),
+    // The gate is this step's prerequisite by construction, like the gate's own deploy edge: `util.deps`
+    // would drop it if the gate were not tracked yet, and a promotion without its check is no release.
+    dependsOn: [CHECK_STEP, ...deps(ctx, ['project:hosting'])],
     preview: [
       `promote ${target.provider} deployment ${target.id} to production: ${target.url} (recorded by golive ${target.at}) becomes what ${adapter.title} serves publicly`,
       `project: ${facts.project}`,

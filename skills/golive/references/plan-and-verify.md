@@ -105,12 +105,20 @@ and `apply` needs `--confirm-live` too when a live-mode value fills a preview en
   planned for the same reasons a production deploy is (no preview deployed yet, preview env changes in
   this plan, the last preview deploy failed) plus a failed release check — a re-planned preview deploy
   always makes a new deployment, so the gate never re-checks a bundle golive did not replace.
-- `release:check` writes nothing (`risk: { writes: false }`) and depends on that deploy. It runs two
-  checks as its inline verification and **fails the step when one fails**, which stops the plan: that is
-  the gate. Its intent is the deploy's intent plus the previous attempt, so a re-plan checks again
-  (the `domain:verify` idiom). It has a second mode: as the promotion's prerequisite it depends only on
-  `project:hosting` and re-reads the preview deployment golive already recorded — the exact deployment
-  `promote:production` would make production.
+- `release:check` writes nothing (`risk: { writes: false }`) and declares `preview:deploy` as its
+  prerequisite — a declared edge, not an ordering accident: the plan's dependency helper keeps only step
+  ids already tracked, so a gate built before its deploy declares no prerequisite and `apply --only
+  release:check` runs the check against a deployment the plan never made. With the edge, that `--only`
+  call is refused while `preview:deploy` has no completed evidence for the plan. It runs two checks as
+  its inline verification and **fails the step when one fails**, and the runner stops the plan there.
+  What that stops turns on the plan, and the step's own text says which: in a **cut** plan the gate is
+  the last step, so it stops nothing emitted before it — that plan's own production deploy included —
+  and it gates the promotion, whose plan re-runs the check before writing; in the **release** plan the
+  gate is `promote:production`'s prerequisite, and a red gate stops the re-point. Its intent is the
+  deploy's intent plus the previous attempt, so a re-plan checks again (the `domain:verify` idiom). It
+  has a second mode: as the promotion's prerequisite it depends only on `project:hosting` and re-reads
+  the preview deployment golive already recorded — the exact deployment `promote:production` would make
+  production.
 
 Adding these step ids changes a plan's id, so an approval that was not applied must be re-planned.
 
@@ -125,9 +133,12 @@ only when the human opted in:
   **no extra confirmation flag**: the plan id, the named deployment and the fresh gate are the
   approval. Because the provider reports a deployment's id only once the deployment is made, the plan
   that can name it is a different plan from the one that deploys it — with the opt-in set, a plan is
-  either **cut** (`preview:deploy` + `release:check`) or **release** (`release:check` +
-  `promote:production`), and its preview says which. While `release.promote` is set, every plan asks
-  for a release; remove the flag to stop planning releases. `run` re-reads the target deployment and
+  either **cut** (`preview:deploy` + `release:check` at the end of the plan) or **release**
+  (`release:check` + `promote:production`), and its preview says which. A **cut** plan changes nothing
+  about the rest of the plan: its other steps, a production deploy included, are emitted before the
+  preview steps, so the gate stops nothing that came before it; the gate's grip is the promotion. While
+  `release.promote` is set, every plan asks for a release; remove the flag to stop planning releases.
+  `run` re-reads the target deployment and
   what production serves before writing, refuses when the provider cannot answer either read (or the
   deployment is gone/not ready), then re-reads production after the write and records nothing unless
   the provider confirms the switch. Production already serving the target is a no-op.

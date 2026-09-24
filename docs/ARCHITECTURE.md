@@ -62,15 +62,23 @@ and whether the preview shares production's sources — golive fills preview env
 project as production, so a preview reads and writes production's data — plus `--confirm-live` when a
 live-mode source (recorded in state, or written by this plan) fills a preview env name.
 
-`release:check` writes nothing (`risk: { writes: false }`) and depends on that deploy. It runs two
-checks as its inline verification: `preview-deploy` (the hosting provider's own read confirms the
-recorded deployment is ready, belongs to the project golive links, and is not the production
-deployment) and `preview-bundle` (the credential scan of the provider-confirmed preview URL, reusing
-the production scanner and its exact-host allowlist). A failing check fails the step, and the runner
-stops the plan there: that is the gate. Neither check invents a read: a host that exposes no
-per-deployment preview read (Vercel, whose preview URLs are also protected by default) makes them skip
-with that reason, a 401/403 wall on a preview skips the scan, and neither is ever a pass. Both step ids
-are part of a plan's identity, so an approval that was not applied has to be re-planned.
+`release:check` writes nothing (`risk: { writes: false }`) and depends on that deploy — a declared edge,
+not an ordering accident: `util.deps` keeps only step ids the plan has already tracked, so a gate built
+before its deploy declares no prerequisite at all, and `apply --only release:check` would then run the
+check against a deployment this plan never made. With the edge in place that `--only` call is refused
+while `preview:deploy` has no completed evidence for the plan. It runs two checks as its inline
+verification: `preview-deploy` (the hosting provider's own read confirms the recorded deployment is
+ready, belongs to the project golive links, and is not the production deployment) and `preview-bundle`
+(the credential scan of the provider-confirmed preview URL, reusing the production scanner and its
+exact-host allowlist). A failing check fails the step and the runner stops the plan there — what that
+stops turns on the plan, and the step's text says which: in a **cut** plan the gate is the last step, so
+it stops nothing emitted before it (that plan's own production deploy included) and it gates the
+promotion, which runs its own fresh check before writing; in the **release** plan the gate is
+`promote:production`'s prerequisite, and a red gate stops that re-point. Neither check invents a read: a
+host that exposes no per-deployment preview read (Vercel, whose preview URLs are also protected by
+default) makes them skip with that reason, a 401/403 wall on a preview skips the scan, and neither is
+ever a pass. Both step ids are part of a plan's identity, so an approval that was not applied has to be
+re-planned.
 
 ## Promotion and rollback
 
@@ -83,8 +91,12 @@ A provider reports a deployment's own id only once the deployment is made, so th
 the deployment it promotes is a different plan from the one that deploys it. With the promotion opt-in
 set, a plan is one of the two halves, and the preview line says which:
 
-- **cut**: `preview:deploy` + `release:check` — a new candidate for the next plan to promote;
-- **release**: `release:check` (re-reading the recorded candidate) + `promote:production`.
+- **cut**: `preview:deploy` + `release:check` at the end of the plan — a new candidate for the next
+  plan to promote. Everything else that plan does, its own production deploy included, is emitted
+  before the preview steps, so the gate stops nothing that came before it; what it gates is the
+  promotion, and the promoting plan re-runs the check before it writes;
+- **release**: `release:check` (re-reading the recorded candidate) + `promote:production` — here the
+  gate is the promotion's prerequisite, so a red gate stops the re-point in that plan.
 
 `promote:production` (`kind: 'deploy'`, `risk: { writes: true }`, `dependsOn: ['release:check']`) names the
 exact deployment in its preview: the provider's own id and URL, when golive recorded it, the env target it

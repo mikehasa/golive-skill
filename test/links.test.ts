@@ -835,8 +835,9 @@ describe('release:check is the gate', () => {
   it('fails the step and stops the plan: a step that depends on the gate never runs', async () => {
     const { ctx } = previewSetup({ http: previewHttp(() => true) });
     const plan = await build(ctx);
-    // A later slice's promotion step would depend on release:check exactly like this placeholder does.
-    plan.steps.push(step({ id: 'promote:preview', title: 'Promote the checked preview', kind: 'wire', risk: { writes: true }, dependsOn: ['release:check'], preview: ['a later slice would promote a checked preview here'], run: async () => ({ changes: ['promoted'] }) }));
+    // Any step that depends on the gate is stopped like this placeholder — the promotion itself
+    // (promote:production, in the promotion plan) declares exactly this edge.
+    plan.steps.push(step({ id: 'promote:preview', title: 'Promote the checked preview', kind: 'wire', risk: { writes: true }, dependsOn: ['release:check'], preview: ['a step that depends on the gate is promoted here'], run: async () => ({ changes: ['promoted'] }) }));
     plan.id = planId(plan.steps, plan.handoffs, ctx.release);
 
     const out = await applyPlan(ctx, plan, previewChecks(), { approvedPlanId: plan.id, yes: true, confirmLive: true, confirmDns: true });
@@ -847,6 +848,62 @@ describe('release:check is the gate', () => {
     expect(ctx.state.get().steps['release:check']?.status).toBe('failed');
     expectNoRawSecrets([JSON.stringify(out), JSON.stringify(ctx.state.get())]);
     expect(JSON.stringify(out)).not.toContain(KEY);
+  });
+
+  it('declares the deploy it checks as its prerequisite, and the cut plan keeps its production deploy before it', async () => {
+    const { ctx } = previewSetup();
+    const plan = await build(ctx);
+    // The edge the approval and `--only` turn on. `util.deps` keeps only step ids that are already
+    // tracked, so this is [] — and the check runs alone, against no deployment — if the gate is built
+    // before its deploy is tracked.
+    expect(byId(plan, 'release:check').dependsOn).toEqual(['preview:deploy']);
+
+    // The cut plan's own production deploy is emitted before the preview steps, so the gate — the last
+    // step — stops nothing that came before it. The plan says exactly that, because the human approves
+    // those words: the gate is the promotion's gate, not this deploy's.
+    const order = ids(plan);
+    expect(order.indexOf('deploy:production')).toBeLessThan(order.indexOf('preview:deploy'));
+    expect(order.at(-1)).toBe('release:check');
+    const gate = byId(plan, 'release:check').preview.join('\n');
+    expect(gate).toMatch(/nothing follows the gate in this plan, and the production deploy this plan emits earlier \(deploy:production and deploy:production:final\) is not gated by it/);
+    expect(gate).toMatch(/The failure is recorded, so a later plan does not treat this preview as checked/);
+  });
+
+  it('says in a cut plan that the gate stops the plan, not the promotion of the candidate', async () => {
+    // Nothing is recorded yet, so with the promote opt-in set this plan is the cut half.
+    const { ctx } = previewSetup({ config: { release: { preview: true, promote: true } } });
+    const plan = await build(ctx);
+    expect(ids(plan).slice(-2)).toEqual(['preview:deploy', 'release:check']);
+    const gate = byId(plan, 'release:check').preview.join('\n');
+    expect(gate).toMatch(/this check does not gate the promotion itself: promote:production is a later plan's step/);
+    expect(gate).not.toMatch(/this check gates promote:production in this plan/);
+  });
+
+  it('refuses `apply --only release:check` while the deploy it checks has no completed evidence', async () => {
+    const http = mockHttp([['GET', `${PREVIEW_URL}/`, () => ({ text: 'clean preview' })]]);
+    const { w, ctx } = previewSetup({ http: http.http });
+    const plan = await build(ctx);
+    // The edge is what refuses it (the runner names the first prerequisite of the graph without matching
+    // evidence, not necessarily the deploy itself). Without the edge the gate would run alone — reading
+    // and scanning a preview deployment this plan never made.
+    await expect(
+      applyPlan(ctx, plan, previewChecks(), { approvedPlanId: plan.id, yes: true, confirmLive: true, confirmDns: true, only: ['release:check'] }),
+    ).rejects.toThrow(/prerequisite .* does not have matching completed evidence/);
+    expect(w.host.deploys).toBe(0);
+    expect(http.calls).toEqual([]);
+    expect(ctx.state.get().steps['release:check']).toBeUndefined();
+  });
+
+  it('runs the gate alone once the deploy it checks has matching completed evidence', async () => {
+    const { w, ctx } = previewSetup();
+    const plan = await build(ctx);
+    await apply(ctx, plan, previewChecks());
+    const deploys = w.host.deploys;
+    // The interrupted-run case: this plan's deploy completed, its gate did not.
+    ctx.state.save((s) => void delete s.steps['release:check']);
+    const out = await applyPlan(ctx, plan, previewChecks(), { approvedPlanId: plan.id, yes: true, confirmLive: true, confirmDns: true, only: ['release:check'] });
+    expect(out.find((o) => o.id === 'release:check')?.status).toBe('done');
+    expect(w.host.deploys).toBe(deploys); // the deploy it checks was not re-run: it already has evidence
   });
 
   it('is re-planned after a failure and passed once the leak is gone', async () => {

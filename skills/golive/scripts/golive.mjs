@@ -18454,7 +18454,6 @@ var releaseLink = {
         project: await projectLabel(ctx, h.adapter),
         promotes: true
       });
-      track(ctx, [check2]);
       const promotion = promoteStep(ctx, h.adapter, {
         target: previous,
         built: builtForDeployment(ctx, previous),
@@ -18481,7 +18480,6 @@ var releaseLink = {
       previous: previous?.at
     });
     const deploy2 = await deployStep(ctx, h.adapter, h.cap, { reasons, intent, live, previous, promotes: Boolean(rel) });
-    track(ctx, [deploy2]);
     const check = checkStep(ctx, h.adapter, {
       deploy: intent,
       coveredId: "this-plan",
@@ -18545,17 +18543,19 @@ async function deployStep(ctx, adapter, deploy2, facts) {
 }
 function checkStep(ctx, adapter, facts) {
   const prev = ctx.state.get().steps[CHECK_STEP];
+  const production = [...memo(ctx).steps.keys()].filter((id2) => id2.startsWith("deploy:production"));
   return step({
     id: CHECK_STEP,
     title: `Release check for the preview deployment on ${adapter.title}`,
     kind: "wire",
     risk: { writes: false },
-    dependsOn: facts.deploy ? deps(ctx, [DEPLOY_STEP]) : deps(ctx, ["project:hosting"]),
+    dependsOn: facts.deploy ? [DEPLOY_STEP] : deps(ctx, ["project:hosting"]),
     preview: [
       `check ${facts.covers} on ${adapter.title} (${facts.project}) without writing anything: the provider's own read (it exists, is ready, belongs to the project golive links, and is not the production deployment) and a scan of the HTML/JavaScript it serves for known credential patterns`,
-      ...facts.promotes ? [`this check gates ${PROMOTE_STEP} in this plan: it re-reads the exact deployment that step would make production, before production changes`] : [],
+      ...facts.deploy ? [] : [`this check gates ${PROMOTE_STEP} in this plan: it re-reads the exact deployment that step would make production, before production changes`],
+      ...facts.deploy && facts.promotes ? [`this check does not gate the promotion itself: ${PROMOTE_STEP} is a later plan's step (the provider reports a deployment's id only once the deployment is made) and that plan runs its own fresh ${CHECK_STEP} against the deployment this one records before any production write`] : [],
       ...prev ? [`previous release check: ${prev.at}`] : [],
-      facts.promotes ? `a failing check fails this step and stops the plan before ${PROMOTE_STEP}: that is the gate, and production stays as it is` : "a failing check fails this step and stops the plan: that is the gate"
+      facts.deploy ? `a failing check fails this step and stops the plan there \u2014 nothing follows the gate in this plan${production.length ? `, and the production deploy this plan emits earlier (${production.join(" and ")}) is not gated by it` : ""}. The failure is recorded, so a later plan does not treat this preview as checked` : `a failing check fails this step and stops the plan before ${PROMOTE_STEP}: that is the gate, and production stays as it is`
     ],
     intent: intentOf({ deploy: facts.deploy ?? "", covered: facts.coveredId, previous: prev?.at }),
     async run() {
@@ -18575,7 +18575,9 @@ function promoteStep(ctx, adapter, facts) {
     // A production re-point: a real write, no extra category flag (the plan names the exact deployment
     // and depends on the gate), never `replayable` and never a deletion.
     risk: { writes: true },
-    dependsOn: deps(ctx, [CHECK_STEP, "project:hosting"]),
+    // The gate is this step's prerequisite by construction, like the gate's own deploy edge: `util.deps`
+    // would drop it if the gate were not tracked yet, and a promotion without its check is no release.
+    dependsOn: [CHECK_STEP, ...deps(ctx, ["project:hosting"])],
     preview: [
       `promote ${target.provider} deployment ${target.id} to production: ${target.url} (recorded by golive ${target.at}) becomes what ${adapter.title} serves publicly`,
       `project: ${facts.project}`,

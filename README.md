@@ -329,8 +329,11 @@ live-tested milestones**, not a finished category or a completed checklist for y
   `preview:deploy` — a create that deploys the current working tree to the host's preview target,
   names the provider, project, env target and the source project the preview shares with production,
   needs `--confirm-live` when a live-mode value fills a preview env name, and records the provider's
-  own identity as `deployed:preview:id` — and `release:check`, which writes nothing and fails the plan
-  when the provider's read of that deployment or a credential scan of its bundle fails. **Promotion
+  own identity as `deployed:preview:id` — and `release:check`, which writes nothing, declares
+  `preview:deploy` as its prerequisite, and fails the plan when the provider's read of that deployment
+  or a credential scan of its bundle fails. In a cut plan that check is the last step, so what it gates
+  is the promotion (whose own plan re-runs the check before production changes), not a production
+  deploy the plan emits before it. **Promotion
   and rollback — implemented, not live-validated:** with `release.promote: true` (on top of the
   preview opt-in) a plan asks for a release by promotion, and with `release.rollback: true` it asks to
   re-point production at an earlier deployment golive itself created and recorded. `promote:production`
