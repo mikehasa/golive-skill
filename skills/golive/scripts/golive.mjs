@@ -11659,7 +11659,7 @@ async function withZone(ctx, domain, run) {
     }
     if (fresh.zone.id !== zone.id) {
       ctx.log.warn(
-        `cloudflare: the zone for ${domain} changed during retry (${zone.name} -> ${fresh.zone.name}); the record is being written to ${fresh.zone.name}. If the domain does not go live, check that this zone is the one that serves it.`
+        `cloudflare: recovering a stale zone id for ${domain}: using ${fresh.zone.name} (${fresh.zone.id}) instead of the rejected ${zone.name} (${zone.id}). If the domain does not go live, check that this zone is the one that serves it.`
       );
     }
     return run(fresh.zone);
