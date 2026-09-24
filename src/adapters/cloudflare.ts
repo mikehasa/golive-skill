@@ -171,7 +171,7 @@ async function withZone<T>(ctx: Ctx, domain: string, run: (zone: Zone) => Promis
     }
     if (fresh.zone.id !== zone.id) {
       ctx.log.warn(
-        `cloudflare: the zone for ${domain} changed during retry (${zone.name} -> ${fresh.zone.name}); the record is being written to ${fresh.zone.name}. ` +
+        `cloudflare: recovering a stale zone id for ${domain}: using ${fresh.zone.name} (${fresh.zone.id}) instead of the rejected ${zone.name} (${zone.id}). ` +
           'If the domain does not go live, check that this zone is the one that serves it.',
       );
     }

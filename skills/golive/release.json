@@ -17,7 +17,7 @@
     "LICENSE": "b1546216882fd37b1602f3a004e8548b5f6c38ada73117308d4c3ac6968235e9",
     "THIRD_PARTY_NOTICES.md": "ad33f954a31c411cc667c07460859c77a014d6720e581a5ce5edd48c9c962781",
     "references/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "references/cloudflare-dns.md": "187016365572a33a7094e1c6c319f702a8777b6b5859b5d08302b9cdeafbebcb",
+    "references/cloudflare-dns.md": "1e2c3143d714590486d181befa0237f18e077328ab7fcd2151adaa0f68b898ff",
     "references/godaddy.md": "79f0fc450f939a258eff829d02208ffcf08f3490b88c142580d2369fce8b63d4",
     "references/guided.md": "43081b870baec23f67b5523c786ee109d647d3e36ef57d86cec7fe961e98662e",
     "references/neon.md": "221bc3134a22241fc6d61780ab4be3f1094a229175b7137c841375260819b4e5",
@@ -30,9 +30,9 @@
     "references/troubleshooting.md": "8a9a8bd3a4c79e5fac00edbec3db0d6c47eaf36f4f6e7a5b92a46a92b21e50fd",
     "references/updates.md": "f7e162ed69a3935ab6bd87896d54876345c39e59d305afdd9fae1950fe56fd37",
     "references/vercel.md": "83e98b61a1f16ba0e76327ccf01268a3a4c42be3ffecc0ab12bc8c6f061c18df",
-    "scripts/golive.mjs": "1c96e07d33e81e4a65772d04c9b2692ea4a9a95c40573cffa8bd69e4ebf43d10",
+    "scripts/golive.mjs": "203a77788ba6a55bab6323c6e90cad1b912f7bca571a7777cd6ec43faedcc1b3",
     "scripts/install-cli.mjs": "55e2a776892a9d34fa62d7ebf70bb101a0f54a3592ba9f87b77a1d43043e108a",
     "scripts/install-lib.mjs": "9d3de597acc711178e588247f3cc9b5b5445f90d492cd464018065f2cd25caec"
   },
-  "bundleDigest": "6c365a41c98fdc5699b2003c793180fa9b723ce45dc2361aec2d17ff9e60a3df"
+  "bundleDigest": "bcb5f1a6e2293724bbee11c7f57a1647ce43f3cee462781cfc2f918a8babea44"
 }

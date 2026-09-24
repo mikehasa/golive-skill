@@ -661,9 +661,34 @@ describe('cloudflare dns: stale cached zone id', () => {
     const ctx = testCtx({ http, tokens: { CLOUDFLARE_API_TOKEN: TOKEN } });
     ctx.state.save((s) => void (s.resources['cloudflare.zoneId:sub.example.com'] = 'zoneOLD'));
     expect(await cloudflareDns.upsert(ctx, 'sub.example.com', { type: 'A', name: 'sub.example.com', content: '76.76.21.21' })).toBe('created');
-    expect(ctx.logs.join('\n')).toMatch(/zone for sub\.example\.com changed during retry/);
+    expect(
+      ctx.logs.some((l) => l.startsWith('! ') && /recovering a stale zone id for sub\.example\.com: using example\.com \(zoneNEW\) instead of the rejected sub\.example\.com \(zoneOLD\)/.test(l)),
+    ).toBe(true); // a warning, with both zone identities — never silent
     expect(ctx.state.resource('cloudflare.zoneId:sub.example.com')).toBeUndefined();
     expect(ctx.state.resource('cloudflare.zoneId:example.com')).toBe('zoneNEW');
+  });
+
+  it('a re-created zone (same name, new id) is reported with both ids, not as a no-op', async () => {
+    const { http } = mockHttp([
+      ['GET', new RegExp(`^${API}/zones\\?`), () => ({ json: { success: true, result: [{ id: 'zoneNEW', name: 'example.com', status: 'active' }], result_info: { page: 1, total_pages: 1 } } })],
+      ZONES_404,
+      ['GET', new RegExp(`^${API}/zones/zoneNEW/dns_records`), () => ({ json: { success: true, result: [], result_info: { page: 1, total_pages: 1 } } })],
+      ['POST', new RegExp(`^${API}/zones/zoneNEW/dns_records$`), (c) => ({ json: { success: true, result: { ...(c.body as Rec), id: 'recNEW' } } })],
+    ]);
+    const ctx = cachedZone(testCtx({ http, tokens: { CLOUDFLARE_API_TOKEN: TOKEN } }));
+    expect(await cloudflareDns.upsert(ctx, 'example.com', A)).toBe('created');
+    expect(ctx.logs.some((l) => l.startsWith('! ') && /using example\.com \(zoneNEW\) instead of the rejected example\.com \(zoneOLD\)/.test(l))).toBe(true);
+  });
+
+  it('a failed re-resolution rethrows the original rejection, not the lookup failure', async () => {
+    const { http } = mockHttp([
+      ['GET', new RegExp(`^${API}/zones\\?`), () => ({ status: 429, json: { success: false, errors: [{ code: 971, message: 'Please wait and consider throttling your request speed' }], result: null } })],
+      ZONES_404,
+    ]);
+    const ctx = cachedZone(testCtx({ http, tokens: { CLOUDFLARE_API_TOKEN: TOKEN } }));
+    const err = await errorOf(cloudflareDns.upsert(ctx, 'example.com', A));
+    expect(err.message).toContain('HTTP 404'); // the original rejection
+    expect(err.message).not.toMatch(/rate limit/i); // not the re-resolution's 429
   });
 
   it('a record-level 403 on a cached id is retried once against the re-resolved zone, then surfaces', async () => {
