@@ -13,7 +13,7 @@
     "approval": 1
   },
   "files": {
-    "SKILL.md": "66d5e7c70ac8052260663e68765b23646fb6b1b4274e01ab36f80a301a9bf15c",
+    "SKILL.md": "41b1710006ecccd4ddbcf2ed307ad0d2372d92a2003fe41359e98ca8ddecc4d8",
     "LICENSE": "b1546216882fd37b1602f3a004e8548b5f6c38ada73117308d4c3ac6968235e9",
     "THIRD_PARTY_NOTICES.md": "ad33f954a31c411cc667c07460859c77a014d6720e581a5ce5edd48c9c962781",
     "references/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -22,7 +22,7 @@
     "references/guided.md": "43081b870baec23f67b5523c786ee109d647d3e36ef57d86cec7fe961e98662e",
     "references/neon.md": "a5a85919d318b8f15fca6dd49a8a495a6aeb3e713ddac620978747c5a67bd400",
     "references/netlify.md": "5889627df48b5cdf5213f6a1ec951395d13b5f5eb4f9e9c0aba00db12f0247d8",
-    "references/plan-and-verify.md": "f047ac6ec89b4ee399cf1f00b8074f674905de953b1592b2083093665594eb92",
+    "references/plan-and-verify.md": "33f3cbe1ef5d99e43f60bf14665a5d5519f76b22c973949fecbbcc463a60f54f",
     "references/porkbun.md": "8eaeb8890ce3c104e242ced33e77179253a9d8f3b9425be6692585254c6b6490",
     "references/resend.md": "21166f08bbbbf3e0a9b19559f4f7bfe29024d38840ca7d37fab8aab5248d4fed",
     "references/stripe.md": "ef06e9f2782919849b49dfa5145010a8b3017e2210c655c8af45e3683d105c32",
@@ -30,9 +30,9 @@
     "references/troubleshooting.md": "8a9a8bd3a4c79e5fac00edbec3db0d6c47eaf36f4f6e7a5b92a46a92b21e50fd",
     "references/updates.md": "f7e162ed69a3935ab6bd87896d54876345c39e59d305afdd9fae1950fe56fd37",
     "references/vercel.md": "83e98b61a1f16ba0e76327ccf01268a3a4c42be3ffecc0ab12bc8c6f061c18df",
-    "scripts/golive.mjs": "0552ffb2a04c1bcb02dcce3559d76512712264000bfbb40f9df208496a08c294",
+    "scripts/golive.mjs": "b77b0ca4537b836151eebd7f46b2a3502ea9ff60a8caadd8a8f6cac4d73fe163",
     "scripts/install-cli.mjs": "55e2a776892a9d34fa62d7ebf70bb101a0f54a3592ba9f87b77a1d43043e108a",
     "scripts/install-lib.mjs": "9d3de597acc711178e588247f3cc9b5b5445f90d492cd464018065f2cd25caec"
   },
-  "bundleDigest": "21600e8528f37874d017713d3b3f21ccee89d8feef78426af60a31d55c7e678b"
+  "bundleDigest": "89114346db759eec76239e535d72473ea472d9685f36631c1af40c5ef5c3bd77"
 }
