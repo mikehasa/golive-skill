@@ -24,8 +24,8 @@
     "references/netlify.md": "7c1705f0bea0987d0a19c3be8f370e64c66f0d205f9fb963bbf923744f846f0a",
     "references/plan-and-verify.md": "af6d0ba516ccf1454d071acc5ce6cc6b177fbe67acc7102e8baeb5d6099aa2af",
     "references/porkbun.md": "8eaeb8890ce3c104e242ced33e77179253a9d8f3b9425be6692585254c6b6490",
-    "references/resend.md": "55a2d863a9bd4295303c1e06f72b200292f609f03dee46bcc2a541a6fde50e0e",
-    "references/stripe.md": "f37d8cd2f14c31692af7b885d71d56e81ddf1224d906dd7d559f79a5234f24a5",
+    "references/resend.md": "21166f08bbbbf3e0a9b19559f4f7bfe29024d38840ca7d37fab8aab5248d4fed",
+    "references/stripe.md": "ef06e9f2782919849b49dfa5145010a8b3017e2210c655c8af45e3683d105c32",
     "references/supabase.md": "cdfd5793aa248f61afeed13bd5d64d2fd1a40cd3e1d359a4cc717b528019dcfd",
     "references/troubleshooting.md": "8a9a8bd3a4c79e5fac00edbec3db0d6c47eaf36f4f6e7a5b92a46a92b21e50fd",
     "references/updates.md": "f7e162ed69a3935ab6bd87896d54876345c39e59d305afdd9fae1950fe56fd37",
@@ -34,5 +34,5 @@
     "scripts/install-cli.mjs": "55e2a776892a9d34fa62d7ebf70bb101a0f54a3592ba9f87b77a1d43043e108a",
     "scripts/install-lib.mjs": "9d3de597acc711178e588247f3cc9b5b5445f90d492cd464018065f2cd25caec"
   },
-  "bundleDigest": "ba5bd04580da1e950628290c28c15122022e70c11baf5a252eb623de43486273"
+  "bundleDigest": "0913fc8e7b7cc3a145ed0b559d9bdc897889cff047d6d17b1c026e8be46d04bf"
 }
