@@ -1,7 +1,7 @@
 import { domainToASCII } from 'node:url';
 import { isIP } from 'node:net';
 import type { Adapter, AuthStatus, Ctx, DnsRecord, DnsZone, HttpResponse } from '../core/types.js';
-import { Secret, fingerprint } from '../core/secret.js';
+import { Secret, fingerprint, redact } from '../core/secret.js';
 import { resolve, normalizeTxt } from '../core/doh.js';
 import { tokenHowTo } from '../core/credentials.js';
 import { isSpf, mergeSpf } from './cloudflare-spf.js';
@@ -28,7 +28,7 @@ function tokenHelp(): string {
 }
 
 class GoDaddyError extends Error {
-  constructor(message: string, readonly status = 0) { super(message); }
+  constructor(message: string, readonly status = 0) { super(redact(message)); }
 }
 
 function responseError(status: number, transport: 'rest' | 'cli' = 'rest'): GoDaddyError {

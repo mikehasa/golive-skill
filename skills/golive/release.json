@@ -30,9 +30,9 @@
     "references/troubleshooting.md": "8a9a8bd3a4c79e5fac00edbec3db0d6c47eaf36f4f6e7a5b92a46a92b21e50fd",
     "references/updates.md": "f7e162ed69a3935ab6bd87896d54876345c39e59d305afdd9fae1950fe56fd37",
     "references/vercel.md": "83e98b61a1f16ba0e76327ccf01268a3a4c42be3ffecc0ab12bc8c6f061c18df",
-    "scripts/golive.mjs": "a16bc9198188adbe1a92d6cf7c6fadb411447316b2a054339cdefac94fe5b3c8",
+    "scripts/golive.mjs": "0552ffb2a04c1bcb02dcce3559d76512712264000bfbb40f9df208496a08c294",
     "scripts/install-cli.mjs": "55e2a776892a9d34fa62d7ebf70bb101a0f54a3592ba9f87b77a1d43043e108a",
     "scripts/install-lib.mjs": "9d3de597acc711178e588247f3cc9b5b5445f90d492cd464018065f2cd25caec"
   },
-  "bundleDigest": "0023017d8d3b27466bc7970c94dbd6b3109e4d245b848738b4d0fe8099996fdc"
+  "bundleDigest": "21600e8528f37874d017713d3b3f21ccee89d8feef78426af60a31d55c7e678b"
 }

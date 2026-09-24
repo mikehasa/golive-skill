@@ -6,7 +6,7 @@ import { createHttp, allowHost, HttpError } from '../src/core/http.js';
 import { parseConfig, ConfigError, modeFor } from '../src/core/config.js';
 import { mapEnv } from '../src/core/envmap.js';
 import { orderSteps, planId, buildPlan } from '../src/core/plan.js';
-import { applyPlan, PlanMismatchError } from '../src/core/runner.js';
+import { applyPlan, PlanMismatchError, runCheck } from '../src/core/runner.js';
 import { memoryStateStore } from '../src/core/state.js';
 import { createCtx } from '../src/core/context.js';
 import { silentLogger } from '../src/core/output.js';
@@ -303,10 +303,40 @@ describe('runner', () => {
     expect(dump).not.toContain('whsec_');
     expect(ctx.state.get().secrets['STRIPE_WEBHOOK_SECRET@production']?.fp).toHaveLength(8);
   });
+
+  it('redacts a step error before it is recorded in state or outcomes', async () => {
+    const value = 'provider-side-token-that-must-not-leak';
+    new Secret('RESEND_API_KEY', value);
+    const ctx = mkCtx();
+    const plan = await planOf(ctx, [step('s', [], { run: async () => { throw new Error(`provider rejected ${value}`); } })]);
+    const out = await applyPlan(ctx, plan, new Map(), { ...base, approvedPlanId: plan.id });
+    expect(out[0]!.status).toBe('failed');
+    const recorded = JSON.stringify(ctx.state.get().steps.s);
+    expect(recorded).not.toContain(value);
+    expect(recorded).toContain(`[redacted RESEND_API_KEY fp:${fingerprint(value)}]`);
+    expect(out[0]!.error).toMatch(/\[redacted RESEND_API_KEY fp:/);
+    expect(JSON.stringify(out)).not.toContain(value);
+  });
+
+  it('redacts error evidence from a failing check and from inline verification', async () => {
+    const value = 'probe-token-that-must-not-leak';
+    new Secret('VERCEL_TOKEN', value);
+    const ctx = mkCtx();
+    const errored = await runCheck(ctx, { id: 'chk', title: 'chk', severity: 'high', applies: () => true, run: async () => { throw new Error(`probe failed: ${value}`); } });
+    expect(errored.evidence.join(' ')).not.toContain(value);
+    expect(errored.evidence.join(' ')).toContain(`[redacted VERCEL_TOKEN fp:${fingerprint(value)}]`);
+
+    const passing: Check = { id: 'chk', title: 'chk', severity: 'high', applies: () => true, run: async () => ({ status: 'pass', severity: 'high', evidence: [] }) };
+    const plan = await planOf(ctx, [step('s', [], { verifyWith: ['chk'], verifyInline: async () => { throw new Error(`inline probe failed: ${value}`); } })]);
+    const out = await applyPlan(ctx, plan, new Map([['chk', passing]]), { ...base, approvedPlanId: plan.id });
+    expect(out[0]!.status).toBe('failed');
+    expect(JSON.stringify(out)).not.toContain(value);
+    expect(JSON.stringify(out)).toContain(`[redacted VERCEL_TOKEN fp:${fingerprint(value)}]`);
+  });
 });
 
 // ── credentials file + retry policy ─────────────────────────────────────────────────────────────
-import { mkdtempSync, writeFileSync as wf, chmodSync } from 'node:fs';
+import { mkdtempSync, writeFileSync as wf, chmodSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join as pjoin } from 'node:path';
 import { parseCredentials, credentialsStatus, tokenHowTo, _resetCredentialsCache } from '../src/core/credentials.js';
@@ -340,6 +370,7 @@ describe('credentials file', () => {
     } finally {
       if (prev === undefined) delete process.env.GOLIVE_CREDENTIALS;
       else process.env.GOLIVE_CREDENTIALS = prev;
+      rmSync(dir, { recursive: true, force: true });
       _resetCredentialsCache();
     }
   });

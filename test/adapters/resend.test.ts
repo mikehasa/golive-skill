@@ -502,18 +502,36 @@ describe('resend CLI transport', () => {
     expect(err2.message).not.toContain(MINTED);
   });
 
-  it('revokes via the CLI; a CLI delete failure still throws (its not-found is not classified)', async () => {
+  it('revokes via the CLI, and reads an already-gone key out of the stderr error envelope', async () => {
     const ex = mockExec([whoami, ['resend api-keys delete', { stdout: JSON.stringify({ object: 'api_key', id: 'k_cli', deleted: true }) }]]);
     const ctx = testCtx({ exec: ex.run });
     expect(await keys.revoke!(ctx, 'k_cli')).toEqual({ revoked: true });
     expect(ex.calls[1]!.args).toEqual(['api-keys', 'delete', 'k_cli', '--yes', '--json']);
 
-    // resend-cli 2.21.1 answers a failed `api-keys delete` with this envelope on stderr (exit 1), and
-    // every API-side failure carries the same generic `delete_error` code: an already-gone key is not
-    // distinguishable from a real failure, so it stays a thrown error. REST classifies its 404 instead.
+    // resend-cli 2.21.1 answers a failed `api-keys delete` with this envelope on stderr (exit 1), pretty
+    // printed over several lines. Every API-side failure carries the same generic `delete_error` code, so
+    // `statusCode` is the only discriminator — the same already-gone outcome REST reports for its 404.
     const envelope = JSON.stringify({ error: { message: 'API key not found', code: 'delete_error', statusCode: 404 } }, null, 2);
     const ex2 = mockExec([whoami, ['resend api-keys delete', { code: 1, stderr: envelope }]]);
-    await expect(keys.revoke!(testCtx({ exec: ex2.run }), 'k_gone')).rejects.toThrow(/api-keys delete failed \(exit 1\)/);
+    expect(await keys.revoke!(testCtx({ exec: ex2.run }), 'k_gone')).toEqual({ revoked: false, reason: 'key not found' });
+
+    // The envelope may also carry the status beside the error (as REST bodies do); both shapes classify.
+    const flat = JSON.stringify({ error: { message: 'API key not found', code: 'delete_error' }, statusCode: 404 });
+    const ex3 = mockExec([whoami, ['resend api-keys delete', { code: 1, stderr: flat }]]);
+    expect(await keys.revoke!(testCtx({ exec: ex3.run }), 'k_gone')).toEqual({ revoked: false, reason: 'key not found' });
+  });
+
+  it('keeps throwing, with the same message, for a CLI delete failure that is not a not-found', async () => {
+    const stderr = JSON.stringify({ error: { message: 'internal server error', code: 'delete_error', statusCode: 500 } });
+    const ex = mockExec([whoami, ['resend api-keys delete', { code: 1, stderr }]]);
+    await expect(keys.revoke!(testCtx({ exec: ex.run }), 'k_500')).rejects.toThrow(
+      `resend api-keys delete failed (exit 1): ${stderr}`,
+    );
+
+    const garbage = mockExec([whoami, ['resend api-keys delete', { code: 1, stderr: 'Error: request failed\nretry in a minute' }]]);
+    await expect(keys.revoke!(testCtx({ exec: garbage.run }), 'k_bad')).rejects.toThrow(
+      'resend api-keys delete failed (exit 1): Error: request failed\nretry in a minute',
+    );
   });
 
   it('sends the CLI test email with an idempotency key when no app key is in the vault', async () => {

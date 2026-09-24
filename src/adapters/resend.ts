@@ -163,7 +163,34 @@ async function sendRest(ctx: Ctx, key: Secret, msg: EmailMsg, idem: string): Pro
 // ── CLI transport ───────────────────────────────────────────────────────────────────────────────
 
 interface CliError {
-  error?: { message?: string; code?: string };
+  error?: { message?: string; code?: string; statusCode?: number };
+  statusCode?: number;
+}
+
+/** A failed `resend …` run, carrying the error envelope's status code when the CLI printed one. */
+class ResendCliError extends Error {
+  constructor(message: string, readonly statusCode?: number) { super(message); }
+}
+
+function statusOf(v: unknown): number | undefined {
+  const e = v as CliError | undefined;
+  const s = e?.statusCode ?? e?.error?.statusCode;
+  return typeof s === 'number' ? s : undefined;
+}
+
+/**
+ * The CLI prints its error envelope on stderr, sometimes pretty-printed over several lines. Its
+ * `statusCode` is the only discriminator `api-keys delete` offers: every API-side failure of that
+ * command carries the same generic `delete_error` code, so a not-found cannot be told apart by code.
+ */
+function stderrStatus(stderr: string): number | undefined {
+  const json = stderr.match(/\{[\s\S]*\}/);
+  if (!json) return undefined;
+  try {
+    return statusOf(JSON.parse(json[0]));
+  } catch {
+    return undefined;
+  }
 }
 
 /** Run `resend … --json` with stdout captured in-process. Error messages never echo stdout. */
@@ -186,7 +213,7 @@ async function cli<T>(ctx: Ctx, args: string[]): Promise<T> {
     const code = err?.code ?? '';
     const detail = err?.message ?? (r.stderr.trim().slice(0, 300) || 'no error output');
     const hint = code === 'not_authenticated' ? ` — ${loginHelp()}` : hintFor(code, 0, detail);
-    throw new Error(redact(`${what} failed (exit ${r.code}${code ? `, ${code}` : ''}): ${detail}${hint}`));
+    throw new ResendCliError(redact(`${what} failed (exit ${r.code}${code ? `, ${code}` : ''}): ${detail}${hint}`), statusOf(parsed) ?? stderrStatus(r.stderr));
   }
   if (parsed === undefined) throw new Error(`${what}: expected JSON output (is resend-cli >= 2.21 installed?)`);
   return unwrap(parsed) as T;
@@ -213,11 +240,16 @@ function cliTransport(ctx: Ctx, profile: string | undefined): Transport {
     createKey: async (name, domainId) =>
       keyFrom(await cli<{ id?: string; token?: string }>(ctx, ['api-keys', 'create', '--name', name, '--permission', 'sending_access', '--domain-id', domainId]), name),
     deleteKey: async (id) => {
-      // Every API-side failure of `api-keys delete` carries the same generic `delete_error` code (its
-      // documented codes are auth_error / confirmation_required / delete_error), so an already-gone key
-      // cannot be told apart here the way REST tells its 404 apart. It stays a thrown error.
-      await cli(ctx, ['api-keys', 'delete', id, '--yes']);
-      return { revoked: true };
+      try {
+        await cli(ctx, ['api-keys', 'delete', id, '--yes']);
+        return { revoked: true };
+      } catch (e) {
+        // Already gone (revoked by hand, or by an earlier run): the outcome teardown asked for, exactly
+        // like REST's 404. The command's own codes (auth_error / confirmation_required / delete_error)
+        // are too coarse to tell that apart, so the envelope's statusCode is what we classify on.
+        if (e instanceof ResendCliError && e.statusCode === 404) return { revoked: false, reason: 'key not found' };
+        throw e;
+      }
     },
     sendEmail: async (msg, idem) => {
       const r = await cli<{ id?: string }>(ctx, ['emails', 'send', '--from', msg.from, '--to', msg.to, '--subject', msg.subject, '--text', msg.text, '--idempotency-key', idem]);

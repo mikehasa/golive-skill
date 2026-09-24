@@ -10648,6 +10648,9 @@ init_secret();
 import { createHash as createHash5 } from "node:crypto";
 var PlanMismatchError = class extends Error {
 };
+function errMsg2(e) {
+  return redact(e instanceof Error ? e.message : String(e));
+}
 async function runCheck(ctx, check) {
   const t0 = Date.now();
   if (!check.applies(ctx)) return { id: check.id, title: check.title, status: "skip", severity: check.severity, evidence: ["not applicable to this stack"], durationMs: 0 };
@@ -10655,7 +10658,7 @@ async function runCheck(ctx, check) {
     const r = await check.run(ctx);
     return { id: check.id, title: check.title, ...r, durationMs: Date.now() - t0 };
   } catch (e) {
-    return { id: check.id, title: check.title, status: "fail", severity: check.severity, evidence: [`check errored: ${e.message}`], durationMs: Date.now() - t0 };
+    return { id: check.id, title: check.title, status: "fail", severity: check.severity, evidence: [`check errored: ${errMsg2(e)}`], durationMs: Date.now() - t0 };
   }
 }
 async function applyPlan(ctx, plan, checks, opts) {
@@ -10731,7 +10734,7 @@ async function applyPlan(ctx, plan, checks, opts) {
         try {
           results.push(...await step2.verifyInline(ctx));
         } catch (e) {
-          results.push({ id: `${step2.id}:verify`, title: `verify ${step2.id}`, status: "fail", severity: "high", evidence: [`verification errored: ${e.message}`] });
+          results.push({ id: `${step2.id}:verify`, title: `verify ${step2.id}`, status: "fail", severity: "high", evidence: [`verification errored: ${errMsg2(e)}`] });
         }
       }
       const bad = results.filter((r) => r.status === "fail");
@@ -10743,7 +10746,7 @@ async function applyPlan(ctx, plan, checks, opts) {
       record(ctx, step2, plan.id, "done", res.changes);
       outcomes.push({ id: step2.id, status: "done", changes: res.changes, checks: results });
     } catch (e) {
-      const msg = e.message;
+      const msg = errMsg2(e);
       record(ctx, step2, plan.id, "failed", [], msg);
       outcomes.push({ id: step2.id, status: "failed", changes: [], checks: [], error: msg, next: "fix the error above, then re-run apply (completed steps are skipped)" });
       break;
@@ -11286,7 +11289,7 @@ function parseCliError(text) {
   const j = json2 ? parseJson(json2[0]) : null;
   const status = j?.status ?? Number(text.match(/\b([45]\d\d)\b/)?.[1] ?? NaN);
   const code = j?.error?.code ?? j?.code ?? (/not[_ ]found/i.test(text) ? "not_found" : void 0);
-  const message = j?.error?.message ?? j?.message ?? text.trim().split("\n").slice(-3).join(" ").slice(0, 300);
+  const message = redact((j?.error?.message ?? j?.message ?? text.trim().split("\n").slice(-3).join(" ")).replace(/\s+/g, " ").trim().slice(0, 300));
   return { status: Number.isFinite(status) ? status : code === "not_found" ? 404 : void 0, code, message };
 }
 function apiError(method, path, status, code, message) {
@@ -12038,6 +12041,27 @@ async function sendRest(ctx, key, msg, idem) {
   if (!r?.id) throw new Error("Resend send test email: response had no email id");
   return { id: r.id };
 }
+var ResendCliError = class extends Error {
+  constructor(message, statusCode) {
+    super(message);
+    this.statusCode = statusCode;
+  }
+  statusCode;
+};
+function statusOf(v) {
+  const e = v;
+  const s = e?.statusCode ?? e?.error?.statusCode;
+  return typeof s === "number" ? s : void 0;
+}
+function stderrStatus(stderr) {
+  const json2 = stderr.match(/\{[\s\S]*\}/);
+  if (!json2) return void 0;
+  try {
+    return statusOf(JSON.parse(json2[0]));
+  } catch {
+    return void 0;
+  }
+}
 async function cli2(ctx, args) {
   const what = `resend ${args.slice(0, 2).join(" ")}`;
   let r;
@@ -12057,7 +12081,7 @@ async function cli2(ctx, args) {
     const code = err?.code ?? "";
     const detail = err?.message ?? (r.stderr.trim().slice(0, 300) || "no error output");
     const hint = code === "not_authenticated" ? ` \u2014 ${loginHelp()}` : hintFor2(code, 0, detail);
-    throw new Error(redact(`${what} failed (exit ${r.code}${code ? `, ${code}` : ""}): ${detail}${hint}`));
+    throw new ResendCliError(redact(`${what} failed (exit ${r.code}${code ? `, ${code}` : ""}): ${detail}${hint}`), statusOf(parsed) ?? stderrStatus(r.stderr));
   }
   if (parsed === void 0) throw new Error(`${what}: expected JSON output (is resend-cli >= 2.21 installed?)`);
   return unwrap(parsed);
@@ -12078,8 +12102,13 @@ function cliTransport(ctx, profile) {
     listKeys: async () => listOf(await cli2(ctx, ["api-keys", "list"])),
     createKey: async (name3, domainId) => keyFrom(await cli2(ctx, ["api-keys", "create", "--name", name3, "--permission", "sending_access", "--domain-id", domainId]), name3),
     deleteKey: async (id2) => {
-      await cli2(ctx, ["api-keys", "delete", id2, "--yes"]);
-      return { revoked: true };
+      try {
+        await cli2(ctx, ["api-keys", "delete", id2, "--yes"]);
+        return { revoked: true };
+      } catch (e) {
+        if (e instanceof ResendCliError && e.statusCode === 404) return { revoked: false, reason: "key not found" };
+        throw e;
+      }
     },
     sendEmail: async (msg, idem) => {
       const r = await cli2(ctx, ["emails", "send", "--from", msg.from, "--to", msg.to, "--subject", msg.subject, "--text", msg.text, "--idempotency-key", idem]);
@@ -12800,7 +12829,7 @@ function tokenHelp3() {
 }
 var GoDaddyError = class extends Error {
   constructor(message, status = 0) {
-    super(message);
+    super(redact(message));
     this.status = status;
   }
   status;
@@ -13132,7 +13161,7 @@ var ADDRESS3 = /* @__PURE__ */ new Set(["A", "AAAA", "CNAME"]);
 var OWNED = "golive:";
 var PorkbunError = class extends Error {
   constructor(message, status, code) {
-    super(message);
+    super(redact(message));
     this.status = status;
     this.code = code;
   }
@@ -15405,7 +15434,7 @@ function worst(sevs) {
 function isFailing(s) {
   return RANK[s] >= RANK.high;
 }
-function errMsg2(e) {
+function errMsg3(e) {
   return redact(e instanceof Error ? e.message : String(e));
 }
 function trimSlash(url) {
@@ -15465,7 +15494,7 @@ async function confirmedProductionUrl(ctx) {
   try {
     got = await urlCap.get(ctx, "production");
   } catch (e) {
-    return cannot(`the host could not report it: ${errMsg2(e)}`);
+    return cannot(`the host could not report it: ${errMsg3(e)}`);
   }
   if (!got) return ctx.config.domain ? cannot("blocked by: deploy:production; the host reports no production URL") : { ok: false, outcome: blocked("deploy:production", "no production deployment yet") };
   let u;
@@ -15630,7 +15659,7 @@ var accountsCheck = {
           fixes.push(`${adapter.title}: ${st.howToFix ?? `log in with the ${adapter.title} CLI in a separate terminal window (Claude Code's \`!\` prefix has no interactive terminal)`}`);
         }
       } catch (e) {
-        evidence.push(`${label2}: auth check errored: ${errMsg2(e)}`);
+        evidence.push(`${label2}: auth check errored: ${errMsg3(e)}`);
         fixes.push(`${adapter.title}: check that its CLI is installed and logged in, then re-run`);
       }
     }
@@ -15700,10 +15729,10 @@ var envParityCheck = {
         names = new Set(await env.listNames(ctx, target));
       } catch (e) {
         if (isHiddenEnv(e)) {
-          block(`the hosting token's role cannot read ${target} env vars`, `${target}: ${errMsg2(e)}`);
+          block(`the hosting token's role cannot read ${target} env vars`, `${target}: ${errMsg3(e)}`);
           continue;
         }
-        return result("fail", "high", [`could not list ${target} env names: ${errMsg2(e)}`], "Re-run verify; if it persists, check the hosting login with `golive doctor`.");
+        return result("fail", "high", [`could not list ${target} env names: ${errMsg3(e)}`], "Re-run verify; if it persists, check the hosting login with `golive doctor`.");
       }
       const mm = [];
       for (const m of mapped) {
@@ -15897,7 +15926,7 @@ var bundleSecretsCheck = {
     try {
       bundle = await fetchBundle(ctx, base);
     } catch (e) {
-      return result("warn", "medium", [`could not fetch ${base}/: ${errMsg2(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
+      return result("warn", "medium", [`could not fetch ${base}/: ${errMsg3(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
     }
     const seen = /* @__PURE__ */ new Set();
     const hits = [];
@@ -15994,7 +16023,7 @@ async function probeTable(ctx, ref3, key, t) {
   try {
     r = await restProbe(ctx, ref3, t.name, t.schema, key);
   } catch (e) {
-    return { severity: "medium", line: `${fq}: probe failed (${errMsg2(e)})` };
+    return { severity: "medium", line: `${fq}: probe failed (${errMsg3(e)})` };
   }
   if (r.status === 200 && r.rows > 0) return { severity: "critical", line: `anyone can read ${fq} (anonymous GET returned rows)` };
   if (r.status === 200 && !t.rls) return { severity: "high", line: `${fq} is exposed with RLS disabled (empty today; without RLS anyone with the public key can read and write it)` };
@@ -16023,7 +16052,7 @@ var rlsCheck = {
     try {
       tables2 = (await admin.tables(ctx)).filter((t) => !INTERNAL.test(t.schema));
     } catch (e) {
-      return result("fail", "high", [`could not list tables: ${errMsg2(e)}`], "Re-run verify; if it persists, check the Supabase login with `golive doctor`.");
+      return result("fail", "high", [`could not list tables: ${errMsg3(e)}`], "Re-run verify; if it persists, check the Supabase login with `golive doctor`.");
     }
     let noKey = false;
     if (tables2.length) {
@@ -16051,7 +16080,7 @@ var rlsCheck = {
           });
         }
       } catch (e) {
-        evidence.push(`advisors unavailable: ${errMsg2(e)}`);
+        evidence.push(`advisors unavailable: ${errMsg3(e)}`);
       }
     }
     const sev = worst(issues.map((i) => i.severity));
@@ -16089,7 +16118,7 @@ var dbConnectionCheck = {
       return result(
         "fail",
         "high",
-        [`read-only database probe failed: ${errMsg2(e)}`],
+        [`read-only database probe failed: ${errMsg3(e)}`],
         "Confirm the selected project, branch, database and role, then re-run verify. Do not paste connection strings into chat."
       );
     }
@@ -16130,7 +16159,7 @@ async function runUnsigned(ctx, url) {
   try {
     r = await probe(ctx, url, { method: "POST", body: {}, headers: { "user-agent": "golive-verify" } });
   } catch (e) {
-    return result("fail", "high", [`POST ${url} failed: ${errMsg2(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
+    return result("fail", "high", [`POST ${url} failed: ${errMsg3(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
   }
   const ev = `POST ${url} without Stripe-Signature \u2192 HTTP ${r.status}`;
   const s = r.status;
@@ -16185,7 +16214,7 @@ var webhookRegisteredCheck = {
         match = endpoints.filter((e) => e.url === expected);
       }
     } catch (e) {
-      return result("fail", "high", [`could not list ${mode}-mode webhook endpoints: ${errMsg2(e)}`], "Re-run verify; if it persists, check the Stripe login with `golive doctor`.");
+      return result("fail", "high", [`could not list ${mode}-mode webhook endpoints: ${errMsg3(e)}`], "Re-run verify; if it persists, check the Stripe login with `golive doctor`.");
     }
     if (!match.length) {
       const others = endpoints.map((e) => e.url).slice(0, 5);
@@ -16218,7 +16247,7 @@ var stripeLiveReadyCheck = {
       if (e.status === 403) {
         return result("warn", "medium", ["live readiness unknown: this key cannot read the Stripe account (restricted key without Account: Read)"], "Check Settings \u2192 Account in the Stripe Dashboard, or give the key Account: Read, then re-run verify.");
       }
-      return result("fail", "high", [`could not read the live Stripe account: ${errMsg2(e)}`], "Re-run verify; if it persists, check the Stripe login with `golive doctor`.");
+      return result("fail", "high", [`could not read the live Stripe account: ${errMsg3(e)}`], "Re-run verify; if it persists, check the Stripe login with `golive doctor`.");
     }
     const ev = [`charges_enabled: ${st.chargesEnabled}`, `details_submitted: ${st.detailsSubmitted}`];
     if (st.chargesEnabled) return pass(ev);
@@ -16251,7 +16280,7 @@ var authRedirectsCheck = {
     try {
       cfg2 = await auth8.get(ctx);
     } catch (e) {
-      return result("fail", "high", [`could not read auth settings: ${errMsg2(e)}`], "Re-run verify; if it persists, check the auth provider with `golive doctor`.");
+      return result("fail", "high", [`could not read auth settings: ${errMsg3(e)}`], "Re-run verify; if it persists, check the auth provider with `golive doctor`.");
     }
     const problems = [];
     const evidence = [`production URL: ${prod}`, `site URL: ${cfg2.siteUrl ?? "(unset)"}`];
@@ -16291,7 +16320,7 @@ async function q(ctx, name3, type, errors) {
   try {
     return await lookup(ctx, name3, type);
   } catch (e) {
-    errors.push(`${type} ${name3}: ${errMsg2(e)}`);
+    errors.push(`${type} ${name3}: ${errMsg3(e)}`);
     return [];
   }
 }
@@ -16401,7 +16430,7 @@ var emailDnsCheck = {
           if (got.length) records3 = got;
           else notes.push(`${provider} listed no DNS records for ${d}; checked common record locations instead`);
         } catch (e) {
-          notes.push(`could not read ${provider}'s record list (${errMsg2(e)}); checked common record locations instead`);
+          notes.push(`could not read ${provider}'s record list (${errMsg3(e)}); checked common record locations instead`);
         }
       }
     }
@@ -16437,7 +16466,7 @@ var emailVerifiedCheck = {
     try {
       st = await sd.status(ctx, id2);
     } catch (e) {
-      return result("fail", "high", [`could not read ${provider} domain ${id2}: ${errMsg2(e)}`], "Re-run verify; if it persists, check the email provider with `golive doctor`.");
+      return result("fail", "high", [`could not read ${provider} domain ${id2}: ${errMsg3(e)}`], "Re-run verify; if it persists, check the email provider with `golive doctor`.");
     }
     const ev = [`${provider} domain ${d} (${id2}): ${st}`];
     if (st === "verified") return pass(ev);
@@ -16470,7 +16499,7 @@ var domainLiveCheck = {
         const vals = await lookup(ctx, d, type);
         if (vals.length) found.push(`${type} ${vals.slice(0, 3).join(", ")}`);
       } catch (e) {
-        errors.push(`${type}: ${errMsg2(e)}`);
+        errors.push(`${type}: ${errMsg3(e)}`);
       }
     }
     if (!found.length) {
@@ -16487,7 +16516,7 @@ var domainLiveCheck = {
       try {
         st = await attach.status(ctx, d);
       } catch (e) {
-        return result("skip", "info", [`cannot confirm ${d} is attached to your ${ctx.config.stack.hosting ?? "hosting"} project: the host domain status is unavailable (${errMsg2(e)})`, ...evidence]);
+        return result("skip", "info", [`cannot confirm ${d} is attached to your ${ctx.config.stack.hosting ?? "hosting"} project: the host domain status is unavailable (${errMsg3(e)})`, ...evidence]);
       }
       evidence.push(`host reports domain ${st}`);
       if (st === "misconfigured") return result("fail", "high", evidence, `${d} is not attached to your hosting project or its DNS does not point at the host. Run \`golive plan\` (it attaches the domain and shows the records the host requires) and fix them at your DNS provider.`);
@@ -16505,7 +16534,7 @@ var domainLiveCheck = {
     try {
       res = await probe(ctx, url);
     } catch (e) {
-      return result("fail", "high", [...evidence, `GET ${url} failed (TLS or connection error): ${errMsg2(e)}`], "The certificate may still be issuing (a few minutes after DNS resolves); if it persists, check the domain status in your host dashboard.");
+      return result("fail", "high", [...evidence, `GET ${url} failed (TLS or connection error): ${errMsg3(e)}`], "The certificate may still be issuing (a few minutes after DNS resolves); if it persists, check the domain status in your host dashboard.");
     }
     evidence.push(`GET ${url} \u2192 HTTP ${res.status}${res.headers.location ? ` (\u2192 ${res.headers.location})` : ""}`);
     if (res.status >= 200 && res.status < 400) return pass(evidence);

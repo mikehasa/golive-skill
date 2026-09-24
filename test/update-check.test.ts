@@ -1,7 +1,7 @@
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, afterEach } from 'vitest';
 import { checkForUpdate, compareVersions, UPDATE_METADATA_URL } from '../src/core/update-check.js';
 import { releaseDigest, releaseIdentity, PUBLIC_REPOSITORY } from '../src/core/release.js';
 import type { ReleaseManifest } from '../src/core/types.js';
@@ -13,6 +13,10 @@ function manifest(version = '0.1.0-alpha.10'): ReleaseManifest {
 const current = () => releaseIdentity(manifest('0.1.0-alpha.9'));
 const respond = (value: unknown, calls: unknown[] = []) => (async (url, options) => { calls.push({url,options}); return new Response(JSON.stringify(value)); }) as typeof fetch;
 
+const tempDirs: string[] = [];
+const tempDir = (): string => { const d = realpathSync(mkdtempSync(join(tmpdir(), 'golive-update-'))); tempDirs.push(d); return d; };
+afterEach(() => { for (const d of tempDirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
+
 describe('public update checks', () => {
   it('uses only fixed public URL, no auth/cookies/redirects, and compares alpha numbers', async () => {
     const calls: any[]=[]; const r=await checkForUpdate(current(),{fetcher:respond(manifest(),calls),cachePath:false});
@@ -21,7 +25,7 @@ describe('public update checks', () => {
     expect(calls[0].options.credentials).toBe('omit'); expect(calls[0].options.redirect).toBe('error');
   });
   it('caches valid metadata for 24 hours, then refreshes', async () => {
-    const cachePath=join(realpathSync(mkdtempSync(join(tmpdir(),'golive-update-'))),'cache.json'); const calls: unknown[]=[];
+    const cachePath=join(tempDir(),'cache.json'); const calls: unknown[]=[];
     const opts={cachePath,fetcher:respond(manifest(),calls),now:100000000};
     expect((await checkForUpdate(current(),opts)).cached).toBe(false);
     expect((await checkForUpdate(current(),{...opts,now:100000001})).cached).toBe(true); expect(calls).toHaveLength(1);
@@ -43,11 +47,11 @@ describe('public update checks', () => {
     expect((await checkForUpdate(current(),{cachePath:false,fetcher:respond(m)})).status).toBe('unavailable');
   });
   it('does not follow or overwrite a cache symlink', async()=>{
-    const root=realpathSync(mkdtempSync(join(tmpdir(),'golive-update-'))); const victim=join(root,'private');writeFileSync(victim,'unchanged'); const cache=join(root,'cache');symlinkSync(victim,cache);
+    const root=tempDir(); const victim=join(root,'private');writeFileSync(victim,'unchanged'); const cache=join(root,'cache');symlinkSync(victim,cache);
     expect((await checkForUpdate(current(),{cachePath:cache,fetcher:respond(manifest())})).status).toBe('available'); expect(readFileSync(victim,'utf8')).toBe('unchanged');
   });
   it('does not follow symlinked cache parents', async()=>{
-    const root=realpathSync(mkdtempSync(join(tmpdir(),'golive-update-')));mkdirSync(join(root,'target'));symlinkSync(join(root,'target'),join(root,'link'));
+    const root=tempDir();mkdirSync(join(root,'target'));symlinkSync(join(root,'target'),join(root,'link'));
     expect((await checkForUpdate(current(),{cachePath:join(root,'link','cache'),fetcher:respond(manifest())})).status).toBe('available');
   });
   it('never suggests mutating a plugin via the own updater',async()=>{
