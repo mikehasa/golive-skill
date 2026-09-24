@@ -136,6 +136,17 @@ describe('native credential entry', () => {
     expect(mocked.script).toContain('buttons {"取消", "保存"}');
   });
 
+  it('names the exact variable in the title and describes which value belongs here', async () => {
+    expect((await promptCredential('PORKBUN_SECRET_API_KEY', { language: 'zh' })).status).toBe('saved');
+    expect(mocked.script).toContain('with title "GoLive — PORKBUN_SECRET_API_KEY"');
+    expect(mocked.script).toContain('不是 API Key');
+    expect((await promptCredential('PORKBUN_API_KEY', { language: 'en' })).status).toBe('saved');
+    expect(mocked.script).toContain('with title "GoLive — PORKBUN_API_KEY"');
+    expect(mocked.script).toContain('Not the Secret Key');
+    expect((await promptCredential('SOME_OTHER_TOKEN')).status).toBe('saved');
+    expect(mocked.script).toContain('the provider API key / access token'); // unknown names keep the generic description
+  });
+
   it.each([
     'literal"double\'single\\backslash#hash=equals', '  keep surrounding spaces  ',
     '中文 Unicode 🔑', '"already-quoted"', "'already-single-quoted'", '#starts-with-hash', 'a=b=c',

@@ -48,10 +48,12 @@ async function api(ctx: Ctx, method: 'GET' | 'POST', path: string, body?: Record
   const env = response.json;
   if (response.status < 200 || response.status >= 300 || env?.status !== 'SUCCESS') {
     const code = typeof env?.code === 'string' && /^[A-Z0-9_]+$/.test(env.code) ? env.code : undefined;
-    const hint = code === 'DOMAIN_NOT_ALLOWED' || code === 'IP_NOT_ALLOWED' || response.status === 403
-      ? ' Check the key domain/IP restrictions and this domain\'s API Access setting.'
-      : response.status === 429 ? ' Rate limited; wait and retry.'
-        : code?.startsWith('INVALID_API_KEYS') || code === 'API_KEY_REQUIRED' ? ` ${help()}` : '';
+    let hint = '';
+    if (code === 'DOMAIN_NOT_ALLOWED' || code === 'IP_NOT_ALLOWED' || response.status === 403) hint = ' Check the key domain/IP restrictions and this domain\'s API Access setting.';
+    else if (response.status === 429) hint = ' Rate limited; wait and retry.';
+    else if (code === 'INVALID_API_KEYS_002') hint = ' The key pair does not match (the provider reports this deliberately vaguely). Both values are shown at porkbun.com/account/api; re-enter the mistyped one with `credentials --prompt PORKBUN_SECRET_API_KEY --replace` if needed.';
+    else if (code === 'MISSING_SECRETAPIKEY') hint = ` The secret value is missing or misnamed; Porkbun needs both keys. ${help()}`;
+    else if (code?.startsWith('INVALID_API_KEYS') || code === 'API_KEY_REQUIRED') hint = ` ${help()}`;
     // Provider error bodies may echo credentials or record values. Only vetted codes are printable.
     throw new PorkbunError(`Porkbun request failed: HTTP ${response.status}${code ? ` (${code})` : ' (unexpected or unsuccessful response)'}.${hint}`, response.status, code);
   }

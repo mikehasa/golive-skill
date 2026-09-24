@@ -10133,22 +10133,46 @@ async function promptCredential(name3, options = {}) {
 function appleString(value) {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\r/g, "\\r").replace(/\n/g, "\\n")}"`;
 }
+var DESCRIPTIONS = {
+  PORKBUN_API_KEY: {
+    zh: "Porkbun \u7684 API Key\uFF08\u4EE5 pk1_ \u5F00\u5934\uFF09\u3002\u6CE8\u610F\uFF1A\u4E0D\u662F Secret Key\u3002",
+    en: 'the Porkbun API Key (starts with "pk1_"). Not the Secret Key.'
+  },
+  PORKBUN_SECRET_API_KEY: {
+    zh: "Porkbun \u7684 Secret Key\uFF08\u4EE5 sk1_ \u5F00\u5934\uFF09\u3002\u6CE8\u610F\uFF1A\u4E0D\u662F API Key\u2014\u2014\u4E24\u8005\u662F\u4E0D\u540C\u7684\u503C\u3002",
+    en: 'the Porkbun Secret Key (starts with "sk1_"). Not the API Key \u2014 they are different values.'
+  },
+  CLOUDFLARE_API_TOKEN: {
+    zh: 'Cloudflare API token\uFF08"Edit zone DNS" \u6A21\u677F + Zone:Zone:Read\uFF0C\u4EC5\u9650\u8BE5\u57DF\u540D\u7684 zone\uFF09\u3002',
+    en: `the Cloudflare API token ("Edit zone DNS" template plus Zone:Zone:Read, limited to this domain's zone).`
+  },
+  GODADDY_API_TOKEN: {
+    zh: "GoDaddy Personal Access Token\uFF08\u5728 developer.godaddy.com \u521B\u5EFA\uFF1B\u6743\u9650 domains.domain:read + domains.dns:update\uFF09\u3002",
+    en: "the GoDaddy Personal Access Token (from developer.godaddy.com; scopes domains.domain:read + domains.dns:update)."
+  }
+};
 function nativeAnswer(name3, path, language) {
   const zh = language === "zh";
-  const message = zh ? `\u8BF7\u8F93\u5165 ${name3} \u5BF9\u5E94\u7684\u670D\u52A1\u5546 API key / access token\u3002
-\u4E0D\u662F Mac \u767B\u5F55\u5BC6\u7801\uFF0C\u8BF7\u4E0D\u8981\u8F93\u5165\u7535\u8111\u5BC6\u7801\u3002
+  const known = DESCRIPTIONS[name3];
+  const what = known ? zh ? known.zh : known.en : zh ? "\u670D\u52A1\u5546 API key / access token" : "the provider API key / access token";
+  const message = zh ? `\u672C\u6B65\u9AA4\u8F93\u5165\uFF1A${what}
+\u53D8\u91CF\u540D\uFF1A${name3}
+
+\u8FD9\u4E0D\u662F Mac \u767B\u5F55\u5BC6\u7801\uFF0C\u8BF7\u4E0D\u8981\u8F93\u5165\u7535\u8111\u5BC6\u7801\u3002
 
 \u5C06\u4EE5\u660E\u6587\u4FDD\u5B58\u5230\u672C\u673A\u79C1\u6709\u6587\u4EF6\uFF08\u6743\u9650 0600\uFF09\uFF1A
 ${path}
 
-\u8F93\u5165\u503C\u4E0D\u4F1A\u8FD4\u56DE\u7ED9 agent \u804A\u5929\u6216\u547D\u4EE4\u8F93\u51FA\u3002\u4FDD\u5B58\u540E\u4ECD\u9700\u9A8C\u8BC1\u670D\u52A1\u5546\u6743\u9650\u3002` : `Enter the provider API key / access token for ${name3}.
+\u8F93\u5165\u503C\u4E0D\u4F1A\u8FD4\u56DE\u7ED9 agent \u804A\u5929\u6216\u547D\u4EE4\u8F93\u51FA\u3002\u4FDD\u5B58\u540E\u4ECD\u9700\u9A8C\u8BC1\u670D\u52A1\u5546\u6743\u9650\u3002` : `This step enters: ${what}
+Variable: ${name3}
+
 This is NOT your Mac login password. Do not enter your computer password.
 
 Saved as plaintext in this local private file (mode 0600):
 ${path}
 
 The value is not returned to agent chat or command output. Provider access still needs verification after saving.`;
-  const title = zh ? "GoLive \u2014 \u670D\u52A1\u5546 API key / token" : "GoLive \u2014 provider API key / token";
+  const title = `GoLive \u2014 ${name3}`;
   const buttons = zh ? ["\u53D6\u6D88", "\u4FDD\u5B58"] : ["Cancel", "Save"];
   const script = `set answer to display dialog ${appleString(message)} default answer "" with hidden answer buttons {${buttons.map(appleString).join(", ")}} default button 2 cancel button 1 with title ${appleString(title)} giving up after ${DIALOG_SECONDS}
 if gave up of answer then error number -1712
@@ -12206,7 +12230,12 @@ async function api4(ctx, method, path, body2) {
   const env = response.json;
   if (response.status < 200 || response.status >= 300 || env?.status !== "SUCCESS") {
     const code = typeof env?.code === "string" && /^[A-Z0-9_]+$/.test(env.code) ? env.code : void 0;
-    const hint = code === "DOMAIN_NOT_ALLOWED" || code === "IP_NOT_ALLOWED" || response.status === 403 ? " Check the key domain/IP restrictions and this domain's API Access setting." : response.status === 429 ? " Rate limited; wait and retry." : code?.startsWith("INVALID_API_KEYS") || code === "API_KEY_REQUIRED" ? ` ${help()}` : "";
+    let hint = "";
+    if (code === "DOMAIN_NOT_ALLOWED" || code === "IP_NOT_ALLOWED" || response.status === 403) hint = " Check the key domain/IP restrictions and this domain's API Access setting.";
+    else if (response.status === 429) hint = " Rate limited; wait and retry.";
+    else if (code === "INVALID_API_KEYS_002") hint = " The key pair does not match (the provider reports this deliberately vaguely). Both values are shown at porkbun.com/account/api; re-enter the mistyped one with `credentials --prompt PORKBUN_SECRET_API_KEY --replace` if needed.";
+    else if (code === "MISSING_SECRETAPIKEY") hint = ` The secret value is missing or misnamed; Porkbun needs both keys. ${help()}`;
+    else if (code?.startsWith("INVALID_API_KEYS") || code === "API_KEY_REQUIRED") hint = ` ${help()}`;
     throw new PorkbunError(`Porkbun request failed: HTTP ${response.status}${code ? ` (${code})` : " (unexpected or unsuccessful response)"}.${hint}`, response.status, code);
   }
   if (env.sandbox === true) throw new Error("Porkbun returned a sandbox response; simulated DNS cannot verify a live domain. Use a domain-scoped real key for this DNS adapter.");
