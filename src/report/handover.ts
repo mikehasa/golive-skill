@@ -124,6 +124,7 @@ export function renderHandover(doc: HandoverDoc): string {
   lines.push('## Retirement', '');
   lines.push('`golive teardown` lists exactly these resources and deletes only what golive provably created, under its own approval:', '');
   lines.push('_golive lists only what the inventory could read: a provider it cannot reach right now contributes no rows, and never a deletion it cannot do._', '');
+  lines.push('_A removal is reported as done only after re-reading the resource at its provider; fetching the URL proves nothing, because a CDN cache can keep answering after the resource is gone._', '');
   if (doc.retirement.length) {
     lines.push('| Resource | How it goes away | Removal |', '| --- | --- | --- |');
     for (const r of doc.retirement) lines.push(retirementLine(r));

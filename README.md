@@ -165,8 +165,12 @@ The lifecycle commands have their own evidence: `golive teardown` was live-exerc
 Netlify project (blocked without `--confirm-destroy`, then removed, the account's site list unchanged
 apart from it) and earlier runs removed the GoDaddy and Porkbun records golive had written, revoked the
 Resend sending keys it had issued and removed the Stripe test-mode endpoint it had registered.
-`golive status` ran read-only against a live project; `golive handoff --write` is implemented and
-mock-covered with no live row yet. See [observed validation](docs/VALIDATION.md) for the evidence.
+`golive status` ran read-only against a live project; `golive handoff --write` ran on a disposable
+Vercel-only fixture: both artifacts were written and audited (a provenance tag on every claim row, the
+ownership proof and the teardown gate named, no credential-shaped value in the document, its JSON twin,
+state or config), and the project was removed afterwards through the approved teardown flow — the stack
+was host-only, so the document's other-provider rows remain mock-covered. See
+[observed validation](docs/VALIDATION.md) for the evidence.
 
 Experimental adapters also exist for Supabase Auth configuration, the Supabase Auth signup journey and
 Cloudflare DNS. Supabase Auth settings — signup, email confirmation, minimum password length, the
