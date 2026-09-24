@@ -7672,15 +7672,15 @@ function parseConfig(text) {
     }
     cfg2.auth = auth8;
   }
-  const release = raw2.release;
-  if (release !== void 0) {
-    if (!release || typeof release !== "object" || Array.isArray(release)) throw new ConfigError(`${CONFIG_FILE}: release must be a mapping of opt-in release settings`);
-    for (const [key, value] of Object.entries(release)) {
+  const release2 = raw2.release;
+  if (release2 !== void 0) {
+    if (!release2 || typeof release2 !== "object" || Array.isArray(release2)) throw new ConfigError(`${CONFIG_FILE}: release must be a mapping of opt-in release settings`);
+    for (const [key, value] of Object.entries(release2)) {
       if (!Object.hasOwn(RELEASE_SETTINGS, key)) throw new ConfigError(`${CONFIG_FILE}: unknown release setting; expected ${Object.keys(RELEASE_SETTINGS).join(", ")} (no credentials)`);
       const problem = RELEASE_SETTINGS[key](value);
       if (problem) throw new ConfigError(`${CONFIG_FILE}: release.${key} ${problem}`);
     }
-    cfg2.release = release;
+    cfg2.release = release2;
   }
   const projects2 = raw2.projects;
   if (projects2) {
@@ -7727,7 +7727,9 @@ var init_config = __esm({
       isolationPath: (v) => typeof v === "string" && v.startsWith("/") ? null : `must be an app route starting with "/", e.g. "/api/notes" (that route returns the signed-in caller's OWN rows, and refuses without a session)`
     };
     RELEASE_SETTINGS = {
-      preview: (v) => typeof v === "boolean" ? null : "must be true or false"
+      preview: (v) => typeof v === "boolean" ? null : "must be true or false",
+      promote: (v) => typeof v === "boolean" ? null : "must be true or false",
+      rollback: (v) => typeof v === "boolean" ? null : "must be true or false"
     };
   }
 });
@@ -9727,9 +9729,9 @@ function verifyReleaseBundle(root) {
 function sameRelease(a, b) {
   return !!a && canonicalReleaseJson(a) === canonicalReleaseJson(b);
 }
-function assertReleaseSchemas(release) {
-  validateReleaseIdentity(release);
-  if (canonicalReleaseJson(release.schemas) !== canonicalReleaseJson(RELEASE_SCHEMAS)) throw new ReleaseIntegrityError("Unsupported release schemas. Use a compatible complete release; preserve app state and re-observe before planning.");
+function assertReleaseSchemas(release2) {
+  validateReleaseIdentity(release2);
+  if (canonicalReleaseJson(release2.schemas) !== canonicalReleaseJson(RELEASE_SCHEMAS)) throw new ReleaseIntegrityError("Unsupported release schemas. Use a compatible complete release; preserve app state and re-observe before planning.");
 }
 function loadRuntimeRelease(moduleUrl, invokedPath = process.argv[1]) {
   const path = fileURLToPath(moduleUrl);
@@ -10153,13 +10155,13 @@ var STATE_FILE = ".golive/state.json";
 function emptyState() {
   return { version: 1, resources: {}, secrets: {}, steps: {} };
 }
-function assertCompatibleState(state, release) {
-  assertReleaseSchemas(release);
-  if (state.version !== release.schemas.state) throw new Error(`${STATE_FILE}: incompatible state schema; preserve this file and use a compatible release before generating a new plan.`);
+function assertCompatibleState(state, release2) {
+  assertReleaseSchemas(release2);
+  if (state.version !== release2.schemas.state) throw new Error(`${STATE_FILE}: incompatible state schema; preserve this file and use a compatible release before generating a new plan.`);
   const identities2 = [state.release, ...Object.values(state.steps).map((r) => r.release)].filter((r) => r !== void 0);
   for (const prior of identities2) {
     validateReleaseIdentity(prior);
-    if (prior.name !== release.name || prior.source.repository !== release.source.repository || prior.schemas.config !== release.schemas.config || prior.schemas.state !== release.schemas.state || prior.schemas.approval !== release.schemas.approval) {
+    if (prior.name !== release2.name || prior.source.repository !== release2.source.repository || prior.schemas.config !== release2.schemas.config || prior.schemas.state !== release2.schemas.state || prior.schemas.approval !== release2.schemas.approval) {
       throw new Error(`${STATE_FILE}: incompatible release identity or schemas; preserve resource IDs, fingerprints and step evidence. Re-observe with a compatible release before planning; no automatic migration or write replay.`);
     }
   }
@@ -10251,9 +10253,9 @@ function mapEnv(refs) {
 
 // src/core/plan.ts
 import { createHash as createHash4 } from "node:crypto";
-function planId(steps, handoffs, release) {
+function planId(steps, handoffs, release2) {
   const canon = canonicalReleaseJson({
-    release,
+    release: release2,
     steps: steps.map((s) => ({ id: s.id, kind: s.kind, preview: s.preview, intent: s.intent ?? "", destination: s.destination, risk: s.risk, dependsOn: s.dependsOn })),
     handoffs: handoffs.map((h) => h.id)
   });
@@ -10413,15 +10415,66 @@ var redeployKey = (target) => `redeploy:${target}`;
 var deployedIdKey = (target) => `${deployedKey(target)}:id`;
 var DEPLOYED_KEY = deployedKey("production");
 var REDEPLOY_KEY = redeployKey("production");
+var DEPLOY_HISTORY_KEY = "deployed:history";
+var RELEASED_KEY = "deployed:release";
+var DEPLOY_HISTORY_LIMIT = 8;
 var DEPLOY_STEPS = ["deploy:production", "deploy:production:final", "preview:deploy"];
 function recordDeploy(ctx, provider, target, deployment) {
   ctx.state.save((s) => {
     const at = (/* @__PURE__ */ new Date()).toISOString();
     s.resources[deployedKey(target)] = at;
     delete s.resources[redeployKey(target)];
-    if (deployment.id) s.resources[deployedIdKey(target)] = [provider, deployment.id, deployment.url, at].join("|");
-    else delete s.resources[deployedIdKey(target)];
+    if (deployment.id) {
+      s.resources[deployedIdKey(target)] = [provider, deployment.id, deployment.url, at].join("|");
+      s.resources[DEPLOY_HISTORY_KEY] = withHistory(s.resources[DEPLOY_HISTORY_KEY], { target, provider, id: deployment.id, url: deployment.url, at, production: target === "production" });
+    } else delete s.resources[deployedIdKey(target)];
   });
+}
+function parseHistory(raw2) {
+  if (!raw2) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(raw2);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((e) => {
+    const r = e;
+    if (!r || typeof r !== "object") return false;
+    if (r.target !== "preview" && r.target !== "production") return false;
+    return typeof r.provider === "string" && typeof r.id === "string" && typeof r.url === "string" && typeof r.at === "string" && typeof r.production === "boolean";
+  });
+}
+function withHistory(raw2, entry) {
+  const previous = parseHistory(raw2);
+  const rest = previous.filter((e) => !(e.provider === entry.provider && e.id === entry.id));
+  const production = entry.production || previous.some((e) => e.provider === entry.provider && e.id === entry.id && e.production);
+  return JSON.stringify([{ ...entry, production }, ...rest].slice(0, DEPLOY_HISTORY_LIMIT));
+}
+function readDeployHistory(ctx) {
+  return parseHistory(ctx.state.resource(DEPLOY_HISTORY_KEY));
+}
+function previousProductionDeploy(history, prod) {
+  const at = history.findIndex((e) => e.provider === prod.provider && e.id === prod.id);
+  const rest = at >= 0 ? history.slice(at + 1) : history.filter((e) => !(e.provider === prod.provider && e.id === prod.id));
+  return rest.find((e) => e.production && e.provider === prod.provider) ?? null;
+}
+function recordRelease(ctx, release2) {
+  ctx.state.save((s) => {
+    const at = (/* @__PURE__ */ new Date()).toISOString();
+    s.resources[RELEASED_KEY] = [release2.kind, release2.provider, release2.id, release2.url, release2.displaced ?? "", at].join("|");
+    s.resources[DEPLOYED_KEY] = at;
+    s.resources[deployedIdKey("production")] = [release2.provider, release2.id, release2.url, at].join("|");
+    s.resources[DEPLOY_HISTORY_KEY] = withHistory(s.resources[DEPLOY_HISTORY_KEY], { target: release2.target, provider: release2.provider, id: release2.id, url: release2.url, at, production: true });
+  });
+}
+function readRelease(ctx) {
+  const raw2 = ctx.state.resource(RELEASED_KEY);
+  if (!raw2) return null;
+  const [kind, provider, id2, url, displaced, at] = raw2.split("|");
+  if (kind !== "promote" && kind !== "rollback" || !provider || !id2 || !url || !at) return null;
+  return { kind, provider, id: id2, url, displaced: displaced || null, at };
 }
 function lastDeployAt(ctx) {
   const at = ctx.state.resource(DEPLOYED_KEY);
@@ -12672,7 +12725,7 @@ function releaseItems(ctx, at, c, plan) {
     c.items.push(failedStepItem(ctx, at, id2, rec, plan));
   }
 }
-var releaseName = (release) => release ? `${release.version}${release.source.ref ? ` ${release.source.ref}` : ""} (bundle ${release.bundleDigest.slice(0, 8)})` : "an unknown release (state written before golive recorded release identities)";
+var releaseName = (release2) => release2 ? `${release2.version}${release2.source.ref ? ` ${release2.source.ref}` : ""} (bundle ${release2.bundleDigest.slice(0, 8)})` : "an unknown release (state written before golive recorded release identities)";
 var resumableNote = (step2) => {
   if (!step2) return null;
   if (step2.risk.destroy) return "this is a destruction step: a deletion re-checks ownership and is idempotent, so a newer release resumes it";
@@ -13992,6 +14045,10 @@ var vercelAdapter = {
     url: vercelUrl,
     deploy: vercelDeploy,
     domain: vercelDomain
+    // No `release` capability: this adapter has no read of which deployment production currently
+    // serves (only aliases, which a promotion cannot be proven against) and no promote/rollback call
+    // golive has exercised, so promotion and rollback are refused/skipped with that reason rather than
+    // acting blind — see docs/PROVIDERS.md.
   }
 };
 
@@ -16025,6 +16082,49 @@ var deploy = {
     return { url: d.url, id: d.id };
   }
 };
+async function readDeployment(ctx, site, deployId) {
+  let raw2;
+  try {
+    raw2 = object3(await netlifyHttp(ctx, "GET", `/sites/${encodeURIComponent(site.id)}/deploys/${encodeURIComponent(identifier(deployId))}`));
+  } catch (e) {
+    if (e instanceof NetlifyError && e.status === 404) return null;
+    throw e;
+  }
+  if (raw2.id !== deployId || raw2.site_id !== site.id) throw new NetlifyError("Netlify returned a different deployment than the one asked about; re-plan before any write.");
+  return {
+    id: deployId,
+    url: publicOrigin(raw2.deploy_ssl_url),
+    ready: raw2.state === "ready",
+    ...typeof raw2.created_at === "string" ? { createdAt: raw2.created_at } : {}
+  };
+}
+var release = {
+  /** What Netlify publishes for the linked site; null = it reports no published deployment. */
+  async production(ctx) {
+    const site = await requireSite(ctx);
+    if (!site.publishedId) return null;
+    const deploy2 = await readDeployment(ctx, site, site.publishedId);
+    return deploy2 ? { ...deploy2, url: deploy2.url ?? site.sslUrl } : null;
+  },
+  async read(ctx, id2) {
+    const site = await requireSite(ctx);
+    return readDeployment(ctx, site, id2);
+  },
+  /**
+   * Restore one existing deploy of this site as the live one. Re-reads it first, and the caller
+   * re-reads production afterwards (that read, not this response, is what proves the switch).
+   */
+  async promote(ctx, id2) {
+    const session2 = await cliSession(ctx);
+    if (!session2.ok) throw new NetlifyError(session2.howToFix);
+    await netlifyCredential(ctx);
+    const site = await requireSite(ctx);
+    const deploy2 = await readDeployment(ctx, site, id2);
+    if (!deploy2) throw new NetlifyError(`Netlify no longer has deployment ${id2}; nothing was restored.`);
+    if (!deploy2.ready) throw new NetlifyError(`Netlify reports deployment ${id2} as not ready, so it cannot serve production; nothing was restored.`);
+    await netlifyHttp(ctx, "POST", `/sites/${encodeURIComponent(site.id)}/deploys/${encodeURIComponent(identifier(id2))}/restore`);
+  }
+};
 var netlifyAdapter = {
   id: "netlify",
   title: "Netlify",
@@ -16041,7 +16141,7 @@ var netlifyAdapter = {
       return { ok: false, howToFix: e instanceof NetlifyError ? e.message : "Netlify account access could not be verified safely. Check the CLI/network, then retry doctor or plan. No provider output was logged." };
     }
   },
-  capabilities: { project: netlifyProject, env: netlifyEnv, url: netlifyUrl, deploy }
+  capabilities: { project: netlifyProject, env: netlifyEnv, url: netlifyUrl, deploy, release }
 };
 
 // src/adapters/neon.ts
@@ -18165,6 +18265,12 @@ var previewDeployCheck = {
     const where = `${recorded.provider} deployment ${recorded.id}`;
     const recordedAt2 = `recorded by golive ${recorded.at} (${deployedIdKey(TARGET)})`;
     const prod = recordedProductionUrl(ctx);
+    const released = readRelease(ctx);
+    if (released && released.id === recorded.id) {
+      return skip(
+        `golive ${released.kind === "rollback" ? "rolled production back to" : "promoted"} ${where} (${released.at}), so what the preview target records is now what production serves: there is no unreleased preview to gate. Deploy a new preview (the preview:deploy step) to have something to check.`
+      );
+    }
     if (prod && recorded.url === prod) {
       return result(
         "fail",
@@ -18227,14 +18333,102 @@ var previewBundleCheck = {
     };
   }
 };
+var productionReleaseCheck = {
+  id: "production-release",
+  title: "Production serves the deployment golive promoted or rolled back to",
+  severity: "high",
+  // Applies whenever a release is possible or recorded: after the opt-in is removed (the docs tell the
+  // human to remove it when they do not want another release planned) a recorded release stays
+  // verifiable, because the check only re-reads what golive already did.
+  applies: (ctx) => Boolean(ctx.config.stack.hosting) && (ctx.config.release?.promote === true || ctx.config.release?.rollback === true || readRelease(ctx) !== null),
+  async run(ctx) {
+    const released = readRelease(ctx);
+    if (!released) {
+      return skip("golive has not promoted or rolled back a deployment for this app (no deployed:release in .golive/state.json), so there is no release to confirm: what production serves was not pointed there by golive");
+    }
+    const provider = ctx.config.stack.hosting;
+    const what = released.kind === "rollback" ? "rolled production back to" : "promoted to production";
+    const where = `${released.provider} deployment ${released.id}`;
+    const recordedAt2 = `recorded by golive ${released.at} (deployed:release)`;
+    if (!provider) return skip("no hosting provider is chosen");
+    if (released.provider !== provider) {
+      return skip(`the recorded release belongs to ${released.provider}, not to the chosen hosting provider (${provider})`);
+    }
+    const release2 = cap(ctx, "hosting", "release");
+    if (!release2) {
+      return skip(
+        `hosting provider ${provider} exposes no read of what production serves, so the deployment golive ${what} (${where}) cannot be confirmed by golive \u2014 check production in ${provider}'s own dashboard or CLI; this is not a pass`
+      );
+    }
+    const pre = await prereq(ctx, "hosting");
+    if (pre) return pre;
+    let served;
+    try {
+      served = await release2.production(ctx);
+    } catch (e) {
+      return result("warn", "medium", [`could not read what ${provider} serves as production: ${errMsg2(e)}`, recordedAt2], "Check the hosting login with `golive doctor`, then re-run verify.");
+    }
+    const before = released.displaced ? `golive recorded ${released.displaced} as what production served before it` : "golive recorded no production deployment before it";
+    if (!served) {
+      return skip(`no ${provider} read confirms what production serves: this adapter reports no production deployment, so the deployment golive ${what} (${where}) is unverified \u2014 ${before}`);
+    }
+    if (served.id === released.id) {
+      return pass([
+        `${where} (${served.url ?? released.url}) is what ${provider} reports for production now`,
+        `golive ${what} it, and both the deployment and what production serves were re-read from ${provider} before and after that write`,
+        ...served.ready ? [] : [`${provider} does not report that deployment as ready, which is worth checking in its own dashboard`],
+        before,
+        recordedAt2
+      ]);
+    }
+    const known = readDeployHistory(ctx).find((e) => e.provider === released.provider && e.id === served.id);
+    if (known) {
+      return result(
+        "fail",
+        "high",
+        [
+          `${provider} reports ${served.id} (${served.url ?? "no URL reported"}) as what production serves, while golive ${what} ${released.id} (${where})`,
+          `${served.id} is in golive's own record too, so production moved after that release \u2014 something else re-pointed it`,
+          before,
+          recordedAt2
+        ],
+        `Run \`golive plan\` and apply the release step it shows (a promotion or a rollback names the exact deployment), or roll back with release.rollback if an earlier deployment should be live.`
+      );
+    }
+    return result(
+      "warn",
+      "medium",
+      [
+        `${provider} reports ${served.id} (${served.url ?? "no URL reported"}) as what production serves, and golive never recorded that deployment: it was built by ${provider}'s dashboard, a Git push or a pull request, not by an approved golive step`,
+        `the deployment golive ${what} (${where}) is therefore not what production serves now`,
+        before,
+        recordedAt2
+      ],
+      `Confirm ${served.id} in ${provider}'s own dashboard or CLI, then re-plan if production should serve a deployment golive created. golive promotes and rolls back only deployments it recorded and does not touch one it did not create.`
+    );
+  }
+};
 
 // src/links/release.ts
 var DEPLOY_STEP = "preview:deploy";
 var CHECK_STEP = "release:check";
+var PROMOTE_STEP = "promote:production";
+var ROLLBACK_STEP = "release:rollback";
 var releaseLink = {
   id: "release",
   async plan(ctx) {
-    if (ctx.config.release?.preview !== true) return null;
+    const release2 = ctx.config.release;
+    const preview = release2?.preview === true;
+    const promote = release2?.promote === true;
+    const rollback = release2?.rollback === true;
+    if (!preview && !promote && !rollback) return null;
+    if (promote && rollback) {
+      return { steps: [], handoffs: [], warnings: ["release.promote and release.rollback are both set: golive will not plan a release and a rollback of the same app in one plan \u2014 keep one of them in golive.yaml, then re-plan"] };
+    }
+    if (rollback) return rollbackPlan(ctx);
+    if (promote && !preview) {
+      return { steps: [], handoffs: [], warnings: ["release.promote is set, but release.preview is not: golive promotes a preview deployment it deployed and checked, and nothing else \u2014 set release.preview: true too, then re-plan"] };
+    }
     if (!ctx.config.targets.includes("preview")) {
       return { steps: [], handoffs: [], warnings: ["release.preview is set, but `targets` in golive.yaml does not manage preview: no preview deployment is planned"] };
     }
@@ -18244,14 +18438,40 @@ var releaseLink = {
     }
     const m = memo(ctx);
     const env = m.steps.get("env:preview");
-    const steps = ctx.state.get().steps;
     const previous = readRecordedDeploy(ctx, "preview");
+    const production = readRecordedDeploy(ctx, "production");
+    const warnings = [];
+    const rel = promote ? await ready(ctx, "hosting", "release") : void 0;
+    if (promote && !rel) {
+      warnings.push(`release.promote is set, but golive cannot re-point production on ${ctx.config.stack.hosting ?? "the chosen hosting provider"}: the host is guided, not logged in, or exposes no release capability (a read of what production serves plus a re-point call) \u2014 no promotion is planned`);
+    }
+    if (rel && promote && previous && previous.provider === h.adapter.id && production?.id !== previous.id && !env) {
+      const check2 = checkStep(ctx, h.adapter, {
+        deploy: null,
+        coveredId: `${previous.provider}|${previous.id}`,
+        covers: `the preview deployment golive recorded (${previous.provider} ${previous.id}, ${previous.url}, recorded ${previous.at})`,
+        project: await projectLabel(ctx, h.adapter),
+        promotes: true
+      });
+      track(ctx, [check2]);
+      const promotion = promoteStep(ctx, h.adapter, {
+        target: previous,
+        built: builtForDeployment(ctx, previous),
+        production,
+        checkedAt: ctx.state.get().steps[CHECK_STEP]?.status === "done" ? ctx.state.get().steps[CHECK_STEP].at : void 0,
+        checkIntent: check2.intent ?? "",
+        project: await projectLabel(ctx, h.adapter)
+      });
+      return { steps: track(ctx, [check2, promotion]), handoffs: [], warnings };
+    }
+    const steps = ctx.state.get().steps;
     const reasons = [];
     if (env) reasons.push(`the preview env changes in this plan (${env.id}) and only reaches a new deployment`);
     if (steps[DEPLOY_STEP]?.status === "failed") reasons.push(`the last preview deploy failed (${steps[DEPLOY_STEP].at})`);
     if (steps[CHECK_STEP]?.status === "failed") reasons.push(`the last release check failed (${steps[CHECK_STEP].at}); a new preview gets a fresh check`);
     if (!previous) reasons.push("golive has never deployed a preview for this app");
-    if (!reasons.length) return null;
+    if (rel) reasons.push(`release.promote is set: golive releases by promoting a checked preview, so this plan deploys and checks the preview that the next approved plan promotes to production`);
+    if (!reasons.length) return warnings.length ? { steps: [], handoffs: [], warnings } : null;
     const live = livePreviewNames(ctx, [...m.steps.values()]);
     const intent = intentOf({
       project: await projectIntent(ctx, h.adapter),
@@ -18259,11 +18479,40 @@ var releaseLink = {
       live: live.join(","),
       previous: previous?.at
     });
-    const deploy2 = await deployStep(ctx, h.adapter, h.cap, { reasons, intent, live, previous });
-    const check = checkStep(ctx, h.adapter, { intent, project: await projectLabel(ctx, h.adapter) });
-    return { steps: track(ctx, [deploy2, check]), handoffs: [] };
+    const deploy2 = await deployStep(ctx, h.adapter, h.cap, { reasons, intent, live, previous, promotes: Boolean(rel) });
+    track(ctx, [deploy2]);
+    const check = checkStep(ctx, h.adapter, {
+      deploy: intent,
+      coveredId: "this-plan",
+      covers: `the preview deployment ${DEPLOY_STEP} records`,
+      project: await projectLabel(ctx, h.adapter),
+      promotes: Boolean(rel)
+    });
+    return { steps: track(ctx, [deploy2, check]), handoffs: [], warnings };
   }
 };
+async function rollbackPlan(ctx) {
+  const none = (why) => ({ steps: [], handoffs: [], warnings: [why] });
+  if (!ctx.config.targets.includes("production")) return none("release.rollback is set, but `targets` in golive.yaml does not manage production: no rollback is planned");
+  const h = await ready(ctx, "hosting", "release");
+  if (!h) {
+    return none(`release.rollback is set, but golive cannot re-point production on ${ctx.config.stack.hosting ?? "the chosen hosting provider"}: the host is guided, not logged in, or exposes no release capability (a read of what production serves plus a re-point call)`);
+  }
+  const prod = readRecordedDeploy(ctx, "production");
+  if (!prod || prod.provider !== h.adapter.id) {
+    return none(`release.rollback is set, but golive has no production deployment recorded on ${h.adapter.title}: a rollback only ever re-points production at a deployment golive itself made and recorded`);
+  }
+  const history = readDeployHistory(ctx);
+  const target = previousProductionDeploy(history, prod);
+  if (!target) {
+    return none(`release.rollback is set, but golive's record of its own deployments (deployed:history, the last ${history.length}) holds no earlier production deployment to go back to`);
+  }
+  const released = readRelease(ctx);
+  if (released?.kind === "rollback" && released.displaced === target.id) {
+    return none(`golive already rolled production back to ${released.id} at ${released.at}; it will not roll forward to ${target.id} on its own \u2014 review production in ${h.adapter.title}, then re-plan without release.rollback if nothing is needed`);
+  }
+  return { steps: track(ctx, [await rollbackStep(ctx, h.adapter, { target, prod })]), handoffs: [], warnings: [] };
+}
 async function deployStep(ctx, adapter, deploy2, facts) {
   const { reasons, intent, live, previous } = facts;
   return step({
@@ -18281,7 +18530,8 @@ async function deployStep(ctx, adapter, deploy2, facts) {
       `data: ${await sourceLine(ctx)}`,
       `preview URL: ${adapter.title} reports this deployment's own URL and id, which golive records under deployed:preview:id${previous ? `; the preview it recorded before: ${previous.url} (${previous.at})` : " (golive has not deployed a preview yet)"}`,
       ...live.length ? [`live-mode values behind preview env names (${live.join(", ")}): a preview built with them can reach live payments or live data, so approving this deploy needs --confirm-live`] : [],
-      "nothing is promoted: this deploys a preview and checks it, and production is unchanged \u2014 golive never replays or replaces a preview"
+      ...facts.promotes ? [`release.promote is set: the deployment this plan records and checks is the candidate the next approved plan promotes to production \u2014 golive names one exact deployment id there, and the provider reports that id only once this deploy has made it`] : [],
+      facts.promotes ? "nothing is promoted by this step: the next approved plan promotes the deployment this one records, and until then production is unchanged \u2014 golive never replays or replaces a preview" : "nothing is promoted: this deploys a preview and checks it, and production is unchanged \u2014 golive never replays or replaces a preview"
     ],
     intent,
     verifyWith: [previewDeployCheck.id],
@@ -18299,20 +18549,127 @@ function checkStep(ctx, adapter, facts) {
     title: `Release check for the preview deployment on ${adapter.title}`,
     kind: "wire",
     risk: { writes: false },
-    dependsOn: deps(ctx, [DEPLOY_STEP]),
+    dependsOn: facts.deploy ? deps(ctx, [DEPLOY_STEP]) : deps(ctx, ["project:hosting"]),
     preview: [
-      `check the preview deployment ${DEPLOY_STEP} records on ${adapter.title} (${facts.project}) without writing anything: the provider's own read (it exists, is ready, belongs to the project golive links, and is not the production deployment) and a scan of the HTML/JavaScript it serves for known credential patterns`,
+      `check ${facts.covers} on ${adapter.title} (${facts.project}) without writing anything: the provider's own read (it exists, is ready, belongs to the project golive links, and is not the production deployment) and a scan of the HTML/JavaScript it serves for known credential patterns`,
+      ...facts.promotes ? [`this check gates ${PROMOTE_STEP} in this plan: it re-reads the exact deployment that step would make production, before production changes`] : [],
       ...prev ? [`previous release check: ${prev.at}`] : [],
-      "a failing check fails this step and stops the plan: that is the gate. Promoting a checked preview to production is not part of this plan"
+      facts.promotes ? `a failing check fails this step and stops the plan before ${PROMOTE_STEP}: that is the gate, and production stays as it is` : "a failing check fails this step and stops the plan: that is the gate"
     ],
-    intent: intentOf({ deploy: facts.intent, previous: prev?.at }),
+    intent: intentOf({ deploy: facts.deploy ?? "", covered: facts.coveredId, previous: prev?.at }),
     async run() {
       return { changes: ["no writes: the checks re-read the preview deployment the provider reports and scan what it serves"] };
     },
     // The runner fails this step on any `fail` result here (skips and warns do not fail it), which is
-    // what stops the plan before any promotion: a promotion step would depend on release:check.
+    // what stops the plan before any promotion: `promote:production` depends on this step.
     verifyInline: async (vctx) => await Promise.all([runCheck(vctx, previewDeployCheck), runCheck(vctx, previewBundleCheck)])
   });
+}
+function promoteStep(ctx, adapter, facts) {
+  const { target, built, production } = facts;
+  return step({
+    id: PROMOTE_STEP,
+    title: `Promote the checked preview deployment to production on ${adapter.title}`,
+    kind: "deploy",
+    // A production re-point: a real write, no extra category flag (the plan names the exact deployment
+    // and depends on the gate), never `replayable` and never a deletion.
+    risk: { writes: true },
+    dependsOn: deps(ctx, [CHECK_STEP, "project:hosting"]),
+    preview: [
+      `promote ${target.provider} deployment ${target.id} to production: ${target.url} (recorded by golive ${target.at}) becomes what ${adapter.title} serves publicly`,
+      `project: ${facts.project}`,
+      `that deployment was built for the ${built} env target and keeps the env it was built with: a promotion re-points production, it does not rebuild or rewrite anything`,
+      `production before this promotion: ${production ? `${production.provider} deployment ${production.id} (${production.url}, recorded by golive ${production.at})` : "golive recorded no production deployment; this step reads what the provider says it serves now"}`,
+      `gated by ${CHECK_STEP} in this plan: the provider's own read of that exact deployment and a credential scan of the HTML/JavaScript it serves${facts.checkedAt ? ` (golive's last release check ran ${facts.checkedAt})` : ""} \u2014 a failing check fails that step and stops the plan before production changes`,
+      `before writing, this step re-reads the deployment and what ${adapter.title} serves as production; after writing it re-reads production and records what it serves now (check ${productionReleaseCheck.id})`,
+      `production will change: the app's production URL is served by that deployment. No data, DNS, payments or email is touched, and no new deployment is built`,
+      `golive promotes only a deployment it created and recorded: one ${adapter.title} built from a Git push, a pull request or its dashboard is not in golive's record and stays with that provider`
+    ],
+    intent: intentOf({
+      release: "promote",
+      target: `${target.provider}|${target.id}`,
+      production: production ? `${production.provider}|${production.id}` : "none",
+      check: facts.checkIntent
+    }),
+    verifyWith: [productionReleaseCheck.id],
+    run: releaseRun("promote", adapter, { provider: target.provider, id: target.id, url: target.url, built, at: target.at })
+  });
+}
+async function rollbackStep(ctx, adapter, facts) {
+  const { target, prod } = facts;
+  return step({
+    id: ROLLBACK_STEP,
+    title: `Roll production back on ${adapter.title}`,
+    kind: "deploy",
+    risk: { writes: true },
+    dependsOn: deps(ctx, ["project:hosting"]),
+    preview: [
+      `roll production back to ${target.provider} deployment ${target.id}: ${target.url} (built for the ${target.target} env target, recorded by golive ${target.at}) becomes what ${adapter.title} serves again`,
+      `project: ${await projectLabel(ctx, adapter)}`,
+      `production now serves ${prod.provider} deployment ${prod.id} (${prod.url}, recorded by golive ${prod.at}) \u2014 this rollback replaces it`,
+      `the target comes from golive's own record (deployed:history): golive rolls production back only to a deployment it created and recorded, and a deployment from a dashboard, a Git push or a pull request is never a target`,
+      `before writing, this step re-reads that deployment and what ${adapter.title} serves as production; after writing it re-reads production and records what it serves now (check ${productionReleaseCheck.id}). Nothing is rebuilt, no env is rewritten and nothing is deleted \u2014 a rollback re-points production`,
+      `production will change: the app's production URL serves an earlier deployment again. No data, DNS, payments or email is touched`,
+      `this step is a production re-point, so it is neither replayable nor a deletion: if its record belongs to an older release, apply refuses to resume it instead of re-pointing production from a stale approval`,
+      `never automatic: golive plans a rollback only while release.rollback is set, and only an approved plan run performs one \u2014 a failed check never triggers a rollback`
+    ],
+    intent: intentOf({ release: "rollback", target: `${target.provider}|${target.id}`, production: `${prod.provider}|${prod.id}` }),
+    verifyWith: [productionReleaseCheck.id],
+    run: releaseRun("rollback", adapter, { provider: target.provider, id: target.id, url: target.url, built: target.target, at: target.at })
+  });
+}
+var shortId = (provider, id2) => `${provider} ${id2}`;
+function releaseRun(kind, adapter, target) {
+  const verb = kind === "promote" ? "promote" : "roll";
+  const done = kind === "promote" ? "promoted" : "rolled production back to";
+  return async (sctx) => {
+    const host = cap(sctx, "hosting", "release");
+    if (!host) {
+      throw new Error(`${adapter.title} exposes no release capability here: golive cannot re-read what production serves or point it at a deployment, so it will not ${verb} blind.`);
+    }
+    if (!host.promote) {
+      throw new Error(`${adapter.title} can read its deployments but exposes no call to point production at one, so golive cannot ${verb}: nothing was written.`);
+    }
+    const deployment = await host.read(sctx, target.id);
+    if (!deployment) {
+      throw new Error(`${adapter.title} no longer has deployment ${shortId(target.provider, target.id)} (${target.url}), so there is nothing to ${verb}: nothing was written. Re-plan for a deployment the provider still serves.`);
+    }
+    if (deployment.id !== target.id) {
+      throw new Error(`${adapter.title} answered with deployment ${deployment.id} instead of ${target.id}; golive will not ${verb} a deployment the approval did not name. Nothing was written.`);
+    }
+    if (!deployment.ready) {
+      throw new Error(`${adapter.title} reports deployment ${deployment.id} as not ready, so it cannot serve production: nothing was written.`);
+    }
+    const before = await host.production(sctx);
+    if (!before) {
+      throw new Error(`${adapter.title} reports no deployment for production, so golive cannot read what this ${verb} would replace: nothing was written. Deploy production first (the deploy:production step), then re-plan.`);
+    }
+    if (before.id === deployment.id) {
+      return { changes: [`${adapter.title} already serves deployment ${deployment.id} as production (read again now); nothing was written${kind === "rollback" ? " \u2014 production is already where this rollback would put it" : ""}`] };
+    }
+    await host.promote(sctx, deployment.id);
+    const after = await host.production(sctx);
+    if (!after || after.id !== deployment.id) {
+      throw new Error(`${adapter.title} did not report deployment ${deployment.id} as what production serves after the write (it reports ${after ? after.id : "no deployment"}); golive recorded nothing and will not repeat the write blindly \u2014 check ${adapter.title}'s dashboard before re-running.`);
+    }
+    recordRelease(sctx, {
+      kind,
+      provider: adapter.id,
+      id: deployment.id,
+      url: after.url ?? target.url,
+      target: target.built,
+      displaced: before.id
+    });
+    return {
+      changes: [
+        `${done} ${shortId(adapter.id, deployment.id)} as production: ${after.url ?? target.url}`,
+        `${adapter.title} reported production serving ${before.id} before the write and ${after.id} after it`
+      ]
+    };
+  };
+}
+function builtForDeployment(ctx, deployment) {
+  return readDeployHistory(ctx).find((e) => e.provider === deployment.provider && e.id === deployment.id)?.target ?? "preview";
 }
 async function projectLabel(ctx, adapter) {
   const linker = adapter.capabilities.project;
@@ -19935,7 +20292,8 @@ var ALL_CHECKS = [
   emailDnsCheck,
   emailVerifiedCheck,
   previewDeployCheck,
-  previewBundleCheck
+  previewBundleCheck,
+  productionReleaseCheck
 ];
 
 // src/checks/index.ts
@@ -21785,20 +22143,20 @@ async function main(argv) {
   const { cmd, flags } = parseArgs(argv);
   const json2 = flags.json === true;
   const cwd = resolve8(typeof flags.cwd === "string" ? flags.cwd : process.cwd());
-  const release = loadRuntimeRelease(import.meta.url);
+  const release2 = loadRuntimeRelease(import.meta.url);
   if (cmd === "help" || flags.help) {
     process.stdout.write(HELP);
     return 0;
   }
   if (cmd === "version") {
-    emit({ version: VERSION, release }, { json: json2 });
+    emit({ version: VERSION, release: release2 }, { json: json2 });
     return 0;
   }
   if (cmd === "update-check") {
     const modulePath = fileURLToPath2(import.meta.url);
     const bundleRoot = basename11(modulePath) === "cli.ts" ? resolve8(dirname9(modulePath), "../skills/golive") : resolve8(dirname9(modulePath), "..");
     const ownership = statusForBundle(bundleRoot);
-    emit(await checkForUpdate(release, { ownership, disabled: flags.offline === true || process.env.GOLIVE_UPDATE_CHECK === "0", ...flags["no-cache"] === true ? { cachePath: false } : {} }), { json: json2 });
+    emit(await checkForUpdate(release2, { ownership, disabled: flags.offline === true || process.env.GOLIVE_UPDATE_CHECK === "0", ...flags["no-cache"] === true ? { cachePath: false } : {} }), { json: json2 });
     return 0;
   }
   if (cmd === "credentials") {
@@ -21835,7 +22193,7 @@ async function main(argv) {
   }
   const config = loadConfig(cwd);
   if (!config) throw new UsageError("no golive.yaml yet \u2014 run `detect`, pick providers with the human, then `init --stack ...`");
-  const ctx = createCtx({ cwd, exec, http: createHttp(), log: logger, config, state: fileStateStore(cwd), detect: d, adapters: ADAPTERS, release });
+  const ctx = createCtx({ cwd, exec, http: createHttp(), log: logger, config, state: fileStateStore(cwd), detect: d, adapters: ADAPTERS, release: release2 });
   if (config.domain) allowHost(config.domain), allowHost(`www.${config.domain}`);
   switch (cmd) {
     case "doctor": {

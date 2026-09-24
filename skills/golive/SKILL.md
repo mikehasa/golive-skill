@@ -253,10 +253,34 @@ Explain the steps by provider, in plain language, and call out:
   provider's own deployment id, and that `needs` includes `--confirm-live` when a live-mode value fills
   a preview env name. `release:check` writes nothing; it re-reads that deployment from the provider and
   scans the HTML/JavaScript it serves, and **fails the plan** when either fails — that failure is the
-  gate, and nothing is promoted to production. A host with no per-deployment preview read (Vercel)
+  gate, and nothing is promoted by those two steps. A host with no per-deployment preview read (Vercel)
   makes both checks skip: say that the preview is unverified rather than implying it passed, and point
   the human at the provider's own dashboard or CLI. These steps are new step ids, so a plan approved
   before the opt-in no longer matches: re-plan and get a fresh approval.
+- `promote:production` / `release:rollback`: only with their own opt-ins (`release.promote: true` on
+  top of the preview opt-in, or `release.rollback: true` on its own; both set means golive plans
+  neither and says why). Say plainly, in the human's language:
+  - A promotion **re-points production at the preview deployment golive deployed and recorded** — the
+    plan names that exact deployment id, URL and the env target it was built with, and what production
+    serves before it. It needs **no additional confirmation flag**: the plan id, the named deployment
+    and `release:check` in the same plan (re-read from the provider, bundle scanned) are the approval.
+    A failing check stops the plan before production changes.
+  - Because the provider reports a deployment's id only once the deployment exists, a promotion is one
+    of two halves and the preview says which: **cut** (`preview:deploy` + `release:check`, a new
+    candidate) or **release** (`release:check` + `promote:production`). While `release.promote` is set,
+    every plan asks for a release: run the plan the human actually asked for, and after a release tell
+    them the flag is a standing request — remove it (or set it to `false`) when they do not want
+    another release planned. Do not loop `plan`/`apply` for it.
+  - A rollback **re-points production at an earlier deployment golive itself created and recorded**
+    (`deployed:history`); it is never automatic, never deletes anything, and only an approved plan run
+    performs one. Once golive has rolled production back it reports that instead of planning the same
+    rollback again. A deployment built by the provider's dashboard, a Git push or a pull request is
+    never a promotion or rollback target: that stays with the human and their provider.
+  - Both steps re-read the target deployment and what production serves **before** writing and prove
+    what production serves **after**; a host that cannot answer those reads (Vercel has no
+    production-deployment read) makes golive plan no promotion/rollback and say so. Treat promotion and
+    rollback as **implemented and mock-covered, not live-validated**, and never describe them as
+    verified on the human's own project until a report says so.
 - `warnings` and `findings`, and `unmappedEnv`: env names golive can't fill (e.g. `OPENAI_API_KEY`).
   The human types those into the host's dashboard. Never ask for the value.
 
@@ -288,7 +312,9 @@ says the records the host requires changed since approval, run `plan` again and 
 `release:check` failed, fix the cause and run `plan` + `apply` again: a failed gate makes the next plan
 deploy a fresh preview of whatever was fixed and check that deployment. The two release checks can also
 be re-run against the current preview with `verify --only preview-deploy,preview-bundle`, whose result
-is evidence, not a new gate.
+is evidence, not a new gate. A `promote:production` or `release:rollback` step in the plan is applied
+the same way — one approved plan, and its own `run` re-reads both sides around the write — and it needs
+no extra confirmation flag: the plan names the exact deployment id.
 
 ### 5b. Teardown: `teardown --json`, then `apply --plan <teardown planId> --yes --confirm-destroy [--confirm-dns] --json`
 
@@ -329,8 +355,9 @@ Check scope:
 | `stripe-live-ready` | the Stripe account can take live payments |
 | `email-dns` | the sending domain's SPF/DKIM/DMARC records are published |
 | `email-verified` | the email provider marks the domain verified |
-| `preview-deploy` | with `release.preview: true`: the hosting provider's own read confirms the preview deployment golive recorded (`deployed:preview:id`) is ready, belongs to the linked project and is not the production deployment |
+| `preview-deploy` | with `release.preview: true`: the hosting provider's own read confirms the preview deployment golive recorded (`deployed:preview:id`) is ready, belongs to the linked project and is not the production deployment; skips once golive itself promoted that deployment (it is production then, not a preview to gate) |
 | `preview-bundle` | with `release.preview: true`: the HTML/JavaScript the provider-confirmed preview URL serves carries no known credential patterns (a protected preview skips; an incomplete scan only warns) |
+| `production-release` | with `release.promote`/`release.rollback` (or a recorded release, even after the opt-in is removed): the provider's own read of what production serves is the deployment golive promoted or rolled back to, naming what production served before. Skips without a recorded release and on a host that cannot answer that read (Vercel); **warns** when production serves a deployment golive never recorded (a dashboard, Git or PR-built one — a handoff, `action` for the human); **fails** when it serves another deployment golive recorded (something moved production after the release) |
 
 `auth-signup` and `auth-session` are opt-in: without `auth.e2e: true` in `golive.yaml` they skip with
 that reason and create nothing. With it on, each run signs up one throwaway probe account (address
@@ -363,6 +390,13 @@ the human's project, and never read it as covering an app whose routes golive co
 never produces one. Treat them the same way — **implemented and mock-covered, not live-validated** —
 and note that on a host exposing no per-deployment preview read (Vercel) both skip, so the preview is
 unverified by golive rather than gated; say that plainly instead of presenting the preview as checked.
+
+`production-release` is the same: **implemented and mock-covered, not live-validated**. It only has
+something to confirm when a promotion or a rollback recorded one (`deployed:release`), and on Vercel
+it skips with `exposes no read of what production serves` — that is not a pass. Report its warn branch
+as a handoff (the human confirms or changes that deployment in the provider's own dashboard), and its
+fail branch as an open problem: production moved after the release, so re-plan (`golive plan`) and
+apply the release step it shows if production should serve a deployment golive created.
 
 Finish with a short summary: the live URL, what passed, what is still open (`handoff --json`), and
 every `done: null` / skipped item named as not verified by golive. Say who owns each remaining item —

@@ -1,5 +1,5 @@
-import type { Adapter, Ctx, Deployer, PublicUrl } from '../core/types.js';
-import { CLI_ENV, cliSession, identifier, netlifyCredential, netlifyRead, NetlifyError, object, parseJson } from './netlify-api.js';
+import type { Adapter, Ctx, Deployer, DeploymentInfo, PublicUrl, ReleaseControl } from '../core/types.js';
+import { CLI_ENV, cliSession, identifier, netlifyCredential, netlifyHttp, netlifyRead, NetlifyError, object, parseJson } from './netlify-api.js';
 import { netlifyEnv } from './netlify-env.js';
 import { netlifyProject, publicOrigin, requireFreeAccount, requireSite, type NetlifySite } from './netlify-project.js';
 
@@ -61,6 +61,59 @@ const deploy: Deployer = {
   },
 };
 
+/**
+ * Production re-points. Netlify's site read reports `published_deploy`, so what production serves is
+ * the provider's own answer, and one earlier deploy can be restored (`POST
+ * /sites/{site_id}/deploys/{deploy_id}/restore`, Netlify's "restore deploy (rollback)") without a
+ * rebuild or an env change. Reads go over HTTPS on purpose: the CLI transport reports a missing
+ * deployment as a plain exit code with no HTTP status, so only an HTTPS 404 may count as "gone"
+ * (the same rule `netlifyProject.exists` follows).
+ */
+async function readDeployment(ctx: Ctx, site: NetlifySite, deployId: string): Promise<DeploymentInfo | null> {
+  let raw: Record<string, unknown>;
+  try {
+    raw = object(await netlifyHttp(ctx, 'GET', `/sites/${encodeURIComponent(site.id)}/deploys/${encodeURIComponent(identifier(deployId))}`));
+  } catch (e) {
+    if (e instanceof NetlifyError && e.status === 404) return null;
+    throw e;
+  }
+  if (raw.id !== deployId || raw.site_id !== site.id) throw new NetlifyError('Netlify returned a different deployment than the one asked about; re-plan before any write.');
+  return {
+    id: deployId,
+    url: publicOrigin(raw.deploy_ssl_url),
+    ready: raw.state === 'ready',
+    ...(typeof raw.created_at === 'string' ? { createdAt: raw.created_at } : {}),
+  };
+}
+
+const release: ReleaseControl = {
+  /** What Netlify publishes for the linked site; null = it reports no published deployment. */
+  async production(ctx) {
+    const site = await requireSite(ctx);
+    if (!site.publishedId) return null;
+    const deploy = await readDeployment(ctx, site, site.publishedId);
+    return deploy ? { ...deploy, url: deploy.url ?? site.sslUrl } : null;
+  },
+  async read(ctx, id) {
+    const site = await requireSite(ctx);
+    return readDeployment(ctx, site, id);
+  },
+  /**
+   * Restore one existing deploy of this site as the live one. Re-reads it first, and the caller
+   * re-reads production afterwards (that read, not this response, is what proves the switch).
+   */
+  async promote(ctx, id) {
+    const session = await cliSession(ctx);
+    if (!session.ok) throw new NetlifyError(session.howToFix);
+    await netlifyCredential(ctx);
+    const site = await requireSite(ctx);
+    const deploy = await readDeployment(ctx, site, id);
+    if (!deploy) throw new NetlifyError(`Netlify no longer has deployment ${id}; nothing was restored.`);
+    if (!deploy.ready) throw new NetlifyError(`Netlify reports deployment ${id} as not ready, so it cannot serve production; nothing was restored.`);
+    await netlifyHttp(ctx, 'POST', `/sites/${encodeURIComponent(site.id)}/deploys/${encodeURIComponent(identifier(id))}/restore`);
+  },
+};
+
 export const netlifyAdapter: Adapter = {
   id: 'netlify', title: 'Netlify', axes: ['hosting'], automated: true,
   detect: d => Boolean(d.configs['netlify.toml'] || d.configs['.netlify/state.json'] || d.providers.hosting?.includes('netlify')),
@@ -72,5 +125,5 @@ export const netlifyAdapter: Adapter = {
       return { ok: true, via: `Netlify CLI login (user ${s.userId}); matching in-process HTTPS credential verified` };
     } catch (e) { return { ok: false, howToFix: e instanceof NetlifyError ? e.message : 'Netlify account access could not be verified safely. Check the CLI/network, then retry doctor or plan. No provider output was logged.' }; }
   },
-  capabilities: { project: netlifyProject, env: netlifyEnv, url: netlifyUrl, deploy },
+  capabilities: { project: netlifyProject, env: netlifyEnv, url: netlifyUrl, deploy, release },
 };

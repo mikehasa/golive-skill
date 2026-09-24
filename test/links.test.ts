@@ -3,13 +3,13 @@ import { Secret, _resetSecretRegistry } from '../src/core/secret.js';
 import { buildPlan, planId, planView } from '../src/core/plan.js';
 import { applyPlan } from '../src/core/runner.js';
 import { emptyState } from '../src/core/state.js';
-import type { Check, Finding, Http, Plan, ShipConfig, ShipState, Step } from '../src/core/types.js';
+import type { Check, Ctx, DeploymentInfo, Finding, Http, Plan, ReleaseIdentity, ShipConfig, ShipState, Step, StepRecord } from '../src/core/types.js';
 import { envParityCheck } from '../src/checks/env-parity.js';
-import { previewBundleCheck, previewDeployCheck } from '../src/checks/release.js';
+import { previewBundleCheck, previewDeployCheck, productionReleaseCheck } from '../src/checks/release.js';
 import { ALL_LINKS } from '../src/links/all.js';
-import { availableKeys, forgetDeployFacts, recordDeploy, step } from '../src/links/util.js';
+import { availableKeys, forgetDeployFacts, previousProductionDeploy, readDeployHistory, readRelease, recordDeploy, step } from '../src/links/util.js';
 import { emailDomain } from '../src/links/email.js';
-import { mockExec, mockHttp, testCtx } from './helpers.js';
+import { TEST_RELEASE, mockExec, mockHttp, testCtx } from './helpers.js';
 import { ALL_RAW_SECRETS, FAKE_STACK, PUBLIC, RAW, fakeWorld, type FakeWorld } from './fakes.js';
 
 beforeEach(() => _resetSecretRegistry());
@@ -33,7 +33,7 @@ const BASE_CONFIG: Partial<ShipConfig> = {
   email: { from: 'Shop <hello@example.com>' },
 };
 
-function setup(opts: { config?: Partial<ShipConfig>; env?: string[]; state?: ShipState; findings?: Finding[]; arrange?: (w: FakeWorld) => void; exec?: Parameters<typeof mockExec>[0]; http?: Http } = {}) {
+function setup(opts: { config?: Partial<ShipConfig>; env?: string[]; state?: ShipState; findings?: Finding[]; arrange?: (w: FakeWorld) => void; exec?: Parameters<typeof mockExec>[0]; http?: Http; release?: ReleaseIdentity } = {}) {
   const w = fakeWorld();
   opts.arrange?.(w);
   const exec = mockExec(opts.exec ?? []);
@@ -44,6 +44,7 @@ function setup(opts: { config?: Partial<ShipConfig>; env?: string[]; state?: Shi
     adapters: w.adapters,
     config: { ...BASE_CONFIG, ...opts.config },
     state: opts.state,
+    ...(opts.release ? { release: opts.release } : {}),
     detect: { envRefs: (opts.env ?? ENV).map((name) => ({ name, files: ['src/lib.ts'], clientExposed: false })), findings: opts.findings ?? [] },
   });
   return { w, ctx, exec };
@@ -996,8 +997,479 @@ describe('preview state is teardown-safe', () => {
   });
 });
 
-// ── Regression tests for review findings ────────────────────────────────────────────────────────────
+// ── Promotion and rollback: re-pointing production at a deployment golive recorded ────────────────
 
+const PROD_AT = '2026-01-01T00:00:00.000Z';
+const PROD_ID = 'dpl_fake1';
+const PROD_URL = 'https://shop-abc123.fakehost.app';
+const OLD_ID = 'dpl_older';
+const OLD_URL = 'https://shop-older.fakehost.app';
+const OLD_AT = '2025-12-01T00:00:00.000Z';
+const OLDER_RELEASE: ReleaseIdentity = { ...TEST_RELEASE, version: '0.1.0-alpha.1-old', bundleDigest: 'c'.repeat(64) };
+
+const deployInfo = (id: string, url: string): DeploymentInfo => ({ id, url, ready: true });
+const record = (target: 'preview' | 'production', id: string, url: string, at: string, production = true) => ({ target, provider: 'fakehost', id, url, at, production });
+
+/** A recorded production deployment, then a preview deployment golive made after it. */
+function releaseState(): ShipState {
+  return stateWith([], {
+    'deployed:production': PROD_AT,
+    'deployed:production:id': `fakehost|${PROD_ID}|${PROD_URL}|${PROD_AT}`,
+    'deployed:preview': PREVIEW_AT,
+    'deployed:preview:id': `fakehost|${PREVIEW_ID}|${PREVIEW_URL}|${PREVIEW_AT}`,
+    'deployed:history': JSON.stringify([record('preview', PREVIEW_ID, PREVIEW_URL, PREVIEW_AT, false), record('production', PROD_ID, PROD_URL, PROD_AT)]),
+  });
+}
+
+/** Two recorded production deployments: what a rollback goes back to, and what production serves now. */
+function rollbackState(): ShipState {
+  return stateWith([], {
+    'deployed:production': PROD_AT,
+    'deployed:production:id': `fakehost|${PROD_ID}|${PROD_URL}|${PROD_AT}`,
+    'deployed:history': JSON.stringify([record('production', PROD_ID, PROD_URL, PROD_AT), record('production', OLD_ID, OLD_URL, OLD_AT)]),
+  });
+}
+
+const withStepRecord = (state: ShipState, id: string, rec: StepRecord): ShipState => ({ ...state, steps: { ...state.steps, [id]: rec } });
+
+/**
+ * A hosting-only stack with the release opt-ins set and a host that reports what production serves,
+ * can re-read its deployments and can re-point production at one.
+ */
+function releaseSetup(kind: 'promote' | 'rollback', opts: Parameters<typeof setup>[0] = {}) {
+  const state = opts.state ?? (kind === 'promote' ? releaseState() : rollbackState());
+  return setup({
+    ...opts,
+    env: opts.env ?? [],
+    exec: opts.exec ?? [['git rev-parse', { stdout: 'main\n' }]],
+    state,
+    config: {
+      stack: { hosting: 'fakehost' },
+      domain: undefined,
+      release: kind === 'promote' ? { preview: true, promote: true } : { rollback: true },
+      ...opts.config,
+    },
+    arrange: (w) => {
+      w.host.urls.preview = PREVIEW_URL;
+      for (const [id, url] of [[PROD_ID, PROD_URL], [PREVIEW_ID, PREVIEW_URL], [OLD_ID, OLD_URL]] as const) w.host.release.deploys.set(id, deployInfo(id, url));
+      w.host.release.production = deployInfo(PROD_ID, PROD_URL);
+      opts.arrange?.(w);
+    },
+  });
+}
+
+/** The checks an apply of the release steps needs registered (the pre-points verify with this one). */
+const releaseChecks = () => new Map<string, Check>([['production-release', productionReleaseCheck]]);
+
+describe('release opt-ins', () => {
+  it('plans no promotion and no rollback until its own opt-in is set', async () => {
+    for (const release of [undefined, {}, { preview: false }, { preview: true }]) {
+      const { ctx } = setup({ config: { stack: { hosting: 'fakehost' }, domain: undefined, release }, env: [], state: releaseState() });
+      const plan = await build(ctx);
+      expect(ids(plan), JSON.stringify(release)).not.toContain('promote:production');
+      expect(ids(plan)).not.toContain('release:rollback');
+    }
+  });
+
+  it('refuses a promotion without the preview opt-in, and a release together with a rollback', async () => {
+    const noPreview = await build(setup({ config: { stack: { hosting: 'fakehost' }, domain: undefined, release: { promote: true } }, env: [], state: releaseState() }).ctx);
+    expect(ids(noPreview)).not.toContain('promote:production');
+    expect(noPreview.warnings.join('\n')).toMatch(/release\.promote is set, but release\.preview is not/);
+
+    const both = await build(setup({ config: { stack: { hosting: 'fakehost' }, domain: undefined, release: { preview: true, promote: true, rollback: true } }, env: [], state: releaseState() }).ctx);
+    expect(ids(both)).not.toContain('promote:production');
+    expect(ids(both)).not.toContain('release:rollback');
+    expect(both.warnings.join('\n')).toMatch(/will not plan a release and a rollback of the same app in one plan/);
+  });
+
+  it('says why no promotion is planned when the host exposes no release capability (Vercel’s case)', async () => {
+    const { ctx } = releaseSetup('promote', { arrange: (w) => (w.host.release.available = false) });
+    const plan = await build(ctx);
+    // Nothing the release link can do is planned — but the warning says what is missing, not silence.
+    expect(ids(plan)).toEqual(['project:hosting']);
+    expect(plan.warnings.join('\n')).toMatch(/release\.promote is set, but golive cannot re-point production on fakehost.*no promotion is planned/);
+
+    // The preview machinery still works on that host: a failed check cuts a fresh preview, and only
+    // the promotion stays unplanned.
+    const retryState = withStepRecord(releaseState(), 'release:check', { status: 'failed', at: PREVIEW_AT, planId: 'previous-plan' });
+    const { ctx: retryCtx } = releaseSetup('promote', { state: retryState, arrange: (w) => (w.host.release.available = false) });
+    const retry = await build(retryCtx);
+    expect(ids(retry)).toEqual(['project:hosting', 'preview:deploy', 'release:check']);
+    expect(retry.warnings.join('\n')).toMatch(/no promotion is planned/);
+  });
+});
+
+describe('promote:production', () => {
+  it('is planned after the gate, naming the exact deployment, env target and production it changes', async () => {
+    const { ctx } = releaseSetup('promote');
+    const plan = await build(ctx);
+    expect(ids(plan)).toEqual(['project:hosting', 'release:check', 'promote:production']);
+
+    const gate = byId(plan, 'release:check');
+    expect(gate.risk).toEqual({ writes: false });
+    expect(gate.dependsOn).toEqual(['project:hosting']);
+    expect(gate.preview.join('\n')).toContain(`check the preview deployment golive recorded (fakehost ${PREVIEW_ID}, ${PREVIEW_URL}, recorded ${PREVIEW_AT}) on FakeHost`);
+    expect(gate.preview.join('\n')).toMatch(/this check gates promote:production in this plan: it re-reads the exact deployment that step would make production/);
+
+    const promote = byId(plan, 'promote:production');
+    expect(promote.kind).toBe('deploy');
+    // A production re-point: a write, and nothing else — no live/destroy/replayable category flag.
+    expect(promote.risk).toEqual({ writes: true });
+    expect(promote.dependsOn).toEqual(['release:check', 'project:hosting']);
+    expect(promote.verifyWith).toEqual(['production-release']);
+    const pv = promote.preview.join('\n');
+    expect(pv).toContain(`promote fakehost deployment ${PREVIEW_ID} to production: ${PREVIEW_URL} (recorded by golive ${PREVIEW_AT}) becomes what FakeHost serves publicly`);
+    expect(pv).toContain('project: FakeHost project shop (prj_1)');
+    expect(pv).toContain('that deployment was built for the preview env target and keeps the env it was built with');
+    expect(pv).toContain(`production before this promotion: fakehost deployment ${PROD_ID} (${PROD_URL}, recorded by golive ${PROD_AT})`);
+    expect(pv).toMatch(/gated by release:check in this plan: the provider's own read of that exact deployment/);
+    expect(pv).toMatch(/before writing, this step re-reads the deployment and what FakeHost serves as production; after writing it re-reads production and records what it serves now/);
+    expect(pv).toMatch(/production will change: the app's production URL is served by that deployment/);
+    expect(pv).toMatch(/golive promotes only a deployment it created and recorded/);
+    // The approval is the plan id and the gate: no `--confirm-*` flag is added for a re-point.
+    expect(planView(plan).steps.find((s) => s.id === 'promote:production')!.needs).toEqual([]);
+    expect(plan.warnings).toEqual([]);
+    expectNoRawSecrets([JSON.stringify(planView(plan)), ...ctx.logs]);
+  });
+
+  it('names the case where golive recorded no production deployment at all', async () => {
+    const state = stateWith([], {
+      'deployed:preview': PREVIEW_AT,
+      'deployed:preview:id': `fakehost|${PREVIEW_ID}|${PREVIEW_URL}|${PREVIEW_AT}`,
+      'deployed:history': JSON.stringify([record('preview', PREVIEW_ID, PREVIEW_URL, PREVIEW_AT, false)]),
+    });
+    const { ctx } = releaseSetup('promote', { state, arrange: (w) => (w.host.release.production = null) });
+    const pv = byId(await build(ctx), 'promote:production').preview.join('\n');
+    expect(pv).toContain('production before this promotion: golive recorded no production deployment; this step reads what the provider says it serves now');
+  });
+
+  it('re-points production, records the release and proves what production serves with the check', async () => {
+    const { w, ctx } = releaseSetup('promote');
+    const out = await apply(ctx, await build(ctx), releaseChecks());
+    expect(out.map((o) => [o.id, o.status])).toEqual([['project:hosting', 'done'], ['release:check', 'done'], ['promote:production', 'done']]);
+    expect(w.host.release.promoted).toEqual([PREVIEW_ID]);
+    // The order is the proof: both sides are re-read before the write, and production afterwards.
+    expect(w.calls.filter((c) => c.method.startsWith('release.')).map((c) => `${c.method}:${String(c.args[0] ?? '')}`)).toEqual([
+      'release.read:dpl_fake1_preview',
+      'release.production:',
+      'release.promote:dpl_fake1_preview',
+      'release.production:',
+      // The recorded release is proved by the provider's own read again, in the check.
+      'release.production:',
+    ]);
+    const step = out.find((o) => o.id === 'promote:production')!;
+    expect(step.changes.join('\n')).toContain(`promoted fakehost ${PREVIEW_ID} as production: ${PREVIEW_URL}`);
+    expect(step.changes.join('\n')).toContain(`FakeHost reported production serving ${PROD_ID} before the write and ${PREVIEW_ID} after it`);
+    // The record: the release, the production pointer, and the deployment's own history entry.
+    const released = readRelease(ctx)!;
+    expect(released).toMatchObject({ kind: 'promote', provider: 'fakehost', id: PREVIEW_ID, url: PREVIEW_URL, displaced: PROD_ID });
+    expect(ctx.state.resource('deployed:production:id')).toBe(`fakehost|${PREVIEW_ID}|${PREVIEW_URL}|${ctx.state.resource('deployed:production')}`);
+    const history = readDeployHistory(ctx);
+    expect(history[0]).toMatchObject({ id: PREVIEW_ID, target: 'preview', production: true });
+    expect(history.map((e) => e.id)).toEqual([PREVIEW_ID, PROD_ID]);
+    // The proof: the provider's own read, naming what production served before.
+    expect(step.checks.map((c) => [c.id, c.status])).toEqual([['production-release', 'pass']]);
+    expect(step.checks[0]!.evidence.join('\n')).toContain(`fakehost deployment ${PREVIEW_ID} (${PREVIEW_URL}) is what fakehost reports for production now`);
+    expect(step.checks[0]!.evidence.join('\n')).toContain(`golive recorded ${PROD_ID} as what production served before it`);
+    expectNoRawSecrets([JSON.stringify(out), JSON.stringify(ctx.state.get()), ...ctx.logs]);
+  });
+
+  it('writes nothing and records no release when production already serves the deployment', async () => {
+    const { w, ctx } = releaseSetup('promote', { arrange: (w) => (w.host.release.production = deployInfo(PREVIEW_ID, PREVIEW_URL)) });
+    const out = await apply(ctx, await build(ctx), releaseChecks());
+    const step = out.find((o) => o.id === 'promote:production')!;
+    expect(step.status).toBe('done');
+    expect(step.changes.join(' ')).toMatch(/already serves deployment .* nothing was written/);
+    expect(w.host.release.promoted).toEqual([]);
+    expect(readRelease(ctx)).toBeNull();
+    expect(ctx.state.resource('deployed:production:id')).toContain(PROD_ID);
+  });
+
+  it.each([
+    ['the provider no longer has the deployment', (w: FakeWorld) => void w.host.release.deploys.delete(PREVIEW_ID), /no longer has deployment fakehost dpl_fake1_preview .*nothing was written/],
+    ['the provider reports it as not ready', (w: FakeWorld) => void w.host.release.deploys.set(PREVIEW_ID, { id: PREVIEW_ID, url: PREVIEW_URL, ready: false }), /reports deployment dpl_fake1_preview as not ready/],
+    ['the provider read fails', (w: FakeWorld) => void (w.host.release.readError = 'FakeHost read failed'), /FakeHost read failed/],
+    ['the provider exposes no re-point call', (w: FakeWorld) => void (w.host.release.canPromote = false), /exposes no call to point production at one/],
+    ['the provider reports no production deployment', (w: FakeWorld) => void (w.host.release.production = null), /reports no deployment for production, so golive cannot read what this promote would replace: nothing was written/],
+  ])('refuses to act blind when %s', async (_what, arrange, error) => {
+    const { w, ctx } = releaseSetup('promote', { arrange: arrange as (w: FakeWorld) => void });
+    const out = await apply(ctx, await build(ctx), releaseChecks());
+    const step = out.find((o) => o.id === 'promote:production')!;
+    expect(step.status).toBe('failed');
+    expect(step.error).toMatch(error as RegExp);
+    expect(w.host.release.promoted).toEqual([]);
+    expect(readRelease(ctx)).toBeNull();
+    expect(ctx.state.resource('deployed:production:id')).toContain(PROD_ID);
+  });
+
+  it('fails with nothing recorded when the provider does not confirm the switch', async () => {
+    const { w, ctx } = releaseSetup('promote', { arrange: (w) => (w.host.release.promoteHasNoEffect = true) });
+    const out = await apply(ctx, await build(ctx), releaseChecks());
+    const step = out.find((o) => o.id === 'promote:production')!;
+    expect(step.status).toBe('failed');
+    expect(step.error).toMatch(/did not report deployment dpl_fake1_preview as what production serves after the write/);
+    expect(w.host.release.promoted).toEqual([PREVIEW_ID]); // attempted once, never repeated
+    expect(readRelease(ctx)).toBeNull();
+    expect(ctx.state.get().steps['promote:production']?.status).toBe('failed');
+    expectNoRawSecrets([JSON.stringify(out), JSON.stringify(ctx.state.get())]);
+  });
+
+  it('a failing gate stops the plan before production changes', async () => {
+    const KEY = 'sk_' + 'live_' + 'Q4'.repeat(12);
+    const leaky = mockHttp([
+      ['GET', `${PREVIEW_URL}/`, () => ({ text: '<script src="/a.js"></script>' })],
+      ['GET', `${PREVIEW_URL}/a.js`, () => ({ text: `const k="${KEY}"` })],
+    ]);
+    const { w, ctx } = releaseSetup('promote', { http: leaky.http });
+    const out = await apply(ctx, await build(ctx), previewChecks());
+    expect(out.map((o) => o.id)).toEqual(['project:hosting', 'release:check']);
+    expect(out.find((o) => o.id === 'release:check')!.status).toBe('failed');
+    expect(w.host.release.promoted).toEqual([]);
+    expect(ctx.state.get().steps['promote:production']).toBeUndefined();
+    expect(JSON.stringify(out)).not.toContain(KEY);
+  });
+});
+
+describe('release:rollback', () => {
+  it('plans a rollback of the previous production deployment from golive’s own record', async () => {
+    const { ctx } = releaseSetup('rollback');
+    const plan = await build(ctx);
+    expect(ids(plan)).toEqual(['project:hosting', 'release:rollback']);
+    const step = byId(plan, 'release:rollback');
+    expect(step.kind).toBe('deploy');
+    // A production re-point keeps the reconciliation stop: never `destroy`, never `replayable`.
+    expect(step.risk).toEqual({ writes: true });
+    expect(step.risk.destroy).toBeUndefined();
+    expect(step.risk.replayable).toBeUndefined();
+    expect(step.dependsOn).toEqual(['project:hosting']);
+    expect(step.verifyWith).toEqual(['production-release']);
+    const pv = step.preview.join('\n');
+    expect(pv).toContain(`roll production back to fakehost deployment ${OLD_ID}: ${OLD_URL} (built for the production env target, recorded by golive ${OLD_AT}) becomes what FakeHost serves again`);
+    expect(pv).toContain('project: FakeHost project shop (prj_1)');
+    expect(pv).toContain(`production now serves fakehost deployment ${PROD_ID} (${PROD_URL}, recorded by golive ${PROD_AT}) — this rollback replaces it`);
+    expect(pv).toMatch(/golive rolls production back only to a deployment it created and recorded/);
+    expect(pv).toMatch(/neither replayable nor a deletion/);
+    expect(pv).toMatch(/never automatic/);
+    expect(planView(plan).steps.find((s) => s.id === 'release:rollback')!.needs).toEqual([]);
+    expectNoRawSecrets([JSON.stringify(planView(plan)), ...ctx.logs]);
+  });
+
+  it('re-points production, records the release and proves what production serves with the check', async () => {
+    const { w, ctx } = releaseSetup('rollback');
+    const out = await apply(ctx, await build(ctx), releaseChecks());
+    expect(out.map((o) => [o.id, o.status])).toEqual([['project:hosting', 'done'], ['release:rollback', 'done']]);
+    expect(w.host.release.promoted).toEqual([OLD_ID]);
+    expect(w.calls.filter((c) => c.method.startsWith('release.')).map((c) => `${c.method}:${String(c.args[0] ?? '')}`)).toEqual([
+      'release.read:dpl_older',
+      'release.production:',
+      'release.promote:dpl_older',
+      'release.production:',
+      // The recorded release is proved by the provider's own read again, in the check.
+      'release.production:',
+    ]);
+    expect(readRelease(ctx)).toMatchObject({ kind: 'rollback', id: OLD_ID, url: OLD_URL, displaced: PROD_ID });
+    expect(readDeployHistory(ctx).map((e) => e.id)).toEqual([OLD_ID, PROD_ID]);
+    expect(ctx.state.get().steps['release:rollback']?.changes!.join(' ')).toMatch(/rolled production back to fakehost dpl_older/);
+    const proof = out.find((o) => o.id === 'release:rollback')!.checks;
+    expect(proof.map((c) => [c.id, c.status])).toEqual([['production-release', 'pass']]);
+    expect(proof[0]!.evidence.join('\n')).toContain(`fakehost deployment ${OLD_ID} (${OLD_URL}) is what fakehost reports for production now`);
+    expect(proof[0]!.evidence.join('\n')).toContain(`golive recorded ${PROD_ID} as what production served before it`);
+    expectNoRawSecrets([JSON.stringify(out), JSON.stringify(ctx.state.get()), ...ctx.logs]);
+  });
+
+  it('does not offer the same rollback twice, and says what it already did', async () => {
+    const { w, ctx } = releaseSetup('rollback');
+    await apply(ctx, await build(ctx), releaseChecks());
+    const reported = w.host.release.promoted.length;
+    const plan = await build(ctx);
+    expect(ids(plan)).toEqual(['project:hosting']);
+    expect(plan.warnings.join('\n')).toMatch(/golive already rolled production back to dpl_older .*will not roll forward to dpl_fake1 on its own/);
+    expect(w.host.release.promoted).toHaveLength(reported);
+  });
+
+  it('says so when there is nothing older to go back to', async () => {
+    const state = stateWith([], {
+      'deployed:production': PROD_AT,
+      'deployed:production:id': `fakehost|${PROD_ID}|${PROD_URL}|${PROD_AT}`,
+      'deployed:history': JSON.stringify([record('production', PROD_ID, PROD_URL, PROD_AT)]),
+    });
+    const { ctx } = releaseSetup('rollback', { state });
+    const plan = await build(ctx);
+    expect(ids(plan)).toEqual(['project:hosting']);
+    expect(plan.warnings.join('\n')).toMatch(/holds no earlier production deployment to go back to/);
+  });
+
+  it('refuses without a recorded ability to re-point, and without a host release capability', async () => {
+    const gone = releaseSetup('rollback', { arrange: (w) => w.host.release.deploys.delete(OLD_ID) });
+    const out = await apply(gone.ctx, await build(gone.ctx), releaseChecks());
+    expect(out.find((o) => o.id === 'release:rollback')).toMatchObject({ status: 'failed' });
+    expect(out.find((o) => o.id === 'release:rollback')!.error).toMatch(/no longer has deployment fakehost dpl_older/);
+    expect(gone.w.host.release.promoted).toEqual([]);
+
+    const noCap = await build(releaseSetup('rollback', { arrange: (w) => (w.host.release.available = false) }).ctx);
+    expect(ids(noCap)).toEqual(['project:hosting']);
+    expect(noCap.warnings.join('\n')).toMatch(/release\.rollback is set, but golive cannot re-point production on fakehost/);
+
+    // A repository that never had golive deploy production has nothing to roll back from.
+    const never = await build(releaseSetup('rollback', { state: emptyState() }).ctx);
+    expect(never.warnings.join('\n')).toMatch(/has no production deployment recorded on FakeHost/);
+  });
+
+  it.each(['promote', 'rollback'] as const)('a historical %s from an older release is refused, not re-pointed', async (kind) => {
+    const stepId = kind === 'promote' ? 'promote:production' : 'release:rollback';
+    const state = withStepRecord(kind === 'promote' ? releaseState() : rollbackState(), stepId, {
+      status: 'failed',
+      hash: 'older-approval',
+      at: OLD_AT,
+      planId: 'older-plan',
+      release: OLDER_RELEASE,
+    });
+    const { w, ctx } = releaseSetup(kind, { state });
+    const plan = await build(ctx);
+    expect(ids(plan)).toContain(stepId);
+    await expect(applyPlan(ctx, plan, new Map(), { approvedPlanId: plan.id, yes: true, confirmLive: true, confirmDns: true })).rejects.toThrow(
+      /historical step .* belongs to another or unknown release.*automatic write replay is blocked/,
+    );
+    expect(w.host.release.promoted).toEqual([]);
+    expect(readRelease(ctx)).toBeNull();
+  });
+});
+
+describe('production-release check', () => {
+  const run = (ctx: Ctx) => productionReleaseCheck.run(ctx);
+  const withRelease = (kind: 'promote' | 'rollback', extra: Record<string, string> = {}): ShipState =>
+    stateWith([], { ...releaseState().resources, 'deployed:release': [kind, 'fakehost', PREVIEW_ID, PREVIEW_URL, PROD_ID, PREVIEW_AT].join('|'), ...extra });
+
+  it('passes when the provider reports the released deployment as what production serves', async () => {
+    const { ctx } = releaseSetup('promote', { state: withRelease('promote'), arrange: (w) => (w.host.release.production = deployInfo(PREVIEW_ID, PREVIEW_URL)) });
+    const r = await run(ctx);
+    expect(r.status).toBe('pass');
+    expect(r.evidence.join('\n')).toContain(`fakehost deployment ${PREVIEW_ID} (${PREVIEW_URL}) is what fakehost reports for production now`);
+    expect(r.evidence.join('\n')).toContain('golive promoted to production it');
+    expect(r.evidence.join('\n')).toContain(`golive recorded ${PROD_ID} as what production served before it`);
+    expect(r.evidence.join('\n')).toContain(`recorded by golive ${PREVIEW_AT} (deployed:release)`);
+  });
+
+  it('names the rollback in the pass evidence too', async () => {
+    const { ctx } = releaseSetup('rollback', { state: withRelease('rollback'), arrange: (w) => (w.host.release.production = deployInfo(PREVIEW_ID, PREVIEW_URL)) });
+    expect((await run(ctx)).evidence.join('\n')).toContain('golive rolled production back to it');
+  });
+
+  it('skips without a recorded release, without the opt-in, without a provider read, and with no production deployment', async () => {
+    // No `deployed:release`: nothing golive released.
+    expect(await run(releaseSetup('promote').ctx)).toMatchObject({ status: 'skip' });
+    expect((await run(releaseSetup('promote').ctx)).evidence[0]).toMatch(/has not promoted or rolled back a deployment/);
+    // The opt-in gate at the check level: no release opt-in and no recorded release, no check.
+    const plain = setup({ config: { stack: { hosting: 'fakehost' }, domain: undefined }, env: [], state: releaseState() }).ctx;
+    expect(productionReleaseCheck.applies(plain)).toBe(false);
+    // A recorded release keeps the check applicable after the flags are removed: the evidence is
+    // re-read (read-only), so dropping the opt-in does not drop what already happened.
+    const kept = setup({ config: { stack: { hosting: 'fakehost' }, domain: undefined }, env: [], state: withRelease('promote') }).ctx;
+    expect(productionReleaseCheck.applies(kept)).toBe(true);
+    // A host that cannot answer the read: skipped with the reason, never a pass.
+    const noCap = await run(releaseSetup('promote', { state: withRelease('promote'), arrange: (w) => (w.host.release.available = false) }).ctx);
+    expect(noCap.status).toBe('skip');
+    expect(noCap.evidence[0]).toMatch(/exposes no read of what production serves, so the deployment golive promoted to production .*this is not a pass/);
+    // A provider that reports no production deployment at all.
+    const none = await run(releaseSetup('promote', { state: withRelease('promote'), arrange: (w) => (w.host.release.production = null) }).ctx);
+    expect(none.status).toBe('skip');
+    expect(none.evidence[0]).toMatch(/reports no production deployment, so the deployment golive promoted to production .* is unverified/);
+    // A recording that belongs to another hosting provider.
+    const other = await run(releaseSetup('promote', { state: withRelease('promote'), config: { stack: { hosting: 'netlify' }, domain: undefined } }).ctx);
+    expect(other.evidence[0]).toMatch(/belongs to fakehost, not to the chosen hosting provider \(netlify\)/);
+  });
+
+  it('fails when production serves another deployment golive recorded', async () => {
+    const { ctx } = releaseSetup('promote', { state: withRelease('promote'), arrange: (w) => (w.host.release.production = deployInfo(PROD_ID, PROD_URL)) });
+    const r = await run(ctx);
+    expect(r).toMatchObject({ status: 'fail', severity: 'high' });
+    expect(r.evidence.join('\n')).toContain(`while golive promoted to production ${PREVIEW_ID} (fakehost deployment ${PREVIEW_ID})`);
+    expect(r.evidence.join('\n')).toContain(`${PROD_ID} is in golive's own record too, so production moved after that release`);
+    expect(r.fix).toMatch(/Run `golive plan` and apply the release step it shows/);
+  });
+
+  it('warns — and names the handoff — when production serves a deployment golive never recorded', async () => {
+    const { ctx } = releaseSetup('promote', {
+      state: withRelease('promote'),
+      arrange: (w) => (w.host.release.production = deployInfo('dpl_elsewhere', 'https://shop-elsewhere.fakehost.app')),
+    });
+    const r = await run(ctx);
+    expect(r).toMatchObject({ status: 'warn', severity: 'medium' });
+    expect(r.evidence.join('\n')).toMatch(/never recorded that deployment: it was built by fakehost's dashboard, a Git push or a pull request/);
+    expect(r.fix).toMatch(/golive promotes and rolls back only deployments it recorded and does not touch one it did not create/);
+  });
+
+  it('warns when the provider read fails, rather than claiming anything about production', async () => {
+    const { ctx } = releaseSetup('promote', { state: withRelease('promote'), arrange: (w) => (w.host.release.readError = 'FakeHost read failed') });
+    const r = await run(ctx);
+    expect(r).toMatchObject({ status: 'warn', severity: 'medium' });
+    expect(r.evidence.join('\n')).toMatch(/could not read what fakehost serves as production: FakeHost read failed/);
+  });
+
+  it('no longer fails the preview gate once golive itself promoted that deployment', async () => {
+    // After a promotion the recorded preview deployment IS what production serves: the preview gate
+    // says so instead of reading it as a mis-recorded preview.
+    const { ctx } = releaseSetup('promote', { state: withRelease('promote'), arrange: (w) => (w.host.release.production = deployInfo(PREVIEW_ID, PREVIEW_URL)) });
+    const r = await previewDeployCheck.run(ctx);
+    expect(r.status).toBe('skip');
+    expect(r.evidence[0]).toMatch(/golive promoted fakehost deployment dpl_fake1_preview .* there is no unreleased preview to gate/);
+  });
+});
+
+describe('deployment history', () => {
+  it('records every deployment, newest first, and stays bounded', () => {
+    const { ctx } = setup();
+    for (let i = 0; i < 12; i++) recordDeploy(ctx, 'fakehost', i % 3 === 0 ? 'production' : 'preview', { url: `https://shop-${i}.fakehost.app`, id: `dpl_${i}` });
+    const history = readDeployHistory(ctx);
+    expect(history).toHaveLength(8);
+    expect(history.map((e) => e.id)).toEqual(['dpl_11', 'dpl_10', 'dpl_9', 'dpl_8', 'dpl_7', 'dpl_6', 'dpl_5', 'dpl_4']);
+    expect(history[0]).toMatchObject({ provider: 'fakehost', target: 'preview', production: false });
+    expect(history.find((e) => e.id === 'dpl_9')).toMatchObject({ target: 'production', production: true });
+    // A provider that reports no id records no identity: nothing enters the history.
+    recordDeploy(ctx, 'fakehost', 'preview', { url: 'https://shop-x.fakehost.app' });
+    expect(readDeployHistory(ctx)[0]!.id).toBe('dpl_11');
+  });
+
+  it('replaces its own record of a deployment instead of duplicating it, keeping what it reached', () => {
+    const { ctx } = setup({ state: releaseState() });
+    // The same deployment recorded again (a promotion records the deployment the preview deploy made).
+    recordDeploy(ctx, 'fakehost', 'preview', { url: PROD_URL, id: PROD_ID });
+    const history = readDeployHistory(ctx);
+    expect(history.filter((e) => e.id === PROD_ID)).toHaveLength(1);
+    expect(history.find((e) => e.id === PROD_ID)).toMatchObject({ target: 'preview', production: true });
+  });
+
+  it('reads the deployment production served before the recorded one', () => {
+    const history = readDeployHistory(releaseSetup('rollback').ctx);
+    expect(previousProductionDeploy(history, { provider: 'fakehost', id: PROD_ID })).toMatchObject({ id: OLD_ID });
+    // A pointer golive has no record of, and a history with nothing older, both yield no target.
+    expect(previousProductionDeploy(history, { provider: 'fakehost', id: 'dpl_unknown' })).toMatchObject({ id: PROD_ID });
+    expect(previousProductionDeploy([history[0]!], { provider: 'fakehost', id: PROD_ID })).toBeNull();
+  });
+
+  it('is unreadable history, not a crash: a value that does not parse is no history', () => {
+    const { ctx } = setup({ state: stateWith([], { 'deployed:history': 'not json' }) });
+    expect(readDeployHistory(ctx)).toEqual([]);
+    const broken = setup({ state: stateWith([], { 'deployed:history': JSON.stringify([{ id: 'x' }, record('production', PROD_ID, PROD_URL, PROD_AT)]) }) }).ctx;
+    expect(readDeployHistory(broken).map((e) => e.id)).toEqual([PROD_ID]);
+  });
+
+  it('teardown forgets the history and the release record with the project it belonged to', async () => {
+    const { ctx } = releaseSetup('promote');
+    await apply(ctx, await build(ctx), releaseChecks());
+    expect(readRelease(ctx)).not.toBeNull();
+    expect(readDeployHistory(ctx)).toHaveLength(2);
+    forgetDeployFacts(ctx);
+    expect(ctx.state.resource('deployed:history')).toBeUndefined();
+    expect(ctx.state.resource('deployed:release')).toBeUndefined();
+    expect(readRelease(ctx)).toBeNull();
+    expect(readDeployHistory(ctx)).toEqual([]);
+    // The recorded environment facts of the same project are untouched, like every other key.
+    expect(ctx.state.get().steps['release:check']?.status).toBe('done');
+  });
+});
+
+// ── Regression tests for review findings ────────────────────────────────────────────────────────────
 const DEPLOYED = { 'deployed:production': '2026-01-01T00:00:00.000Z' };
 const stub = (id: string, status: 'pass' | 'fail' = 'pass'): Check => ({ id, title: id, severity: 'high', applies: () => true, run: async () => ({ status, severity: 'info', evidence: [] }) });
 

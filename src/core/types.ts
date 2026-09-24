@@ -130,6 +130,7 @@ export interface Capabilities {
   env: EnvStore;
   url: PublicUrl;
   deploy: Deployer;
+  release: ReleaseControl;
   domain: DomainAttach;
   dns: DnsZone;
   outputs: OutputsProvider;
@@ -257,6 +258,43 @@ export interface Deployer {
    * than inventing one.
    */
   deploy(ctx: Ctx, target: Exclude<EnvTarget, 'development'>): Promise<{ url: string; id?: string }>;
+}
+
+/**
+ * One deployment as the PROVIDER itself reports it. `id` is the provider's own identity (never derived
+ * from a URL), `url` that deployment's own URL, and `ready` what the provider says about serving it.
+ * A provider that cannot report one of these answers `null` (or leaves the capability out entirely):
+ * golive never describes, promotes or rolls back a deployment it cannot re-read.
+ */
+export interface DeploymentInfo {
+  id: string;
+  url: string | null;
+  /** The provider reports this deployment as ready (built, processed, servable). */
+  ready: boolean;
+  /** When the provider created it, when it reports one (ISO). */
+  createdAt?: string;
+}
+
+/**
+ * Pointing production at a deployment golive already made: a promotion (the checked preview becomes
+ * what production serves) or a rollback (an earlier production deployment becomes production again).
+ * Both act on public traffic, so a provider that exposes this must be able to answer BOTH reads —
+ * `production()` (what the provider itself serves as production now) and `read()` (one deployment by
+ * the id golive recorded) — and golive re-reads them before and after every write. A host that cannot
+ * answer those reads (Vercel's adapter has no production-deployment read) exposes no `release`
+ * capability at all, and the release steps refuse rather than act blind.
+ */
+export interface ReleaseControl {
+  /** What the provider itself reports as the deployment production serves; null = it reports none. */
+  production(ctx: Ctx): Promise<DeploymentInfo | null>;
+  /** Re-read one deployment by the id golive recorded; null = the provider no longer has it. */
+  read(ctx: Ctx, id: string): Promise<DeploymentInfo | null>;
+  /**
+   * Re-point production at `id` (a WRITE). The caller re-reads both sides before and after. Omit it
+   * when the provider reports its deployments but offers no re-point call: the release steps then
+   * refuse with that reason instead of guessing at one.
+   */
+  promote?(ctx: Ctx, id: string): Promise<void>;
 }
 
 export interface DomainAttach {
@@ -817,9 +855,13 @@ export interface ShipConfig {
    * preview deployment of this repo alongside production: golive then plans `preview:deploy` (a
    * create, `--confirm-live` when a live-mode source fills a preview env name) plus `release:check`,
    * which re-reads the deployment the provider reports and scans the bundle it serves as the inline
-   * gate. Nothing is promoted: promotion and rollback are later releases.
+   * gate. With `promote: true` (and preview), golive releases by promotion: `promote:production`
+   * re-points production at the checked preview deployment golive recorded — never at a deployment
+   * golive did not create — and with `rollback: true` (instead of promote) `release:rollback`
+   * re-points it back at an earlier deployment golive recorded for production. Both need a host that
+   * can re-read what production serves; a host that cannot is skipped with that reason.
    */
-  release?: { preview?: boolean };
+  release?: { preview?: boolean; promote?: boolean; rollback?: boolean };
 }
 
 export interface StepRecord {

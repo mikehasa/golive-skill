@@ -48,7 +48,7 @@ describe('ALL_CHECKS', () => {
     const ids = ALL_CHECKS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.sort()).toEqual(
-      ['accounts', 'auth-isolation', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'preview-bundle', 'preview-deploy', 'rls-probe', 'site-headers', 'stripe-live-ready', 'webhook-registered', 'webhook-unsigned'].sort(),
+      ['accounts', 'auth-isolation', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'preview-bundle', 'preview-deploy', 'production-release', 'rls-probe', 'site-headers', 'stripe-live-ready', 'webhook-registered', 'webhook-unsigned'].sort(),
     );
   });
 });

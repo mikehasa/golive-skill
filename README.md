@@ -317,7 +317,7 @@ live-tested milestones**, not a finished category or a completed checklist for y
   (`golive status`, below) — continuous monitoring and alerting do not.
 - [ ] 🗺️ **Product analytics:** event validation and consent/data settings, beyond today's guided
   provider suggestions.
-- [ ] 🗺️ **CI/CD and safe releases:** previews, release checks, promotion, rollback and drift
+- [ ] 🚧 **CI/CD and safe releases:** previews, release checks, promotion, rollback and drift
   detection, building on today's approved CLI deployments. **Deployment identity — implemented, not
   live-validated:** each successful deploy records the provider's own identity for the deployment it
   made (`deployed:<target>:id` = `<provider>|<deployment id>|<url>|<time>` in `.golive/state.json`,
@@ -328,10 +328,26 @@ live-tested milestones**, not a finished category or a completed checklist for y
   names the provider, project, env target and the source project the preview shares with production,
   needs `--confirm-live` when a live-mode value fills a preview env name, and records the provider's
   own identity as `deployed:preview:id` — and `release:check`, which writes nothing and fails the plan
-  when the provider's read of that deployment or a credential scan of its bundle fails. Nothing is
-  promoted: promotion and rollback are still planned, and the preview checks skip on a host that
-  exposes no per-deployment preview read (Vercel), reporting that instead of guessing. Adding these
-  step ids changes a plan's id, so an approval that was not applied must be re-planned. Drift detection
+  when the provider's read of that deployment or a credential scan of its bundle fails. **Promotion
+  and rollback — implemented, not live-validated:** with `release.promote: true` (on top of the
+  preview opt-in) a plan asks for a release by promotion, and with `release.rollback: true` it asks to
+  re-point production at an earlier deployment golive itself created and recorded. `promote:production`
+  names the exact deployment id it would make production — the provider reports a deployment's id only
+  once the deployment exists, so cutting the candidate and promoting it are two plans and the preview
+  says which one it is — is gated by `release:check` re-reading that deployment in the same plan, and
+  needs **no extra confirmation flag**: the plan id, the named deployment and the fresh gate are the
+  approval. Both steps re-read the target deployment and what production serves before writing and
+  prove what production serves afterwards; both keep the cross-release stop (neither is `replayable`
+  nor a deletion), and neither is automatic — no failed check triggers a rollback, and a deployment
+  built by a dashboard, a Git push or a pull request is never a promotion or rollback target (it is a
+  handoff, named as such). What each host supports differs, and golive refuses rather than guessing:
+  Netlify re-reads its published deployment and can restore an earlier one, so both steps work there;
+  Vercel exposes no read of what production serves and no promote/rollback call golive has exercised,
+  so on Vercel nothing is promoted or rolled back and a warning says why. `production-release` proves
+  what production serves, names what it served before, and reports a deployment golive never recorded
+  as a handoff. Adding these step ids changes a plan's id, so an approval that was not applied must be
+  re-planned. The preview checks (and therefore promotion) skip on a host that exposes no
+  per-deployment read (Vercel), reporting that instead of guessing. Drift detection
   exists as the read-only `golive status` command below (it ran read-only in the auth validation and
   had nothing actionable once that journey passed, but the DNS, environment, webhook and deployment
   baselines it compares still lack live evidence), and preview deployments are not yet among the
@@ -385,8 +401,9 @@ These inform the goals above; they are not GoLive features or blanket requiremen
 ## Verification you can inspect
 
 The report records **pass, fail, warning and skipped** results, along with remaining human steps.
-Checks include account access, environment-variable names, provider-confirmed deployment URLs,
-public JavaScript secret patterns, database access and supported auth/webhook/DNS settings.
+Checks include account access, environment-variable names, provider-confirmed deployment URLs, public
+JavaScript secret patterns, database access, supported auth/webhook/DNS settings, and (where the host
+can answer it) the deployment the provider says production serves.
 
 A ready deployment is not proof that the app works. An environment-variable name can exist with
 a wrong value. A verified email domain does not prove inbox delivery. Signed payment events,
@@ -395,7 +412,9 @@ signup and the app's business flows need functional tests. **Skipped is not pass
 Your app gets `golive.yaml`, `.golive/state.json`, `.golive/report.json` and `GOLIVE_REPORT.md`.
 State preserves resource IDs and step evidence for recovery; it is not a credential store.
 `golive teardown` removes what golive created after its own approval and `--confirm-destroy`;
-there is no cross-provider rollback, restore or general reconciliation command.
+there is no cross-provider rollback, restore or general reconciliation command for those resources —
+`release:rollback` (opt-in) only re-points production at an earlier deployment golive itself recorded,
+and touches no data, DNS, payment or email resource.
 
 `golive handoff --write` adds the ownership document: `GOLIVE_HANDOVER.md` at the repo root and its
 JSON source in `.golive/handover.json`. It names the accounts and login route, every resource golive
