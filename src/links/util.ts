@@ -172,6 +172,8 @@ export async function productionUrl(ctx: Ctx): Promise<string | null> {
 export const DEPLOYED_KEY = 'deployed:production';
 /** resources key: time of a production env write that no deploy has picked up yet. */
 export const REDEPLOY_KEY = 'redeploy:production';
+/** The step ids a production deploy records (see deployLink). */
+const DEPLOY_STEPS = ['deploy:production', 'deploy:production:final'];
 
 /** When golive last deployed production successfully (state), or undefined if it never did. */
 export function lastDeployAt(ctx: Ctx): string | undefined {
@@ -179,8 +181,21 @@ export function lastDeployAt(ctx: Ctx): string | undefined {
   if (at) return at;
   // State written before DEPLOYED_KEY existed: a done deploy step counts.
   const steps = ctx.state.get().steps;
-  const done = ['deploy:production', 'deploy:production:final'].map((id) => steps[id]).filter((r) => r?.status === 'done');
+  const done = DEPLOY_STEPS.map((id) => steps[id]).filter((r) => r?.status === 'done');
   return done.map((r) => r!.at).sort().at(-1);
+}
+
+/**
+ * Forget the deploy facts that belonged to a host project golive just removed: the recorded deploy
+ * time(s) and the completed deploy step evidence. A project created again in the same repo must be
+ * deployed again instead of inheriting "production was deployed" (which plans no deploy at all).
+ * Failed records and every other key are left as they are.
+ */
+export function forgetDeployFacts(ctx: Ctx): void {
+  ctx.state.save((s) => {
+    for (const key of Object.keys(s.resources)) if (key.startsWith('deployed:')) delete s.resources[key];
+    for (const id of DEPLOY_STEPS) if (s.steps[id]?.status === 'done') delete s.steps[id];
+  });
 }
 
 /** Time of a production env write not yet deployed, if any. */

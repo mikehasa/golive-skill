@@ -296,6 +296,21 @@ describe('vercel project', () => {
     expect(await project.remove!(ctx)).toEqual({ removed: true });
     expect(ctx.state.resource('vercel.projectId')).toBeUndefined();
   });
+
+  it('exists() reads the project and reports only the provider not-found as gone', async () => {
+    const live = mockExec([WHOAMI_OK, cliApi({ 'GET /v9/projects/prj_1': RAW_PROJECT })]);
+    expect(await project.exists!(testCtx({ exec: live.run }), 'prj_1')).toBe(true);
+
+    const gone = mockExec([WHOAMI_OK, cliApi({})]);
+    const goneCtx = testCtx({ exec: gone.run });
+    expect(await project.exists!(goneCtx, 'prj_1')).toBe(false);
+    expect(JSON.stringify(goneCtx.logs)).not.toContain(BYPASS);
+  });
+
+  it('exists() throws when the project read fails for any other reason', async () => {
+    const limited = mockExec([WHOAMI_OK, cliApi({ 'GET /v9/projects/prj_1': () => ({ code: 1, stderr: 'Error: Rate limited (429)' }) })]);
+    await expect(project.exists!(testCtx({ exec: limited.run }), 'prj_1')).rejects.toThrow(/HTTP 429/);
+  });
 });
 
 // ── env ───────────────────────────────────────────────────────────────────────────────────────

@@ -219,7 +219,9 @@ Explain the steps by provider, in plain language, and call out:
   The human types those into the host's dashboard. Never ask for the value.
 
 Before asking for approval, put a short consent summary **directly in chat**, even when a detailed
-plan document exists. Use `plan.targets` and verified provider metadata, never guessed names:
+plan document exists. Read the destinations from `steps[].preview` (with the step's `destination`
+when it has one) and `steps[].needs` for the confirm flags, plus verified provider metadata — never
+guessed names. A teardown plan's `targets` is empty: its `steps[].preview` lines are the summary:
 
 - **Frontend:** Vercel → account / team display name → project name; new or existing.
 - **Database + Auth:** Supabase → organization display name → project name; new or existing; region.

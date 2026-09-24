@@ -10108,12 +10108,19 @@ async function productionUrl(ctx) {
 }
 var DEPLOYED_KEY = "deployed:production";
 var REDEPLOY_KEY = "redeploy:production";
+var DEPLOY_STEPS = ["deploy:production", "deploy:production:final"];
 function lastDeployAt(ctx) {
   const at = ctx.state.resource(DEPLOYED_KEY);
   if (at) return at;
   const steps = ctx.state.get().steps;
-  const done = ["deploy:production", "deploy:production:final"].map((id2) => steps[id2]).filter((r) => r?.status === "done");
+  const done = DEPLOY_STEPS.map((id2) => steps[id2]).filter((r) => r?.status === "done");
   return done.map((r) => r.at).sort().at(-1);
+}
+function forgetDeployFacts(ctx) {
+  ctx.state.save((s) => {
+    for (const key of Object.keys(s.resources)) if (key.startsWith("deployed:")) delete s.resources[key];
+    for (const id2 of DEPLOY_STEPS) if (s.steps[id2]?.status === "done") delete s.steps[id2];
+  });
 }
 function pendingRedeploy(ctx) {
   return ctx.state.resource(REDEPLOY_KEY);
@@ -10380,12 +10387,13 @@ async function projectInventory(ctx) {
   const adapter = s.adapter;
   const remove2 = adapter.capabilities.project?.remove;
   if (!remove2) return null;
+  const read = adapter.capabilities.project?.exists;
   const keys3 = projectStateKeys(adapter.id);
   const current3 = ctx.state.resource(keys3.id);
   if (!current3) return null;
   const name3 = ctx.state.resource(keys3.name);
   const created = ctx.state.resource(createdProjectKey(adapter.id)) === current3;
-  return { provider: adapter.id, providerTitle: adapter.title, keys: keys3, id: current3, ...name3 ? { name: name3 } : {}, created, remove: remove2 };
+  return { provider: adapter.id, providerTitle: adapter.title, keys: keys3, id: current3, ...name3 ? { name: name3 } : {}, created, remove: remove2, ...read ? { exists: (x) => read(x, current3) } : {} };
 }
 function recordedInventory(ctx) {
   const out = [];
@@ -10803,9 +10811,11 @@ function projectTeardown(project) {
   return { steps: [projectStep(project)], handoffs: [] };
 }
 function projectStep(p) {
+  const id2 = "teardown:project:hosting";
   const label3 = p.name ? `${p.name} (${p.id})` : p.id;
+  let deleted = false;
   return step({
-    id: "teardown:project:hosting",
+    id: id2,
     title: `Delete the ${p.providerTitle} project golive created`,
     kind: "destroy",
     risk: { writes: true, destroy: true },
@@ -10813,10 +10823,55 @@ function projectStep(p) {
     intent: intentOf({ provider: p.provider, project: p.id }),
     async run(sctx) {
       const r = await p.remove(sctx);
-      if (r.removed) return { changes: [`deleted project ${p.id}`] };
+      deleted = r.removed;
+      if (r.removed) {
+        forgetDeployFacts(sctx);
+        return { changes: [`deleted project ${p.id}`] };
+      }
       const reason = r.reason ?? "the provider kept the project";
       if (sctx.state.resource(p.keys.id) !== p.id || sctx.state.resource(createdProjectKey(p.provider)) !== p.id) return { changes: [`left as is: ${reason}`] };
       throw new Error(`could not delete the ${p.providerTitle} project ${p.id}: ${redact(reason)}`);
+    },
+    // A delete is only reported as done once the host itself no longer resolves the project (the DNS
+    // steps confirm a removal the same way). A host golive cannot re-read warns instead of failing.
+    async verifyInline(vctx) {
+      if (!deleted) return [];
+      const checkId = `${id2}:removed`;
+      const title = `${p.providerTitle} no longer reports the project golive created: ${label3}`;
+      if (!p.exists) {
+        return [{
+          id: checkId,
+          title,
+          status: "warn",
+          severity: "medium",
+          evidence: [`${p.providerTitle} has no read that could re-check the project after the delete`],
+          fix: `Confirm ${label3} is gone in the ${p.providerTitle} dashboard.`
+        }];
+      }
+      let still;
+      try {
+        still = await p.exists(vctx);
+      } catch (e) {
+        return [{
+          id: checkId,
+          title,
+          status: "warn",
+          severity: "medium",
+          evidence: [`could not re-read the ${p.providerTitle} project ${label3} after the delete: ${errMsg(e)}`],
+          fix: `Check ${p.providerTitle} access, then confirm ${label3} is gone.`
+        }];
+      }
+      if (still) {
+        return [{
+          id: checkId,
+          title,
+          status: "fail",
+          severity: "high",
+          evidence: [`${p.providerTitle} still resolves the project ${label3} after the delete`],
+          fix: `Delete it in the ${p.providerTitle} dashboard; golive does not report a delete it cannot confirm.`
+        }];
+      }
+      return [{ id: checkId, title, status: "pass", severity: "info", evidence: [`${p.providerTitle} no longer resolves the project ${label3}`] }];
     }
   });
 }
@@ -13050,6 +13105,16 @@ async function resolveProject2(ctx, idOrName) {
 var vercelProject = {
   creationTarget: creationTarget2,
   resolve: resolveProject2,
+  /** Read-only existence probe for a deletion golive performed (the provider's own not-found). */
+  async exists(ctx, id2) {
+    try {
+      await projectInfo(ctx, id2);
+      return true;
+    } catch (e) {
+      if (isNotFound(e)) return false;
+      throw e;
+    }
+  },
   async current(ctx) {
     const stateId = ctx.state.resource("vercel.projectId");
     const stateName = ctx.state.resource("vercel.projectName");
@@ -15307,8 +15372,10 @@ function guardAccount(ctx, p) {
   const saved = ctx.state.resource("netlify.siteId") === p.id ? ctx.state.resource("netlify.accountId") : void 0;
   if (wanted && wanted !== p.accountId || saved && saved !== p.accountId) throw new NetlifyError("Netlify project owner differs from the selected or previously approved team; re-plan before any write.");
 }
-async function getSite(ctx, id2) {
-  const p = siteInfo(await netlifyRead(ctx, "getSite", `/sites/${encodeURIComponent(identifier(id2))}`, { site_id: id2 }));
+async function getSite(ctx, id2, transport2 = "cli") {
+  const path = `/sites/${encodeURIComponent(identifier(id2))}`;
+  const raw2 = transport2 === "https" ? await netlifyHttp(ctx, "GET", path) : await netlifyRead(ctx, "getSite", path, { site_id: id2 });
+  const p = siteInfo(raw2);
   if (p.id !== id2) throw new NetlifyError("Netlify returned a different site identity; re-plan.");
   guardAccount(ctx, p);
   return p;
@@ -15385,6 +15452,20 @@ var netlifyProject = {
   },
   async resolve(ctx, idOrName) {
     return ref(await resolveSite(ctx, idOrName));
+  },
+  /**
+   * Read-only existence probe for a deletion golive performed. Reads over HTTPS on purpose: the CLI
+   * transport reports a missing site as a plain exit code, with no HTTP status to recognize, so only
+   * an HTTPS 404 may count as removed.
+   */
+  async exists(ctx, id2) {
+    try {
+      await getSite(ctx, id2, "https");
+      return true;
+    } catch (e) {
+      if (e instanceof NetlifyError && e.status === 404) return false;
+      throw e;
+    }
   },
   async select(ctx, idOrName) {
     return remember5(ctx, await resolveSite(ctx, idOrName));

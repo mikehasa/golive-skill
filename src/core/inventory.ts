@@ -23,6 +23,9 @@ const ENV_TARGETS: readonly EnvTarget[] = ['development', 'preview', 'production
 /** A provider's project-deletion capability (see ProjectLinker.remove). */
 export type ProjectRemove = (ctx: Ctx) => Promise<{ removed: boolean; reason?: string }>;
 
+/** A provider's "is this project still there?" read (see ProjectLinker.exists). */
+export type ProjectExists = (ctx: Ctx) => Promise<boolean>;
+
 /**
  * Where a hosting adapter records the project it resolved. The id key doubles as "a project is
  * linked"; the name key is only used to make the preview readable.
@@ -93,6 +96,11 @@ export interface InventoryProject {
   name?: string;
   created: boolean;
   remove: ProjectRemove;
+  /**
+   * Read-only existence probe bound to `id`, present when the host exposes one. Absent means golive
+   * cannot re-read the project after a delete — reported as a warning, never as a confirmed deletion.
+   */
+  exists?: ProjectExists;
 }
 
 /**
@@ -268,6 +276,7 @@ async function projectInventory(ctx: Ctx): Promise<InventoryProject | null> {
   const adapter = s.adapter;
   const remove = adapter.capabilities.project?.remove;
   if (!remove) return null;
+  const read = adapter.capabilities.project?.exists;
   const keys = projectStateKeys(adapter.id);
   const current = ctx.state.resource(keys.id);
   if (!current) return null; // nothing linked (in state): nothing to report
@@ -275,7 +284,7 @@ async function projectInventory(ctx: Ctx): Promise<InventoryProject | null> {
   // State holds the adopt/select path too, so a missing or different creation marker means the
   // human's project: report it, but never as golive's to delete.
   const created = ctx.state.resource(createdProjectKey(adapter.id)) === current;
-  return { provider: adapter.id, providerTitle: adapter.title, keys, id: current, ...(name ? { name } : {}), created, remove };
+  return { provider: adapter.id, providerTitle: adapter.title, keys, id: current, ...(name ? { name } : {}), created, remove, ...(read ? { exists: (x: Ctx) => read(x, current) } : {}) };
 }
 
 // ── Recorded database projects and sending domains ───────────────────────────────────────────────

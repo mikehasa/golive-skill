@@ -5,7 +5,7 @@
  */
 import { Secret } from '../src/core/secret.js';
 import { modeFor } from '../src/core/config.js';
-import type { Adapter, AuthSettings, DnsRecord, EnvTarget, Mode, OutputKey, Outputs, ProjectRef, Value } from '../src/core/types.js';
+import type { Adapter, AuthSettings, Ctx, DnsRecord, EnvTarget, Mode, OutputKey, Outputs, ProjectRef, Value } from '../src/core/types.js';
 
 export interface Call {
   adapter: string;
@@ -47,6 +47,12 @@ export function fakeWorld() {
     createError: null as string | null,
     /** When false, the fake project linker has no remove() (a provider golive cannot delete from). */
     canRemoveProject: true,
+    /** When false, the fake project linker has no exists() (a host whose deletion cannot be re-read). */
+    withExists: true,
+    /** When set, project.exists() throws this (a read the provider cannot answer). */
+    existsError: null as string | null,
+    /** When true, the delete reports success but leaves the project resolvable (a provider that did not delete it). */
+    removeKeepsProject: false,
     /** What project.remove() answers. */
     removeResult: { removed: true } as { removed: boolean; reason?: string },
     /** When set, project.remove() throws this (a provider-side error, unlike a refusal). */
@@ -99,12 +105,28 @@ export function fakeWorld() {
         },
         get remove() {
           return host.canRemoveProject
-            ? async (): Promise<{ removed: boolean; reason?: string }> => {
+            ? async (c: Ctx): Promise<{ removed: boolean; reason?: string }> => {
                 rec('fakehost', 'project.remove');
                 if (host.removeError) throw new Error(host.removeError);
                 host.removed.push(host.current?.id ?? '?');
-                if (host.removeResult.removed) host.current = null;
+                if (host.removeResult.removed) {
+                  // Like the real host adapters, a reported deletion clears this host's own state keys.
+                  c.state.save((s) => {
+                    delete s.resources['fakehost.projectId']; delete s.resources['fakehost.projectName'];
+                    delete s.resources['fakehost.createdProjectId'];
+                  });
+                  if (!host.removeKeepsProject) host.current = null;
+                }
                 return host.removeResult;
+              }
+            : undefined;
+        },
+        get exists() {
+          return host.withExists
+            ? async (_c: unknown, id: string): Promise<boolean> => {
+                rec('fakehost', 'project.exists', id);
+                if (host.existsError) throw new Error(host.existsError);
+                return host.current?.id === id;
               }
             : undefined;
         },
