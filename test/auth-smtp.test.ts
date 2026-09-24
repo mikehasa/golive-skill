@@ -54,7 +54,7 @@ const stepOf = (p: Plan, id: string): Step => {
 };
 const outcomeOf = (out: Awaited<ReturnType<typeof apply>>, id: string) => out.find((o) => o.id === id)!;
 const authChecks = new Map<string, Check>([['auth-policy', authPolicyCheck]]);
-const smtpPatch = (w: FakeWorld) => w.calls.find((c) => c.method === 'authConfig.set')?.args[0] as ({ smtp?: unknown; smtpPassword?: Secret } | undefined);
+const smtpPatch = (w: FakeWorld) => w.calls.find((c) => c.method === 'authConfig.set')?.args[0] as ({ smtp?: unknown; smtpPassword?: Secret; emailRateLimitPerHour?: number } | undefined);
 
 describe('auth SMTP journey: auth.smtp: resend → the custom-SMTP write → the mailer the check reports', () => {
   it('plans the step only with the opt-in, a Resend email axis and a sending key in reach', async () => {
@@ -83,8 +83,9 @@ describe('auth SMTP journey: auth.smtp: resend → the custom-SMTP write → the
     expect((await build(ctx)).steps.map((s) => s.id)).toContain('auth:smtp');
   });
 
-  it('writes exactly the SMTP fields and keeps the password out of state, evidence, plan view and logs', async () => {
-    const { w, ctx } = setup();
+  it('writes exactly the SMTP fields and the auth email rate limit, and keeps the password out of state, evidence, plan view and logs', async () => {
+    // The project the live run found: custom SMTP half done, and the provider's own limit at 2.
+    const { w, ctx } = setup(undefined, (x) => void (x.db.auth.emailRateLimitPerHour = 2));
     const plan = await build(ctx);
     const s = stepOf(plan, 'auth:smtp');
     expect(s.risk).toEqual({ writes: true });
@@ -92,27 +93,100 @@ describe('auth SMTP journey: auth.smtp: resend → the custom-SMTP write → the
     expect(s.preview[0]).toBe("set the FakeDB project's custom SMTP to Resend (smtp.resend.com:465, user resend) as hello@example.com (Shop)");
     expect(s.preview.join('\n')).toMatch(/SMTP host: \(not set\) → smtp\.resend\.com/);
     expect(s.preview.join('\n')).toMatch(/sender address: \(not set\) → hello@example\.com/);
+    expect(s.preview.join('\n')).toMatch(/auth email rate limit: 2 → 30 per hour/);
 
     const out = await apply(ctx, plan, authChecks);
     const o = outcomeOf(out, 'auth:smtp');
     expect(o.status).toBe('done');
     expect(w.db.auth.smtp).toEqual({ configured: true, host: 'smtp.resend.com', port: 465, user: 'resend', senderEmail: 'hello@example.com', senderName: 'Shop' });
+    expect(w.db.auth.emailRateLimitPerHour).toBe(30);
     expect(smtpPatch(w)!.smtpPassword).toBeInstanceOf(Secret);
-    // Nothing but the SMTP group and its one secret is written: the policy fields stay `auth:settings`.
+    // Nothing but the SMTP group, the rate limit and its one secret is written: the policy fields stay `auth:settings`.
     expect(w.calls.filter((c) => c.method === 'authConfig.set').length).toBe(1);
-    expect(Object.keys(smtpPatch(w)!).sort()).toEqual(['smtp', 'smtpPassword']);
+    expect(Object.keys(smtpPatch(w)!).sort()).toEqual(['emailRateLimitPerHour', 'smtp', 'smtpPassword']);
+    expect(smtpPatch(w)!.emailRateLimitPerHour).toBe(30);
+    expect(o.changes.join('\n')).toMatch(/auth email rate limit: 2 → 30 per hour/);
     expect(o.changes.join('\n')).toMatch(/not confirmed: smtpPassword \(write-only/);
     expect(o.changes.join('\n')).toMatch(/the password itself is only ever accepted, never confirmed: FakeDB answers it with a hash/);
     const inline = o.checks.find((c) => c.id === 'auth:smtp:applied')!;
     expect(inline).toMatchObject({ status: 'pass' });
     expect(inline.evidence.join('\n')).toMatch(/SMTP host: smtp\.resend\.com/);
+    expect(inline.evidence.join('\n')).toMatch(/auth email rate limit: 30 per hour/);
     expect(inline.evidence.join('\n')).toMatch(/the SMTP password is write-only/);
+    // The raise holds: a later plan has nothing to write again.
+    expect((await build(ctx)).steps.map((x) => x.id)).not.toContain('auth:smtp');
 
     // The raw value registered for that Secret is nowhere: not in the plan view, the outcome, state,
     // the log or the recorded call arguments (a Secret serialises to its label and fingerprint).
     const blob = JSON.stringify([planView(plan), out, ctx.state.get(), ctx.logs, w.calls]);
     for (const raw of ALL_RAW_SECRETS()) expect(blob).not.toContain(raw);
     expect(blob).not.toMatch(/smtpPassword":"re_/);
+  });
+
+  it('takes the auth email rate limit from auth.emailRateLimitPerHour when golive.yaml sets it', async () => {
+    const { w, ctx } = setup({ ...CONFIG, auth: { ...CONFIG.auth, emailRateLimitPerHour: 60 } }, (x) => void (x.db.auth.emailRateLimitPerHour = 2));
+    const plan = await build(ctx);
+    const s = stepOf(plan, 'auth:smtp');
+    expect(s.preview.join('\n')).toMatch(/auth email rate limit: 2 → 60 per hour/);
+    expect(s.intent).toMatch(/emailRateLimitPerHour=60/);
+
+    const out = await apply(ctx, plan, authChecks);
+    expect(outcomeOf(out, 'auth:smtp').changes.join('\n')).toMatch(/auth email rate limit: 2 → 60 per hour/);
+    expect(smtpPatch(w)!.emailRateLimitPerHour).toBe(60);
+    expect(w.db.auth.emailRateLimitPerHour).toBe(60);
+    const inline = outcomeOf(out, 'auth:smtp').checks.find((c) => c.id === 'auth:smtp:applied')!;
+    expect(inline.evidence.join('\n')).toMatch(/auth email rate limit: 60 per hour/);
+  });
+
+  it('names the rate limit in the plan even when it already holds, without listing it as a change', async () => {
+    const { ctx } = setup(); // the provider already reports the 30 the step writes
+    const s = stepOf(await build(ctx), 'auth:smtp');
+    expect(s.preview.join('\n')).toMatch(/auth email rate limit: 30 per hour \(the provider's own limit, which custom SMTP does not remove/);
+    expect(s.preview.join('\n')).not.toMatch(/auth email rate limit: .*→/);
+  });
+
+  it('names a rate limit the provider never reports back as unconfirmed, without failing the step', async () => {
+    const { ctx } = setup(undefined, (w) => void (w.db.authIgnores = ['emailRateLimitPerHour']));
+    const out = await apply(ctx, await build(ctx), authChecks);
+    const o = outcomeOf(out, 'auth:smtp');
+    expect(o.status).toBe('done');
+    expect(o.changes.join('\n')).toMatch(/not confirmed: emailRateLimitPerHour \(the provider does not report this setting back\)/);
+    const inline = o.checks.find((c) => c.id === 'auth:smtp:applied')!;
+    expect(inline.status).toBe('pass');
+    expect(inline.evidence.join('\n')).toMatch(/auth email rate limit: FakeDB does not report it back/);
+  });
+
+  it('keeps the step done, with a warning naming what holds, when the provider ignores the rate limit', async () => {
+    const { w, ctx } = setup(undefined, (x) => {
+      // The project's own limit, as the live run found it.
+      x.db.auth.emailRateLimitPerHour = 2;
+      const caps = x.adapters.find((a) => a.id === 'fakedb')!.capabilities.authConfig!;
+      const apply = caps.set;
+      // Accepted, never applied: the write returns 2xx and the SMTP group lands, but the project keeps
+      // reporting its own rate limit — the provider's own accounting of what it kept.
+      caps.set = async (c, patch) => {
+        const outcome = await apply(c, patch);
+        x.db.auth.emailRateLimitPerHour = 2;
+        return {
+          ...outcome,
+          applied: outcome.applied.filter((f) => f !== 'emailRateLimitPerHour'),
+          skipped: [...outcome.skipped, 'emailRateLimitPerHour (the provider reports 2 instead of 30)'],
+        };
+      };
+    });
+    const out = await apply(ctx, await build(ctx), authChecks);
+    const o = outcomeOf(out, 'auth:smtp');
+    expect(o.status).toBe('done');
+    expect(o.changes.join('\n')).toMatch(/not confirmed: emailRateLimitPerHour \(the provider reports 2 instead of 30\)/);
+    expect(w.db.auth.emailRateLimitPerHour).toBe(2);
+    const inline = o.checks.find((c) => c.id === 'auth:smtp:applied')!;
+    expect(inline.status).toBe('pass');
+    expect(inline.evidence.join('\n')).toMatch(/SMTP host: smtp\.resend\.com/);
+    const warn = o.checks.find((c) => c.id === 'auth:smtp:applied:rate-limit')!;
+    expect(warn).toMatchObject({ status: 'warn', severity: 'medium' });
+    expect(warn.evidence.join('\n')).toMatch(/auth email rate limit is 2 per hour after the write, not 30 per hour/);
+    expect(warn.evidence.join('\n')).toMatch(/one run of the auth journeys needs four accepted sends/);
+    expect(warn.fix).toMatch(/Raise the auth email rate limit in the FakeDB dashboard/);
   });
 
   it('takes the password from the sending key the email journey issues in this run', async () => {

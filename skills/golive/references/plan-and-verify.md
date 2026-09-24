@@ -188,8 +188,13 @@ again.
 points the auth project's custom SMTP at Resend: `smtp.resend.com:465`, the user `resend`, the sender
 `email.from` already uses, and an SMTP password that is a sending key — the one the email journey
 issued in this run, otherwise one golive issues for SMTP alone (`golive-…-smtp`, state key
-`<provider>.keyId@smtp`, so `teardown` can revoke it). It writes only the fields that differ and plans
-nothing once they hold; its own `auth:smtp:applied` result plus the `auth-policy` check carry the
+`<provider>.keyId@smtp`, so `teardown` can revoke it). The same write raises the project's **auth email
+rate limit** (`rate_limit_email_sent`) to 30 per hour, or to `auth.emailRateLimitPerHour` from
+`golive.yaml`: the provider keeps its own limit with custom SMTP in place and one run of the journeys
+needs four accepted sends. Unlike an SMTP field, a limit the provider keeps at another value does not
+fail the step — the provider's own setting, reported by `auth:smtp:applied:rate-limit` (medium) — and
+one it never reports back is named as unconfirmed. Otherwise it writes only the fields that differ and
+plans nothing once they hold; its own `auth:smtp:applied` result plus the `auth-policy` check carry the
 evidence. The password is write-only (`smtp_pass` answers a hash, never the value), so what is
 confirmed is the settings golive can read back and the write itself — a real auth email arriving is
 the only full proof, and the journeys below run after this step so their sends are the one that
@@ -372,7 +377,7 @@ state — and a protected preview skips instead of being reported as scanned.
 | `rls-probe` | tables in exposed schemas aren't readable with the publishable key; advisors clean | `blocked by: project:db`; no publishable/anon key |
 | `db-connection` | the selected Neon compute accepts a fixed read-only query and returns the expected database and role; no schema/Auth/app-isolation claim | no connection-probe capability; `blocked by: login:<db>` / `project:db` |
 | `auth-redirects` | site URL and allowlist point at production, no localhost | guided auth; `blocked by: deploy:production` |
-| `auth-policy` | the reported signup/confirmation/password policy matches golive.yaml `auth` (below 12 characters, a built-in mailer or an unapplied `auth.smtp: resend` only warn); the mailer is reported as the provider's built-in one or as custom SMTP via Resend, and the SMTP password is never read back; evidence lists the effective values | guided auth; `blocked by: login:<id>` / `project:<axis>`; the provider reports no policy fields |
+| `auth-policy` | the reported signup/confirmation/password policy matches golive.yaml `auth` (below 12 characters, a built-in mailer, an unapplied `auth.smtp: resend` or an auth email rate limit below a run's four sends only warn); the mailer is reported as the provider's built-in one or as custom SMTP via Resend, and the SMTP password is never read back; evidence lists the effective values | guided auth; `blocked by: login:<id>` / `project:<axis>`; the provider reports no policy fields |
 | `auth-signup` | a fresh probe address got a confirmation email, could not sign in before confirming, and the seeded account reads back confirmed (`email_confirmed_at`) — the confirmed account's own sign-in is extra evidence when this run holds its password (delivery stays human-confirmed) | `auth.e2e` off; no `auth.testEmail`; guided auth; `blocked by: login:<id>` / `auth:test-user`; a captcha blocks signup; **warns** on a 429 or while the account is still unconfirmed |
 | `auth-session` | the seeded account's session is accepted for the same user, an anonymous request is 401, and a declared `auth.protectedPath` is refused while the production root still answers (each refusal is corroborated against that public route); the signed-in table probe names the tables it read per verdict | `auth.e2e` off; guided auth; `blocked by: login:<id>` / `auth:test-user` / `no password for the test account in this run`; **warns** on a 429, an unconfirmed account, every exposed table denying the signed-in user, or an inconclusive protected-path answer (the root is walled or unreadable too) |
 | `auth-recovery` | the recorded account's recovery request is accepted for sending, an address with no account gets the same answer (no account enumeration), the token this run spent is refused on replay, the new password signs in and the replaced one is refused, and the token window is named from `otpExpirySeconds` when reported | `auth.recovery` off; guided auth; `blocked by: login:<id>` / `auth:test-user`; no rotation in this run (`this run holds none of what the recovery check needs`); a captcha blocks a scripted request; **warns** on a 429 for either request or a login leg, never fails |

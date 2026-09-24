@@ -129,9 +129,9 @@ email: { from: "Acme <hello@example.com>" }
   it('parses the auth block, keeping the existing keys working', () => {
     const c = parseConfig(`version: 1
 stack: { auth: supabase }
-auth: { redirectPaths: [/auth/callback], previewRedirects: true, signup: false, requireEmailConfirm: true, passwordMinLength: 12, smtp: resend }
+auth: { redirectPaths: [/auth/callback], previewRedirects: true, signup: false, requireEmailConfirm: true, passwordMinLength: 12, smtp: resend, emailRateLimitPerHour: 60 }
 `);
-    expect(c.auth).toEqual({ redirectPaths: ['/auth/callback'], previewRedirects: true, signup: false, requireEmailConfirm: true, passwordMinLength: 12, smtp: 'resend' });
+    expect(c.auth).toEqual({ redirectPaths: ['/auth/callback'], previewRedirects: true, signup: false, requireEmailConfirm: true, passwordMinLength: 12, smtp: 'resend', emailRateLimitPerHour: 60 });
   });
 
   it('parses the auth e2e opt-in: the journey switch, the inbox address and the protected path', () => {
@@ -181,6 +181,8 @@ release: { preview: true, promote: true, rollback: false }
     ['version: 1\nauth: { requireEmailConfirm: 1 }\n', /auth\.requireEmailConfirm must be true or false/],
     ['version: 1\nauth: { passwordMinLength: 0 }\n', /auth\.passwordMinLength must be a positive whole number/],
     ['version: 1\nauth: { passwordMinLength: "12" }\n', /auth\.passwordMinLength must be a positive whole number/],
+    ['version: 1\nauth: { emailRateLimitPerHour: 0 }\n', /auth\.emailRateLimitPerHour must be a positive whole number/],
+    ['version: 1\nauth: { emailRateLimitPerHour: "30" }\n', /auth\.emailRateLimitPerHour must be a positive whole number/],
     ['version: 1\nauth: { smtp: gmail }\n', /auth\.smtp must be "provider"/],
     ['version: 1\nauth: { redirectPaths: [/ok, ok] }\n', /auth\.redirectPaths must be a list of paths/],
     ['version: 1\nauth: { previewRedirects: yes }\n', /auth\.previewRedirects must be true or false/],

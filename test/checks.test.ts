@@ -651,6 +651,18 @@ describe('auth-policy', () => {
     expect(text).toMatch(/rate limit: 30 auth emails\/hour/);
   });
 
+  it('warns (medium) when the provider\'s auth email rate limit cannot fit a run\'s sends', async () => {
+    const r = await run(authPolicyCheck, policyCtx({ ...POLICY, emailRateLimitPerHour: 2 }));
+    expect(r.status).toBe('warn');
+    expect(r.severity).toBe('medium');
+    const text = r.evidence.join('\n');
+    expect(text).toMatch(/the auth email rate limit is 2 per hour, below the 4 accepted sends one run of the auth journeys needs/);
+    expect(text).toMatch(/custom SMTP included, because the limit is the provider's own/);
+    expect(text).toMatch(/rate limit: 2 auth emails\/hour \(the provider's own limit; custom SMTP does not remove it\)/);
+    expect(r.fix).toMatch(/`auth\.emailRateLimitPerHour`/);
+    expect(r.fix).toMatch(/the `auth:smtp` step writes it/);
+  });
+
   it('fails when the settings cannot be read', async () => {
     const ctx = testCtx({
       config: { stack: { auth: 'supabase' } },

@@ -139,14 +139,23 @@ golive automates (after plan approval):
   `smtp_sender_name` from the sender `email.from` already uses, and the write-only `smtp_pass` from a
   sending key golive issued — the one the email journey issued in this run, otherwise one it issues for
   SMTP alone (`golive-…-smtp`, recorded as `<provider>.keyId@smtp` so teardown can revoke it); never a
-  paste and never a chat prompt. `smtp_port` is the one field this API documents and validates as a
-  string: golive sends `"465"`, because a number is the live 400 `smtp_port: Invalid input: expected
-  string, received number` (the port stays a number in the plan, the changes and everything golive
-  reads back — the read accepts either type). The step re-reads the non-secret fields
-  (`auth:smtp:applied`) and the `auth-policy` check reports `custom SMTP via Resend` instead of the
-  built-in-mailer warning, and the journeys that send real mail run after it. The password is never
-  compared, because the API never returns it: the read-back confirms the settings, and a real auth
-  email arriving is the only full proof.
+  paste and never a chat prompt. Configuring the mailer is only half of it: Supabase keeps its **own
+  auth-email rate limit** with custom SMTP in place (the live project's `rate_limit_email_sent: 2`
+  refused a recovery request with HTTP 429 in the same run that wired the SMTP), and one run of the
+  auth journeys needs four accepted sends, so the step writes `rate_limit_email_sent` too:
+  **30 per hour**, or `auth.emailRateLimitPerHour` from `golive.yaml` when the human wants another
+  value. The change is named in the plan and the step's changes
+  (`auth email rate limit: 2 → 30 per hour`). Unlike an SMTP field, a rate limit the API keeps at
+  another value does not fail the step — it is the provider's own setting — so it warns instead:
+  `auth:smtp:applied:rate-limit` (medium) names the value that holds, and one the API never reports
+  back is named as unconfirmed like any other field. `smtp_port` is the one field this API documents
+  and validates as a string: golive sends `"465"`, because a number is the live 400
+  `smtp_port: Invalid input: expected string, received number` (the port stays a number in the plan,
+  the changes and everything golive reads back — the read accepts either type). The step re-reads the
+  non-secret fields (`auth:smtp:applied`) and the `auth-policy` check reports
+  `custom SMTP via Resend` instead of the built-in-mailer warning, and the journeys that send real
+  mail run after it. The password is never compared, because the API never returns it: the read-back
+  confirms the settings, and a real auth email arriving is the only full proof.
 - **Runs the signup journey** when the human opted in with `auth.e2e: true` (see below): the
   `auth:test-user` step seeds one test account through the project's own `/auth/v1` signup endpoint,
   `auth:confirm-email` hands the inbox click over, and the `auth-signup`/`auth-session` checks prove
@@ -250,12 +259,14 @@ Caveats to pass on before enabling it:
   is a second seeded account (`+gl-isolation`) that `auth:isolation` creates and confirms the same way,
   and the `auth-isolation` check stores one small marker row per test account through the app's own
   `auth.isolationPath` route on every run — those two rows stay in the project's data too.
-- **The built-in mailer is rate-limited** (a handful of auth emails per hour; the live project's
-  `rate_limit_email_sent: 2` behaved closer to one accepted send per window). Supabase then answers
-  HTTP 429: `auth-signup` warns, `auth:test-user` fails with instructions, and one run of the
-  journeys can exceed what that limit fits. The fix is the `auth:smtp` step (`auth.smtp: resend`),
-  then waiting for the window to reset. Check the spam folder — a project without DMARC often lands
-  there.
+- **The auth email limit is the project's own, and the built-in mailer is rate-limited on top of it**
+  (a handful of auth emails per hour; the live project's `rate_limit_email_sent: 2` behaved closer to
+  one accepted send per window). Supabase then answers HTTP 429: `auth-signup` warns, `auth:test-user`
+  fails with instructions, and one run of the journeys can exceed what that limit fits. The fix is the
+  `auth:smtp` step (`auth.smtp: resend`), which now raises the limit to 30 per hour (or
+  `auth.emailRateLimitPerHour`) as well as wiring the mailer — a limit that already spent its window
+  still has to reset, so a run that hit 429 should wait before re-running. Check the spam folder — a
+  project without DMARC often lands there.
 - **A captcha on signup** (`hcaptcha`/`turnstile`) makes a scripted journey impossible: the step
   fails and `auth-signup` skips, never fails. Turn the auth captcha off for this project, or accept
   that the journey stays manual.
@@ -424,14 +435,15 @@ account isolation as proven on a human's project until a live report says `pass`
 | `auth-policy` says signup is closed / confirmation off / password too short | Write the intended policy under `auth` in `golive.yaml` (`signup`, `requireEmailConfirm`, `passwordMinLength`), then `plan` + `apply` (the `auth:settings` step) and re-run verify. |
 | `auth:settings` step fails with "is X after the write, not Y" | Supabase accepted the PATCH but reports another value: check Auth Config write permission for this token and the setting in the dashboard, then re-run `apply`. |
 | `auth:settings` changes say `not confirmed: …` | Supabase does not return that setting through the API, so golive cannot confirm it. Confirm it in the dashboard; the rest of the write is unaffected. |
-| `auth-policy` warns about the built-in mailer | Supabase's default SMTP is rate-limited; set `auth.smtp: resend` in `golive.yaml` and run `plan` + `apply` (the `auth:smtp` step writes the custom SMTP from a sending key golive issues), configure it by hand, or accept the built-in mailer with `auth.smtp: provider`. Turn off link tracking at the email provider. |
+| `auth-policy` warns about the built-in mailer | Supabase's default SMTP is rate-limited; set `auth.smtp: resend` in `golive.yaml` and run `plan` + `apply` (the `auth:smtp` step writes the custom SMTP from a sending key golive issues, and raises the auth email rate limit), configure it by hand, or accept the built-in mailer with `auth.smtp: provider`. Turn off link tracking at the email provider. |
+| `auth-policy` warns the rate limit is below a run's sends | The project's own auth email limit (`rate_limit_email_sent`) is under the four accepted sends one run of the journeys needs. Set `auth.emailRateLimitPerHour` (30 is Supabase's suggested starting point) or raise it in the dashboard, then `plan` + `apply` (the `auth:smtp` step writes it when `auth.smtp: resend`) and re-run verify. |
 | `auth-policy` says `custom SMTP via Resend` but mail still fails | The read-back only proves the settings: `smtp_pass` is write-only, so a wrong or revoked key looks the same. Confirm the sender domain is verified (`email-verified`), the key exists at Resend, then re-run `plan` + `apply` (a fresh key) and send a real auth email. |
 | Magic-link emails broken or slow | Supabase's default SMTP is rate-limited; the `auth:smtp` step replaces it with the app's own email provider (§2). Turn off link tracking at the email provider. |
 | `auth.e2e` journey | Start with `auth.e2e: true`, `auth.testEmail` and `auth.protectedPath` in `golive.yaml`, then `plan` + `apply --confirm-live` (the `auth:test-user` step creates a real account). Click the link in that inbox, then `plan` + `apply` again and re-run `verify`. |
 | `auth-signup` skips with `blocked by: auth:test-user` | No test account is seeded yet: run `plan` + `apply` with `auth.e2e: true` first. |
 | `auth-session` reports `blocked by: no password for the test account in this run` | The generated password exists only in the run that seeded or rotated it, so a `verify`-only run cannot sign in. `auth-signup` still passes on the provider reads (`email_confirmed_at`) and closes the handoff; `auth-session` needs the password. Run `plan` + `apply` again (the step re-runs with a new password), then re-run `verify`. |
 | `auth-signup` says the test account is not confirmed yet | The human has not clicked that link. golive cannot read an inbox; the `auth:confirm-email` handoff stays open until `auth-signup` passes. Check spam (the built-in mailer is rate-limited and new domains often land there). |
-| `auth-signup` warns "rate-limited (HTTP 429)" | Supabase's built-in mailer limit (or a per-project email rate limit) refused the send. Wait for it to reset, raise `rate_limit_email_sent` / configure custom SMTP (§2), then re-run verify. |
+| `auth-signup` warns "rate-limited (HTTP 429)" | Supabase's built-in mailer limit (or a per-project email rate limit) refused the send. Wait for it to reset, then let the `auth:smtp` step configure custom SMTP and raise `rate_limit_email_sent` (`auth.emailRateLimitPerHour` overrides the 30 per hour it writes), or raise it in the dashboard, and re-run verify. |
 | `auth:test-user` fails with "wants a captcha" | Auth captcha (hcaptcha/turnstile) is on for the project: turn it off for a test journey, or keep the journey manual. A scripted signup cannot pass a captcha. |
 | `auth-signup` fails "accepted without sending a confirmation email" | `mailer_autoconfirm` is on (users are confirmed automatically): set `auth.requireEmailConfirm: true`, `plan` + `apply`, and re-run. If the address already had an account, that is why nothing was sent — see the next row. |
 | `auth:test-user` says the address already has an account | Supabase answers a duplicate signup without sending mail. golive adopts that account and rotates its password; delete it in the dashboard (Authentication → Users) or set another `auth.testEmail` to start clean. |
@@ -446,7 +458,7 @@ account isolation as proven on a human's project until a live report says `pass`
 | `auth-recovery` fails: an address with no account was answered differently | Something in front of `/auth/v1/recover` (a proxy, WAF, edge function or cached response) is leaking whether an address has an account. Answer an unknown address exactly like a known one. |
 | `auth-recovery` fails: the spent token resolved again | The verification endpoint accepted a one-time token twice. Check for anything answering `/auth/v1/verify` ahead of the project, then re-run verify. |
 | `auth-recovery` fails: the password set through recovery cannot sign in | The project's password policy may reject the generated password, or the account changed during the run. Check the user in the dashboard, then run `plan` + `apply` again (a fresh rotation) and re-run verify. |
-| `auth:recovery` or `auth-recovery` warns/errors with HTTP 429 | The project's auth email limit refused the send. Wait for the window to reset (the built-in mailer allows roughly one accepted send), configure custom SMTP (§2) and raise `rate_limit_email_sent`, then re-run. |
+| `auth:recovery` or `auth-recovery` warns/errors with HTTP 429 | The project's auth email limit refused the send. Wait for the window to reset, then configure custom SMTP (§2) — the `auth:smtp` step also raises `rate_limit_email_sent` (30 per hour, or `auth.emailRateLimitPerHour`) — and re-run. |
 | `auth.isolation` journey | Start with `auth.e2e: true`, `auth.testEmail`, `auth.isolation: true`, `auth.identityPath` and `auth.isolationPath` in `golive.yaml`, have the app expose both routes (the `auth:isolation-routes` handoff holds the contract), then `plan` + `apply --confirm-live` (the `auth:isolation` step creates and confirms the second account) and re-run `verify`. |
 | `plan` warns `the FIRST account comes from auth.e2e …` | `auth.isolation` needs the first test account too: set `auth.e2e: true` and `auth.testEmail`, then run `plan` again. |
 | `plan` warns the test account `is not confirmed yet` (with `auth.isolation`) | The isolation check signs in as both accounts, so the first one has to be confirmed: click its confirmation link, then run `plan` again. |
@@ -465,7 +477,11 @@ account isolation as proven on a human's project until a live report says `pass`
 - Custom SMTP writes: mock-covered, and the 2026-09-24 live run reached the write — the provider's
   validation rejected the port's number (`smtp_port: Invalid input: expected string, received
   number`, fixed by sending the string), so an accepted write and its read-back are still unobserved
-  live. `smtp_pass` is write-only (the API answers a hash), so even after a real run the read-back
+  live. The auth email rate limit is written in the same request (`rate_limit_email_sent`, 30 per hour
+  or `auth.emailRateLimitPerHour`): **implemented and mock-covered, not live-validated** — no live run
+  has yet read back a raised limit, and the field is the one setting here whose refusal golive only
+  warns about (the provider is free to keep its own value). `smtp_pass` is write-only (the API answers
+  a hash), so even after a real run the read-back
   confirms only host/port/user/sender — never that the key in effect is the recorded one, or that
   mail leaves the project. The auth email throttle's exact behaviour is also unconfirmed — the live
   project's `rate_limit_email_sent: 2` accepted one send and refused the next 25 seconds later
