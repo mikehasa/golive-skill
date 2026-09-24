@@ -1,19 +1,22 @@
 # GoLive
 
-**Take your agent-built product live: hosting, database, domain, email, payments — on your own accounts.**
+**Take your agent-built product live: hosting, database, auth, domain, email, payments — on your own accounts. Then hand it over, or tear it all down.**
 
 Your coding agent can build an app in minutes. Getting it to real users still means accounts,
 hosting, databases, domains, secrets and connected services. GoLive is the open-source Agent Skill
 for that work: it **detects what your app needs, plans the exact changes, asks for your approval,
-applies them with your own logins, and verifies what actually works**.
+applies them with your own logins, and verifies what actually works** — then records what it
+created, re-checks it for drift on demand, and can remove it again.
 
 Automate the parts providers expose. Guide you through the parts that need a human. Verify what
 can be observed, and make unfinished work clear. No GoLive account, hosted backend or product telemetry.
 
 > **Early alpha · 0.1.0-alpha.1**
 > We are starting with **hosting + database: two choices each**. Vercel + Supabase and Netlify +
-> Neon passed disposable live tests; custom-domain DNS, transactional email, test-mode payments and
-> Supabase authentication have since passed their own disposable validations. The broader
+> Neon passed disposable live tests; custom-domain DNS, transactional email, test-mode payments,
+> Supabase authentication and the `teardown` uninstall path have since passed their own disposable
+> validations; the ownership document and the on-demand `golive status` drift check are implemented
+> with test coverage (`golive status` also ran read-only in a live validation), while the broader
 > [roadmap](#the-full-go-live-checklist-and-roadmap) is our direction, not a claim that it is all built.
 
 [Install](#install) · [Use GoLive](#use-golive) · [See the workflow](#what-a-run-looks-like) · [Alpha scope](#what-this-alpha-supports) · [Roadmap](#the-full-go-live-checklist-and-roadmap) · [Contribute](CONTRIBUTING.md)
@@ -122,7 +125,8 @@ An illustrative conversation for an app that already uses Supabase:
 > **You:** Approved.
 >
 > **Agent:** The deployment is live. Here is the URL, the verification report, and anything still
-> unverified. Next we'll test the app's own signup and data flows.
+> unverified. Next we'll test the app's own signup and data flows. When you're done with this test
+> project, `golive teardown` plans its removal for your approval before anything is deleted.
 
 GoLive keeps the provider choices already in your app and asks about missing pieces. You handle
 signups, browser logins, identity checks and purchases. If an API key is needed on macOS, a native
@@ -156,6 +160,13 @@ afterward, and recent runs' disposable projects and records are cleaned up under
 supervision. Cross-pairings have mocked coverage, not equivalent live proof. Supabase CLI-login
 reuse separately passed read-only verification; the complete deployment test used an explicit
 token. A new user's first-account setup and every application framework have not been validated.
+
+The lifecycle commands have their own evidence: `golive teardown` was live-exercised on a disposable
+Netlify project (blocked without `--confirm-destroy`, then removed, the account's site list unchanged
+apart from it) and earlier runs removed the GoDaddy and Porkbun records golive had written, revoked the
+Resend sending keys it had issued and removed the Stripe test-mode endpoint it had registered.
+`golive status` ran read-only against a live project; `golive handoff --write` is implemented and
+mock-covered with no live row yet. See [observed validation](docs/VALIDATION.md) for the evidence.
 
 Experimental adapters also exist for Supabase Auth configuration, the Supabase Auth signup journey and
 Cloudflare DNS. Supabase Auth settings — signup, email confirmation, minimum password length, the
