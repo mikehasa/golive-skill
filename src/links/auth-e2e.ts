@@ -56,7 +56,7 @@ export const authE2eLink: Link = {
       title: `Seed one ${au.adapter.title} test account for the signup journey`,
       kind: 'provision',
       risk: { writes: true, live: true, replayable: true },
-      dependsOn: deps(ctx, [...(axis ? [`project:${axis}`] : []), 'auth:settings']),
+      dependsOn: deps(ctx, [...(axis ? [`project:${axis}`] : []), 'auth:smtp', 'auth:settings']),
       preview: [
         seeded
           ? `set a new password on the test account ${email} golive seeded earlier (${seeded}) in ${where}`

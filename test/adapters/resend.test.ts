@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { resendAdapter, mapDomainStatus, keyName } from '../../src/adapters/resend.js';
+import { resendAdapter, mapDomainStatus, keyName, keyNameFor } from '../../src/adapters/resend.js';
 import { normalizeRecords, fqdnFor } from '../../src/adapters/resend-records.js';
 import { _resetSecretRegistry, Secret, vaultGet } from '../../src/core/secret.js';
 import { mockExec, mockHttp, testCtx, type HttpCall } from '../helpers.js';
@@ -300,6 +300,11 @@ describe('resend keys (REST)', () => {
     const n = keyName(ctx, 'production');
     expect(n.length).toBeLessThanOrEqual(50);
     expect(n).toMatch(/^golive-a-very-long.*-production$/);
+    // An SMTP-only key gets a name of its own: it must not be rotated together with the app's key.
+    const smtp = keyNameFor(ctx, 'smtp');
+    expect(smtp).toMatch(/^golive-a-very-long.*-smtp$/);
+    expect(smtp.length).toBeLessThanOrEqual(50);
+    expect(smtp).not.toBe(n);
 
     const h = mockHttp([['GET', `${API}/domains`, () => ({ json: { data: [] } })]]);
     const ctx2 = testCtx({ exec: noCli().run, http: h.http, tokens: { RESEND_API_KEY: ADMIN } });

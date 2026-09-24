@@ -71,13 +71,19 @@ export interface InventoryDnsRecord {
   remove: NonNullable<DnsZone['remove']>;
 }
 
+/**
+ * What a recorded sending key serves: an env target's app key, or `smtp` — the key golive sets as the
+ * auth project's SMTP password (state key `<provider>.keyId@smtp`).
+ */
+export type KeySlot = EnvTarget | 'smtp';
+
 /** A sending key golive issued, recorded in state. */
 export interface InventorySendingKey {
   provider: string;
   providerTitle: string;
   /** State key recording the key id. */
   key: string;
-  target: EnvTarget;
+  target: KeySlot;
   id: string;
   /** Present only when golive can revoke the key right now: the adapter and its capability. */
   revocation?: { adapter: Adapter; revoke: NonNullable<KeyIssuer['revoke']> };
@@ -259,7 +265,7 @@ async function keyInventory(ctx: Ctx): Promise<InventorySendingKey[]> {
     const provider = m[1]!;
     const target = m[2]!;
     const id = ctx.state.resource(stateKey);
-    if (!id || !isEnvTarget(target)) continue;
+    if (!id || !isKeySlot(target)) continue;
     const revoke = ready && ready.adapter.id === provider ? ready.adapter.capabilities.keys?.revoke : undefined;
     out.push({ provider, providerTitle: titleOf(ctx, provider), key: stateKey, target, id, ...(ready && revoke ? { revocation: { adapter: ready.adapter, revoke } } : {}) });
   }
@@ -267,6 +273,8 @@ async function keyInventory(ctx: Ctx): Promise<InventorySendingKey[]> {
 }
 
 const isEnvTarget = (v: string): v is EnvTarget => (ENV_TARGETS as readonly string[]).includes(v);
+/** The slots a recorded sending key can serve: the env targets, plus `smtp` for the auth mailer. */
+const isKeySlot = (v: string): v is KeySlot => isEnvTarget(v) || v === 'smtp';
 
 // ── Host project ────────────────────────────────────────────────────────────────────────────────
 

@@ -647,7 +647,7 @@ describe('auth-policy', () => {
     expect(text).toMatch(/signup: open/);
     expect(text).toMatch(/email confirmation: required/);
     expect(text).toMatch(/password minimum length: 12/);
-    expect(text).toMatch(/auth email: custom SMTP \(smtp\.resend\.com\)/);
+    expect(text).toMatch(/auth email: custom SMTP via Resend \(smtp\.resend\.com\)/);
     expect(text).toMatch(/rate limit: 30 auth emails\/hour/);
   });
 

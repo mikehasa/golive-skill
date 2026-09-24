@@ -134,6 +134,16 @@ golive automates (after plan approval):
   SMTP write can never be confirmed from the read-back. The live run confirmed that the Management API
   does echo signup, email confirmation, the password minimum length, the SMTP-configured flag and the
   email rate limit back.
+- Writes the **custom SMTP** in its own `auth:smtp` step when `auth.smtp: resend` is set: `smtp_host`
+  (`smtp.resend.com`), `smtp_port` (465), `smtp_user` (`resend`), `smtp_admin_email` and
+  `smtp_sender_name` from the sender `email.from` already uses, and the write-only `smtp_pass` from a
+  sending key golive issued — the one the email journey issued in this run, otherwise one it issues for
+  SMTP alone (`golive-…-smtp`, recorded as `<provider>.keyId@smtp` so teardown can revoke it); never a
+  paste and never a chat prompt. The step re-reads the non-secret fields (`auth:smtp:applied`) and the
+  `auth-policy` check reports `custom SMTP via Resend` instead of the built-in-mailer warning, and the
+  journeys that send real mail run after it. The password is never compared, because the API never
+  returns it: the read-back confirms the settings, and a real auth email arriving is the only full
+  proof.
 - **Runs the signup journey** when the human opted in with `auth.e2e: true` (see below): the
   `auth:test-user` step seeds one test account through the project's own `/auth/v1` signup endpoint,
   `auth:confirm-email` hands the inbox click over, and the `auth-signup`/`auth-session` checks prove
@@ -167,11 +177,9 @@ Stays with the human (and why):
   `auth.isolation: true` it creates a **second** test account, confirms it through the admin API, and
   the check stores one small marker row per test account through the app's own
   `auth.isolationPath` route.
-- **Custom SMTP for auth emails.** Not automated yet. The human sets it in the Supabase dashboard
-  (Authentication → SMTP), pasting a sending key straight from the email provider (see `resend.md`).
-  Until then `auth-policy` warns that auth emails still use the built-in mailer (rate-limited, meant
-  for testing); setting `auth.smtp: provider` in `golive.yaml` is how a human accepts that
-  deliberately. Never ask for the SMTP password in chat: the human enters it in the dashboard.
+- **The inbox click** for a confirmation or recovery email (see the journeys below): golive never
+  reads an inbox, and with `auth.smtp: resend` that message comes from the app's own email provider
+  instead of the built-in mailer.
 - Restoring a paused project, plan upgrades, billing, creating OAuth apps (e.g. Google sign-in).
 
 ### The signup journey (`auth.e2e`)
@@ -239,10 +247,12 @@ Caveats to pass on before enabling it:
   is a second seeded account (`+gl-isolation`) that `auth:isolation` creates and confirms the same way,
   and the `auth-isolation` check stores one small marker row per test account through the app's own
   `auth.isolationPath` route on every run — those two rows stay in the project's data too.
-- **The built-in mailer is rate-limited** (a handful of auth emails per hour). Supabase then answers
-  HTTP 429: `auth-signup` warns, `auth:test-user` fails with instructions, and the fix is waiting for
-  the limit to reset or configuring custom SMTP. Check the spam folder — a project without DMARC
-  often lands there.
+- **The built-in mailer is rate-limited** (a handful of auth emails per hour; the live project's
+  `rate_limit_email_sent: 2` behaved closer to one accepted send per window). Supabase then answers
+  HTTP 429: `auth-signup` warns, `auth:test-user` fails with instructions, and one run of the
+  journeys can exceed what that limit fits. The fix is the `auth:smtp` step (`auth.smtp: resend`),
+  then waiting for the window to reset. Check the spam folder — a project without DMARC often lands
+  there.
 - **A captcha on signup** (`hcaptcha`/`turnstile`) makes a scripted journey impossible: the step
   fails and `auth-signup` skips, never fails. Turn the auth captcha off for this project, or accept
   that the journey stays manual.
@@ -411,8 +421,9 @@ account isolation as proven on a human's project until a live report says `pass`
 | `auth-policy` says signup is closed / confirmation off / password too short | Write the intended policy under `auth` in `golive.yaml` (`signup`, `requireEmailConfirm`, `passwordMinLength`), then `plan` + `apply` (the `auth:settings` step) and re-run verify. |
 | `auth:settings` step fails with "is X after the write, not Y" | Supabase accepted the PATCH but reports another value: check Auth Config write permission for this token and the setting in the dashboard, then re-run `apply`. |
 | `auth:settings` changes say `not confirmed: …` | Supabase does not return that setting through the API, so golive cannot confirm it. Confirm it in the dashboard; the rest of the write is unaffected. |
-| `auth-policy` warns about the built-in mailer | Supabase's default SMTP is rate-limited; set custom SMTP (§2, a manual dashboard step) or accept it with `auth.smtp: provider`. Turn off link tracking at the email provider. |
-| Magic-link emails broken or slow | Supabase's default SMTP is rate-limited; custom SMTP is a manual dashboard step (§2). Turn off link tracking at the email provider. |
+| `auth-policy` warns about the built-in mailer | Supabase's default SMTP is rate-limited; set `auth.smtp: resend` in `golive.yaml` and run `plan` + `apply` (the `auth:smtp` step writes the custom SMTP from a sending key golive issues), configure it by hand, or accept the built-in mailer with `auth.smtp: provider`. Turn off link tracking at the email provider. |
+| `auth-policy` says `custom SMTP via Resend` but mail still fails | The read-back only proves the settings: `smtp_pass` is write-only, so a wrong or revoked key looks the same. Confirm the sender domain is verified (`email-verified`), the key exists at Resend, then re-run `plan` + `apply` (a fresh key) and send a real auth email. |
+| Magic-link emails broken or slow | Supabase's default SMTP is rate-limited; the `auth:smtp` step replaces it with the app's own email provider (§2). Turn off link tracking at the email provider. |
 | `auth.e2e` journey | Start with `auth.e2e: true`, `auth.testEmail` and `auth.protectedPath` in `golive.yaml`, then `plan` + `apply --confirm-live` (the `auth:test-user` step creates a real account). Click the link in that inbox, then `plan` + `apply` again and re-run `verify`. |
 | `auth-signup` skips with `blocked by: auth:test-user` | No test account is seeded yet: run `plan` + `apply` with `auth.e2e: true` first. |
 | `auth-session` reports `blocked by: no password for the test account in this run` | The generated password exists only in the run that seeded or rotated it, so a `verify`-only run cannot sign in. `auth-signup` still passes on the provider reads (`email_confirmed_at`) and closes the handoff; `auth-session` needs the password. Run `plan` + `apply` again (the step re-runs with a new password), then re-run `verify`. |
@@ -448,10 +459,11 @@ account isolation as proven on a human's project until a live report says `pass`
 
 - Whether publishable keys are blocked from `/rest/v1/` exactly like anon keys (assumed yes).
 - The exact enforcement date for removing legacy keys ("late 2026", not final).
-- Custom SMTP writes: `smtp_pass` is write-only (the API answers a hash), so no SMTP write has been
-  made or can be confirmed from the read-back. The auth email throttle's exact behaviour is also
-  unconfirmed — the live project's `rate_limit_email_sent: 2` accepted one send and refused the next
-  25 seconds later rather than allowing a clean two per window.
+- Custom SMTP writes: implemented and mock-covered, not exercised live. `smtp_pass` is write-only (the
+  API answers a hash), so even after a real run the read-back confirms only host/port/user/sender —
+  never that the key in effect is the recorded one, or that mail leaves the project. The auth email
+  throttle's exact behaviour is also unconfirmed — the live project's `rate_limit_email_sent: 2`
+  accepted one send and refused the next 25 seconds later rather than allowing a clean two per window.
 - GoTrue answer shapes still modelled from its documented behaviour: an obfuscated duplicate signup
   and a captcha refusal. The disposable live run (2026-09-23) exercised an accepted signup, the
   confirmation email request, the `email_not_confirmed` login refusal and the 429 rate-limit refusal.

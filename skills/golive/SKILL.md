@@ -215,8 +215,16 @@ Explain the steps by provider, in plain language, and call out:
 - `auth:settings` / `auth:redirects` (Supabase Auth): the auth policy comes from `auth` in
   `golive.yaml` (`signup`, `requireEmailConfirm`, `passwordMinLength`; set or change those keys and
   re-run `plan`) and the redirects from the production URL. They are separate steps, each writing
-  only what differs; show the `before → after` lines as the change being approved. Never ask for the
-  SMTP password — custom SMTP stays a manual dashboard step.
+  only what differs; show the `before → after` lines as the change being approved.
+- `auth:smtp`: only when the human opted in with `auth.smtp: resend` **and** the email axis is Resend.
+  Say plainly that it points the project's auth emails at Resend's SMTP (`smtp.resend.com:465`, user
+  `resend`) as the sender `email.from` already names, and that the SMTP **password** is a sending key
+  golive already issued: the one the email journey issued in this run, otherwise one golive issues for
+  SMTP alone (`golive-…-smtp`, recorded in state like every other key). Never ask for that password —
+  golive never prints, stores or reports it, and the provider never returns it (it answers a hash), so
+  the step confirms the host/port/user/sender it can read back and a real auth email arriving is the
+  only full proof. Then `auth-policy` reports `custom SMTP via Resend` instead of the built-in-mailer
+  warning, and the journeys below no longer depend on that mailer's rate limit.
 - `auth:test-user`: only when the human opted in with `auth.e2e: true`, `auth.testEmail` and (for the
   app route) `auth.protectedPath`. Say plainly that it **creates a real account in their project**
   (a `--confirm-live` write), that the generated password lives only in that run, and that the
@@ -356,7 +364,7 @@ Check scope:
 | `rls-probe` | tables not readable with the public key |
 | `db-connection` | selected Neon database and role accept a fixed read-only query; does not verify migrations, deployed app access or user isolation |
 | `auth-redirects` | auth site URL / redirect allowlist point at production |
-| `auth-policy` | auth signup/confirmation/password policy matches the app and golive.yaml (site URL and redirects are `auth-redirects`); a setting the provider does not report is named, never assumed |
+| `auth-policy` | auth signup/confirmation/password policy matches the app and golive.yaml (site URL and redirects are `auth-redirects`); the mailer is reported as the provider's built-in one (with its rate limit) or as the custom SMTP it is (Resend's own host named); a setting the provider does not report is named, never assumed, and the SMTP password is never read back |
 | `auth-signup` | the `auth.e2e` journey: a fresh probe address gets a confirmation email, cannot sign in before confirming, and the test account reads back confirmed (`email_confirmed_at`) — a sign-in of that account is extra evidence when this run holds its password (golive never sees the inbox: delivery and the click stay human-confirmed) |
 | `auth-session` | the `auth.e2e` journey: the test account's password login returns a session, the token resolves to that user, an anonymous request is refused, and a declared `auth.protectedPath` is not publicly readable |
 | `auth-recovery` | the `auth.recovery` journey: the provider accepts the recovery request for the test account, an address with no account gets the same answer (a different one is account enumeration), the token this run spent is refused when replayed, the new password signs in and the one it replaced is refused, and the token's window is named from `otpExpirySeconds` when the provider reports it (a 429 only warns: the mail throttle decides what a run can prove) |

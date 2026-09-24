@@ -8943,9 +8943,17 @@ function smtpPasswordOf(v) {
 }
 function smtpOf(reported) {
   const host = str2(reported.host);
+  const user2 = str2(reported.user);
   const senderEmail = str2(reported.senderEmail);
   const senderName = str2(reported.senderName);
-  return { configured: Boolean(host), ...host ? { host } : {}, ...senderEmail ? { senderEmail } : {}, ...senderName ? { senderName } : {} };
+  return {
+    configured: Boolean(host),
+    ...host ? { host } : {},
+    ...reported.port ? { port: reported.port } : {},
+    ...user2 ? { user: user2 } : {},
+    ...senderEmail ? { senderEmail } : {},
+    ...senderName ? { senderName } : {}
+  };
 }
 function fieldValue(obj2, name3) {
   const [head, tail] = name3.split(".");
@@ -9033,7 +9041,7 @@ async function supabaseAuthedProbe(ctx, ref3, table, schema, publishableKey2, ac
 function detect(d) {
   return !!d.providers.db?.includes("supabase") || !!d.providers.auth?.includes("supabase") || Object.keys(d.configs).some((k) => k.startsWith("supabase/")) || d.envRefs.some((e) => e.name.includes("SUPABASE"));
 }
-var supabaseTiming, dbPassKey, STATE_CREATED, refOf, PAUSED, BROKEN, STARTING, CREATE_TIMEOUT_MS, usableKey, preferDefault, isStepRun, wantsDbUrls, LEVEL, str2, bool, int, flip, optionalStr, splitList, AUTH_FIELDS, sameValue, show, supabaseAdapter;
+var supabaseTiming, dbPassKey, STATE_CREATED, refOf, PAUSED, BROKEN, STARTING, CREATE_TIMEOUT_MS, usableKey, preferDefault, isStepRun, wantsDbUrls, LEVEL, str2, bool, int, flip, optionalStr, splitList, smtpPort, AUTH_FIELDS, sameValue, show, supabaseAdapter;
 var init_supabase = __esm({
   "src/adapters/supabase.ts"() {
     "use strict";
@@ -9061,6 +9069,7 @@ var init_supabase = __esm({
     flip = (v) => v === void 0 ? void 0 : !v;
     optionalStr = (key) => (raw2, res) => Object.hasOwn(res, key) ? str2(raw2) ?? "" : void 0;
     splitList = (raw2) => raw2.split(",").map((s) => s.trim()).filter(Boolean);
+    smtpPort = (v) => int(typeof v === "string" && /^\d+$/.test(v.trim()) ? Number(v.trim()) : v);
     AUTH_FIELDS = [
       {
         name: "siteUrl",
@@ -9081,6 +9090,8 @@ var init_supabase = __esm({
       { name: "otpLength", key: "mailer_otp_length", read: int, write: (v) => intOf("mailer_otp_length", v) },
       { name: "emailRateLimitPerHour", key: "rate_limit_email_sent", read: int, write: (v) => intOf("rate_limit_email_sent", v) },
       { name: "smtp.host", key: "smtp_host", read: optionalStr("smtp_host"), write: (v) => str2(v) },
+      { name: "smtp.port", key: "smtp_port", read: smtpPort, write: (v) => intOf("smtp_port", v) },
+      { name: "smtp.user", key: "smtp_user", read: optionalStr("smtp_user"), write: (v) => str2(v) },
       { name: "smtp.senderEmail", key: "smtp_admin_email", read: optionalStr("smtp_admin_email"), write: (v) => str2(v) },
       { name: "smtp.senderName", key: "smtp_sender_name", read: optionalStr("smtp_sender_name"), write: (v) => str2(v) },
       // Write-only: GET answers `smtp_pass` with a hash, never the value.
@@ -10747,13 +10758,14 @@ async function keyInventory(ctx) {
     const provider = m[1];
     const target = m[2];
     const id2 = ctx.state.resource(stateKey);
-    if (!id2 || !isEnvTarget(target)) continue;
+    if (!id2 || !isKeySlot(target)) continue;
     const revoke = ready2 && ready2.adapter.id === provider ? ready2.adapter.capabilities.keys?.revoke : void 0;
     out.push({ provider, providerTitle: titleOf(ctx, provider), key: stateKey, target, id: id2, ...ready2 && revoke ? { revocation: { adapter: ready2.adapter, revoke } } : {} });
   }
   return out;
 }
 var isEnvTarget = (v) => ENV_TARGETS.includes(v);
+var isKeySlot = (v) => isEnvTarget(v) || v === "smtp";
 async function projectInventory(ctx) {
   const s = await axisStatus(ctx, "hosting");
   if (s.kind !== "ready") return null;
@@ -14114,7 +14126,7 @@ function toInt(v) {
 var API2 = "https://api.resend.com";
 var UA = "golive/0";
 var TOKEN = "RESEND_API_KEY";
-var VAULT_KEY = "resend.apiKey";
+var KEY_VAULT = "resend.apiKey";
 var REGIONS = /* @__PURE__ */ new Set(["us-east-1", "eu-west-1", "sa-east-1", "ap-northeast-1"]);
 var CLI_ENV = { RESEND_API_KEY: "" };
 var CLI_LOGIN = "Preferred: run `resend login` (browser login; install with `npm i -g resend-cli`) in a separate terminal window (the Terminal app or your IDE's terminal; Claude Code's `!` prefix has no interactive terminal, so logins fail there).";
@@ -14393,12 +14405,13 @@ function appSlug(ctx) {
   const raw2 = basename7(ctx.detect.root || ctx.cwd) || "app";
   return raw2.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "app";
 }
-function keyName(ctx, target) {
-  const suffix = `-${target}`;
+function keyNameFor(ctx, slot) {
+  const suffix = `-${slot}`;
   const room = 50 - "golive-".length - suffix.length;
   const app = appSlug(ctx).slice(0, room).replace(/-$/, "") || "app";
   return `golive-${app}${suffix}`;
 }
+var keyName = (ctx, target) => keyNameFor(ctx, target);
 var keys = {
   async issue(ctx, target, scope) {
     const domain = scope.domain ?? ctx.config.email?.domain ?? ctx.config.domain;
@@ -14406,11 +14419,11 @@ var keys = {
     const t = await transport(ctx);
     const d = (await t.listDomains()).find((x) => sameName(x.name, domain));
     if (!d) throw new Error(`Resend has no domain ${domain} yet; run the sending-domain step first, then issue the key`);
-    const name3 = keyName(ctx, target);
+    const name3 = scope.purpose === "smtp" ? keyNameFor(ctx, "smtp") : keyName(ctx, target);
     const older = await t.listKeys().catch(() => []);
     const same2 = older.filter((k2) => k2.name === name3).map((k2) => k2.id);
     const k = await t.createKey(name3, d.id);
-    vaultPut(VAULT_KEY, k.token);
+    vaultPut(KEY_VAULT, k.token);
     ctx.log.info(`issued Resend sending key ${name3} (${k.id}, domain ${d.name}, fp:${k.token.fingerprint})`);
     if (same2.length) ctx.log.info(`older Resend keys named ${name3} still exist (${same2.join(", ")}); revoke them once the new key is live`);
     return { key: "resend.apiKey", id: k.id, secret: k.token };
@@ -14428,7 +14441,7 @@ function idempotencyKey(msg, keyFp) {
 }
 var testSend = {
   async send(ctx, msg) {
-    const appKey = msg.key ?? vaultGet(VAULT_KEY);
+    const appKey = msg.key ?? vaultGet(KEY_VAULT);
     if (appKey) return sendRest(ctx, appKey, msg, idempotencyKey(msg, appKey.fingerprint));
     const t = await transport(ctx);
     return t.sendEmail(msg, idempotencyKey(msg, t.via));
@@ -17486,6 +17499,147 @@ async function verifySettings(ctx, title, authConfig, changes) {
   return [{ id: id2, title: checkTitle, status: "pass", severity: "info", evidence: [...confirmed, ...unconfirmed] }];
 }
 
+// src/links/auth-smtp.ts
+init_secret();
+var SMTP_HOST = "smtp.resend.com";
+var SMTP_PORT = 465;
+var SMTP_USER = "resend";
+var smtpKeySlot = (provider) => `${provider}.keyId@smtp`;
+var FIELDS = [
+  { field: "host", label: "SMTP host" },
+  { field: "port", label: "SMTP port" },
+  { field: "user", label: "SMTP user" },
+  { field: "senderEmail", label: "sender address" },
+  { field: "senderName", label: "sender name" }
+];
+var show3 = (v) => v === void 0 || v === "" ? "(not set)" : String(v);
+function senderOf(from) {
+  const raw2 = from?.trim();
+  if (!raw2) return {};
+  const m = /^(.*?)\s*<\s*([^>]+)\s*>\s*$/.exec(raw2);
+  if (!m) return { email: raw2 };
+  const name3 = m[1].replace(/^"|"$/g, "").trim();
+  return { email: m[2].trim(), ...name3 ? { name: name3 } : {} };
+}
+function whyEmail(status) {
+  if (status.kind === "none") return "no email provider is chosen in golive.yaml";
+  if (status.kind === "guided") return `${status.title} is guided`;
+  if (status.kind === "unauthed") return `${status.adapter.title} is not connected yet`;
+  return `${status.adapter.title} is not Resend`;
+}
+var authSmtpLink = {
+  id: "auth-smtp",
+  async plan(ctx) {
+    if (ctx.config.auth?.smtp !== "resend") return null;
+    const au = await axisStatus(ctx, "auth");
+    if (au.kind !== "ready") return null;
+    const authConfig = au.adapter.capabilities.authConfig;
+    if (!authConfig) return null;
+    const em = await axisStatus(ctx, "email");
+    if (em.kind !== "ready" || em.adapter.id !== "resend") {
+      return { steps: [], handoffs: [], warnings: [`auth.smtp is "resend" in golive.yaml, but ${whyEmail(em)}: golive knows only Resend's SMTP endpoint and needs its API to obtain a sending key, so the custom-SMTP write stays a manual dashboard step`] };
+    }
+    const keys3 = em.adapter.capabilities.keys;
+    if (!keys3) {
+      return { steps: [], handoffs: [], warnings: [`auth.smtp is "resend" in golive.yaml, but ${em.adapter.title} exposes no key issuance: golive cannot obtain the sending key the SMTP password has to be, so the custom-SMTP write is left out of this plan`] };
+    }
+    const sender = senderOf(ctx.config.email?.from);
+    if (!sender.email) {
+      return { steps: [], handoffs: [], warnings: ['auth.smtp is "resend" in golive.yaml but golive.yaml sets no email.from: the SMTP sender is an address on the sending domain (the one the app sends as), so the custom-SMTP write is left out of this plan'] };
+    }
+    const domain = emailDomain(ctx);
+    let before;
+    try {
+      before = await authConfig.get(ctx);
+    } catch (e) {
+      return { steps: [], handoffs: [], warnings: [`reading ${au.adapter.title} auth settings failed (${errMsg(e)}); the custom-SMTP write is left out of this plan`] };
+    }
+    const want = { host: SMTP_HOST, port: SMTP_PORT, user: SMTP_USER, senderEmail: sender.email, ...sender.name ? { senderName: sender.name } : {} };
+    const changes = FIELDS.filter((f) => want[f.field] !== void 0 && before.smtp?.[f.field] !== want[f.field]).map((f) => ({ label: f.label, from: before.smtp?.[f.field], to: want[f.field] }));
+    const slot = smtpKeySlot(em.adapter.id);
+    const recorded = ctx.state.resource(slot);
+    const fromJourney = deps(ctx, [...memo(ctx).planned].filter((id2) => id2.startsWith("email:key:")));
+    if (!changes.length && ctx.state.get().steps["auth:smtp"]?.status === "done" && !fromJourney.length) return null;
+    const axis = projectAxisFor(ctx, au.adapter);
+    const s = step({
+      id: "auth:smtp",
+      title: `Send ${au.adapter.title} auth emails through Resend's SMTP`,
+      kind: "wire",
+      risk: { writes: true },
+      dependsOn: deps(ctx, [...axis ? [`project:${axis}`] : [], ...fromJourney.length ? fromJourney : ["email:domain"]]),
+      preview: [
+        `set the ${au.adapter.title} project's custom SMTP to Resend (${SMTP_HOST}:${SMTP_PORT}, user ${SMTP_USER}) as ${sender.email}${sender.name ? ` (${sender.name})` : ""}`,
+        ...changes.map((c) => `${c.label}: ${show3(c.from)} \u2192 ${show3(c.to)}`),
+        fromJourney.length ? "the SMTP password is the sending key the email journey issues in this run" : `the SMTP password is a sending key golive issues for SMTP alone (golive-\u2026-smtp), recorded in state as ${slot} like every other key${recorded ? ` (it issued ${recorded} before)` : ""}`,
+        "the password is never printed, stored or reported; the provider answers that field with a hash, so what the write can show is the accepted request plus the host/port/user/sender it reports back, and a real auth email arriving is the only full proof it can send"
+      ],
+      intent: intentOf({
+        project: await projectIntent(ctx, au.adapter),
+        sender: sender.email,
+        key: fromJourney.length ? `journey:${fromJourney.join(",")}` : `smtp:${recorded ?? "new"}`,
+        write: Object.entries(want).map(([k, v]) => `${k}=${String(v)}`)
+      }),
+      verifyWith: ["auth-policy"],
+      async run(sctx) {
+        const lines = changes.map((c) => `${c.label}: ${show3(c.from)} \u2192 ${show3(c.to)}`);
+        const held = vaultGet(KEY_VAULT);
+        let password;
+        if (held) {
+          password = held;
+          lines.push(`SMTP password: the sending key this run issued earlier (fp:${password.fingerprint})`);
+        } else {
+          const issued = await keys3.issue(sctx, "production", { ...domain ? { domain } : {}, purpose: "smtp" });
+          sctx.remember(slot, issued.id);
+          password = issued.secret;
+          lines.push(`issued the ${em.adapter.title} sending key ${issued.id} as the SMTP password (fp:${password.fingerprint}); recorded in state as ${slot}, so teardown can revoke it`);
+          if (recorded && recorded !== issued.id) lines.push(`the SMTP key golive issued earlier (${recorded}) is left active; revoke it in ${em.adapter.title} once nothing uses it`);
+        }
+        const outcome = await authConfig.set(sctx, { smtp: want, smtpPassword: password });
+        for (const skip2 of outcome.skipped) lines.push(`not confirmed: ${skip2}`);
+        lines.push(`the password itself is only ever accepted, never confirmed: ${au.adapter.title} answers it with a hash, and a real auth email arriving is the only full proof it can send`);
+        return { changes: lines };
+      },
+      verifyInline: (vctx) => verifySmtp(vctx, au.adapter.title, authConfig, want)
+    });
+    return { steps: track(ctx, [s]), handoffs: [], warnings: [] };
+  }
+};
+async function verifySmtp(ctx, title, authConfig, want) {
+  const id2 = "auth:smtp:applied";
+  const checkTitle = `${title} custom SMTP holds after the write`;
+  let after;
+  try {
+    after = await authConfig.get(ctx);
+  } catch (e) {
+    return [{ id: id2, title: checkTitle, status: "fail", severity: "high", evidence: [`could not re-read ${title} auth settings: ${errMsg(e)}`], fix: "Check the auth provider login, then re-run apply." }];
+  }
+  const confirmed = [];
+  const unconfirmed = [];
+  const wrong = [];
+  for (const f of FIELDS) {
+    const to = want[f.field];
+    if (to === void 0) continue;
+    const got = after.smtp?.[f.field];
+    if (got === void 0) unconfirmed.push(`${f.label}: ${title} does not report it back`);
+    else if (got === to) confirmed.push(`${f.label}: ${show3(got)}`);
+    else wrong.push(`${f.label} is ${show3(got)} after the write, not ${show3(to)}`);
+  }
+  const limit = "the SMTP password is write-only (the provider answers a hash), so this proves the settings, not a delivery";
+  if (wrong.length) {
+    return [
+      {
+        id: id2,
+        title: checkTitle,
+        status: "fail",
+        severity: "high",
+        evidence: [...wrong, ...confirmed, ...unconfirmed, limit],
+        fix: `Set the custom SMTP in the ${title} dashboard, or check that this credential may update auth settings, then re-run apply.`
+      }
+    ];
+  }
+  return [{ id: id2, title: checkTitle, status: "pass", severity: "info", evidence: [...confirmed, ...unconfirmed, limit] }];
+}
+
 // src/links/auth-e2e.ts
 init_secret();
 init_supabase_auth();
@@ -17520,7 +17674,7 @@ var authE2eLink = {
       title: `Seed one ${au.adapter.title} test account for the signup journey`,
       kind: "provision",
       risk: { writes: true, live: true, replayable: true },
-      dependsOn: deps(ctx, [...axis ? [`project:${axis}`] : [], "auth:settings"]),
+      dependsOn: deps(ctx, [...axis ? [`project:${axis}`] : [], "auth:smtp", "auth:settings"]),
       preview: [
         seeded ? `set a new password on the test account ${email} golive seeded earlier (${seeded}) in ${where}` : `create one test account ${email} in ${where}`,
         "the generated password stays in this run's memory only; state records the user id and the address, never a secret",
@@ -17643,7 +17797,7 @@ var authRecoveryLink = {
       title: `Rotate the ${au.adapter.title} test account's password through password recovery`,
       kind: "provision",
       risk: { writes: true, live: true, replayable: true },
-      dependsOn: deps(ctx, [...axis ? [`project:${axis}`] : [], "auth:settings", "auth:test-user"]),
+      dependsOn: deps(ctx, [...axis ? [`project:${axis}`] : [], "auth:smtp", "auth:settings", "auth:test-user"]),
       preview: [
         `ask ${au.adapter.title} to send a real password-recovery email for ${address} in ${where}`,
         `mint the recovery link through the admin API and set a new password on ${address} (${seeded}) with it \u2014 the same calls the app's own recovery page makes`,
@@ -17787,7 +17941,7 @@ var authIsolationLink = {
       title: `Seed a second ${au.adapter.title} test account for the account-isolation check`,
       kind: "provision",
       risk: { writes: true, live: true, replayable: true },
-      dependsOn: deps(ctx, [...axis ? [`project:${axis}`] : [], "auth:settings", "auth:test-user"]),
+      dependsOn: deps(ctx, [...axis ? [`project:${axis}`] : [], "auth:smtp", "auth:settings", "auth:test-user"]),
       preview: [
         seeded ? `set a new password on the second test account ${address} golive seeded earlier (${seeded}) in ${where}` : `create a second test account ${address} in ${where}`,
         `confirm that account through ${au.adapter.title}'s admin API and read it back: the isolation check needs two signed-in accounts, and a click in the inbox is not one of its legs (the confirmation email it also receives is a side effect)`,
@@ -18737,7 +18891,7 @@ function livePreviewNames(ctx, planned) {
 }
 
 // src/links/all.ts
-var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, authE2eLink, authIsolationLink, authRecoveryLink, emailDomainLink, emailKeysLink, deployLink, netlifyVisibilityLink, releaseLink];
+var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, emailDomainLink, emailKeysLink, authSmtpLink, authE2eLink, authIsolationLink, authRecoveryLink, deployLink, netlifyVisibilityLink, releaseLink];
 
 // src/links/index.ts
 var LINKS = ALL_LINKS;
@@ -19228,6 +19382,8 @@ var authRedirectsCheck = {
 
 // src/checks/auth.ts
 var MIN_PASSWORD = 12;
+var RESEND_SMTP_HOST = "smtp.resend.com";
+var isResendSmtp = (host) => (host ?? "").trim().toLowerCase() === RESEND_SMTP_HOST;
 function appUsesAuth(ctx, provider) {
   return Boolean(ctx.detect.providers.auth?.includes(provider));
 }
@@ -19315,12 +19471,21 @@ var authPolicyCheck = {
     }
     if (!cfg2.smtp) missing.push("auth email (SMTP)");
     else {
-      evidence.push(cfg2.smtp.configured ? `auth email: custom SMTP${cfg2.smtp.host ? ` (${cfg2.smtp.host})` : ""}` : "auth email: provider built-in mailer");
-      if (!cfg2.smtp.configured && ctx.config.auth?.smtp !== "provider") {
+      evidence.push(cfg2.smtp.configured ? `auth email: custom SMTP${isResendSmtp(cfg2.smtp.host) ? " via Resend" : ""}${cfg2.smtp.host ? ` (${cfg2.smtp.host})` : ""}` : "auth email: provider built-in mailer");
+      if (cfg2.smtp.configured) {
+        if (cfg2.smtp.senderEmail) evidence.push(`auth email sender: ${cfg2.smtp.senderEmail}`);
+        evidence.push("the provider never returns the SMTP password, so this reads the settings back, not a delivery");
+      } else if (ctx.config.auth?.smtp === "resend") {
         issues.push({
           severity: "medium",
-          line: `auth emails go through ${provider}'s built-in mailer, which is rate-limited and meant for testing`,
-          fix: `Configure custom SMTP in the ${provider} dashboard, or accept the built-in mailer with \`auth.smtp: provider\` in golive.yaml.`
+          line: `golive.yaml asks for the app's email provider (\`auth.smtp: resend\`) but auth emails still go through ${provider}'s built-in mailer, which allows roughly one accepted send per window \u2014 the recovery journey alone needs four`,
+          fix: `Re-run \`plan\` + \`apply\` (the \`auth:smtp\` step writes the custom SMTP from a sending key golive issues), then re-run verify.`
+        });
+      } else if (ctx.config.auth?.smtp !== "provider") {
+        issues.push({
+          severity: "medium",
+          line: `auth emails go through ${provider}'s built-in mailer, which is rate-limited and meant for testing: its limit can refuse the sends an auth journey needs (HTTP 429, roughly one accepted send per window)`,
+          fix: `Set \`auth.smtp: resend\` in golive.yaml and re-run \`plan\` + \`apply\` (the \`auth:smtp\` step writes the custom SMTP from a sending key golive issues), configure custom SMTP in the ${provider} dashboard, or accept the built-in mailer with \`auth.smtp: provider\`.`
         });
       }
     }

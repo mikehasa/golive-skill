@@ -396,17 +396,22 @@ export interface AuthSettings {
 export interface AuthSmtp {
   configured: boolean;
   host?: string;
+  port?: number;
+  /** The SMTP username (`resend` for a Resend key) — an identifier, never the password. */
+  user?: string;
   senderEmail?: string;
   senderName?: string;
 }
 
 /**
- * What `set` may write: the policy fields above plus the one write-only secret. `smtpPassword` goes
- * into the request body and is never read back, so an SMTP write is confirmed through its non-secret
- * companions (host, sender) — never by comparing the password. It must never reach state, reports,
- * previews or errors, the same as every other credential.
+ * What `set` may write: the policy fields above plus the custom-SMTP group and its one write-only
+ * secret. `smtp` is a partial group: `configured` is derived from the host on read and a patch carries
+ * only the fields it changes. `smtpPassword` goes into the request body and is never read back, so an
+ * SMTP write is confirmed through its non-secret companions (host, port, user, sender) — never by
+ * comparing the password. It must never reach state, reports, previews or errors, the same as every
+ * other credential.
  */
-export type AuthWrite = Partial<AuthSettings> & { smtpPassword?: Secret };
+export type AuthWrite = Partial<Omit<AuthSettings, 'smtp'>> & { smtp?: Partial<AuthSmtp>; smtpPassword?: Secret };
 
 /**
  * What a `set` achieved, from re-reading the provider's own settings afterwards. Entries are golive's
@@ -595,7 +600,12 @@ export interface SendingDomain {
  * `outputs` instead.
  */
 export interface KeyIssuer {
-  issue(ctx: Ctx, target: EnvTarget, scope: { domain?: string }): Promise<{ key: OutputKey; id: string; secret: Secret }>;
+  /**
+   * Mint a key. `purpose: 'smtp'` asks for the key golive sets as the auth project's SMTP password:
+   * the same scope and least privilege, but under a name of its own (`golive-<app>-smtp`) so it is not
+   * rotated together with the app's own key. A provider that cannot tell the two apart may ignore it.
+   */
+  issue(ctx: Ctx, target: EnvTarget, scope: { domain?: string; purpose?: 'smtp' }): Promise<{ key: OutputKey; id: string; secret: Secret }>;
   /**
    * Revoke a key previously issued (by id), e.g. when rotating or tearing down. A key the provider no
    * longer has is NOT an error: report `revoked: false` with the reason (`'key not found'` for a key

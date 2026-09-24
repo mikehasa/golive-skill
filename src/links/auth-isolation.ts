@@ -100,7 +100,7 @@ export const authIsolationLink: Link = {
       title: `Seed a second ${au.adapter.title} test account for the account-isolation check`,
       kind: 'provision',
       risk: { writes: true, live: true, replayable: true },
-      dependsOn: deps(ctx, [...(axis ? [`project:${axis}`] : []), 'auth:settings', 'auth:test-user']),
+      dependsOn: deps(ctx, [...(axis ? [`project:${axis}`] : []), 'auth:smtp', 'auth:settings', 'auth:test-user']),
       preview: [
         seeded
           ? `set a new password on the second test account ${address} golive seeded earlier (${seeded}) in ${where}`
