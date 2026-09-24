@@ -298,6 +298,31 @@ describe('cloudflare dns.upsert', () => {
     expect(ctx.logs.join('\n')).toMatch(/proxied/);
   });
 
+  it('identical but TTL drift: patches the TTL only when golive owns it', async () => {
+    const want: DnsRecord = { ...cname, ttl: 300 };
+    const owned = fakeCloudflare({ records: [{ id: 'o1', type: 'CNAME', name: 'www.example.com', content: 'cname.vercel-dns.com', ttl: 1, proxied: false, comment: 'golive: managed' }] });
+    expect(await cloudflareDns.upsert(ctxWith(owned), 'example.com', want)).toBe('updated');
+    expect(owned.writes()[0]!.method).toBe('PATCH');
+    expect(owned.writes()[0]!.body).toEqual({ ttl: 300, proxied: false });
+    expect(owned.records[0]!.ttl).toBe(300);
+
+    const foreign = fakeCloudflare({ records: [{ id: 'f1', type: 'CNAME', name: 'www.example.com', content: 'cname.vercel-dns.com', ttl: 1, proxied: false, comment: 'set up by bob' }] });
+    const fctx = ctxWith(foreign);
+    expect(await cloudflareDns.upsert(fctx, 'example.com', want)).toBe('unchanged');
+    expect(foreign.writes()).toHaveLength(0);
+    expect(fctx.logs.join('\n')).toMatch(/TTL 1/);
+  });
+
+  it('no TTL asked for, or the same TTL: an identical record stays unchanged', async () => {
+    const noTtl = fakeCloudflare({ records: [{ id: 'r1', type: 'CNAME', name: 'www.example.com', content: 'cname.vercel-dns.com', ttl: 3600, proxied: false, comment: 'golive: managed' }] });
+    expect(await cloudflareDns.upsert(ctxWith(noTtl), 'example.com', cname)).toBe('unchanged');
+    expect(noTtl.writes()).toHaveLength(0);
+
+    const sameTtl = fakeCloudflare({ records: [{ id: 'r2', type: 'CNAME', name: 'www.example.com', content: 'cname.vercel-dns.com', ttl: 300, proxied: false, comment: 'golive: managed' }] });
+    expect(await cloudflareDns.upsert(ctxWith(sameTtl), 'example.com', { ...cname, ttl: 300 })).toBe('unchanged');
+    expect(sameTtl.writes()).toHaveLength(0);
+  });
+
   it('foreign conflicting CNAME: clear error naming the existing record, nothing written', async () => {
     const fake = fakeCloudflare({ records: [{ id: 'f1', type: 'CNAME', name: 'www.example.com', content: 'old-host.netlify.app', proxied: false, comment: null }] });
     const ctx = ctxWith(fake);
@@ -529,6 +554,92 @@ describe('cloudflare dns.upsert', () => {
       expect(err.message).toMatch(/can never pass/);
       expect(fake.writes()).toHaveLength(0);
     });
+  });
+});
+
+describe('cloudflare dns: stale cached zone id', () => {
+  const A: DnsRecord = { type: 'A', name: 'example.com', content: '76.76.21.21' };
+  const cname: DnsRecord = { type: 'CNAME', name: 'www.example.com', content: 'cname.vercel-dns.com' };
+  const cachedZone = (ctx: ReturnType<typeof testCtx>) => {
+    ctx.state.save((s) => void (s.resources['cloudflare.zoneId:example.com'] = 'zoneOLD'));
+    return ctx;
+  };
+  const ZONES_404: [string, RegExp, () => { status: number; json: unknown }] = [
+    'GET',
+    new RegExp(`^${API}/zones/zoneOLD/`),
+    () => ({ status: 404, json: { success: false, errors: [{ code: 1049, message: 'Invalid zone identifier' }], result: null } }),
+  ];
+
+  it('regression: re-resolves once, retries on the fresh id and remembers it', async () => {
+    const lookups: string[] = [];
+    const { http, calls } = mockHttp([
+      [
+        'GET',
+        new RegExp(`^${API}/zones\\?`),
+        (c) => {
+          const name = new URL(c.url).searchParams.get('name') ?? '';
+          lookups.push(name);
+          return { json: { success: true, result: name === 'example.com' ? [{ id: 'zoneNEW', name: 'example.com', status: 'active' }] : [], result_info: { page: 1, total_pages: 1 } } };
+        },
+      ],
+      ZONES_404,
+      ['GET', new RegExp(`^${API}/zones/zoneNEW/dns_records`), () => ({ json: { success: true, result: [], result_info: { page: 1, total_pages: 1 } } })],
+      ['POST', new RegExp(`^${API}/zones/zoneNEW/dns_records$`), (c) => ({ json: { success: true, result: { ...(c.body as Rec), id: 'recNEW' } } })],
+    ]);
+    const ctx = cachedZone(testCtx({ http, tokens: { CLOUDFLARE_API_TOKEN: TOKEN } }));
+    expect(await cloudflareDns.upsert(ctx, 'example.com', A)).toBe('created');
+    expect(ctx.state.resource('cloudflare.zoneId:example.com')).toBe('zoneNEW');
+    expect(ctx.state.resource('cloudflare.recordId:A:example.com')).toBe('recNEW');
+    expect(lookups).toEqual(['example.com']); // exactly one re-resolution
+    expect(calls.filter((c) => c.url.includes('zoneOLD'))).toHaveLength(1); // one attempt on the stale id, no loop
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+    assertTokenContained(calls, ctx.logs);
+  });
+
+  it('a retried write reaches the fresh zone (owned conflict PATCHed there)', async () => {
+    const { http, calls } = mockHttp([
+      ['GET', new RegExp(`^${API}/zones\\?`), () => ({ json: { success: true, result: [{ id: 'zoneNEW', name: 'example.com', status: 'active' }], result_info: { page: 1, total_pages: 1 } } })],
+      ZONES_404,
+      ['GET', new RegExp(`^${API}/zones/zoneNEW/dns_records`), () => ({ json: { success: true, result: [{ id: 'o1', type: 'CNAME', name: 'www.example.com', content: 'old.vercel-dns.com', proxied: false, comment: 'golive: managed' }], result_info: { page: 1, total_pages: 1 } } })],
+      ['PATCH', new RegExp(`^${API}/zones/zoneNEW/dns_records/o1$`), (c) => ({ json: { success: true, result: { id: 'o1', ...(c.body as object) } } })],
+    ]);
+    const ctx = cachedZone(testCtx({ http, tokens: { CLOUDFLARE_API_TOKEN: TOKEN } }));
+    expect(await cloudflareDns.upsert(ctx, 'example.com', cname)).toBe('updated');
+    const patches = calls.filter((c) => c.method === 'PATCH');
+    expect(patches).toHaveLength(1);
+    expect(patches[0]!.url).toBe(`${API}/zones/zoneNEW/dns_records/o1`);
+    expect(patches[0]!.body).toEqual({ type: 'CNAME', content: 'cname.vercel-dns.com', ttl: 1, comment: 'golive: managed', proxied: false });
+    expect(calls.filter((c) => c.url.includes('zoneOLD'))).toHaveLength(1);
+  });
+
+  it('when re-resolution finds no zone, the original error surfaces after exactly one retry', async () => {
+    const lookups: string[] = [];
+    const { http, calls } = mockHttp([
+      [
+        'GET',
+        new RegExp(`^${API}/zones\\?`),
+        (c) => {
+          lookups.push(new URL(c.url).searchParams.get('name') ?? '');
+          return { json: { success: true, result: [], result_info: { page: 1, total_pages: 1 } } };
+        },
+      ],
+      ZONES_404,
+    ]);
+    const ctx = cachedZone(testCtx({ http, tokens: { CLOUDFLARE_API_TOKEN: TOKEN } }));
+    const err = await errorOf(cloudflareDns.upsert(ctx, 'example.com', A));
+    expect(err.message).toContain('HTTP 404');
+    expect(lookups).toEqual(['example.com']);
+    expect(calls.filter((c) => c.url.includes('zoneOLD'))).toHaveLength(1);
+  });
+
+  it('a freshly resolved zone is not retried (there is no cache to invalidate)', async () => {
+    const { http, calls } = mockHttp([
+      ['GET', new RegExp(`^${API}/zones\\?`), () => ({ json: { success: true, result: [{ id: 'zoneX', name: 'example.com', status: 'active' }], result_info: { page: 1, total_pages: 1 } } })],
+      ['GET', new RegExp(`^${API}/zones/zoneX/dns_records`), () => ({ status: 404, json: { success: false, errors: [{ code: 1049, message: 'Invalid zone identifier' }], result: null } })],
+    ]);
+    const err = await errorOf(cloudflareDns.upsert(testCtx({ http, tokens: { CLOUDFLARE_API_TOKEN: TOKEN } }), 'example.com', A));
+    expect(err.message).toContain('HTTP 404');
+    expect(calls.filter((c) => c.url.includes('/dns_records'))).toHaveLength(1);
   });
 });
 
