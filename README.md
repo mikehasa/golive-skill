@@ -67,6 +67,31 @@ The install includes the instructions, provider references and prebuilt runtime.
 connect accounts or deploy anything. See [installation and updates](docs/DISTRIBUTION.md) for
 noninteractive agent flags, runtime verification and the optional own installer.
 
+### Install from npm
+
+The same skill is published to npm as `golive@0.1.0-alpha.0` (dist-tag `alpha`), which installs it
+offline, with no Git or Skills CLI involved:
+
+```bash
+# Codex
+npx golive@alpha install --agent codex
+
+# Claude Code
+npx golive@alpha install --agent claude
+```
+
+Add `--global` to install into your home directory (`~/.agents/skills/golive` or
+`~/.claude/skills/golive`) instead of the current project. The installer copies the complete skill
+the package ships with, refuses an existing destination, and never connects provider accounts.
+
+**The two channels are at different versions.** GitHub serves the current release,
+`0.1.0-alpha.1`; the npm channel still serves the earlier `0.1.0-alpha.0` snapshot, which predates
+the Netlify and Neon provider references and has no updater. Use GitHub for the newest providers.
+The npm package also exposes the terminal CLI: `npx golive@alpha help`, `version`, `detect`, `menu`,
+`plan`, `apply`, `verify`, `handoff` — `apply` needs the approved plan ID and explicit confirmation.
+See [installation and updates](docs/DISTRIBUTION.md#alternative-installation-the-npm-package) for
+the channel's exact limits.
+
 ## Use GoLive
 
 Open your app repository in your coding agent. After installation, reload skills or start a new
@@ -90,8 +115,9 @@ plan for your approval before making provider changes.
 
 These are chat prompts. `golive skill` is not a command. Installing through `npx skills add` does
 not add a `golive` command to your terminal; the agent runs the included CLI from the installed
-skill directory. The optional npm package is prepared but not yet published; its terminal CLI
-runs individual operations rather than the conversational skill workflow.
+skill directory. The [npm package](#install-from-npm) can also install the skill offline and exposes
+that CLI as `npx golive@alpha <command>`; its terminal commands run individual operations rather
+than the conversational skill workflow.
 
 ## What a run looks like
 

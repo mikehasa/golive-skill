@@ -3,7 +3,9 @@
 GoLive is the project name; `golive` is the skill name, and the repository is
 [`mikehasa/golive-skill`](https://github.com/mikehasa/golive-skill).
 
-The current alpha is `0.1.0-alpha.1`. GitHub installation does not depend on our npm package.
+The current alpha is `0.1.0-alpha.1`. There are two installation channels: GitHub through Skills CLI,
+which serves the current release, and the npm package, which still serves the earlier
+`0.1.0-alpha.0` snapshot. GitHub installation works without npm.
 See [validation](VALIDATION.md) for tested capabilities and remaining channel acceptance.
 
 ## Default installation: GitHub through Skills CLI
@@ -33,6 +35,35 @@ A pinned tag is changed explicitly, not silently advanced. A clone alone is not 
 use Skills CLI on the clone or copy
 its complete `skills/golive` folder into the appropriate agent skill directory and verify it.
 Skills CLI has its own telemetry policy; GoLive has no product telemetry.
+
+## Alternative installation: the npm package
+
+The registry serves `golive@0.1.0-alpha.0` under the `alpha` dist-tag. The tarball carries the
+zero-dependency wrapper (`bin/golive.mjs`), the complete skill and the licenses, so it installs the
+skill offline — without Git or the Skills CLI:
+
+```bash
+npx golive@alpha install --agent codex            # .agents/skills/golive in this project
+npx golive@alpha install --agent claude           # .claude/skills/golive in this project
+npx golive@alpha install --agent codex --global   # ~/.agents/skills/golive
+```
+
+This is the same installer as the [own installer](#optional-own-installer) below, entered through
+npm instead of a checkout: it walks the complete bundled skill, refuses a symlinked parent or an
+existing destination, and copies the bundle without touching provider accounts. Verify a copy from
+either channel with `node <installed-skill>/scripts/golive.mjs version --json`. The wrapper also
+exposes the bundled CLI: `npx golive@alpha help`, `version --json`, `detect --json`, `menu --json`,
+and the workflow commands `init`, `doctor`, `plan`, `apply`, `verify` and `handoff`. `apply`
+requires the approved plan ID and explicit confirmation.
+
+**This channel lags the GitHub channel.** The published `0.1.0-alpha.0` is an earlier snapshot than
+the `0.1.0-alpha.1` in this repository: it predates the Netlify and Neon provider references and the
+standalone installer helpers (`scripts/install-cli.mjs`), so a copy installed from npm has no
+updater and cannot be updated in place — the installer refuses an existing destination, so updating
+means removing the copy first, or switching to the Skills CLI channel, which manages its own
+installs. The package's `latest` tag also points at this alpha until a stable release exists, so
+`npx golive` resolves to the same version; `@alpha` states it explicitly. A later npm release will
+be built from a later tag.
 
 ## One version and complete bundle integrity
 
@@ -70,15 +101,18 @@ installation ownership and applicable update instructions.
 | Agent plugin | That plugin manager |
 | Manual copy | User replaces the complete verified bundle |
 | Own installer | Our explicit whole-bundle update/rollback flow |
+| npm package (`npx golive@alpha install`) | No updater in `0.1.0-alpha.0`; remove the copy and reinstall, or move to the Skills CLI channel |
 
 Externally managed copies are not adopted or deleted automatically. Deliberate per-project pins
 may coexist. Installation status reports duplicates and leaves them unchanged.
 
 ## Optional own installer
 
-The zero-dependency entrypoint is `bin/golive.mjs`. The npm `files` allowlist includes the
-wrapper, standalone installer and complete
-skill with licenses. The own installer's Claude flag is `claude`, unlike Skills CLI's `claude-code`.
+The zero-dependency entrypoint is `bin/golive.mjs`, also reachable through npm as
+`npx golive@alpha install` above. The npm `files` allowlist in this repository includes the wrapper,
+the standalone installer and the complete skill with licenses; the published `0.1.0-alpha.0`
+predates the installer helpers. The own installer's Claude flag is `claude`, unlike Skills CLI's
+`claude-code`.
 
 ```bash
 node bin/golive.mjs install --agent codex --global
