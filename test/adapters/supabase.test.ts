@@ -1016,6 +1016,25 @@ describe('supabase dbAdmin', () => {
 
 describe('supabase authConfig', () => {
   const tokens = { SUPABASE_ACCESS_TOKEN: TOKEN };
+  const SMTP_HASH = 'smtp-pass-hash-never-leak-0123456789';
+  /** A full auth-config response: the whitelisted fields plus the ones golive must never touch. */
+  const FULL_AUTH_CONFIG = {
+    site_url: 'https://app.example.com',
+    uri_allow_list: 'https://app.example.com/**',
+    disable_signup: false,
+    mailer_autoconfirm: false,
+    password_min_length: 8,
+    smtp_host: 'smtp.resend.com',
+    smtp_admin_email: 'noreply@example.com',
+    smtp_sender_name: 'Shop',
+    jwt_exp: 3600,
+    mailer_otp_exp: 86400,
+    mailer_otp_length: 6,
+    rate_limit_email_sent: 30,
+    smtp_pass: SMTP_HASH,
+    external_google_secret: GOOGLE_SECRET,
+  };
+  const patches = (calls: Array<{ method: string; body: unknown }>): unknown[] => calls.filter((c) => c.method === 'PATCH').map((c) => c.body);
 
   it('get(): extracts only site_url and the split allow list', async () => {
     const { http } = mockHttp([
@@ -1032,15 +1051,21 @@ describe('supabase authConfig', () => {
     expect(await caps.authConfig.get(testCtx({ http, tokens, state: withRef() }))).toEqual({ siteUrl: null, redirectUrls: [] });
   });
 
-  it('set(): PATCHes only site_url / uri_allow_list', async () => {
-    const { http, calls } = mockHttp([['PATCH', `${API}/projects/${REF}/config/auth`, () => ({ json: {} })]]);
+  it('set(): PATCHes only the requested whitelisted keys, then re-reads them', async () => {
+    let live: Record<string, unknown> = { site_url: 'http://localhost:3000', uri_allow_list: 'http://localhost:3000/**', external_google_secret: GOOGLE_SECRET };
+    const { http, calls } = mockHttp([
+      ['GET', `${API}/projects/${REF}/config/auth`, () => ({ json: live })],
+      ['PATCH', `${API}/projects/${REF}/config/auth`, (c) => ((live = { ...live, ...(c.body as Record<string, unknown>) }), { json: {} })],
+    ]);
     const ctx = testCtx({ http, tokens, state: withRef() });
-    await caps.authConfig.set(ctx, { siteUrl: 'https://app.example.com', redirectUrls: ['https://app.example.com/**', 'https://app.example.com/**', 'https://*-acme.vercel.app/**'] });
-    expect(calls[0]!.body).toEqual({ site_url: 'https://app.example.com', uri_allow_list: 'https://app.example.com/**,https://*-acme.vercel.app/**' });
+    const first = await caps.authConfig.set(ctx, { siteUrl: 'https://app.example.com', redirectUrls: ['https://app.example.com/**', 'https://app.example.com/**', 'https://*-acme.vercel.app/**'] });
+    expect(patches(calls)[0]).toEqual({ site_url: 'https://app.example.com', uri_allow_list: 'https://app.example.com/**,https://*-acme.vercel.app/**' });
+    expect([first.applied, first.skipped]).toEqual([['siteUrl', 'redirectUrls'], []]);
     await caps.authConfig.set(ctx, { redirectUrls: ['https://a.example.com'] });
-    expect(calls[1]!.body).toEqual({ uri_allow_list: 'https://a.example.com' });
+    expect(patches(calls)[1]).toEqual({ uri_allow_list: 'https://a.example.com' });
     await caps.authConfig.set(ctx, {});
-    expect(calls).toHaveLength(2);
+    expect(patches(calls)).toHaveLength(2); // an empty patch sends nothing, not even a read
+    expect(calls.filter((c) => c.method === 'GET')).toHaveLength(2);
   });
 
   it('set(): rejects commas and requires a token', async () => {
@@ -1050,6 +1075,93 @@ describe('supabase authConfig', () => {
     expect(e.message).toMatch(/Changing Supabase auth settings needs a reusable Supabase login/);
     expectSafeTokenHelp(e.message);
     await expect(caps.authConfig.get(ctx)).rejects.toThrow(/SUPABASE_ACCESS_TOKEN/);
+  });
+
+  it('get(): reads the whitelisted policy fields, flipping the provider\'s negative wording', async () => {
+    const { http } = mockHttp([['GET', `${API}/projects/${REF}/config/auth`, () => ({ json: FULL_AUTH_CONFIG })]]);
+    const ctx = testCtx({ http, tokens, state: withRef() });
+    const a = await caps.authConfig.get(ctx);
+    expect(a).toEqual({
+      siteUrl: 'https://app.example.com',
+      redirectUrls: ['https://app.example.com/**'],
+      signupEnabled: true,
+      emailConfirmRequired: true,
+      minPasswordLength: 8,
+      smtp: { configured: true, host: 'smtp.resend.com', senderEmail: 'noreply@example.com', senderName: 'Shop' },
+      jwtExpirySeconds: 3600,
+      otpExpirySeconds: 86400,
+      otpLength: 6,
+      emailRateLimitPerHour: 30,
+    });
+    expectNoLeak([GOOGLE_SECRET, SMTP_HASH], [a, ctx.logs]);
+  });
+
+  it('get(): reports the built-in mailer when the provider answers its SMTP fields empty', async () => {
+    const { http } = mockHttp([['GET', `${API}/projects/${REF}/config/auth`, () => ({ json: { site_url: 'https://app.example.com', smtp_host: null, smtp_admin_email: '' } })]]);
+    const a = await caps.authConfig.get(testCtx({ http, tokens, state: withRef() }));
+    expect(a.smtp).toEqual({ configured: false });
+  });
+
+  it('set(): writes policy fields and confirms them from the provider\'s own settings', async () => {
+    let live: Record<string, unknown> = { site_url: 'https://app.example.com', uri_allow_list: 'https://app.example.com/**', disable_signup: false, mailer_autoconfirm: false, password_min_length: 6, smtp_host: '' };
+    const { http, calls } = mockHttp([
+      ['GET', `${API}/projects/${REF}/config/auth`, () => ({ json: live })],
+      ['PATCH', `${API}/projects/${REF}/config/auth`, (c) => ((live = { ...live, ...(c.body as Record<string, unknown>) }), { json: {} })],
+    ]);
+    const out = await caps.authConfig.set(testCtx({ http, tokens, state: withRef() }), { signupEnabled: false, emailConfirmRequired: true, minPasswordLength: 12, smtp: { configured: true, host: 'smtp.resend.com' } });
+    expect(patches(calls)[0]).toEqual({ disable_signup: true, mailer_autoconfirm: false, password_min_length: 12, smtp_host: 'smtp.resend.com' });
+    expect(out.applied).toEqual(['signupEnabled', 'emailConfirmRequired', 'minPasswordLength', 'smtp.host']);
+    expect(out.skipped).toEqual([]);
+    expect(calls.map((c) => c.method)).toEqual(['PATCH', 'GET']); // the write is followed by the provider's own settings
+    expect(out.after).toMatchObject({ signupEnabled: false, emailConfirmRequired: true, minPasswordLength: 12, smtp: { configured: true, host: 'smtp.resend.com' } });
+  });
+
+  it('set(): names a setting the provider does not report back instead of calling it applied', async () => {
+    const { http } = mockHttp([
+      ['GET', `${API}/projects/${REF}/config/auth`, () => ({ json: { site_url: 'https://app.example.com', uri_allow_list: 'https://app.example.com/**' } })],
+      ['PATCH', `${API}/projects/${REF}/config/auth`, () => ({ json: {} })],
+    ]);
+    const out = await caps.authConfig.set(testCtx({ http, tokens, state: withRef() }), { signupEnabled: false, minPasswordLength: 12 });
+    expect(out.applied).toEqual([]);
+    expect(out.skipped).toEqual(['signupEnabled (the provider does not report this setting back)', 'minPasswordLength (the provider does not report this setting back)']);
+  });
+
+  it('set(): reports a value the provider keeps answering instead of claiming success', async () => {
+    const { http } = mockHttp([
+      ['GET', `${API}/projects/${REF}/config/auth`, () => ({ json: { site_url: '', uri_allow_list: '', disable_signup: false } })],
+      ['PATCH', `${API}/projects/${REF}/config/auth`, () => ({ json: {} })],
+    ]);
+    const out = await caps.authConfig.set(testCtx({ http, tokens, state: withRef() }), { signupEnabled: false });
+    expect(out.applied).toEqual([]);
+    expect(out.skipped).toEqual(['signupEnabled (the provider reports true instead of false)']);
+  });
+
+  it('set(): sends the SMTP password in the body, never reads it back and never echoes it', async () => {
+    const smtpPass = new Secret('RESEND_SMTP_PASSWORD', 'smtp-password-never-echoed-1234');
+    const { http, calls } = mockHttp([
+      ['GET', `${API}/projects/${REF}/config/auth`, () => ({ json: { site_url: '', uri_allow_list: '', smtp_host: 'smtp.resend.com', smtp_admin_email: 'noreply@example.com', smtp_pass: SMTP_HASH } })],
+      ['PATCH', `${API}/projects/${REF}/config/auth`, () => ({ json: {} })],
+    ]);
+    const ctx = testCtx({ http, tokens, state: withRef() });
+    const out = await caps.authConfig.set(ctx, { smtp: { configured: true, host: 'smtp.resend.com', senderEmail: 'noreply@example.com' }, smtpPassword: smtpPass });
+    expect(patches(calls)[0]).toEqual({ smtp_host: 'smtp.resend.com', smtp_admin_email: 'noreply@example.com', smtp_pass: smtpPass.reveal() });
+    expect(out.applied).toEqual(['smtp.host', 'smtp.senderEmail']);
+    expect(out.skipped).toEqual(['smtpPassword (write-only: the provider never returns the value, so golive cannot confirm it)']);
+    expectNoLeak([smtpPass.reveal()], [out, ctx.state.get(), ctx.logs]);
+  });
+
+  it('set(): a rejected write echoes neither the request body nor the SMTP password', async () => {
+    const smtpPass = new Secret('RESEND_SMTP_PASSWORD', 'smtp-password-never-echoed-5678');
+    const { http } = mockHttp([['PATCH', `${API}/projects/${REF}/config/auth`, () => ({ status: 400, json: { message: `smtp_pass ${smtpPass.reveal()} is not accepted` } })]]);
+    const e = await errorOf(caps.authConfig.set(testCtx({ http, tokens, state: withRef() }), { smtpPassword: smtpPass }));
+    expect(e.message).toMatch(/HTTP 400/);
+    expect(e.message).not.toContain(smtpPass.reveal());
+  });
+
+  it('set(): refuses a policy value the API would reject, before any request', async () => {
+    const { http, calls } = mockHttp([]);
+    await expect(caps.authConfig.set(testCtx({ http, tokens, state: withRef() }), { minPasswordLength: 0 })).rejects.toThrow(/positive whole number/);
+    expect(calls).toHaveLength(0);
   });
 });
 

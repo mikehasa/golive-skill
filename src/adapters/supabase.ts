@@ -11,7 +11,10 @@ import { credentialVia, SupabaseCredentialError } from './supabase-credentials.j
 import type {
   Adapter,
   AuthSettings,
+  AuthSmtp,
   AuthStatus,
+  AuthWrite,
+  AuthWriteOutcome,
   Ctx,
   DetectResult,
   EnvTarget,
@@ -862,37 +865,174 @@ async function advisors(ctx: Ctx): Promise<Finding[]> {
 
 // ── authConfig ──────────────────────────────────────────────────────────────────────────────────
 
-/** GET /config/auth also returns provider secrets and the SMTP hash: extract two fields only. */
+/**
+ * The only auth-config fields golive reads or writes, as Supabase names them, and how the two sides
+ * map. The same response also carries OAuth provider secrets and an `smtp_pass` hash; a field outside
+ * this table is never read, sent or copied into state, evidence or logs.
+ */
+interface AuthField {
+  /** Field name in golive's vocabulary (`smtp.host` is nested in the read shape). */
+  name: string;
+  /** Management API field name. */
+  key: string;
+  /** Provider value -> golive value. `undefined` = the provider did not report this field. */
+  read(raw: unknown, res: Record<string, unknown>): unknown;
+  /** golive value -> request body value. Only fields golive may write have one. */
+  write?(value: unknown): unknown;
+  /** The provider never returns the value (a write-only secret), so the write cannot be re-read. */
+  writeOnly?: boolean;
+}
+
+const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+const bool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
+const int = (v: unknown): number | undefined => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : undefined);
+/** Supabase reports some settings in the negative (`disable_signup`, `mailer_autoconfirm`). */
+const flip = (v: boolean | undefined): boolean | undefined => (v === undefined ? undefined : !v);
+/** A string field a provider may report as unset: '' when present but empty, undefined when absent. */
+const optionalStr = (key: string) => (raw: unknown, res: Record<string, unknown>): string | undefined => (Object.hasOwn(res, key) ? (str(raw) ?? '') : undefined);
+
+/** Comma-separated provider list, normalized the same way in both directions. */
+const splitList = (raw: string): string[] => raw.split(',').map((s) => s.trim()).filter(Boolean);
+function joinList(value: unknown, what: string): string {
+  const items = (Array.isArray(value) ? value : []).map((v) => (typeof v === 'string' ? v.trim() : '')).filter(Boolean);
+  const bad = items.find((v) => v.includes(','));
+  if (bad) throw new SupabaseError(`Supabase ${what} cannot contain commas: ${JSON.stringify(bad)}.`);
+  return [...new Set(items)].join(',');
+}
+
+function boolOf(key: string, v: unknown): boolean {
+  const b = bool(v);
+  if (b === undefined) throw new SupabaseError(`Supabase ${key} must be true or false (got ${JSON.stringify(v)}).`);
+  return b;
+}
+function intOf(key: string, v: unknown): number {
+  const n = int(v);
+  if (n === undefined) throw new SupabaseError(`Supabase ${key} must be a positive whole number (got ${JSON.stringify(v)}).`);
+  return n;
+}
+/** The SMTP password is write-only: it must arrive as a Secret and is never read back. */
+function smtpPasswordOf(v: unknown): Secret {
+  if (!(v instanceof Secret)) throw new SupabaseError(`The Supabase SMTP password must be a Secret (got ${typeof v}).`);
+  return v;
+}
+
+const AUTH_FIELDS: AuthField[] = [
+  {
+    name: 'siteUrl',
+    key: 'site_url',
+    read: (raw) => str(raw) ?? null,
+    write: (v) => {
+      const url = str(v);
+      if (!url || url.includes(',')) throw new SupabaseError(`Supabase site URL must be a single URL without commas (got ${JSON.stringify(v)}).`);
+      return url;
+    },
+  },
+  { name: 'redirectUrls', key: 'uri_allow_list', read: (raw) => (typeof raw === 'string' ? splitList(raw) : undefined), write: (v) => joinList(v, 'redirect URLs') },
+  { name: 'signupEnabled', key: 'disable_signup', read: (raw) => flip(bool(raw)), write: (v) => flip(boolOf('disable_signup', v)) },
+  { name: 'emailConfirmRequired', key: 'mailer_autoconfirm', read: (raw) => flip(bool(raw)), write: (v) => flip(boolOf('mailer_autoconfirm', v)) },
+  { name: 'minPasswordLength', key: 'password_min_length', read: int, write: (v) => intOf('password_min_length', v) },
+  { name: 'jwtExpirySeconds', key: 'jwt_exp', read: int, write: (v) => intOf('jwt_exp', v) },
+  { name: 'otpExpirySeconds', key: 'mailer_otp_exp', read: int, write: (v) => intOf('mailer_otp_exp', v) },
+  { name: 'otpLength', key: 'mailer_otp_length', read: int, write: (v) => intOf('mailer_otp_length', v) },
+  { name: 'emailRateLimitPerHour', key: 'rate_limit_email_sent', read: int, write: (v) => intOf('rate_limit_email_sent', v) },
+  { name: 'smtp.host', key: 'smtp_host', read: optionalStr('smtp_host'), write: (v) => str(v) },
+  { name: 'smtp.senderEmail', key: 'smtp_admin_email', read: optionalStr('smtp_admin_email'), write: (v) => str(v) },
+  { name: 'smtp.senderName', key: 'smtp_sender_name', read: optionalStr('smtp_sender_name'), write: (v) => str(v) },
+  // Write-only: GET answers `smtp_pass` with a hash, never the value.
+  { name: 'smtpPassword', key: 'smtp_pass', read: () => undefined, write: smtpPasswordOf, writeOnly: true },
+];
+
+/**
+ * The SMTP group as golive reports it: `configured` from the host alone, and the blank answers the
+ * provider gives for unset fields dropped, so callers never see a `host: ''` that looks like a value.
+ */
+function smtpOf(reported: AuthSmtp): AuthSmtp {
+  const host = str(reported.host);
+  const senderEmail = str(reported.senderEmail);
+  const senderName = str(reported.senderName);
+  return { configured: Boolean(host), ...(host ? { host } : {}), ...(senderEmail ? { senderEmail } : {}), ...(senderName ? { senderName } : {}) };
+}
+
+/** Dotted access (`smtp.host`) into the read or write shape. */
+function fieldValue(obj: unknown, name: string): unknown {
+  const [head, tail] = name.split('.');
+  if (!obj || typeof obj !== 'object') return undefined;
+  const value = (obj as Record<string, unknown>)[head!];
+  if (!tail) return value;
+  return value && typeof value === 'object' ? (value as Record<string, unknown>)[tail] : undefined;
+}
+
+function setField(obj: AuthSettings, name: string, value: unknown): void {
+  const [head, tail] = name.split('.');
+  const rec = obj as unknown as Record<string, unknown>;
+  if (!tail) {
+    rec[head!] = value;
+    return;
+  }
+  const nested = (rec[head!] ??= { configured: false }) as Record<string, unknown>;
+  nested[tail] = value;
+}
+
+const sameValue = (a: unknown, b: unknown): boolean =>
+  Array.isArray(a) && Array.isArray(b) ? a.length === b.length && a.every((x, i) => x === b[i]) : a === b;
+
+/** Secret-free rendering of a non-secret setting value for an evidence line. */
+const show = (v: unknown): string => (Array.isArray(v) ? v.join(', ') : v === null || v === undefined ? '(unset)' : String(v));
+
+/** Reads only the whitelisted fields: the rest of the response (provider secrets, the SMTP hash) stops here. */
 async function getAuth(ctx: Ctx): Promise<AuthSettings> {
   const ref = await requireRef(ctx);
   const tok = await token(ctx);
   if (!tok) throw needToken('Reading Supabase auth settings');
   const res = await api<Record<string, unknown>>(ctx, tok, 'GET', `/projects/${ref}/config/auth`, 'Reading Supabase auth settings');
-  const site = res?.site_url;
-  const list = res?.uri_allow_list;
-  return {
-    siteUrl: typeof site === 'string' && site ? site : null,
-    redirectUrls: typeof list === 'string' ? list.split(',').map((s) => s.trim()).filter(Boolean) : [],
-  };
+  const body = res && typeof res === 'object' && !Array.isArray(res) ? res : {};
+  const out: AuthSettings = { siteUrl: null, redirectUrls: [] };
+  for (const f of AUTH_FIELDS) {
+    const value = f.read(body[f.key], body);
+    if (value !== undefined) setField(out, f.name, value);
+  }
+  if (out.smtp) out.smtp = smtpOf(out.smtp);
+  return out;
 }
 
-async function setAuth(ctx: Ctx, patch: Partial<AuthSettings>): Promise<void> {
-  const body: { site_url?: string; uri_allow_list?: string } = {};
-  if (typeof patch.siteUrl === 'string') {
-    if (!patch.siteUrl || patch.siteUrl.includes(',')) throw new SupabaseError(`Supabase site URL must be a single URL without commas (got ${JSON.stringify(patch.siteUrl)}).`);
-    body.site_url = patch.siteUrl;
+/**
+ * PATCH the whitelisted fields this patch requests, then re-read the settings and report what the
+ * provider actually kept. A 2xx only means the request was accepted. A field the provider does not
+ * report back is listed as unconfirmed (`skipped`) rather than failing the rest of the write, and a
+ * reported value that still differs is evidence for the caller, not a silent success.
+ */
+async function setAuth(ctx: Ctx, patch: AuthWrite): Promise<AuthWriteOutcome> {
+  const body: Record<string, unknown> = {};
+  const requested: AuthField[] = [];
+  for (const f of AUTH_FIELDS) {
+    const value = fieldValue(patch, f.name);
+    if (value === undefined || !f.write) continue;
+    const encoded = f.write(value);
+    if (encoded === undefined) continue; // an empty value (e.g. a blank SMTP field) is nothing to write
+    body[f.key] = encoded;
+    requested.push(f);
   }
-  if (patch.redirectUrls) {
-    const urls = patch.redirectUrls.map((u) => u.trim()).filter(Boolean);
-    const bad = urls.find((u) => u.includes(','));
-    if (bad) throw new SupabaseError(`Supabase redirect URLs cannot contain commas: ${JSON.stringify(bad)}.`);
-    body.uri_allow_list = [...new Set(urls)].join(',');
-  }
-  if (!Object.keys(body).length) return;
+  if (!requested.length) return { applied: [], skipped: [] };
   const ref = await requireRef(ctx);
   const tok = await token(ctx);
   if (!tok) throw needToken('Changing Supabase auth settings');
   await api<unknown>(ctx, tok, 'PATCH', `/projects/${ref}/config/auth`, 'Updating Supabase auth settings', body);
+
+  const after = await getAuth(ctx);
+  const applied: string[] = [];
+  const skipped: string[] = [];
+  for (const f of requested) {
+    if (f.writeOnly) {
+      skipped.push(`${f.name} (write-only: the provider never returns the value, so golive cannot confirm it)`);
+      continue;
+    }
+    const want = f.read(body[f.key], body);
+    const got = fieldValue(after, f.name);
+    if (sameValue(want, got)) applied.push(f.name);
+    else if (got === undefined) skipped.push(`${f.name} (the provider does not report this setting back)`);
+    else skipped.push(`${f.name} (the provider reports ${show(got)} instead of ${show(want)})`);
+  }
+  return { after, applied, skipped };
 }
 
 // ── RLS probe helper ────────────────────────────────────────────────────────────────────────────

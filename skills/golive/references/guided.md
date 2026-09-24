@@ -104,7 +104,7 @@ preview, live in production by default).
 | `bundle-secrets`, `webhook-unsigned` | Only when the **hosting** provider is automated: they probe only the production URL the host confirms belongs to the project, so with a guided host they skip. |
 | `rls-probe` | Only with `db=supabase`. |
 | `db-connection` | Only with the implemented Neon database capability; not a generic guided DB test. |
-| `env-parity`, `auth-redirects`, `webhook-registered`, `email-verified` | No: they need the provider's API, so they skip for a guided provider on that axis. |
+| `env-parity`, `auth-redirects`, `auth-policy`, `webhook-registered`, `email-verified` | No: they need the provider's API, so they skip for a guided provider on that axis. |
 
 Every skipped check is something golive did not verify. Name them in your final summary.
 
