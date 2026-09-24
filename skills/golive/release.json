@@ -23,7 +23,7 @@
     "references/neon.md": "221bc3134a22241fc6d61780ab4be3f1094a229175b7137c841375260819b4e5",
     "references/netlify.md": "7c1705f0bea0987d0a19c3be8f370e64c66f0d205f9fb963bbf923744f846f0a",
     "references/plan-and-verify.md": "9d342ea6880a922e82bddff5916e5defe0900a7d0f0da7436887ec5367b16e6b",
-    "references/porkbun.md": "cab7f817fb960325ff957ec405ca1affd632d8b1559321dd04a246a77075db75",
+    "references/porkbun.md": "8eaeb8890ce3c104e242ced33e77179253a9d8f3b9425be6692585254c6b6490",
     "references/resend.md": "55a2d863a9bd4295303c1e06f72b200292f609f03dee46bcc2a541a6fde50e0e",
     "references/stripe.md": "f2bf125ac8b4f7b47d93e4921b824195e9a338ca4f7d1c85177eea0e63e67343",
     "references/supabase.md": "cdfd5793aa248f61afeed13bd5d64d2fd1a40cd3e1d359a4cc717b528019dcfd",
@@ -34,5 +34,5 @@
     "scripts/install-cli.mjs": "55e2a776892a9d34fa62d7ebf70bb101a0f54a3592ba9f87b77a1d43043e108a",
     "scripts/install-lib.mjs": "9d3de597acc711178e588247f3cc9b5b5445f90d492cd464018065f2cd25caec"
   },
-  "bundleDigest": "9a2dcba5d271dd9bcc8c8b8432bc12384aa453e51b79656a6be7c4993fad153d"
+  "bundleDigest": "82a4dcb7282aae5aebae3631f02fbc16b83a9b87c57aad0ca6acd73cb84b3c30"
 }

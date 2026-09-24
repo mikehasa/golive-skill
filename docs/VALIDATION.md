@@ -14,11 +14,14 @@ Public-channel installation acceptance was recorded later the same day; see
 | Vercel + Supabase | Approved disposable provisioning, environment wiring, deployment, authenticated CRUD, session restoration and access isolation; 22 strict API checks in the agent-observed retest | Existing Vercel login and explicit Supabase token; preconfirmed synthetic users; no signup/email-delivery proof |
 | Netlify + Neon | Approved Free resources, environment wiring, deployment, database connection, separately approved schema, 149 two-session API assertions and real browser CRUD with refresh persistence | Postgres app, without an Auth provider; other frameworks and cross-pairings not live-tested |
 | Supabase native CLI credential reuse | Existing macOS production-profile login reused with explicit-token input disabled; profile/projects/organizations returned 200; CLI/API project inventories agreed | Read-only; no fresh browser login, project creation, Auth writes or deployment through that credential |
+| Vercel + Porkbun custom domain | Approved disposable Vercel project and a disposable subdomain of an existing Porkbun zone: project creation, production deploy, domain attachment, one approved Porkbun CNAME write under `--confirm-dns`, Vercel ownership verification and HTTPS 200 on the subdomain (final report: 4 pass, 0 fail) | Static fixture without app auth or data flows; attachment is Vercel-only (Netlify stays guided); one adapter fix from this run is mock-covered until its next live exercise |
 | Cleanup | Separately approved exact test projects deleted; exact project reads and test URLs returned 404; unaffected scoped resources and login identities stayed unchanged | Normal provider deletion; Neon may retain a recovery window |
 
 Cleanup used supervised fixture helpers; GoLive does not yet expose a general teardown command.
 Sample application data was removed before project deletion. No domains were purchased and no live
-payment, email or DNS resources were created in these runs.
+payment or email resources were created in these runs. The custom-domain run created one DNS record
+and one host project on approved disposable resources; their cleanup follows the same supervision
+and may trail the run that produced the evidence.
 
 ## Provider mismatches found and repaired
 
@@ -37,6 +40,19 @@ payment, email or DNS resources were created in these runs.
   exact project visibility handoff, without inventing an unsupported API.
 - **Detection and reporting:** exclude installed skill internals from app scanning and retain
   the provider's actual remediation for Auth advisories instead of suggesting unrelated RLS changes.
+- **Porkbun create response (custom-domain run):** the live `/dns/create` response carried an id
+  shape the documented mock does not show, while the record itself was written correctly and resolved
+  publicly; the adapter refused to confirm it. It now accepts numeric ids and settles an unparseable
+  id by re-reading the zone instead of retrying the non-idempotent POST (mocked; the next live
+  exercise comes with a later Porkbun write).
+- **Native credential dialogs (custom-domain run):** the first real saves through the macOS
+  hidden-input dialog worked for both Porkbun keys, but the two prompts of a key pair looked alike
+  and the wrong value was entered once. The dialogs now name the variable in the window title and
+  open with a description of the expected value ("Porkbun Secret Key (sk1_…) — not the API Key").
+  A mismatched pair surfaces as the provider's deliberately vague `INVALID_API_KEYS_002`, which now
+  carries a focused hint.
+- **Porkbun ping:** a `SUCCESS` `/ping` without the documented `credentialsValid` field is now
+  accepted (the getting-started guide's own example shape); only an explicit `false` refuses.
 
 Provider fixes have offline mocked regressions. These implementation tests never use real accounts.
 The repaired behavior was subsequently exercised where described above; this is not blanket live
@@ -96,11 +112,13 @@ passed (see [Post-publication acceptance](#post-publication-acceptance)).
 
 ## Still unverified
 
-Stripe test/live payment behavior, Resend email delivery, custom domains and all DNS adapters need
-live validation. Cross-provider pairings beyond the two above have mocked integration coverage.
-First-time account/login UX, other OS credential stores and framework-specific behavior need further
-coverage. A native Linux/Windows keyring path is not claimed by the Supabase reuse implementation;
-the own updater's Windows filesystem behavior is not a validated alpha channel.
+Stripe test/live payment behavior, Resend email delivery, and the GoDaddy/Cloudflare DNS adapters
+still need live validation (the Vercel attachment + Porkbun DNS journey passed one disposable run;
+Netlify custom-domain attachment remains guided, and custom-domain redirects and certificate edge
+cases are not covered). Cross-provider pairings beyond the tested paths have mocked integration
+coverage. First-time account/login UX, other OS credential stores and framework-specific behavior
+need further coverage. A native Linux/Windows keyring path is not claimed by the Supabase reuse
+implementation; the own updater's Windows filesystem behavior is not a validated alpha channel.
 There is no nightly canary or published cross-agent compatibility matrix. Treat skipped and manual
 checks as unverified, and functionally test the application flows that matter to its owner.
 

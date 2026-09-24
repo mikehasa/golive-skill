@@ -40,6 +40,8 @@ an uncertain result; a write may have been stored already, and the next run re-l
 ## Troubleshooting
 
 - Missing/invalid pair: recreate it in the dashboard and update the private credentials file.
+  `INVALID_API_KEYS_002` means the API key and secret do not match — re-enter the mistyped value
+  with `credentials --prompt PORKBUN_SECRET_API_KEY --replace`.
 - Domain/IP restriction: verify that the key covers this domain and this machine's network.
 - API Access disabled: enable it for this one domain in Domain Management.
 - Authority unconfirmed: inspect public/registry nameservers and delegated child zones; retry
@@ -48,4 +50,6 @@ an uncertain result; a write may have been stored already, and the next run re-l
 - Sandbox key: sandbox DNS is simulated and cannot satisfy live DNS checks; the adapter refuses
   it. Live DNS acceptance needs a scoped real key, an existing throwaway domain, and approval.
 
-This provider is implemented with mocked regression tests; real-account acceptance remains open.
+Status: the Vercel-attached custom-domain journey (one approved CNAME write, ownership verification,
+HTTPS serving) passed a disposable live run. Other host pairings and the mocked-only create-response
+repair await their live exercises.
