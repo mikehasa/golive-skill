@@ -11646,8 +11646,22 @@ async function withZone(ctx, domain, run) {
     ctx.state.save((s) => {
       delete s.resources[zoneKey(zone.name)];
     });
-    const fresh = await findZone(ctx, domain, true);
-    if (!fresh) throw e;
+    let fresh = null;
+    try {
+      fresh = await findZone(ctx, domain, true);
+    } catch {
+      throw e;
+    }
+    if (!fresh) {
+      throw new Error(
+        `The cached Cloudflare zone ${zone.name} was rejected (${e.message}), and no active zone for ${normName(domain)} is visible to this API token anymore. The zone may have been deleted or re-created, its nameservers may have changed, or the token may have been re-scoped or revoked; check the Cloudflare dashboard, then run \`plan\` again.`
+      );
+    }
+    if (fresh.zone.id !== zone.id) {
+      ctx.log.warn(
+        `cloudflare: the zone for ${domain} changed during retry (${zone.name} -> ${fresh.zone.name}); the record is being written to ${fresh.zone.name}. If the domain does not go live, check that this zone is the one that serves it.`
+      );
+    }
     return run(fresh.zone);
   }
 }

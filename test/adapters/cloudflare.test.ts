@@ -612,7 +612,7 @@ describe('cloudflare dns: stale cached zone id', () => {
     expect(calls.filter((c) => c.url.includes('zoneOLD'))).toHaveLength(1);
   });
 
-  it('when re-resolution finds no zone, the original error surfaces after exactly one retry', async () => {
+  it('when re-resolution finds no zone, the actionable error surfaces, the stale key is dropped, and nothing loops', async () => {
     const lookups: string[] = [];
     const { http, calls } = mockHttp([
       [
@@ -627,7 +627,9 @@ describe('cloudflare dns: stale cached zone id', () => {
     ]);
     const ctx = cachedZone(testCtx({ http, tokens: { CLOUDFLARE_API_TOKEN: TOKEN } }));
     const err = await errorOf(cloudflareDns.upsert(ctx, 'example.com', A));
-    expect(err.message).toContain('HTTP 404');
+    expect(err.message).toMatch(/no active zone for example\.com is visible/i);
+    expect(err.message).toContain('HTTP 404'); // the original rejection is preserved as context
+    expect(ctx.state.resource('cloudflare.zoneId:example.com')).toBeUndefined(); // no stale entry is left behind
     expect(lookups).toEqual(['example.com']);
     expect(calls.filter((c) => c.url.includes('zoneOLD'))).toHaveLength(1);
   });
@@ -640,6 +642,56 @@ describe('cloudflare dns: stale cached zone id', () => {
     const err = await errorOf(cloudflareDns.upsert(testCtx({ http, tokens: { CLOUDFLARE_API_TOKEN: TOKEN } }), 'example.com', A));
     expect(err.message).toContain('HTTP 404');
     expect(calls.filter((c) => c.url.includes('/dns_records'))).toHaveLength(1);
+  });
+
+  it('warns when the retry lands on a different zone, and remembers the fresh one', async () => {
+    const { http } = mockHttp([
+      [
+        'GET',
+        new RegExp(`^${API}/zones\\?`),
+        (c) => {
+          const name = new URL(c.url).searchParams.get('name') ?? '';
+          return { json: { success: true, result: name === 'example.com' ? [{ id: 'zoneNEW', name: 'example.com', status: 'active' }] : [], result_info: { page: 1, total_pages: 1 } } };
+        },
+      ],
+      ZONES_404,
+      ['GET', new RegExp(`^${API}/zones/zoneNEW/dns_records`), () => ({ json: { success: true, result: [], result_info: { page: 1, total_pages: 1 } } })],
+      ['POST', new RegExp(`^${API}/zones/zoneNEW/dns_records$`), (c) => ({ json: { success: true, result: { ...(c.body as Rec), id: 'recNEW' } } })],
+    ]);
+    const ctx = testCtx({ http, tokens: { CLOUDFLARE_API_TOKEN: TOKEN } });
+    ctx.state.save((s) => void (s.resources['cloudflare.zoneId:sub.example.com'] = 'zoneOLD'));
+    expect(await cloudflareDns.upsert(ctx, 'sub.example.com', { type: 'A', name: 'sub.example.com', content: '76.76.21.21' })).toBe('created');
+    expect(ctx.logs.join('\n')).toMatch(/zone for sub\.example\.com changed during retry/);
+    expect(ctx.state.resource('cloudflare.zoneId:sub.example.com')).toBeUndefined();
+    expect(ctx.state.resource('cloudflare.zoneId:example.com')).toBe('zoneNEW');
+  });
+
+  it('a record-level 403 on a cached id is retried once against the re-resolved zone, then surfaces', async () => {
+    const { http, calls } = mockHttp([
+      ['GET', new RegExp(`^${API}/zones\\?`), () => ({ json: { success: true, result: [{ id: 'zone123', name: 'example.com', status: 'active' }], result_info: { page: 1, total_pages: 1 } } })],
+      ['GET', /\/zones\/zone123\/dns_records\?/, () => ({ json: { success: true, result: [], result_info: { page: 1, total_pages: 1 } } })],
+      ['POST', /\/zones\/zone123\/dns_records$/, () => ({ status: 403, json: { success: false, errors: [{ code: 10000, message: 'Authentication error' }], result: null } })],
+    ]);
+    const ctx = testCtx({ http, tokens: { CLOUDFLARE_API_TOKEN: TOKEN } });
+    ctx.state.save((s) => void (s.resources['cloudflare.zoneId:example.com'] = 'zone123'));
+    const err = await errorOf(cloudflareDns.upsert(ctx, 'example.com', A));
+    expect(err.message).toContain('HTTP 403');
+    expect(err.message).toContain('Zone:DNS:Edit'); // the permission hint survives the retry
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(2); // exactly one retry
+    expect(calls.filter((c) => c.url.startsWith(`${API}/zones?`))).toHaveLength(1); // one re-resolution
+    expect(ctx.state.resource('cloudflare.zoneId:example.com')).toBe('zone123'); // re-saved unchanged
+  });
+
+  it('list() also recovers from a stale cached zone id', async () => {
+    const { http, calls } = mockHttp([
+      ['GET', new RegExp(`^${API}/zones\\?`), () => ({ json: { success: true, result: [{ id: 'zoneNEW', name: 'example.com', status: 'active' }], result_info: { page: 1, total_pages: 1 } } })],
+      ZONES_404,
+      ['GET', new RegExp(`^${API}/zones/zoneNEW/dns_records`), () => ({ json: { success: true, result: [{ id: 'r1', type: 'A', name: 'example.com', content: '76.76.21.21' }], result_info: { page: 1, total_pages: 1 } } })],
+    ]);
+    const ctx = cachedZone(testCtx({ http, tokens: { CLOUDFLARE_API_TOKEN: TOKEN } }));
+    expect(await cloudflareDns.list(ctx, 'example.com')).toEqual([{ type: 'A', name: 'example.com', content: '76.76.21.21' }]);
+    expect(ctx.state.resource('cloudflare.zoneId:example.com')).toBe('zoneNEW');
+    expect(calls.filter((c) => c.url.includes('zoneOLD'))).toHaveLength(1);
   });
 });
 

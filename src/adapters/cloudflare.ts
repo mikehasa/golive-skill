@@ -145,7 +145,8 @@ async function requireZone(ctx: Ctx, domain: string): Promise<{ zone: Zone; cach
 /**
  * Run a zone-scoped operation, re-resolving once when a zone id cached in state went stale (the zone
  * was deleted/recreated, or the token re-scoped). A 404/403 against a cached id means nothing was
- * written there, so one re-resolution + retry is safe; a fresh lookup's failure is not retried.
+ * written there, so one re-resolution + retry is safe; a fresh lookup's failure is not retried, and a
+ * failed re-resolution never hides the original error.
  */
 async function withZone<T>(ctx: Ctx, domain: string, run: (zone: Zone) => Promise<T>): Promise<T> {
   const { zone, cached } = await requireZone(ctx, domain);
@@ -156,8 +157,24 @@ async function withZone<T>(ctx: Ctx, domain: string, run: (zone: Zone) => Promis
     ctx.state.save((s) => {
       delete s.resources[zoneKey(zone.name)];
     });
-    const fresh = await findZone(ctx, domain, true);
-    if (!fresh) throw e;
+    let fresh: { zone: Zone; cached: boolean } | null = null;
+    try {
+      fresh = await findZone(ctx, domain, true);
+    } catch {
+      throw e; // a failed re-resolution must not mask the original failure
+    }
+    if (!fresh) {
+      throw new Error(
+        `The cached Cloudflare zone ${zone.name} was rejected (${e.message}), and no active zone for ${normName(domain)} is visible to this API token anymore. ` +
+          'The zone may have been deleted or re-created, its nameservers may have changed, or the token may have been re-scoped or revoked; check the Cloudflare dashboard, then run `plan` again.',
+      );
+    }
+    if (fresh.zone.id !== zone.id) {
+      ctx.log.warn(
+        `cloudflare: the zone for ${domain} changed during retry (${zone.name} -> ${fresh.zone.name}); the record is being written to ${fresh.zone.name}. ` +
+          'If the domain does not go live, check that this zone is the one that serves it.',
+      );
+    }
     return run(fresh.zone);
   }
 }
