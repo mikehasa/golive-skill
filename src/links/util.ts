@@ -178,8 +178,8 @@ export const deployedIdKey = (target: Exclude<EnvTarget, 'development'>): string
 export const DEPLOYED_KEY = deployedKey('production');
 /** resources key: time of a production env write that no deploy has picked up yet. */
 export const REDEPLOY_KEY = redeployKey('production');
-/** The step ids a production deploy records (see deployLink). */
-const DEPLOY_STEPS = ['deploy:production', 'deploy:production:final'];
+/** The step ids a deploy records (see deployLink and releaseLink): forgotten with the project's facts. */
+const DEPLOY_STEPS = ['deploy:production', 'deploy:production:final', 'preview:deploy'];
 
 /**
  * Record a successful deploy of `target`: the `deployed:<target>` time marker the deploy link reads,
@@ -209,13 +209,36 @@ export function lastDeployAt(ctx: Ctx): string | undefined {
   return done.map((r) => r!.at).sort().at(-1);
 }
 
+/** The deployment golive recorded for `target`: the provider's own identity and the URL it made. */
+export interface RecordedDeploy {
+  /** Provider id golive deployed through (e.g. `vercel`). */
+  provider: string;
+  /** The deployment id the provider itself reported. */
+  id: string;
+  url: string;
+  /** When golive recorded it (ISO). */
+  at: string;
+}
+
+/**
+ * Read back what `recordDeploy` recorded for `target` (`<provider>|<deployment id>|<url>|<time>`), or
+ * null when state has none. Only a provider-reported identity is ever stored here, so a value that
+ * does not parse is treated as nothing recorded rather than as a deployment golive can name.
+ */
+export function readRecordedDeploy(ctx: Ctx, target: Exclude<EnvTarget, 'development'>): RecordedDeploy | null {
+  const raw = ctx.state.resource(deployedIdKey(target));
+  if (!raw) return null;
+  const [provider, id, url, at] = raw.split('|');
+  return provider && id && url && at ? { provider, id, url, at } : null;
+}
+
 /**
  * Forget the deploy facts that belonged to a host project golive just removed: the recorded deploy
  * time(s), the recorded deployment identity (`deployed:<target>:id`) and the completed deploy step
- * evidence. A project created again in the same repo must be deployed again instead of inheriting
- * "production was deployed" (which plans no deploy at all), and the identity of a deployment that
- * project no longer serves must not outlive it. Failed records and every other key are left as they
- * are.
+ * evidence (production and the opt-in preview). A project created again in the same repo must be
+ * deployed again instead of inheriting "production was deployed" (which plans no deploy at all), and
+ * the identity of a deployment that project no longer serves must not outlive it. Failed records and
+ * every other key are left as they are.
  */
 export function forgetDeployFacts(ctx: Ctx): void {
   ctx.state.save((s) => {

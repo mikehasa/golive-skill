@@ -235,7 +235,14 @@ export interface EnvStore {
 }
 
 export interface PublicUrl {
-  /** Canonical public base URL for the target (production domain or project URL). No trailing slash. */
+  /**
+   * Canonical public base URL for the target (production domain or project URL). No trailing slash.
+   * For `preview` the contract is narrower: the URL of the preview deployment the provider itself
+   * confirms for the LINKED project — ready, belonging to that project, and not its published
+   * production deployment — or null when the provider reports no such deployment (a per-deployment URL
+   * it does not re-read, a protected preview, or none). The `preview-deploy` check reads it as exactly
+   * that confirmation, so a provider that cannot report one must answer null rather than a guess.
+   */
   get(ctx: Ctx, target: EnvTarget): Promise<string | null>;
   /** Glob-style patterns preview deployments are served from (for auth redirect allowlists). */
   previewPatterns?(ctx: Ctx): Promise<string[]>;
@@ -777,8 +784,10 @@ export interface ShipConfig {
   projects?: Partial<Record<Axis, string>>;
   /**
    * Opt-in release capabilities, none of which golive does by itself. `preview: true` asks for a
-   * preview deployment of this repo alongside production: the preview deploy itself lands in a later
-   * release, so today the flag plans nothing and leaves every existing plan unchanged.
+   * preview deployment of this repo alongside production: golive then plans `preview:deploy` (a
+   * create, `--confirm-live` when a live-mode source fills a preview env name) plus `release:check`,
+   * which re-reads the deployment the provider reports and scans the bundle it serves as the inline
+   * gate. Nothing is promoted: promotion and rollback are later releases.
    */
   release?: { preview?: boolean };
 }

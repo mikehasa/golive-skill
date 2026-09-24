@@ -234,6 +234,17 @@ Explain the steps by provider, in plain language, and call out:
   the token live only in that run's memory, and the recovery email lands in the human's inbox: clicking
   it is their step (`auth:recovery-email`, non-blocking, closed by `auth-recovery`). It never touches
   any other account, and a captcha or the provider's mail throttle stops it with the reason.
+- `preview:deploy` / `release:check`: only with `release.preview: true` in `golive.yaml` **and**
+  `preview` in `targets`. Say plainly that the deploy makes a real preview deployment of the current
+  working tree (the branch is named in its preview; the preview env is filled from the same
+  database/auth project as production, so a preview touches production data), that it records the
+  provider's own deployment id, and that `needs` includes `--confirm-live` when a live-mode value fills
+  a preview env name. `release:check` writes nothing; it re-reads that deployment from the provider and
+  scans the HTML/JavaScript it serves, and **fails the plan** when either fails — that failure is the
+  gate, and nothing is promoted to production. A host with no per-deployment preview read (Vercel)
+  makes both checks skip: say that the preview is unverified rather than implying it passed, and point
+  the human at the provider's own dashboard or CLI. These steps are new step ids, so a plan approved
+  before the opt-in no longer matches: re-plan and get a fresh approval.
 - `warnings` and `findings`, and `unmappedEnv`: env names golive can't fill (e.g. `OPENAI_API_KEY`).
   The human types those into the host's dashboard. Never ask for the value.
 
@@ -261,7 +272,11 @@ follow `references/troubleshooting.md` to reconcile its remote outcome; missing 
 is not permission to repeat creation. If `apply` says the plan changed, or `domain:dns`
 says the records the host requires changed since approval, run `plan` again and get approval again
 (with `--confirm-dns` for DNS). Some things only appear after the first deploy (webhook, site URL): run
-`plan` again after a successful apply until it shows only the zero-write project pins.
+`plan` again after a successful apply until it shows only the zero-write project pins. If the gate
+`release:check` failed, fix the cause and run `plan` + `apply` again: a failed gate makes the next plan
+deploy a fresh preview of whatever was fixed and check that deployment. The two release checks can also
+be re-run against the current preview with `verify --only preview-deploy,preview-bundle`, whose result
+is evidence, not a new gate.
 
 ### 5b. Teardown: `teardown --json`, then `apply --plan <teardown planId> --yes --confirm-destroy [--confirm-dns] --json`
 
@@ -301,6 +316,8 @@ Check scope:
 | `stripe-live-ready` | the Stripe account can take live payments |
 | `email-dns` | the sending domain's SPF/DKIM/DMARC records are published |
 | `email-verified` | the email provider marks the domain verified |
+| `preview-deploy` | with `release.preview: true`: the hosting provider's own read confirms the preview deployment golive recorded (`deployed:preview:id`) is ready, belongs to the linked project and is not the production deployment |
+| `preview-bundle` | with `release.preview: true`: the HTML/JavaScript the provider-confirmed preview URL serves carries no known credential patterns (a protected preview skips; an incomplete scan only warns) |
 
 `auth-signup` and `auth-session` are opt-in: without `auth.e2e: true` in `golive.yaml` they skip with
 that reason and create nothing. With it on, each run signs up one throwaway probe account (address
@@ -317,6 +334,12 @@ password it set and the token it spent exist there and nowhere else, so a plain 
 429 warns rather than fails, and it never reads the inbox: the click stays with the human. Treat this
 check as **implemented and mock-covered, not live-validated**: until a live run's report says `pass`
 for it, never present the recovery journey as proven on the human's project.
+
+`preview-deploy` and `preview-bundle` only mean anything after an opted-in preview deploy recorded
+`deployed:preview:id`: without one they skip with that reason, and a plan without `release.preview`
+never produces one. Treat them the same way — **implemented and mock-covered, not live-validated** —
+and note that on a host exposing no per-deployment preview read (Vercel) both skip, so the preview is
+unverified by golive rather than gated; say that plainly instead of presenting the preview as checked.
 
 Finish with a short summary: the live URL, what passed, what is still open (`handoff --json`), and
 every `done: null` / skipped item named as not verified by golive. Say who owns each remaining item —

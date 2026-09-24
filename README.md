@@ -276,11 +276,20 @@ live-tested milestones**, not a finished category or a completed checklist for y
   live-validated:** each successful deploy records the provider's own identity for the deployment it
   made (`deployed:<target>:id` = `<provider>|<deployment id>|<url>|<time>` in `.golive/state.json`,
   mock-covered; a provider that reports no identity records none), so a later capability can name one
-  exact deployment. Drift detection exists as the read-only `golive status` command below (it ran
-  read-only in the auth validation and had nothing actionable once that journey passed, but the DNS,
-  environment, webhook and deployment baselines it compares still lack live evidence); previews (the
-  opt-in `release.preview` plans nothing yet), release checks, promotion and rollback are still
-  planned.
+  exact deployment. **Opt-in preview deploy and release check — implemented, not live-validated:**
+  with `release.preview: true` in `golive.yaml` (and `preview` in `targets`), `plan` adds
+  `preview:deploy` — a create that deploys the current working tree to the host's preview target,
+  names the provider, project, env target and the source project the preview shares with production,
+  needs `--confirm-live` when a live-mode value fills a preview env name, and records the provider's
+  own identity as `deployed:preview:id` — and `release:check`, which writes nothing and fails the plan
+  when the provider's read of that deployment or a credential scan of its bundle fails. Nothing is
+  promoted: promotion and rollback are still planned, and the preview checks skip on a host that
+  exposes no per-deployment preview read (Vercel), reporting that instead of guessing. Adding these
+  step ids changes a plan's id, so an approval that was not applied must be re-planned. Drift detection
+  exists as the read-only `golive status` command below (it ran read-only in the auth validation and
+  had nothing actionable once that journey passed, but the DNS, environment, webhook and deployment
+  baselines it compares still lack live evidence), and preview deployments are not yet among the
+  subjects it compares.
 - [ ] 🗺️ **Backups and recovery:** retention, restore drills, incident steps and approved cleanup.
   Approved `teardown` removes what golive created; backups and any restore remain manual, supervised work.
 - [x] ✅ **Uninstall / teardown:** ~~an approved inventory of golive-created resources and their removal.~~
