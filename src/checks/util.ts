@@ -1,5 +1,6 @@
 import type { Axis, CheckResult, CheckStatus, Ctx, EnvTarget, Severity } from '../core/types.js';
 import { allowHost } from '../core/http.js';
+import type { Secret } from '../core/secret.js';
 import { redact } from '../core/secret.js';
 
 /** What Check.run returns. */
@@ -139,8 +140,9 @@ export async function confirmedProductionUrl(ctx: Ctx): Promise<{ ok: true; url:
 /**
  * GET/POST one URL. Does NOT allowlist anything: callers allowlist the confirmed origin first
  * (confirmedProductionUrl), so hosts taken from redirects or HTML can never widen the allowlist.
+ * Headers may carry a Secret (a session token), which is revealed only at the transport boundary.
  */
-export async function probe(ctx: Ctx, url: string, opts: { method?: 'GET' | 'POST'; body?: unknown; headers?: Record<string, string>; timeoutMs?: number } = {}) {
+export async function probe(ctx: Ctx, url: string, opts: { method?: 'GET' | 'POST'; body?: unknown; headers?: Record<string, string | Secret>; timeoutMs?: number } = {}) {
   return ctx.http<unknown>({ url, method: opts.method ?? 'GET', body: opts.body, headers: opts.headers, timeoutMs: opts.timeoutMs ?? 20_000 });
 }
 

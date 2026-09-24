@@ -341,6 +341,24 @@ async function setPassword(deps: SupabaseAuthDeps, ctx: Ctx, id: string, passwor
   expectOk(res.status, res.json, `Setting a new password on the Supabase test user ${id}`);
 }
 
+/**
+ * `PUT /auth/v1/admin/users/{id}` with `email_confirm`: the provider-admin confirmation of an account
+ * golive seeded and controls. The isolation journey needs a second signed-in account, and asking the
+ * human for a second inbox click would spend the provider's mail throttle on a journey whose point is
+ * the app's data, not delivery. It is a provider-side fact the caller re-reads — never a claim that
+ * the address received or that anyone clicked anything.
+ */
+async function confirmEmail(deps: SupabaseAuthDeps, ctx: Ctx, id: string): Promise<void> {
+  const { ref, keys } = await require(deps, ctx);
+  const res = await ctx.http<GoTrueUser>({
+    url: `${base(ref)}/admin/users/${encodeURIComponent(id)}`,
+    method: 'PUT',
+    headers: adminHeaders(requireSecret(keys)),
+    body: { email_confirm: true },
+  });
+  expectOk(res.status, res.json, `Confirming the Supabase auth user ${id}`);
+}
+
 async function destination(deps: SupabaseAuthDeps, ctx: Ctx): Promise<{ ref: string; url: string } | null> {
   let ref: string | null = null;
   try {
@@ -359,6 +377,7 @@ export function supabaseAuthUsers(deps: SupabaseAuthDeps): AuthUsers {
     user: (ctx, token) => user(deps, ctx, token),
     adminUser: (ctx, id) => adminUser(deps, ctx, id),
     setPassword: (ctx, id, password) => setPassword(deps, ctx, id, password),
+    confirmEmail: (ctx, id) => confirmEmail(deps, ctx, id),
     requestRecovery: (ctx, email) => requestRecovery(deps, ctx, email),
     recoveryLink: (ctx, email) => recoveryLink(deps, ctx, email),
     recoverySession: (ctx, token) => recoverySession(deps, ctx, token),

@@ -199,8 +199,8 @@ state or config), and the project was removed afterwards through the approved te
 was host-only, so the document's other-provider rows remain mock-covered. See
 [observed validation](docs/VALIDATION.md) for the evidence.
 
-Experimental adapters also exist for Supabase Auth configuration, the Supabase Auth signup journey and
-Cloudflare DNS. Supabase Auth settings — signup, email confirmation, minimum password length, the
+Experimental adapters also exist for Supabase Auth configuration, the Supabase Auth signup journey,
+its password recovery and account isolation, and Cloudflare DNS. Supabase Auth settings — signup, email confirmation, minimum password length, the
 mailer it uses, plus the site URL and redirect allowlist — are automated through an approved plan and
 re-read for evidence, and that path passed a disposable live run: the policy write held in the
 read-back (`password minimum length: 6 → 12`) and `auth-policy` ended with the built-in-mailer
@@ -223,7 +223,20 @@ for a session, set the new password with that session — and the `auth-recovery
 outcome: the request is accepted, an address with no account gets the same answer (no account
 enumeration), the spent token is refused on replay, the new password signs in and the one it replaced
 does not. The inbox click and any captcha stay with the human (the `auth:recovery-email` handoff says
-so); the live run that exercises it comes separately, and account isolation is still to come.
+so); the live run that exercises it comes separately. Account isolation is implemented on the same
+provider too: `auth.isolation: true` with `auth.identityPath` and `auth.isolationPath` adds one
+approved step (`auth:isolation`, needs `--confirm-live`) that seeds a
+**second** real test account — the address derived from `auth.testEmail`, the password again only in
+that run's memory — and confirms it through the provider's admin API (no second inbox click: the
+journey is about the app's data, not delivery). The `auth-isolation` check then signs in as both
+accounts and reads the app's own two declared routes on the production URL: both must refuse an
+anonymous caller (a 200 is a critical finding), each account's identity route must answer with its
+own user id and never the other's, and the rows route must return only the caller's own rows —
+checked with one unique marker row per account written **through that route** with the account's
+session and read back, so another account's marker in the answer is a cross-account read and fails
+critically. When the routes are not declared, the non-blocking `auth:isolation-routes` handoff hands
+the app-code task over; a 404 or a refused session skips with that task named, never as a pass.
+Both are **implemented and mock-covered, not live-validated yet** — their live runs come separately.
 The DNS, email and test-mode payment paths listed above are the tested ones, with the custom-domain
 runs using Porkbun and GoDaddy record writes; **Cloudflare DNS specifically is not a validated alpha
 path yet**, and other auth providers stay guided. See [provider scope](docs/PROVIDERS.md) and
@@ -269,8 +282,14 @@ live-tested milestones**, not a finished category or a completed checklist for y
   path (an anonymous 401) and a signed-in read of an RLS-protected table, reported as a count rather
   than a table name**. Password recovery is implemented on the same provider and covered by mocked
   tests (`auth.recovery: true` adds the `auth:recovery` step and the `auth-recovery` check, which
-  proves no account enumeration, a one-time token and the replaced password); its live run and account
-  isolation still need work. Other auth providers stay guided.
+  proves no account enumeration, a one-time token and the replaced password); its live run still needs
+  work. Account isolation — the other half, and the one earlier runs could not exercise — is
+  implemented and mock-covered the same way: `auth.isolation: true` with `auth.identityPath` and
+  `auth.isolationPath` adds the `auth:isolation` step (a second real test account, confirmed through
+  the provider's admin API and recorded by id and address) and the `auth-isolation` check, which
+  signs in as both accounts and proves on the app's own routes that neither can read the other's
+  identity or rows (a cross-account read fails critically; an undeclared or 404 route skips with the
+  app-code task). Its live run comes separately too. Other auth providers stay guided.
 - [ ] 🗺️ **OAuth / social login / SSO:** client registration, consent screens, scopes, callback
   URLs and provider reviews. Current auth-provider setup is guided.
 - [x] ✅ **Payments and subscriptions:** ~~Prove test-mode checkout and webhook acceptance with Stripe.~~
@@ -342,10 +361,10 @@ the right page, the right permissions, a check afterward, and a return to the sa
 When the app itself needs code changes, GoLive should give the coding agent a concrete task and
 recheck the result. It should not make you coordinate a dozen disconnected setup conversations.
 
-**Next up:** complete and live-test the remaining launch journeys—account isolation (the rest of
-authentication after password recovery, which is implemented and mock-covered but not yet
-live-validated), live-mode payment flows and the Cloudflare DNS
-adapter—then expand app architectures and ongoing operations.
+**Next up:** complete and live-test the remaining launch journeys—the live runs for password recovery
+and account isolation (both implemented and mock-covered on Supabase, not yet exercised against a real
+project), live-mode payment flows and the Cloudflare DNS adapter—then expand app architectures and
+ongoing operations.
 
 These are directions, not release dates. A capability should graduate from experimental only after
 its account setup, connection, verification and recovery have been exercised. Contributions toward

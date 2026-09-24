@@ -22,6 +22,9 @@ const AUTH_SETTINGS: Record<string, (v: unknown) => string | null> = {
   testEmail: (v) => (typeof v === 'string' && /^[^@\s+]+(\+[^@\s]+)?@[^@\s]+\.[^@\s]+$/.test(v) ? null : 'must be the address the test account uses, like "you+go-live@example.com" (plus-addressing allowed; never a password)'),
   protectedPath: (v) => (typeof v === 'string' && v.startsWith('/') ? null : 'must be an app route starting with "/", e.g. "/dashboard" (the page that must require a session)'),
   recovery: (v) => (typeof v === 'boolean' ? null : 'must be true or false'),
+  isolation: (v) => (typeof v === 'boolean' ? null : 'must be true or false'),
+  identityPath: (v) => (typeof v === 'string' && v.startsWith('/') ? null : 'must be an app route starting with "/", e.g. "/api/me" (that route answers with the signed-in caller\'s OWN identity as JSON, and refuses without a session)'),
+  isolationPath: (v) => (typeof v === 'string' && v.startsWith('/') ? null : 'must be an app route starting with "/", e.g. "/api/notes" (that route returns the signed-in caller\'s OWN rows, and refuses without a session)'),
 };
 
 /** The opt-in `release` settings and how each may look. Each one is off unless set to true. */

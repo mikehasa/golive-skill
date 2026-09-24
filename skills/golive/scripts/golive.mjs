@@ -7721,7 +7721,10 @@ var init_config = __esm({
       e2e: (v) => typeof v === "boolean" ? null : "must be true or false",
       testEmail: (v) => typeof v === "string" && /^[^@\s+]+(\+[^@\s]+)?@[^@\s]+\.[^@\s]+$/.test(v) ? null : 'must be the address the test account uses, like "you+go-live@example.com" (plus-addressing allowed; never a password)',
       protectedPath: (v) => typeof v === "string" && v.startsWith("/") ? null : 'must be an app route starting with "/", e.g. "/dashboard" (the page that must require a session)',
-      recovery: (v) => typeof v === "boolean" ? null : "must be true or false"
+      recovery: (v) => typeof v === "boolean" ? null : "must be true or false",
+      isolation: (v) => typeof v === "boolean" ? null : "must be true or false",
+      identityPath: (v) => typeof v === "string" && v.startsWith("/") ? null : `must be an app route starting with "/", e.g. "/api/me" (that route answers with the signed-in caller's OWN identity as JSON, and refuses without a session)`,
+      isolationPath: (v) => typeof v === "string" && v.startsWith("/") ? null : `must be an app route starting with "/", e.g. "/api/notes" (that route returns the signed-in caller's OWN rows, and refuses without a session)`
     };
     RELEASE_SETTINGS = {
       preview: (v) => typeof v === "boolean" ? null : "must be true or false"
@@ -8260,6 +8263,16 @@ async function setPassword(deps2, ctx, id2, password) {
   });
   expectOk(res.status, res.json, `Setting a new password on the Supabase test user ${id2}`);
 }
+async function confirmEmail(deps2, ctx, id2) {
+  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const res = await ctx.http({
+    url: `${base(ref3)}/admin/users/${encodeURIComponent(id2)}`,
+    method: "PUT",
+    headers: adminHeaders(requireSecret(keys3)),
+    body: { email_confirm: true }
+  });
+  expectOk(res.status, res.json, `Confirming the Supabase auth user ${id2}`);
+}
 async function destination(deps2, ctx) {
   let ref3 = null;
   try {
@@ -8276,6 +8289,7 @@ function supabaseAuthUsers(deps2) {
     user: (ctx, token2) => user(deps2, ctx, token2),
     adminUser: (ctx, id2) => adminUser(deps2, ctx, id2),
     setPassword: (ctx, id2, password) => setPassword(deps2, ctx, id2, password),
+    confirmEmail: (ctx, id2) => confirmEmail(deps2, ctx, id2),
     requestRecovery: (ctx, email) => requestRecovery(deps2, ctx, email),
     recoveryLink: (ctx, email) => recoveryLink(deps2, ctx, email),
     recoverySession: (ctx, token2) => recoverySession(deps2, ctx, token2),
@@ -12621,14 +12635,14 @@ async function hostItems(ctx, at, c) {
       });
     }
   }
-  const marker = ctx.state.resource(createdProjectKey(provider));
-  if (marker && marker !== recordedId) {
+  const marker2 = ctx.state.resource(createdProjectKey(provider));
+  if (marker2 && marker2 !== recordedId) {
     c.items.push({
       id: "project:hosting:marker",
       class: "host-project",
       subject: `${provider} project creation marker`,
       expected: label(`the creation marker names ${recordedId}`, { source: "provider-marker", at: baseline.at, ref: createdProjectKey(provider) }),
-      observed: seen(`it names ${marker}`, at),
+      observed: seen(`it names ${marker2}`, at),
       baseline: { source: "provider-marker", ...baseline.at ? { at: baseline.at } : {}, ref: createdProjectKey(provider) },
       severity: "medium",
       action: "verify",
@@ -17607,6 +17621,151 @@ var authRecoveryLink = {
   }
 };
 
+// src/links/auth-isolation.ts
+init_secret();
+init_supabase_auth();
+var ISOLATION_USER_ID = "supabase.isolationUserId";
+var ISOLATION_USER_EMAIL = "supabase.isolationUserEmail";
+function secondAddress(email) {
+  const m = /^([^@+]+)(?:\+[^@]*)?@([^@\s]+)$/.exec(email);
+  return m ? `${m[1]}+gl-isolation@${m[2]}` : null;
+}
+var authIsolationLink = {
+  id: "auth-isolation",
+  async plan(ctx) {
+    if (ctx.config.auth?.isolation !== true) return null;
+    const au = await axisStatus(ctx, "auth");
+    if (au.kind === "none") return null;
+    const title = au.kind === "guided" ? au.title : au.adapter.title;
+    if (au.kind !== "ready") {
+      const why = au.kind === "guided" ? "is not automated by golive" : "is not connected yet";
+      return { steps: [], handoffs: [], warnings: [`auth.isolation is on in golive.yaml, but ${title} ${why}: two signed-in accounts cannot be proven apart, so account isolation stays a manual app test`] };
+    }
+    const authUsers = au.adapter.capabilities.authUsers;
+    if (!authUsers) {
+      return { steps: [], handoffs: [], warnings: [`auth.isolation is on in golive.yaml, but ${au.adapter.title} exposes no auth-users surface: account isolation stays a manual app test`] };
+    }
+    const confirmEmail2 = authUsers.confirmEmail;
+    if (!confirmEmail2) {
+      return { steps: [], handoffs: [], warnings: [`auth.isolation is on in golive.yaml, but ${au.adapter.title} cannot confirm an account through its API, so the second test account would never sign in: account isolation stays a manual app test`] };
+    }
+    const email = ctx.config.auth.testEmail;
+    if (ctx.config.auth.e2e !== true || !email) {
+      return { steps: [], handoffs: [], warnings: [`auth.isolation is on in golive.yaml, but the FIRST account comes from \`auth.e2e: true\` with \`auth.testEmail\`, and the isolation check signs in as both accounts: turn that opt-in on (or back on), then run \`plan\` again`] };
+    }
+    const address = secondAddress(email);
+    if (!address) {
+      return { steps: [], handoffs: [], warnings: [`auth.isolation is on in golive.yaml, but auth.testEmail (${email}) is not an address golive can plus-tag for the second account: set an address like "you@example.com" or "you+go-live@example.com"`] };
+    }
+    const first = ctx.state.resource(TEST_USER_ID);
+    if (!first && !memo(ctx).planned.has("auth:test-user")) {
+      return { steps: [], handoffs: [], warnings: [`auth.isolation is on in golive.yaml, but no first test account is recorded yet and this plan does not seed one: the isolation check signs in as two accounts, so apply the plan that seeds the first one (\`auth.e2e: true\`, \`auth.testEmail\`), then run \`plan\` again`] };
+    }
+    if (first) {
+      let firstUser;
+      try {
+        firstUser = await authUsers.adminUser(ctx, first);
+      } catch (e) {
+        return { steps: [], handoffs: [], warnings: [`auth.isolation is on in golive.yaml, but reading the test account ${first} failed (${errMsg(e)}): account isolation is left out of this plan`] };
+      }
+      if (!firstUser) {
+        return { steps: [], handoffs: [], warnings: [`auth.isolation is on in golive.yaml, but the test account ${first} recorded in .golive/state.json is gone from ${title}: restore the user in the provider dashboard, or remove that key from .golive/state.json to seed a new account`] };
+      }
+      if (!firstUser.emailConfirmed) {
+        return { steps: [], handoffs: [], warnings: [`auth.isolation is on in golive.yaml, but ${ctx.state.resource(TEST_USER_EMAIL) ?? email} is not confirmed yet: the isolation check signs in as both accounts, so click the confirmation link in that inbox (\`auth:confirm-email\`), then run \`plan\` again`] };
+      }
+    }
+    const axis = projectAxisFor(ctx, au.adapter);
+    const dest = await authUsers.destination(ctx).catch(() => null);
+    const where = dest ? `${au.adapter.title} project ${dest.ref}` : `the ${au.adapter.title} project`;
+    const seeded = ctx.state.resource(ISOLATION_USER_ID);
+    const identityPath = ctx.config.auth.identityPath;
+    const isolationPath = ctx.config.auth.isolationPath;
+    const s = step({
+      id: "auth:isolation",
+      title: `Seed a second ${au.adapter.title} test account for the account-isolation check`,
+      kind: "provision",
+      risk: { writes: true, live: true, replayable: true },
+      dependsOn: deps(ctx, [...axis ? [`project:${axis}`] : [], "auth:settings", "auth:test-user"]),
+      preview: [
+        seeded ? `set a new password on the second test account ${address} golive seeded earlier (${seeded}) in ${where}` : `create a second test account ${address} in ${where}`,
+        `confirm that account through ${au.adapter.title}'s admin API and read it back: the isolation check needs two signed-in accounts, and a click in the inbox is not one of its legs (the confirmation email it also receives is a side effect)`,
+        "the generated password stays in this run's memory only; state records the user id and the address, never a secret",
+        identityPath && isolationPath ? `the auth-isolation check then reads ${identityPath} and ${isolationPath} with each account's session on the deployed app` : `no app route is declared yet (auth.identityPath / auth.isolationPath), so the isolation check has nothing to read: see the auth:isolation-routes handoff`
+      ],
+      intent: intentOf({ project: await projectIntent(ctx, au.adapter), user: seeded ?? "new", email: address, previous: ctx.state.get().steps["auth:isolation"]?.at }),
+      verifyWith: ["auth-isolation"],
+      async run(sctx) {
+        const pass2 = testPassword();
+        const target = sctx.state.resource(ISOLATION_USER_EMAIL) ?? address;
+        const recorded = sctx.state.resource(ISOLATION_USER_ID);
+        const confirmAndRead = async (id2) => {
+          const before = await authUsers.adminUser(sctx, id2);
+          if (before?.emailConfirmed) return [`${target} is confirmed (email_confirmed_at set)`];
+          await confirmEmail2(sctx, id2);
+          const after = await authUsers.adminUser(sctx, id2);
+          if (!after?.emailConfirmed) {
+            throw new Error(`${au.adapter.title} accepted the confirmation of ${target} (${id2}) but still reports that account unconfirmed. Confirm the user in the provider dashboard, then re-run \`apply\`.`);
+          }
+          return [`confirmed ${target} through ${au.adapter.title}'s admin API and read it back (email_confirmed_at set): the isolation check has a second signed-in account without an inbox click`];
+        };
+        if (recorded) {
+          const known = await authUsers.adminUser(sctx, recorded);
+          if (!known) {
+            throw new Error(
+              `The second test account ${recorded} recorded in .golive/state.json is gone from ${au.adapter.title}. Remove "${ISOLATION_USER_ID}" from .golive/state.json to seed a new account, or restore the user in the provider dashboard.`
+            );
+          }
+          await authUsers.setPassword(sctx, recorded, pass2);
+          vaultPut(testUserPassKey(recorded), pass2);
+          const lines2 = [
+            `set a new password on the existing second test account ${target} (${recorded}); fp:${pass2.fingerprint}, kept in this run's memory only`,
+            ...await confirmAndRead(recorded)
+          ];
+          return { changes: lines2 };
+        }
+        const res = await authUsers.signup(sctx, target, pass2);
+        if (res.captchaRequired) {
+          throw new Error(
+            `${au.adapter.title} wants a captcha for signup, so golive cannot create the second test account. Turn the auth captcha off for this project (provider dashboard, Authentication settings), or accept that account isolation stays manual.`
+          );
+        }
+        if (res.rateLimited) {
+          throw new Error(
+            `${au.adapter.title} refused to send more auth emails (HTTP 429) while signing up ${target}, so the second test account was not seeded. Wait for the limit to reset (or configure custom SMTP and raise the auth rate limit), then re-run \`apply\`; check the provider's user list for ${target} if you are unsure whether the account was created.`
+          );
+        }
+        if (!res.userId) {
+          throw new Error(`Signing up ${target} returned no user id (HTTP ${res.status}). Check the provider's user list before re-running; golive keeps no account it cannot name.`);
+        }
+        sctx.remember(ISOLATION_USER_ID, res.userId);
+        sctx.remember(ISOLATION_USER_EMAIL, target);
+        vaultPut(testUserPassKey(res.userId), pass2);
+        const lines = [`created the second test account ${target} (${res.userId})`, `password fp:${pass2.fingerprint} (this run's memory only, never written anywhere)`];
+        if (res.existing) {
+          await authUsers.setPassword(sctx, res.userId, pass2);
+          lines.push(`${target} already had an account, so no new confirmation email was sent: golive adopted it as the second test account and set the generated password on it`);
+        } else if (!res.confirmationSent) {
+          lines.push(`${au.adapter.title} confirmed the account without sending anything: email confirmation is not required by this project (see the auth-policy check)`);
+        } else {
+          lines.push(`a confirmation email for ${target} was sent to the same inbox as the first account; golive confirms this account through the admin API too, so no click is needed for it`);
+        }
+        lines.push(...await confirmAndRead(res.userId));
+        return { changes: lines };
+      }
+    });
+    const handoff = {
+      id: "auth:isolation-routes",
+      why: `${title} only holds the accounts; whether one of them can read the other's data is a question about YOUR app, and only your coding agent (or you) can add or change its routes.`,
+      action: `Expose two routes on the deployed app and name them in golive.yaml. \`auth.identityPath\` (e.g. "/api/me"): a GET from a signed-in caller answers with that caller's OWN user id as JSON, and without a session it answers 401/403 or redirects. \`auth.isolationPath\` (e.g. "/api/notes"): a GET returns ONLY rows belonging to the signed-in caller, a POST with body {"marker": "\u2026"} stores one row for that caller, and both answer 401/403 or a redirect without a session. Then run \`plan\` + \`apply\` (the auth:isolation step) and \`verify\`.`,
+      blocking: false,
+      verifiedBy: "auth-isolation"
+    };
+    const needsRoutes = !identityPath || !isolationPath;
+    return { steps: track(ctx, [s]), handoffs: needsRoutes ? [handoff] : [], warnings: [] };
+  }
+};
+
 // src/links/deploy.ts
 var WEBHOOK_STEP = "payments:webhook:production";
 var deployLink = {
@@ -18218,7 +18377,7 @@ function livePreviewNames(ctx, planned) {
 }
 
 // src/links/all.ts
-var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, authE2eLink, authRecoveryLink, emailDomainLink, emailKeysLink, deployLink, netlifyVisibilityLink, releaseLink];
+var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, authE2eLink, authIsolationLink, authRecoveryLink, emailDomainLink, emailKeysLink, deployLink, netlifyVisibilityLink, releaseLink];
 
 // src/links/index.ts
 var LINKS = ALL_LINKS;
@@ -19283,6 +19442,252 @@ var authRecoveryCheck = {
   }
 };
 
+// src/checks/auth-isolation.ts
+init_secret();
+init_supabase_auth();
+import { randomBytes as randomBytes6 } from "node:crypto";
+function marker(role) {
+  return `gl-iso-${role}-${randomBytes6(6).toString("hex")}`;
+}
+var routeTask = (path) => `app-code task: deploy a route at ${path} that answers the signed-in caller the way auth.identityPath / auth.isolationPath in golive.yaml declares, then re-run verify`;
+var sessionTask = (path) => `app-code task: read the caller's session from the \`Authorization: Bearer <token>\` header on ${path} (the token is one the auth provider just issued for that account), then re-run verify`;
+function notAnswered(line, status, path) {
+  if (status === 404) return result("skip", "info", [`${line}: the app does not implement the declared route (${path})`, routeTask(path)]);
+  if (status === 401 || status === 403) return result("skip", "info", [`${line}: the route refused the session token golive holds for the account it asks as`, sessionTask(path)]);
+  if (status >= 300 && status < 400) return result("skip", "info", [`${line}: the route redirected a request that carried a session, so it never answered as the caller`, sessionTask(path)]);
+  if (status === 429) return result("skip", "info", [`${line}: the app rate-limited the request, so isolation was not exercised`]);
+  return null;
+}
+var withEvidence = (outcome, evidence) => ({ ...outcome, evidence: [...outcome.evidence, ...evidence] });
+var statusLine = (r) => `HTTP ${r.status}${r.status >= 300 && r.status < 400 ? ` (\u2192 ${r.location ?? "no location"})` : ""}`;
+var anonWord = (status) => status === 401 || status === 403 ? "refused without a session" : status >= 300 && status < 400 ? "redirected out of the route without a session" : "answered neither as the route nor as a refusal";
+async function send(ctx, url, opts = {}) {
+  const headers = { "user-agent": "golive-verify" };
+  if (opts.account) headers.authorization = new Secret(opts.account.token.name, `Bearer ${opts.account.token.reveal()}`);
+  const r = await probe(ctx, url, { method: opts.method ?? "GET", body: opts.body, headers });
+  return { status: r.status, text: r.text ?? "", ...r.headers.location ? { location: r.headers.location } : {} };
+}
+var authIsolationCheck = {
+  id: "auth-isolation",
+  title: "A signed-in account cannot read another account's data through the app",
+  severity: "critical",
+  applies: (ctx) => Boolean(ctx.config.stack.auth),
+  async run(ctx) {
+    if (ctx.config.auth?.isolation !== true) {
+      return skip("auth.isolation is not enabled in golive.yaml: this check signs in as two real accounts and writes one marker row per account through the app, so it only runs on explicit opt-in");
+    }
+    const provider = ctx.config.stack.auth;
+    const title = adapterFor(ctx, "auth")?.title ?? provider;
+    const identityPath = ctx.config.auth.identityPath;
+    const isolationPath = ctx.config.auth.isolationPath;
+    if (!identityPath || !isolationPath) {
+      const missing2 = [!identityPath ? "auth.identityPath" : "", !isolationPath ? "auth.isolationPath" : ""].filter(Boolean).join(" and ");
+      return skip(`auth.isolation is on in golive.yaml but no app route is declared (${missing2}): golive has nothing to read through, so isolation is not exercised (the auth:isolation-routes handoff names what the app must expose)`);
+    }
+    const auth8 = cap(ctx, "auth", "authUsers");
+    if (!auth8) return skip(`auth provider ${provider} has no auth-users surface (guided): account isolation stays a manual app test`);
+    const pre = await prereq(ctx, "auth");
+    if (pre) return pre;
+    const first = ctx.state.resource(TEST_USER_ID);
+    if (!first) return blocked("auth:test-user", "no test account has been seeded yet");
+    const second = ctx.state.resource(ISOLATION_USER_ID);
+    if (!second) return blocked("auth:isolation", "no second test account has been seeded yet");
+    const firstPass = vaultGet(testUserPassKey(first));
+    const secondPass = vaultGet(testUserPassKey(second));
+    if (!firstPass || !secondPass) {
+      const missing2 = [!firstPass ? "the test account" : "", !secondPass ? "the second test account" : ""].filter(Boolean).join(" and ");
+      return skip(`blocked by: no password for ${missing2} in this run (only the run that seeds or rotates an account keeps one, in memory): re-run \`plan\` + \`apply\` so both passwords are rotated, then run verify`);
+    }
+    const firstEmail = ctx.state.resource(TEST_USER_EMAIL) ?? ctx.config.auth.testEmail;
+    const secondEmail = ctx.state.resource(ISOLATION_USER_EMAIL);
+    if (!firstEmail || !secondEmail) return skip("the addresses of the recorded test accounts are not known, so golive cannot sign in as both");
+    const issues = [];
+    const soft = (line, why) => {
+      issues.push({
+        severity: "medium",
+        line: `${line}: ${why}`,
+        fix: `Make the declared routes answer the isolation journey as golive.yaml describes (auth.identityPath / auth.isolationPath, and the auth:isolation-routes handoff), then re-run verify.`
+      });
+    };
+    const wanted = [
+      ["the test account", firstEmail, firstPass, first],
+      ["the second test account", secondEmail, secondPass, second]
+    ];
+    const accounts = [];
+    for (const [who, email, password, recorded] of wanted) {
+      let outcome;
+      try {
+        outcome = await auth8.login(ctx, email, password);
+      } catch (e) {
+        if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
+        return result("fail", "high", [`signing in as ${who} ${email} failed: ${errMsg2(e)}`], `Check that ${provider} auth is reachable, then re-run verify.`);
+      }
+      if (outcome.rateLimited) {
+        return result("skip", "info", [`the provider rate-limited the password login for ${who} (HTTP 429), so the two sessions were not established at once`, "wait for the limit to reset, then re-run verify: isolation needs a session for BOTH accounts in the same run"]);
+      }
+      if (!outcome.session) {
+        if ((outcome.code ?? "").includes("email_not_confirmed")) {
+          return result(
+            "warn",
+            "medium",
+            [
+              `${who} ${email} is not confirmed yet, so it has no session: ${who === "the test account" ? "the auth:confirm-email handoff covers the click in that inbox" : "the auth:isolation step confirms this account through the provider and reads it back"}`,
+              "without both sessions nothing about isolation can be read, and this check claims nothing from one account alone"
+            ],
+            "Run `plan` + `apply` again (each step rotates its own account's password), then re-run verify."
+          );
+        }
+        return result("fail", "high", [`${who} ${email} cannot sign in (${outcome.code})`], `Check that account in the ${title} dashboard (confirmed, not banned, password policy), then re-run \`plan\` + \`apply\` and verify.`);
+      }
+      if (outcome.session.userId !== recorded) {
+        return result(
+          "fail",
+          "high",
+          [`the login for ${email} returned user ${outcome.session.userId}, not the recorded account ${recorded}`],
+          "The account that signed in is not the recorded test account: stop and inspect the provider user list and the state keys before reading anything as it."
+        );
+      }
+      accounts.push({ who, email, id: outcome.session.userId, token: outcome.session.accessToken });
+    }
+    const [a, b] = accounts;
+    const evidence = [`signed in as ${a.email} (${a.id}) and ${b.email} (${b.id})`];
+    const confirmed = await confirmedProductionUrl(ctx);
+    if (!confirmed.ok) return withEvidence(confirmed.outcome, evidence);
+    const base2 = trimSlash(confirmed.url);
+    const anon = [];
+    for (const [label3, path] of [["identity", identityPath], ["rows", isolationPath]]) {
+      const url = `${base2}${path}`;
+      let r;
+      try {
+        r = await send(ctx, url);
+      } catch (e) {
+        return result("fail", "high", [`anonymous GET ${url} failed: ${errMsg2(e)}`, ...evidence], "Make sure the production deployment is reachable, then re-run verify.");
+      }
+      anon.push({ label: label3, path, r });
+    }
+    const open = anon.filter((x) => x.r.status === 200);
+    if (open.length) {
+      return result(
+        "fail",
+        "critical",
+        [
+          ...open.map((x) => `anonymous GET ${base2}${x.path} \u2192 ${statusLine(x.r)}: the declared ${x.label} route is served without a session`),
+          ...evidence
+        ],
+        `Make ${open.map((x) => x.path).join(" and ")} require a session: answer 401/403, or redirect to sign-in, when the request carries none. A page that renders a sign-in form with 200 does not count \u2014 golive cannot tell it from a public page.`
+      );
+    }
+    const missing = anon.filter((x) => x.r.status === 404);
+    if (missing.length) {
+      return withEvidence(
+        result("skip", "info", [
+          ...missing.map((x) => `anonymous GET ${base2}${x.path} \u2192 HTTP 404: the app does not implement the declared ${x.label} route (${x.path})`),
+          routeTask(missing[0].path),
+          ...anon.filter((x) => x.r.status !== 404).map((x) => `anonymous GET ${base2}${x.path} \u2192 ${statusLine(x.r)}: ${anonWord(x.r.status)}`)
+        ]),
+        evidence
+      );
+    }
+    const limited = anon.find((x) => x.r.status === 429);
+    if (limited) {
+      return withEvidence(result("skip", "info", [`anonymous GET ${base2}${limited.path} \u2192 ${statusLine(limited.r)}: the app rate-limited the request, so nothing about isolation was exercised`]), evidence);
+    }
+    for (const x of anon) {
+      const line = `anonymous GET ${base2}${x.path} \u2192 ${statusLine(x.r)}`;
+      if (x.r.status === 401 || x.r.status === 403 || x.r.status >= 300 && x.r.status < 400) evidence.push(`${line}: ${anonWord(x.r.status)}`);
+      else soft(line, `that answer is neither the route nor a refusal, so golive cannot call ${x.path} protected`);
+    }
+    const identityUrl = `${base2}${identityPath}`;
+    for (const [me, them] of [[a, b], [b, a]]) {
+      let r;
+      try {
+        r = await send(ctx, identityUrl, { account: me });
+      } catch (e) {
+        return result("fail", "high", [`GET ${identityUrl} as ${me.email} failed: ${errMsg2(e)}`, ...evidence], "Make sure the production deployment is reachable, then re-run verify.");
+      }
+      const line = `GET ${identityUrl} as ${me.email} (${me.id}) \u2192 ${statusLine(r)}`;
+      const stop = notAnswered(line, r.status, identityPath);
+      if (stop) return withEvidence(stop, evidence);
+      if (r.status !== 200) {
+        soft(line, "the identity answer could not be read");
+        continue;
+      }
+      if (r.text.includes(them.id)) {
+        return result(
+          "fail",
+          "critical",
+          [`${line}: the response carried the OTHER account's id (${them.id})`, ...evidence],
+          `Make ${identityPath} answer with the signed-in caller's own identity only: a response naming another account is a cross-account read, whoever reads it.`
+        );
+      }
+      if (r.text.includes(me.id)) evidence.push(`GET ${identityUrl} as ${me.id} returned its own id and not ${them.id}`);
+      else soft(line, `the response did not carry that account's own id (${me.id}), so golive cannot attribute the answer to a session`);
+    }
+    const rowsUrl = `${base2}${isolationPath}`;
+    const marks = [];
+    for (const [i, role] of [a, b].entries()) {
+      const value = marker(i === 0 ? "a" : "b");
+      let w;
+      try {
+        w = await send(ctx, rowsUrl, { account: role, method: "POST", body: { marker: value } });
+      } catch (e) {
+        return result("fail", "high", [`POST ${rowsUrl} as ${role.email} failed: ${errMsg2(e)}`, ...evidence], "Make sure the production deployment is reachable, then re-run verify.");
+      }
+      const line = `POST ${rowsUrl} as ${role.email} (${role.id}) \u2192 ${statusLine(w)}`;
+      if (w.status === 405 || w.status === 501) {
+        return withEvidence(
+          result("skip", "info", [`${line}: the declared route does not accept a write, so golive cannot put a row of its own into either account's data`, `${routeTask(isolationPath)} \u2014 a POST that stores one row for the caller`]),
+          evidence
+        );
+      }
+      const stop = notAnswered(line, w.status, isolationPath);
+      if (stop) return withEvidence(stop, evidence);
+      if (w.status < 200 || w.status >= 300) {
+        soft(line, "the marker row was not stored, so what the read-back shows is not attributable to an account");
+        continue;
+      }
+      marks.push({ account: role, marker: value });
+      evidence.push(`POST ${rowsUrl} as ${role.id} stored one marker row for that account (${statusLine(w)})`);
+    }
+    for (const [me, them] of [[a, b], [b, a]]) {
+      const mine = marks.find((m) => m.account === me);
+      const theirs = marks.find((m) => m.account === them);
+      let r;
+      try {
+        r = await send(ctx, rowsUrl, { account: me });
+      } catch (e) {
+        return result("fail", "high", [`GET ${rowsUrl} as ${me.email} failed: ${errMsg2(e)}`, ...evidence], "Make sure the production deployment is reachable, then re-run verify.");
+      }
+      const line = `GET ${rowsUrl} as ${me.email} (${me.id}) \u2192 ${statusLine(r)}`;
+      const stop = notAnswered(line, r.status, isolationPath);
+      if (stop) return withEvidence(stop, evidence);
+      if (r.status !== 200) {
+        soft(line, "the rows answer could not be read");
+        continue;
+      }
+      if (theirs && r.text.includes(theirs.marker)) {
+        return result(
+          "fail",
+          "critical",
+          [
+            `${line}: the response carried ${them.email}'s row (marker ${theirs.marker}), which only ${them.id} wrote through the app`,
+            "that is one signed-in account reading another account's data through the app: the declared route returned rows that do not belong to the caller",
+            ...evidence
+          ],
+          `Scope ${isolationPath} to the signed-in caller (an \`auth.uid()\` row policy, or the same filter in the route) and check anything that could widen it \u2014 a shared cache, a service-role client, a join. Then re-run verify.`
+        );
+      }
+      if (mine && r.text.includes(mine.marker)) evidence.push(`GET ${rowsUrl} as ${me.id} returned its own marker (${mine.marker}) and none of the other account's`);
+      else soft(line, `the marker golive just wrote for that account was not in its own rows, so the absence of the other account's row is not attributable`);
+    }
+    const lines = [...issues.map((i) => i.line), ...evidence];
+    const failing = issues.filter((i) => i.severity === "high" || i.severity === "critical");
+    if (failing.length) return result("fail", failing[0].severity, lines, failing.map((i) => i.fix).filter(Boolean).join(" "));
+    if (issues.length) return result("warn", issues[0].severity, lines, issues.map((i) => i.fix).filter(Boolean).join(" "));
+    return result("pass", "info", lines);
+  }
+};
+
 // src/checks/email.ts
 var DKIM_SELECTORS = {
   resend: ["resend"],
@@ -19523,6 +19928,7 @@ var ALL_CHECKS = [
   authSignupCheck,
   authSessionCheck,
   authRecoveryCheck,
+  authIsolationCheck,
   webhookUnsignedCheck,
   webhookRegisteredCheck,
   stripeLiveReadyCheck,

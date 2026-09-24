@@ -469,9 +469,10 @@ export interface AuthUserView {
 
 /**
  * The user surface of the chosen auth provider, used to prove a real signup → confirmation email →
- * login journey and the password recovery that follows it. `signup`, `setPassword`, `requestRecovery`,
- * `recoverySession` and `updateOwnPassword` are WRITES, so only an approved step calls them; the
- * read-only calls back `auth-signup`, `auth-session` and `auth-recovery`. Refusals come back as
+ * login journey and the password recovery that follows it. `signup`, `setPassword`, `confirmEmail`,
+ * `requestRecovery`, `recoverySession` and `updateOwnPassword` are WRITES, so only an approved step
+ * calls them; the read-only calls back `auth-signup`, `auth-session`, `auth-recovery` and
+ * `auth-isolation`. Refusals come back as
  * outcomes (`status`, `code`) so a check can tell "the provider said no" from a broken transport; a
  * missing credential or unlinked project throws, because an unusable prerequisite is something a
  * caller skips on.
@@ -485,8 +486,17 @@ export interface AuthUsers {
   user(ctx: Ctx, token?: Secret): Promise<AuthUserView>;
   /** Admin read of one user by id. null = the provider no longer has it. */
   adminUser(ctx: Ctx, id: string): Promise<AuthUserView | null>;
-  /** Replace a seeded user's password (admin API; a WRITE, used to re-prove login in a later run). */
+  /**
+   * Replace a seeded user's password (admin API; a WRITE, used to re-prove login in a later run).
+   */
   setPassword(ctx: Ctx, id: string, password: Secret): Promise<void>;
+  /**
+   * Confirm one user's address through the provider's admin API (a WRITE). Only ever called on an
+   * account golive itself seeded and controls: it is what lets the isolation journey have two
+   * signed-in accounts without asking the human to click a second link. The caller re-reads
+   * `adminUser` to prove the confirmation took; this NEVER stands for an inbox delivery or a click.
+   */
+  confirmEmail?(ctx: Ctx, id: string): Promise<void>;
   /**
    * Ask the provider to send a recovery link or code to `email` (a WRITE). Idempotent in effect — it
    * mails a link and changes nothing a later request cannot re-derive — and the `auth:recovery` step
@@ -779,6 +789,26 @@ export interface ShipConfig {
      * test account (`auth.e2e: true`); the step writes to the real project and needs `--confirm-live`.
      */
     recovery?: boolean;
+    /**
+     * Opt in to the account-isolation journey: the `auth:isolation` step seeds a SECOND confirmed
+     * test account beside the one `auth:test-user` seeds, and the `auth-isolation` check proves that
+     * neither session can read the other account's identity or rows through the app. Needs the first
+     * account (`auth.e2e: true`) and the two routes below; both steps write to the real project.
+     */
+    isolation?: boolean;
+    /**
+     * An app route that answers a GET from a signed-in caller with that caller's OWN user id as JSON,
+     * and refuses (401/403 or a redirect) without a session. The check reads it anonymously too: a 200
+     * there is a finding. Part of the `auth.isolation` journey only.
+     */
+    identityPath?: string;
+    /**
+     * An app route that answers a GET from a signed-in caller with ONLY that caller's own rows as
+     * JSON, and stores one row for the caller for a POST body `{marker: …}`; both refuse without a
+     * session. The `auth-isolation` check writes one marker row per test account through it and reads
+     * both accounts back, so a row of the other account's in either answer is a leak.
+     */
+    isolationPath?: string;
   };
   /** Project chosen per axis (id or name), e.g. { hosting: "my-app", db: "abcd1234efgh" }. */
   projects?: Partial<Record<Axis, string>>;
