@@ -28,11 +28,11 @@
     "references/stripe.md": "ef06e9f2782919849b49dfa5145010a8b3017e2210c655c8af45e3683d105c32",
     "references/supabase.md": "bcd8feaa9bb6d2a0ab599dcaaaed6cfa115929305e0c23188789ebdbd67b5486",
     "references/troubleshooting.md": "8a9a8bd3a4c79e5fac00edbec3db0d6c47eaf36f4f6e7a5b92a46a92b21e50fd",
-    "references/updates.md": "f7e162ed69a3935ab6bd87896d54876345c39e59d305afdd9fae1950fe56fd37",
+    "references/updates.md": "2da019e0f319689a9b4b054fcc0bbf9b01d55ee34cbf8bf2959cead5aa801c58",
     "references/vercel.md": "83e98b61a1f16ba0e76327ccf01268a3a4c42be3ffecc0ab12bc8c6f061c18df",
-    "scripts/golive.mjs": "a9418dc80f546d09d7668900b9d620aa3d8a20f2aac98e1f20551559fa0ade4e",
+    "scripts/golive.mjs": "e423815b421fdf178c0a0ab13b05ff0ef7113023d6b743e4df0025c11bac22d9",
     "scripts/install-cli.mjs": "55e2a776892a9d34fa62d7ebf70bb101a0f54a3592ba9f87b77a1d43043e108a",
     "scripts/install-lib.mjs": "9d3de597acc711178e588247f3cc9b5b5445f90d492cd464018065f2cd25caec"
   },
-  "bundleDigest": "fba917fd9a8cac920c0649ed0aa6693b6b5f2b08b7017364e066a8249186925e"
+  "bundleDigest": "104290f8af97c34ad5e15411d09f65c0e0231fbc6ba873c4785ba86768a12ff8"
 }

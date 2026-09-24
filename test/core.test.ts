@@ -269,6 +269,19 @@ describe('runner', () => {
     expect(calls).toEqual(['rm']);
   });
 
+  it('exempts a replayable step only from the cross-release block: its live-mode gate still applies', async () => {
+    const ctx = mkCtx();
+    const calls: string[] = [];
+    const plan = await planOf(ctx, [step('seed', [], { risk: { writes: true, live: true, replayable: true } }, calls)]);
+    const blocked = await applyPlan(ctx, plan, new Map(), { ...base, approvedPlanId: plan.id });
+    expect(blocked.map((o) => [o.id, o.status])).toEqual([['seed', 'blocked']]);
+    expect(blocked[0]!.next).toMatch(/--confirm-live/);
+    expect(calls).toEqual([]);
+    const ok = await applyPlan(ctx, plan, new Map(), { ...base, approvedPlanId: plan.id, confirmLive: true });
+    expect(ok.map((o) => [o.id, o.status])).toEqual([['seed', 'done']]);
+    expect(calls).toEqual(['seed']);
+  });
+
   it('stops at the first failure and resumes from there', async () => {
     const ctx = mkCtx();
     const calls: string[] = [];

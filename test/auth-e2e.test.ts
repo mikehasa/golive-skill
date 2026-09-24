@@ -14,8 +14,8 @@ import { authSessionCheck } from '../src/checks/auth-session.js';
 import { authedRestProbe, restProbe } from '../src/checks/providers.js';
 import { ALL_LINKS } from '../src/links/all.js';
 import { TEST_USER_EMAIL, TEST_USER_ID, testUserPassKey } from '../src/links/auth-e2e.js';
-import type { Check, Ctx, Http, Plan, ShipConfig, ShipState, Step } from '../src/core/types.js';
-import { mockHttp, testCtx } from './helpers.js';
+import type { Check, Ctx, Http, Plan, ReleaseIdentity, ShipConfig, ShipState, Step } from '../src/core/types.js';
+import { TEST_RELEASE, mockHttp, testCtx } from './helpers.js';
 import { ALL_RAW_SECRETS, RAW, fakeWorld, type FakeWorld } from './fakes.js';
 
 vi.mock('../src/checks/providers.js', () => ({ restProbe: vi.fn(), accountStatus: vi.fn(), authedRestProbe: vi.fn() }));
@@ -86,7 +86,7 @@ describe('auth:test-user step', () => {
     const { ctx } = setup({ seed: false });
     const plan = await build(ctx);
     const s = stepOf(plan, 'auth:test-user');
-    expect(s.risk).toEqual({ writes: true, live: true });
+    expect(s.risk).toEqual({ writes: true, live: true, replayable: true });
     expect(s.verifyWith).toEqual(['auth-signup', 'auth-session']);
     expect(s.dependsOn).toEqual(expect.arrayContaining(['project:db']));
     expect(s.preview.join('\n')).toMatch(/create one test account owner\+go-live@example\.com/);
@@ -192,6 +192,34 @@ describe('auth:test-user step', () => {
     expect(o.status).toBe('failed');
     expect(o.error).toMatch(/is gone from FakeDB/);
     expect(o.error).toMatch(/\.golive\/state\.json/);
+  });
+
+  it('resumes a seed left failed by an older release instead of blocking the replay', async () => {
+    const { w, ctx } = setup({ seed: false });
+    await apply(ctx, await build(ctx));
+    const before = vaultGet(testUserPassKey('usr_1'))!.reveal();
+    w.db.authUsers.confirm(EMAIL); // the human clicked the link: the live run's provider-verified state
+
+    // The live shape: the write applied (password rotated, account confirmed) but the verification
+    // leg failed, so the record is `failed` and names the release that ran it. The step's intent
+    // carries that attempt time, so a fresh plan's step hash differs too — both causes at once.
+    const newer: ReleaseIdentity = { ...structuredClone(TEST_RELEASE), version: '0.1.0-alpha.2', bundleDigest: 'b'.repeat(64) };
+    const historical = structuredClone(ctx.state.get());
+    historical.steps['auth:test-user'] = { ...historical.steps['auth:test-user']!, status: 'failed', error: 'verification failed: auth-session' };
+    const next = testCtx({ cwd: '/work/shop', adapters: w.adapters, config: { ...E2E_CONFIG } as ShipConfig, state: historical, detect: { envRefs: [] }, release: newer });
+
+    const plan = await build(next);
+    expect(stepOf(plan, 'auth:test-user').risk.replayable).toBe(true);
+    const o = outcomeOf(await apply(next, plan), 'auth:test-user');
+    expect(o.status).toBe('done');
+    const changes = o.changes.join('\n');
+    expect(changes).toMatch(/set a new password on the existing test account owner\+go-live@example\.com \(usr_1\)/);
+    expect(changes).toMatch(/owner\+go-live@example\.com is confirmed \(email_confirmed_at set\)/);
+    // The write re-observed the recorded account: still one account, same id, new password.
+    expect(w.db.authUsers.users.filter((u) => u.email === EMAIL).map((u) => u.id)).toEqual(['usr_1']);
+    const after = vaultGet(testUserPassKey('usr_1'))!.reveal();
+    expect(after).not.toBe(before);
+    expect(w.db.authUsers.byEmail(EMAIL)!.pass).toBe(after);
   });
 });
 

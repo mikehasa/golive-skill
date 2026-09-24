@@ -547,6 +547,14 @@ export interface Risk {
   destroy?: boolean;
   /** May cost money. golive never does this itself; such steps are always handoffs. */
   spend?: boolean;
+  /**
+   * Declares this step's write safe to REPLAY under a later release, instead of stopping for
+   * reconciliation the way every other historical write does. The author must be able to defend it:
+   * the write is idempotent, re-observes the provider and golive's own recorded resource before
+   * acting, and can name exactly what it touches. Never set it on a create whose result cannot be
+   * re-derived, a purchase, or anything ambiguous.
+   */
+  replayable?: boolean;
 }
 
 export interface StepContext extends Ctx {

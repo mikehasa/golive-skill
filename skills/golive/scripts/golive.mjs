@@ -12608,7 +12608,7 @@ async function applyPlan(ctx, plan, checks, opts) {
     if (!visited.has(step2.id)) continue;
     const rec = ctx.state.get().steps[step2.id];
     const selected = !opts.only || opts.only.includes(step2.id);
-    if (step2.risk.writes && !step2.risk.destroy && rec && !sameRelease(rec.release, ctx.release) && (rec.status !== "done" || rec.hash !== stepHash(step2) || opts.force && selected)) {
+    if (step2.risk.writes && !step2.risk.destroy && !step2.risk.replayable && rec && !sameRelease(rec.release, ctx.release) && (rec.status !== "done" || rec.hash !== stepHash(step2) || opts.force && selected)) {
       throw new PlanMismatchError(`historical step ${step2.id} belongs to another or unknown release. Preserve state and reconcile its remote outcome before a new plan; automatic write replay is blocked.`);
     }
     if (!selected && !requiredPins.has(step2.id) && (rec?.status !== "done" || rec.hash !== stepHash(step2))) {
@@ -17228,7 +17228,7 @@ var authE2eLink = {
       id: "auth:test-user",
       title: `Seed one ${au.adapter.title} test account for the signup journey`,
       kind: "provision",
-      risk: { writes: true, live: true },
+      risk: { writes: true, live: true, replayable: true },
       dependsOn: deps(ctx, [...axis ? [`project:${axis}`] : [], "auth:settings"]),
       preview: [
         seeded ? `set a new password on the test account ${email} golive seeded earlier (${seeded}) in ${where}` : `create one test account ${email} in ${where}`,

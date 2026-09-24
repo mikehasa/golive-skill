@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { assertReleaseSchemas, canonicalReleaseJson, isReleaseVersion, loadRuntimeRelease, parseReleaseManifest, PRODUCT_VERSION, releaseDigest, releaseIdentity, verifyReleaseBundle } from '../src/core/release.js';
-import { applyPlan, stepHash } from '../src/core/runner.js';
+import { applyPlan, PlanMismatchError, stepHash } from '../src/core/runner.js';
 import { buildPlan, planId, planView } from '../src/core/plan.js';
 import { emptyState, fileStateStore, memoryStateStore } from '../src/core/state.js';
 import type { ReleaseIdentity, ReleaseManifest, ShipState, Step } from '../src/core/types.js';
@@ -241,6 +241,45 @@ describe('release-bound approvals and state', () => {
     expect(out[0]?.status).toBe('done');
     expect(run).toHaveBeenCalledTimes(1);
     expect(ctx.state.get().steps[s.id]?.status).toBe('done');
+  });
+  it('re-runs a failed replayable write step from another release: its risk declares it idempotent and re-observing', async () => {
+    const oldCtx = testCtx();
+    const run = vi.fn(async () => ({ changes: ['rotated the password on the recorded account'] }));
+    const s = action(run, { id: 'auth:test-user', kind: 'provision', risk: { writes: true, live: true, replayable: true }, intent: 'previous=' });
+    const oldPlan = await makePlan(oldCtx, [s]);
+    await applyPlan(oldCtx, oldPlan, new Map(), { ...approve(oldPlan.id), confirmLive: true });
+    run.mockClear();
+    // Exactly the live record: the write applied, the verification leg failed, and the step belongs
+    // to the release that ran it. Its intent carries the attempt time, so its hash has changed too.
+    const historical = structuredClone(oldCtx.state.get());
+    historical.steps[s.id] = { ...historical.steps[s.id]!, status: 'failed', error: 'verification failed: auth-session' };
+    const ctx = testCtx({ state: historical, release: nextRelease() });
+    const replanned = { ...s, intent: 'previous=2026-09-23T00:00:00.000Z' };
+    expect(stepHash(replanned)).not.toBe(historical.steps[s.id]!.hash);
+    const p = await makePlan(ctx, [replanned]);
+    // The exemption is only from the cross-release replay block: the live-mode gate still applies.
+    const gated = await applyPlan(ctx, p, new Map(), { ...approve(p.id), confirmLive: false });
+    expect(gated[0]).toMatchObject({ id: s.id, status: 'blocked' });
+    expect(run).not.toHaveBeenCalled();
+    const out = await applyPlan(ctx, p, new Map(), { ...approve(p.id), confirmLive: true });
+    expect(out[0]?.status).toBe('done');
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(ctx.state.get().steps[s.id]?.status).toBe('done');
+  });
+  it('still blocks a failed historical write whose risk does not declare it replayable', async () => {
+    const oldCtx = testCtx();
+    const run = vi.fn(async () => ({ changes: ['wrote'] }));
+    const s = action(run, { id: 'auth:test-user', kind: 'provision', risk: { writes: true, live: true }, intent: 'previous=' });
+    const oldPlan = await makePlan(oldCtx, [s]);
+    await applyPlan(oldCtx, oldPlan, new Map(), { ...approve(oldPlan.id), confirmLive: true });
+    run.mockClear();
+    const historical = structuredClone(oldCtx.state.get());
+    historical.steps[s.id] = { ...historical.steps[s.id]!, status: 'failed', error: 'verification failed: auth-session' };
+    const ctx = testCtx({ state: historical, release: nextRelease() });
+    const p = await makePlan(ctx, [{ ...s, intent: 'previous=2026-09-23T00:00:00.000Z' }]);
+    await expect(applyPlan(ctx, p, new Map(), { ...approve(p.id), confirmLive: true })).rejects.toBeInstanceOf(PlanMismatchError);
+    await expect(applyPlan(ctx, p, new Map(), { ...approve(p.id), confirmLive: true })).rejects.toThrow(/historical step auth:test-user belongs to another or unknown release.*reconcile/);
+    expect(run).not.toHaveBeenCalled(); expect(ctx.state.get()).toEqual(historical);
   });
   it('rejects incompatible historical schemas before plan observation and preserves evidence', async () => {
     const state = emptyState(); state.release = { ...structuredClone(TEST_RELEASE), schemas: { config: 1, state: 2, approval: 1 } };
