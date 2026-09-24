@@ -106,6 +106,20 @@ provider behaviour filed as [#52](https://github.com/mikehasa/golive-skill/issue
   planning DNS work once the domain reads verified. Sends were still accepted, so a shipped app could
   carry a "verified" domain with no SPF/DKIM in DNS and no golive output saying so. Filed, not fixed
   here: the check should corroborate the provider's own record list against public DNS before passing.
+- **The flag is corroborated now ([#52](https://github.com/mikehasa/golive-skill/issues/52), fixed after
+  this run).** `email-verified` reads the records the provider itself lists for the recorded sending
+  domain and resolves exactly those over the repo's DoH path, comparing values the way `email-dns`
+  does (TXT equality, a merged SPF that keeps every mechanism the provider needs; MX/CNAME by host). A
+  domain the provider still calls `verified` whose records do not resolve **fails**, with a fix naming
+  the records and `apply --confirm-dns` as the way to write them; a record golive itself wrote inside
+  the 48 h propagation window only **warns** (the window `domain-live` already allows and drift applies
+  per record); a provider that cannot list its records, and a lookup that failed, **skip or warn** —
+  never a pass. The email link no longer drops the DNS work behind a verified flag: when the provider's
+  records do not resolve, the `email:dns` step (or the blocking handoff when golive cannot write DNS)
+  stays in the plan, and the step's intent carries the unresolved records so `apply` re-writes them
+  instead of skipping a step it recorded done when they matched. Mocked coverage only: no live re-run
+  has re-read `mail.trytofu.xyz` or any domain in this state, so what the failing evidence looks like
+  live — as opposed to the `email-dns` lines this run did print — remains to be observed.
 - **Provenance and limits this run cannot escape.** The confirmation was applied through the Auth admin
   API (`PUT /auth/v1/admin/users/{id}`, `email_confirm: true`) and read back — as in both earlier auth
   runs — so the passing `auth-signup`/`auth-session` legs rest on that provenance, not on the owner's
@@ -308,7 +322,9 @@ attachment remains guided, and custom-domain redirects and certificate edge case
 The custom-SMTP write and the password-recovery rotation are live-validated now — with the write-only
 password and the admin-API confirmation limits recorded in their row — but what an auth email actually
 delivering looks like is still not, and the stale-verified finding above ([#52](https://github.com/mikehasa/golive-skill/issues/52))
-means a passing `email-verified` does not by itself show a sending domain can authenticate mail.
+is fixed with mocked coverage: a domain the provider calls verified now fails `email-verified` unless
+the records it lists resolve, so a pass means the records are published — which is still not proof
+that a message arrives.
 Cross-provider pairings beyond the tested paths have mocked integration coverage. The ownership
 document is live-validated on a host-only Vercel stack only: its DNS, database, email and payment
 rows, its open-handoff rows and its recurring jobs are covered by mocked tests, and the account-column

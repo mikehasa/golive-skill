@@ -620,12 +620,16 @@ export function fakeWorld() {
     revokeResult: null as { revoked: boolean; reason?: string } | null,
     /** Ids keys.revoke() was called for. */
     revoked: [] as string[],
+    /** When false, the fake has no record read (a provider golive cannot corroborate against DNS). */
+    withRecords: true,
   };
   const mailRecords = (d: string): DnsRecord[] => [
     { type: 'MX', name: `send.${d}`, content: 'feedback-smtp.fakemail.com', priority: 10 },
     { type: 'TXT', name: `send.${d}`, content: 'v=spf1 include:fakemail.com ~all' },
     { type: 'TXT', name: `fm._domainkey.${d}`, content: 'p=MIGfMA0GFAKEdkim' },
   ];
+  /** The sending domain a fake domain id (`dom_<domain>`) stands for. */
+  const domainOfId = (id: string): string => (id.startsWith('dom_') ? id.slice(4) : '');
   const mailAdapter: Adapter = {
     get id() {
       return mail.providerId;
@@ -649,6 +653,14 @@ export function fakeWorld() {
           if (mail.verifyError) throw new Error(mail.verifyError);
           const e = [...mail.domains.values()].find((x) => x.id === id);
           if (e) e.status = 'pending';
+        },
+        get records() {
+          return mail.withRecords
+            ? async (_c: unknown, id: string): Promise<DnsRecord[]> => {
+                rec(mail.providerId, 'sendingDomain.records', id);
+                return mailRecords(domainOfId(id));
+              }
+            : undefined;
         },
       },
       keys: {
