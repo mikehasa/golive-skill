@@ -26,7 +26,7 @@
     "references/porkbun.md": "8eaeb8890ce3c104e242ced33e77179253a9d8f3b9425be6692585254c6b6490",
     "references/resend.md": "21166f08bbbbf3e0a9b19559f4f7bfe29024d38840ca7d37fab8aab5248d4fed",
     "references/stripe.md": "ef06e9f2782919849b49dfa5145010a8b3017e2210c655c8af45e3683d105c32",
-    "references/supabase.md": "41b77e74e3f1bac047f63602061987df99b181fce7e13e8ef363c0ac109177e1",
+    "references/supabase.md": "958b14b78c49244dd4ae0f4a606240073a58f6a34aabb0c6b2d19f351c4e7b4c",
     "references/troubleshooting.md": "8a9a8bd3a4c79e5fac00edbec3db0d6c47eaf36f4f6e7a5b92a46a92b21e50fd",
     "references/updates.md": "7405e981743ca3d4815449694f560ef91d80a16b1046451f56395fc75d68de58",
     "references/vercel.md": "83e98b61a1f16ba0e76327ccf01268a3a4c42be3ffecc0ab12bc8c6f061c18df",
@@ -34,5 +34,5 @@
     "scripts/install-cli.mjs": "55e2a776892a9d34fa62d7ebf70bb101a0f54a3592ba9f87b77a1d43043e108a",
     "scripts/install-lib.mjs": "9d3de597acc711178e588247f3cc9b5b5445f90d492cd464018065f2cd25caec"
   },
-  "bundleDigest": "79210b5258f3b782ed1efd5208e3b6d76cc8c0b8b25934f1c36be5f7396d0c3f"
+  "bundleDigest": "e59d1b876acf8938564cb79a932ca02a8e58ba507736e8b93370964e39f2cdf0"
 }

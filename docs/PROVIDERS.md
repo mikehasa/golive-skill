@@ -50,7 +50,7 @@ identities match. Neon delegates supported stored-login access to its CLI.
 
 | Area | Adapter | Scope |
 | --- | --- | --- |
-| Auth | Supabase Auth | Production Site URL and redirect configuration, plus the auth policy from golive.yaml; custom SMTP stays a manual dashboard step. The opt-in signup journey (`auth.e2e: true`) adds one approved step that seeds a real test account (`auth:test-user`, `--confirm-live`), the human's click in their inbox (`auth:confirm-email`) and the `auth-signup`/`auth-session` checks (confirmation email, enforced confirmation, session, declared protected path). Live-validated once on a disposable project: the policy write was confirmed by the read-back (`password minimum length: 6 → 12`), and the journey passed `auth-signup` and `auth-session` (probe signup, enforced confirmation, confirmed login, session token accepted, anonymous request refused). The confirmation came through the Auth admin API rather than the seeded email click, and the declared protected path and signed-in table probe were not exercised. |
+| Auth | Supabase Auth | Production Site URL and redirect configuration, plus the auth policy from golive.yaml; custom SMTP stays a manual dashboard step. The opt-in signup journey (`auth.e2e: true`) adds one approved step that seeds a real test account (`auth:test-user`, `--confirm-live`), the human's click in their inbox (`auth:confirm-email`) and the `auth-signup`/`auth-session` checks (confirmation email, enforced confirmation, session, declared protected path). Live-validated once on a disposable project: the policy write was confirmed by the read-back (`password minimum length: 6 → 12`), and the journey passed `auth-signup` and `auth-session` (probe signup, enforced confirmation, confirmed login, session token accepted, anonymous request refused). The confirmation came through the Auth admin API rather than the seeded email click. A later disposable run with a deployed Vercel fixture exercised both app-side legs: an anonymous GET of the declared protected path answered 401 and the signed-in probe read the project's one exposed RLS table as the authenticated user, so that probe is no longer mock-covered (the table line is a count, not a name; any 401 counts as protected — tracked in #30). |
 | Payments | Stripe | Test-mode env wiring, webhook registration and signed-event acceptance passed a disposable run; live-mode payments, refunds, entitlements and subscriptions remain open |
 | Email | Resend | Sending-domain setup, DNS wiring, scoped-key issuance and a real send through the app's environment key passed a disposable run (delivered; spam folder on a fresh subdomain); Auth SMTP and bounce handling remain open |
 | DNS | Cloudflare | Records in an existing authoritative zone; no domain purchase, renewal, transfer or nameserver changes. Live validation pending. |
@@ -83,8 +83,10 @@ accepted, the unconfirmed address was refused a login (`email_not_confirmed`), t
 signed in, its session token resolved back to the same user, and an anonymous request was refused
 401. Two limits stay with that evidence: the confirmation was applied through the Auth admin API
 (`email_confirm`) rather than the seeded account's own email click — the human's click landed on the
-plus-addressed probe in the shared inbox — and the declared `auth.protectedPath` and signed-in table
-probe were not exercised. The provider's auth email throttle and captcha settings can still block the
+plus-addressed probe in the shared inbox — and that run had no app route or exposed table to probe.
+A later disposable run supplied both: a deployed Vercel fixture whose declared `auth.protectedPath`
+answered 401 anonymously, and one RLS-protected table the signed-in probe read as the authenticated
+user. The provider's auth email throttle and captcha settings can still block the
 journey, and the built-in mailer allowed roughly one accepted send per window in that run.
 
 ## Guided providers

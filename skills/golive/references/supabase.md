@@ -183,10 +183,14 @@ What it proves, with the evidence to match:
   `GET /auth/v1/user` to return that same user, requires an anonymous `GET /auth/v1/user` to be 401,
   and — only with `protectedPath` — requires an anonymous GET of the confirmed production URL plus
   that path to redirect to sign-in or answer 401/403. A 200 there is a failure; a 404 only warns
-  (the path is probably wrong).
+  (the path is probably wrong). Live-validated on 2026-09-24 against a deployed Vercel fixture: the
+  declared route answered `401` anonymously (`protected without a session`).
 - **The app can read its own tables.** The checks probe the exposed tables AS the signed-in user
   (anonymity stays `rls-probe`'s job). Every table refusing the `authenticated` role warns: new
   projects no longer `GRANT` new tables automatically, so the app may be missing a migration.
+  Live-validated on 2026-09-24: the probe read the project's one exposed RLS-protected table
+  (`1 reachable, 0 denied, 0 undecided`), which also live-exercises the `supabaseAuthedProbe` bearer
+  fix; the line is a count, not the table's name.
 
 What stays human, and why the evidence says so:
 
@@ -295,9 +299,11 @@ Caveats to pass on before enabling it:
 - GoTrue answer shapes still modelled from its documented behaviour: an obfuscated duplicate signup
   and a captcha refusal. The disposable live run (2026-09-23) exercised an accepted signup, the
   confirmation email request, the `email_not_confirmed` login refusal and the 429 rate-limit refusal.
-- The app-side half of the journey: `auth.protectedPath` (that run declared no app route) and the
-  signed-in PostgREST table probe (`no tables in exposed schemas`), so the `supabaseAuthedProbe`
-  bearer fix stays mock-covered. Inbox delivery and the human's click also stay human-confirmed by
-  design, and in that run the confirmation itself was applied through the Auth admin API
-  (`PUT /auth/v1/admin/users/<id>` with `email_confirm: true`) rather than by clicking the seeded
-  account's own email.
+- What the app-side evidence cannot show: the signed-in table probe reports a count, not the table
+  names, and any 401/403 on the declared `auth.protectedPath` counts as protected — a WAF, edge rule
+  or maintenance page would read the same, so the refusal is not attributed to the app. Both legs
+  were live-exercised on 2026-09-24 against a deployed Vercel fixture; both limits are tracked in
+  #30. Inbox
+  delivery and the human's click stay human-confirmed by design, and the confirmations in both runs
+  were applied through the Auth Admin API (`PUT /auth/v1/admin/users/<id>` with `email_confirm:
+  true`) rather than by clicking the seeded account's own email.
