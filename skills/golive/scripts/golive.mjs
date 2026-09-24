@@ -7710,7 +7710,8 @@ var init_config = __esm({
       smtp: (v) => v === "provider" || v === "resend" ? null : `must be "provider" (the auth provider's own mailer) or "resend" (the app's email provider)`,
       e2e: (v) => typeof v === "boolean" ? null : "must be true or false",
       testEmail: (v) => typeof v === "string" && /^[^@\s+]+(\+[^@\s]+)?@[^@\s]+\.[^@\s]+$/.test(v) ? null : 'must be the address the test account uses, like "you+go-live@example.com" (plus-addressing allowed; never a password)',
-      protectedPath: (v) => typeof v === "string" && v.startsWith("/") ? null : 'must be an app route starting with "/", e.g. "/dashboard" (the page that must require a session)'
+      protectedPath: (v) => typeof v === "string" && v.startsWith("/") ? null : 'must be an app route starting with "/", e.g. "/dashboard" (the page that must require a session)',
+      recovery: (v) => typeof v === "boolean" ? null : "must be true or false"
     };
   }
 });
@@ -8145,16 +8146,84 @@ async function login(deps2, ctx, email, password) {
     headers: publicHeaders(requirePublic(keys3)),
     body: { email, password }
   });
-  const body2 = asObject(res.json);
+  return sessionOutcome(res.status, res.json);
+}
+function sessionOutcome(status, json2) {
+  const body2 = asObject(json2);
   const who = asObject(body2.user);
   const token2 = str(body2.access_token);
   const userId = str(who.id);
-  if (res.status >= 200 && res.status < 300 && token2 && userId) {
+  if (status >= 200 && status < 300 && token2 && userId) {
     const session2 = { accessToken: new Secret("SUPABASE_AUTH_TOKEN", token2), userId, emailConfirmed: confirmedOf(who) };
-    return { status: res.status, session: session2, rateLimited: false };
+    return { status, session: session2, rateLimited: false };
   }
+  const detail = detailOf(json2);
+  return { status, rateLimited: status === 429, code: [codeOf(json2), detail].filter(Boolean).join(" | ").slice(0, 200) || `HTTP ${status}` };
+}
+async function requestRecovery(deps2, ctx, email) {
+  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const res = await ctx.http({
+    url: `${base(ref3)}/recover`,
+    method: "POST",
+    headers: publicHeaders(requirePublic(keys3)),
+    body: { email }
+  });
+  const ok = res.status >= 200 && res.status < 300;
   const detail = detailOf(res.json);
-  return { status: res.status, rateLimited: res.status === 429, code: [codeOf(res.json), detail].filter(Boolean).join(" | ").slice(0, 200) || `HTTP ${res.status}` };
+  return {
+    status: res.status,
+    accepted: ok,
+    emailSent: ok,
+    rateLimited: res.status === 429,
+    captchaRequired: !ok && isCaptcha(codeOf(res.json), detail),
+    ...ok ? {} : { code: [codeOf(res.json), detail].filter(Boolean).join(" | ").slice(0, 200) || `HTTP ${res.status}` }
+  };
+}
+async function recoveryLink(deps2, ctx, email) {
+  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const res = await ctx.http({
+    url: `${base(ref3)}/admin/generate_link`,
+    method: "POST",
+    headers: adminHeaders(requireSecret(keys3)),
+    body: { type: "recovery", email }
+  });
+  if (res.status === 404) return null;
+  expectOk(res.status, res.json, `Minting a Supabase recovery link for ${email}`);
+  const body2 = asObject(res.json);
+  const userId = str(asObject(body2.user).id);
+  const token2 = str(body2.hashed_token) ?? tokenParam(str(body2.action_link));
+  if (!userId || !token2) {
+    throw new SupabaseError(`Supabase answered the recovery link for ${email} without a user id${token2 ? "" : " or a token"}, so golive cannot use it.`);
+  }
+  return { userId, token: new Secret("SUPABASE_RECOVERY_TOKEN", token2) };
+}
+function tokenParam(actionLink) {
+  if (!actionLink) return void 0;
+  try {
+    return str(new URL(actionLink).searchParams.get("token") ?? void 0);
+  } catch {
+    return void 0;
+  }
+}
+async function recoverySession(deps2, ctx, token2) {
+  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const res = await ctx.http({
+    url: `${base(ref3)}/verify`,
+    method: "POST",
+    headers: publicHeaders(requirePublic(keys3)),
+    body: { type: "recovery", token_hash: token2 }
+  });
+  return sessionOutcome(res.status, res.json);
+}
+async function updateOwnPassword(deps2, ctx, session2, password) {
+  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const res = await ctx.http({
+    url: `${base(ref3)}/user`,
+    method: "PUT",
+    headers: publicHeaders(requirePublic(keys3), session2),
+    body: { password }
+  });
+  expectOk(res.status, res.json, "Setting a new password on the signed-in Supabase user");
 }
 async function user(deps2, ctx, token2) {
   const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
@@ -8194,6 +8263,10 @@ function supabaseAuthUsers(deps2) {
     user: (ctx, token2) => user(deps2, ctx, token2),
     adminUser: (ctx, id2) => adminUser(deps2, ctx, id2),
     setPassword: (ctx, id2, password) => setPassword(deps2, ctx, id2, password),
+    requestRecovery: (ctx, email) => requestRecovery(deps2, ctx, email),
+    recoveryLink: (ctx, email) => recoveryLink(deps2, ctx, email),
+    recoverySession: (ctx, token2) => recoverySession(deps2, ctx, token2),
+    updateOwnPassword: (ctx, session2, password) => updateOwnPassword(deps2, ctx, session2, password),
     destination: (ctx) => destination(deps2, ctx)
   };
 }
@@ -17330,6 +17403,137 @@ var authE2eLink = {
   }
 };
 
+// src/links/auth-recovery.ts
+init_secret();
+init_supabase_auth();
+var recoveryTokenKey = (id2) => `supabase.authRecoveryToken:${id2}`;
+var recoveryOldPassKey = (id2) => `supabase.authRecoveryOldPass:${id2}`;
+var authRecoveryLink = {
+  id: "auth-recovery",
+  async plan(ctx) {
+    if (ctx.config.auth?.recovery !== true) return null;
+    const au = await axisStatus(ctx, "auth");
+    if (au.kind === "none") return null;
+    const title = au.kind === "guided" ? au.title : au.adapter.title;
+    if (au.kind !== "ready") {
+      const why = au.kind === "guided" ? "is not automated by golive" : "is not connected yet";
+      return { steps: [], handoffs: [], warnings: [`auth.recovery is on in golive.yaml, but ${title} ${why}: the password-recovery journey stays a manual dashboard task`] };
+    }
+    const authUsers = au.adapter.capabilities.authUsers;
+    if (!authUsers) {
+      return { steps: [], handoffs: [], warnings: [`auth.recovery is on in golive.yaml, but ${au.adapter.title} exposes no auth-users surface: the password-recovery journey stays a manual dashboard task`] };
+    }
+    const mintLink = authUsers.recoveryLink;
+    if (!mintLink) {
+      return { steps: [], handoffs: [], warnings: [`auth.recovery is on in golive.yaml, but ${au.adapter.title} cannot mint a recovery link through its API: rotating a password would mean reading the inbox, so the password-recovery journey stays a manual dashboard task`] };
+    }
+    const seeded = ctx.state.resource(TEST_USER_ID);
+    if (!seeded) {
+      return { steps: [], handoffs: [], warnings: [`auth.recovery is on in golive.yaml, but no test account is recorded yet: the recovery rotation runs on the account \`auth:test-user\` seeds, so apply the plan that seeds it (\`auth.e2e: true\`, \`auth.testEmail\`), then run \`plan\` again`] };
+    }
+    const address = ctx.state.resource(TEST_USER_EMAIL) ?? ctx.config.auth?.testEmail;
+    if (!address) {
+      return { steps: [], handoffs: [], warnings: [`auth.recovery is on in golive.yaml, but the address of the test account ${seeded} is not recorded and auth.testEmail is not set: golive has no address to ask for a recovery link`] };
+    }
+    let known;
+    try {
+      known = await authUsers.adminUser(ctx, seeded);
+    } catch (e) {
+      return { steps: [], handoffs: [], warnings: [`auth.recovery is on in golive.yaml, but reading the test account ${seeded} failed (${errMsg(e)}): the password-recovery journey is left out of this plan`] };
+    }
+    if (!known) {
+      return { steps: [], handoffs: [], warnings: [`auth.recovery is on in golive.yaml, but the test account ${seeded} recorded in .golive/state.json is gone from ${au.adapter.title}: restore the user in the provider dashboard, or remove that key from .golive/state.json to seed a new account`] };
+    }
+    if (!known.emailConfirmed) {
+      return { steps: [], handoffs: [], warnings: [`auth.recovery is on in golive.yaml, but ${address} is not confirmed yet: a recovery of an unconfirmed address sends a confirmation, not a recovery link, so the rotation waits. Click the link in that inbox (\`auth:confirm-email\`), then run \`plan\` again`] };
+    }
+    const axis = projectAxisFor(ctx, au.adapter);
+    const dest = await authUsers.destination(ctx).catch(() => null);
+    const where = dest ? `${au.adapter.title} project ${dest.ref}` : `the ${au.adapter.title} project`;
+    const s = step({
+      id: "auth:recovery",
+      title: `Rotate the ${au.adapter.title} test account's password through password recovery`,
+      kind: "provision",
+      risk: { writes: true, live: true, replayable: true },
+      dependsOn: deps(ctx, [...axis ? [`project:${axis}`] : [], "auth:settings", "auth:test-user"]),
+      preview: [
+        `ask ${au.adapter.title} to send a real password-recovery email for ${address} in ${where}`,
+        `mint the recovery link through the admin API and set a new password on ${address} (${seeded}) with it \u2014 the same calls the app's own recovery page makes`,
+        "the previous and the new password stay in this run's memory only; state records the user id and the address, never a secret",
+        "the click in that inbox is yours (golive cannot read one), and a captcha on the project would block a scripted request"
+      ],
+      intent: intentOf({ project: await projectIntent(ctx, au.adapter), user: seeded, email: address, previous: ctx.state.get().steps["auth:recovery"]?.at }),
+      verifyWith: ["auth-recovery"],
+      async run(sctx) {
+        const current3 = sctx.state.resource(TEST_USER_ID);
+        const email = sctx.state.resource(TEST_USER_EMAIL) ?? address;
+        if (!current3) {
+          throw new Error("No test account is recorded in .golive/state.json, so there is nothing for the recovery rotation to set a password on. Run `plan` + `apply` with auth.e2e: true first.");
+        }
+        const before = await authUsers.adminUser(sctx, current3);
+        if (!before) {
+          throw new Error(`The test account ${current3} recorded in .golive/state.json is gone from ${au.adapter.title}. Remove "${TEST_USER_ID}" from .golive/state.json to seed a new account, or restore the user in the provider dashboard.`);
+        }
+        if (!before.emailConfirmed) {
+          throw new Error(`${email} is not confirmed yet, so a recovery link cannot set its password. Click the confirmation link in that inbox (the auth:confirm-email handoff), then re-run \`apply\`.`);
+        }
+        const asked = await authUsers.requestRecovery(sctx, email);
+        if (asked.captchaRequired) {
+          throw new Error(
+            `${au.adapter.title} wants a captcha for password recovery, so golive cannot request one programmatically. Turn the auth captcha off for this project (provider dashboard, Authentication settings), or accept that this journey stays manual.`
+          );
+        }
+        if (asked.rateLimited) {
+          throw new Error(
+            `${au.adapter.title} refused to send more auth emails (HTTP 429 rate limit) for the recovery request of ${email}, so nothing was rotated. Wait for the limit to reset (or configure custom SMTP and raise the auth rate limit), then re-run \`apply\`.`
+          );
+        }
+        if (!asked.accepted) {
+          throw new Error(`The recovery request for ${email} was refused (HTTP ${asked.status}${asked.code ? ` ${asked.code}` : ""}). Check the project's auth settings (\`auth.signup\` and the recovery template) and re-run \`apply\`.`);
+        }
+        const minted = await mintLink(sctx, email);
+        if (!minted) {
+          throw new Error(`${au.adapter.title} has no account for ${email}, so no recovery link could be minted for the recorded test account ${current3}. Check the address in .golive/state.json and the provider's user list.`);
+        }
+        if (minted.userId !== current3) {
+          throw new Error(`The recovery link ${au.adapter.title} minted for ${email} belongs to user ${minted.userId}, not the recorded test account ${current3}: stop and inspect the project before rotating anything.`);
+        }
+        const pass2 = testPassword();
+        const verified = await authUsers.recoverySession(sctx, minted.token);
+        if (!verified.session) {
+          throw new Error(`The recovery link for ${email} was refused (${verified.code}), so the password was not rotated. Check that the project allows recovery (\`auth.signup: true\`) and re-run \`apply\`.`);
+        }
+        if (verified.session.userId !== current3) {
+          throw new Error(`The recovery session belongs to user ${verified.session.userId}, not the recorded test account ${current3}: stop and inspect the project before rotating anything.`);
+        }
+        await authUsers.updateOwnPassword(sctx, verified.session.accessToken, pass2);
+        const replaced = vaultGet(testUserPassKey(current3));
+        if (replaced) vaultPut(recoveryOldPassKey(current3), replaced);
+        vaultPut(testUserPassKey(current3), pass2);
+        vaultPut(recoveryTokenKey(current3), minted.token);
+        const changes = [
+          `asked ${au.adapter.title} to send a recovery email for ${email} (HTTP ${asked.status})`,
+          `set a new password on the same account through the recovery link (user ${minted.userId}); fp:${pass2.fingerprint}, kept in this run's memory only`
+        ];
+        changes.push(
+          replaced ? `the replaced password is refused from now on (fp:${replaced.fingerprint}); the auth-recovery check re-proves that against the provider` : "this run held no previous password for the account (auth:test-user did not run in it), so the replaced password is not in this run's memory"
+        );
+        const after = await authUsers.adminUser(sctx, current3);
+        if (after) changes.push(`${email} still reads back confirmed (email_confirmed_at set)`);
+        return { changes };
+      }
+    });
+    const handoff = {
+      id: "auth:recovery-email",
+      why: `${au.adapter.title} sends the recovery link for ${address} to that inbox, and golive cannot read an inbox: only the account owner can click it. A captcha on the project blocks a scripted request before a link even exists.`,
+      action: `Open the recovery email for ${address} (check the spam folder; the built-in mailer is rate-limited) and click the link, then set a password on the page it opens. golive rotated that account's password through the recovery path already and the \`auth-recovery\` check proves it \u2014 the click is how you confirm the same link works for a human.`,
+      blocking: false,
+      verifiedBy: "auth-recovery"
+    };
+    return { steps: track(ctx, [s]), handoffs: [handoff], warnings: [] };
+  }
+};
+
 // src/links/deploy.ts
 var WEBHOOK_STEP = "payments:webhook:production";
 var deployLink = {
@@ -17500,7 +17704,7 @@ var netlifyVisibilityLink = {
 };
 
 // src/links/all.ts
-var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, authE2eLink, emailDomainLink, emailKeysLink, deployLink, netlifyVisibilityLink];
+var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, authE2eLink, authRecoveryLink, emailDomainLink, emailKeysLink, deployLink, netlifyVisibilityLink];
 
 // src/links/index.ts
 var LINKS = ALL_LINKS;
@@ -18587,6 +18791,169 @@ async function signedInTables(ctx, ref3, token2) {
   return { lines };
 }
 
+// src/checks/auth-recovery.ts
+init_secret();
+init_supabase_auth();
+import { randomBytes as randomBytes5 } from "node:crypto";
+function unknownAddress(email) {
+  const m = /^([^@+]+)(?:\+[^@]*)?@([^@\s]+)$/.exec(email);
+  return m ? `${m[1]}+gl-recovery-${randomBytes5(3).toString("hex")}@${m[2]}` : null;
+}
+var authRecoveryCheck = {
+  id: "auth-recovery",
+  title: "Password recovery answers an unknown address the same way, spends its token once and replaces the old password",
+  severity: "high",
+  applies: (ctx) => Boolean(ctx.config.stack.auth),
+  async run(ctx) {
+    if (ctx.config.auth?.recovery !== true) {
+      return skip("auth.recovery is not enabled in golive.yaml: this check asks the provider to send recovery emails and replays a recovery token, so it only runs on explicit opt-in");
+    }
+    const provider = ctx.config.stack.auth;
+    const title = adapterFor(ctx, "auth")?.title ?? provider;
+    const auth8 = cap(ctx, "auth", "authUsers");
+    if (!auth8) return skip(`auth provider ${provider} has no auth-users surface (guided): the password-recovery journey stays a manual dashboard task`);
+    const pre = await prereq(ctx, "auth");
+    if (pre) return pre;
+    const seeded = ctx.state.resource(TEST_USER_ID);
+    if (!seeded) return blocked("auth:test-user", "no test account has been seeded yet");
+    const address = ctx.state.resource(TEST_USER_EMAIL) ?? ctx.config.auth?.testEmail;
+    if (!address) return skip("the address of the recorded test account is not known, so golive has nothing to ask the provider for a recovery link");
+    const token2 = vaultGet(recoveryTokenKey(seeded));
+    const newPass = vaultGet(testUserPassKey(seeded));
+    const oldPass = vaultGet(recoveryOldPassKey(seeded));
+    if (!token2 || !newPass || !oldPass) {
+      const missing = [token2 ? "" : "the recovery token it used", newPass ? "" : "the password it set through recovery", oldPass ? "" : "the password that password replaced"].filter(Boolean);
+      return skip(
+        `this run holds none of what the recovery check needs for the test account ${address}: ${missing.join("; ")}. Only the run that carries the auth:recovery step keeps them, in memory, and that step waits for a confirmed account: run \`plan\` + \`apply\` with auth.recovery: true, then re-run verify`
+      );
+    }
+    const evidence = [];
+    let asked;
+    try {
+      asked = await auth8.requestRecovery(ctx, address);
+    } catch (e) {
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
+      return result("fail", "high", [`the recovery request for ${address} failed: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+    }
+    if (asked.captchaRequired) {
+      return skip(`${title} requires a captcha for password recovery, so a scripted request cannot run (golive will not claim a pass it cannot evidence)`);
+    }
+    if (asked.rateLimited) {
+      return result("warn", "medium", [`the recovery request for ${address} was rate-limited (HTTP 429)`, ...evidence], `Wait for ${title}'s auth email limit to reset (or configure custom SMTP and raise the auth rate limit), then re-run verify. The provider's mail throttle decides what a run can prove.`);
+    }
+    if (!asked.accepted) {
+      return result(
+        "fail",
+        "high",
+        [`the recovery request for ${address} was refused (HTTP ${asked.status}${asked.code ? ` ${asked.code}` : ""})`, ...evidence],
+        `Make sure the project allows recovery (\`auth.signup: true\`, \`plan\` + \`apply\` for the auth:settings step) and re-run verify.`
+      );
+    }
+    evidence.push(`the recovery request for ${address} was accepted for sending (HTTP ${asked.status})`);
+    const unknownAddr = unknownAddress(address);
+    let unknown = null;
+    if (!unknownAddr) {
+      evidence.push(`the test address ${address} is not a plus-addressable one, so golive could not form an address with no account to compare the answer against`);
+    } else {
+      try {
+        unknown = await auth8.requestRecovery(ctx, unknownAddr);
+      } catch (e) {
+        if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
+        return result("fail", "high", [`the recovery request for an address with no account failed: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+      }
+      if (unknown.rateLimited) {
+        return result(
+          "warn",
+          "medium",
+          [
+            `the recovery request for an address with no account was rate-limited (HTTP 429), so whether it is answered like a known one is not established in this run`,
+            ...evidence
+          ],
+          `Wait for ${title}'s auth email limit to reset, then re-run verify: the comparison needs one accepted request per address.`
+        );
+      }
+      if (unknown.status !== asked.status || unknown.accepted !== asked.accepted) {
+        return result(
+          "fail",
+          "high",
+          [
+            `an address with no account got HTTP ${unknown.status} (accepted: ${unknown.accepted}) where the recorded account ${address} got HTTP ${asked.status} (accepted: ${asked.accepted}): the endpoint tells the difference`,
+            'that answers "does this address have an account here?" for anyone who asks: account enumeration',
+            ...evidence
+          ],
+          "Answer an unknown address exactly like a known one. A proxy, WAF, edge function or cached response in front of the recovery endpoint is the usual cause; the provider itself does not distinguish."
+        );
+      }
+      evidence.push(`an address with no account (${unknownAddr}) got the same answer (HTTP ${unknown.status}): no account enumeration`);
+    }
+    let replay;
+    try {
+      replay = await auth8.recoverySession(ctx, token2);
+    } catch (e) {
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
+      return result("fail", "high", [`replaying the recovery token failed: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+    }
+    if (replay.session) {
+      return result(
+        "fail",
+        "high",
+        [`the recovery token that already set a password was accepted again (a session for user ${replay.session.userId})`, ...evidence],
+        "A recovery token must resolve once: a replayed or leaked link would otherwise take the account over. Check what answers the verification endpoint (a proxy, cache or custom function is the usual cause), then re-run verify."
+      );
+    }
+    evidence.push(`the recovery token this run used is refused on replay (HTTP ${replay.status}${replay.code ? ` ${replay.code}` : ""})`);
+    let fresh;
+    try {
+      fresh = await auth8.login(ctx, address, newPass);
+    } catch (e) {
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
+      return result("fail", "high", [`signing in with the password set through recovery failed: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+    }
+    if (fresh.rateLimited) return result("warn", "medium", [`the password login for ${address} was rate-limited (HTTP 429)`, ...evidence], "Wait for the rate limit to reset, then re-run verify.");
+    if (!fresh.session) {
+      return result(
+        "fail",
+        "high",
+        [`the password the recovery path set cannot sign in (${fresh.code})`, ...evidence],
+        `Check the account in the ${title} dashboard and the project's password policy, then run \`plan\` + \`apply\` again (a fresh rotation) and re-run verify.`
+      );
+    }
+    evidence.push(`the password set through the recovery path signs in (user ${fresh.session.userId})`);
+    let stale;
+    try {
+      stale = await auth8.login(ctx, address, oldPass);
+    } catch (e) {
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
+      return result("fail", "high", [`signing in with the replaced password failed: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+    }
+    if (stale.rateLimited) return result("warn", "medium", [`the login with the replaced password was rate-limited (HTTP 429)`, ...evidence], "Wait for the rate limit to reset, then re-run verify.");
+    if (stale.session) {
+      return result(
+        "fail",
+        "high",
+        [`the password the recovery rotation replaced still signs in`, ...evidence],
+        "The rotation did not take effect for the old password. Change the account's password in the provider dashboard, then run `plan` + `apply` again (a fresh rotation) and re-run verify."
+      );
+    }
+    evidence.push(`the password the rotation replaced is refused (${stale.code})`);
+    const settings = cap(ctx, "auth", "authConfig");
+    if (!settings) {
+      evidence.push(`auth provider ${provider} reports no auth settings, so the recovery token's expiry window is not named`);
+    } else {
+      try {
+        const conf = await settings.get(ctx);
+        evidence.push(
+          conf.otpExpirySeconds === void 0 ? "the provider does not report the recovery link/code window, so golive names no lifetime for it" : `the provider's one-time link/code window is ${conf.otpExpirySeconds}s (otpExpirySeconds), which bounds how long a recovery link stays usable`
+        );
+      } catch (e) {
+        evidence.push(`could not read the provider's auth settings, so the recovery token's expiry window is not named: ${errMsg2(e)}`);
+      }
+    }
+    evidence.push("the click in the inbox itself stays human-confirmed: golive never sees the inbox, only the provider's own token and password state");
+    return pass(evidence);
+  }
+};
+
 // src/checks/email.ts
 var DKIM_SELECTORS = {
   resend: ["resend"],
@@ -18768,6 +19135,7 @@ var ALL_CHECKS = [
   authPolicyCheck,
   authSignupCheck,
   authSessionCheck,
+  authRecoveryCheck,
   webhookUnsignedCheck,
   webhookRegisteredCheck,
   stripeLiveReadyCheck,

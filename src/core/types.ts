@@ -399,6 +399,33 @@ export interface AuthSignupOutcome {
   code?: string;
 }
 
+/**
+ * What one recovery request did, as the provider answers it. GoTrue answers a request for an address
+ * it has no account for exactly like one it has (that is how it refuses to enumerate accounts), so
+ * `accepted` and `emailSent` carry the same 2xx answer for both; the `auth-recovery` check compares
+ * the two answers instead of trusting a flag to reveal the difference.
+ */
+export interface AuthRecoveryOutcome {
+  status: number;
+  /** The provider took the request (2xx) instead of refusing it. */
+  accepted: boolean;
+  /** The provider queued a recovery email. False when it answered 2xx without sending anything. */
+  emailSent: boolean;
+  /** The provider's mailer or request limit refused this request (HTTP 429). */
+  rateLimited: boolean;
+  /** The project wants a human challenge (captcha) that a scripted request cannot pass. */
+  captchaRequired: boolean;
+  /** Secret-free provider error code on a refusal (e.g. `email_address_invalid`). */
+  code?: string;
+}
+
+/** An admin-minted recovery token for one account. The token is a Secret: it is a credential. */
+export interface AuthRecoveryLink {
+  userId: string;
+  /** The one-time token the verify endpoint exchanges for a session. */
+  token: Secret;
+}
+
 /** A signed-in session. The token is a Secret: it is only ever sent as a header, never printed. */
 export interface AuthSession {
   accessToken: Secret;
@@ -428,10 +455,12 @@ export interface AuthUserView {
 
 /**
  * The user surface of the chosen auth provider, used to prove a real signup → confirmation email →
- * login journey. `signup` and `setPassword` are WRITES, so only an approved step calls them; the
- * read-only calls back `auth-signup` and `auth-session`. Refusals come back as outcomes (`status`,
- * `code`) so a check can tell "the provider said no" from a broken transport; a missing credential or
- * unlinked project throws, because an unusable prerequisite is something a caller skips on.
+ * login journey and the password recovery that follows it. `signup`, `setPassword`, `requestRecovery`,
+ * `recoverySession` and `updateOwnPassword` are WRITES, so only an approved step calls them; the
+ * read-only calls back `auth-signup`, `auth-session` and `auth-recovery`. Refusals come back as
+ * outcomes (`status`, `code`) so a check can tell "the provider said no" from a broken transport; a
+ * missing credential or unlinked project throws, because an unusable prerequisite is something a
+ * caller skips on.
  */
 export interface AuthUsers {
   /** Create one user through the provider's signup endpoint (a WRITE). */
@@ -444,6 +473,23 @@ export interface AuthUsers {
   adminUser(ctx: Ctx, id: string): Promise<AuthUserView | null>;
   /** Replace a seeded user's password (admin API; a WRITE, used to re-prove login in a later run). */
   setPassword(ctx: Ctx, id: string, password: Secret): Promise<void>;
+  /**
+   * Ask the provider to send a recovery link or code to `email` (a WRITE). Idempotent in effect — it
+   * mails a link and changes nothing a later request cannot re-derive — and the `auth:recovery` step
+   * re-reads the recorded account before calling it, so a failed attempt from an older release may
+   * run again.
+   */
+  requestRecovery(ctx: Ctx, email: string): Promise<AuthRecoveryOutcome>;
+  /**
+   * An admin-minted recovery token for `email`, for providers that can mint one; null = no account for
+   * that address. This is what lets a run prove the recovery flow without reading an inbox, and only
+   * an approved step or an opted-in check may ask for it: the token is a credential.
+   */
+  recoveryLink?(ctx: Ctx, email: string): Promise<AuthRecoveryLink | null>;
+  /** Exchange a recovery token for a session (`type=recovery`); a token already used is refused. */
+  recoverySession(ctx: Ctx, token: Secret): Promise<AuthLoginOutcome>;
+  /** Set the signed-in user's OWN password: `PUT /auth/v1/user` carrying that session token (a WRITE). */
+  updateOwnPassword(ctx: Ctx, session: Secret, password: Secret): Promise<void>;
   /** Non-secret destination of the auth project, or null when none is selected. */
   destination(ctx: Ctx): Promise<{ ref: string; url: string } | null>;
 }
@@ -712,6 +758,13 @@ export interface ShipConfig {
     testEmail?: string;
     /** An app route that must require a session (a protected path); checked anonymously. */
     protectedPath?: string;
+    /**
+     * Opt in to the password-recovery journey: the `auth:recovery` step rotates the recorded test
+     * account's password through the provider's own recovery path and the `auth-recovery` check
+     * proves it (including that an unknown address gets the same answer). Needs a seeded, confirmed
+     * test account (`auth.e2e: true`); the step writes to the real project and needs `--confirm-live`.
+     */
+    recovery?: boolean;
   };
   /** Project chosen per axis (id or name), e.g. { hosting: "my-app", db: "abcd1234efgh" }. */
   projects?: Partial<Record<Axis, string>>;

@@ -184,7 +184,16 @@ answers 401 without a session, plus one RLS-protected table) exercised both app-
 anonymous GET of `auth.protectedPath` answered 401 and the signed-in probe read that table as the
 authenticated user, so the probe's bearer fix is no longer mock-covered. What that evidence cannot
 show: the table line is a count rather than table names, and any 401 counts as protected — a WAF or
-maintenance page would read the same (both tracked in issue #30). The domain journey is **not a
+maintenance page would read the same (both tracked in issue #30). Password recovery is **implemented
+on the same provider and not live-validated yet**: `auth.recovery: true` adds one approved step
+(`auth:recovery`, needs `--confirm-live`) that rotates that recorded test account's password through
+the provider's own recovery calls — request the email, mint the link with the admin API, exchange it
+for a session, set the new password with that session — and the `auth-recovery` check proves the
+outcome: the request is accepted, an address with no account gets the same answer (no account
+enumeration), the spent token is refused on replay, the new password signs in and the one it replaced
+does not. The inbox click and any captcha stay with the human (the `auth:recovery-email` handoff says
+so); the live run that exercises it comes separately, and account isolation is still to come.
+The domain journey is **not a
 validated alpha path yet** either; the DNS, email and test-mode payment paths listed above are the
 tested ones, and other auth providers stay guided. See [provider scope](docs/PROVIDERS.md) and
 [observed validation](docs/VALIDATION.md).
@@ -227,8 +236,10 @@ live-tested milestones**, not a finished category or a completed checklist for y
   disposable projects, where the confirmation came through the Auth admin API instead of the seeded
   email click, inbox delivery stayed human-confirmed, and a later run proved a declared protected
   path (an anonymous 401) and a signed-in read of an RLS-protected table, reported as a count rather
-  than a table name**. Other auth providers stay guided; password recovery and account isolation
-  still need work.
+  than a table name**. Password recovery is implemented on the same provider and covered by mocked
+  tests (`auth.recovery: true` adds the `auth:recovery` step and the `auth-recovery` check, which
+  proves no account enumeration, a one-time token and the replaced password); its live run and account
+  isolation still need work. Other auth providers stay guided.
 - [ ] 🗺️ **OAuth / social login / SSO:** client registration, consent screens, scopes, callback
   URLs and provider reviews. Current auth-provider setup is guided.
 - [x] ✅ **Payments and subscriptions:** ~~Prove test-mode checkout and webhook acceptance with Stripe.~~
@@ -286,8 +297,9 @@ the right page, the right permissions, a check afterward, and a return to the sa
 When the app itself needs code changes, GoLive should give the coding agent a concrete task and
 recheck the result. It should not make you coordinate a dozen disconnected setup conversations.
 
-**Next up:** complete and live-test the remaining launch journeys—the rest of authentication
-(password recovery and account isolation), live-mode payment flows and the Cloudflare DNS
+**Next up:** complete and live-test the remaining launch journeys—account isolation (the rest of
+authentication after password recovery, which is implemented and mock-covered but not yet
+live-validated), live-mode payment flows and the Cloudflare DNS
 adapter—then expand app architectures and ongoing operations.
 
 These are directions, not release dates. A capability should graduate from experimental only after

@@ -21,6 +21,7 @@ const AUTH_SETTINGS: Record<string, (v: unknown) => string | null> = {
   e2e: (v) => (typeof v === 'boolean' ? null : 'must be true or false'),
   testEmail: (v) => (typeof v === 'string' && /^[^@\s+]+(\+[^@\s]+)?@[^@\s]+\.[^@\s]+$/.test(v) ? null : 'must be the address the test account uses, like "you+go-live@example.com" (plus-addressing allowed; never a password)'),
   protectedPath: (v) => (typeof v === 'string' && v.startsWith('/') ? null : 'must be an app route starting with "/", e.g. "/dashboard" (the page that must require a session)'),
+  recovery: (v) => (typeof v === 'boolean' ? null : 'must be true or false'),
 };
 
 export function defaultConfig(): ShipConfig {

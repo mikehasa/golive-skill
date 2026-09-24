@@ -58,7 +58,8 @@ Never update between a plan and its apply. A changed release requires a new plan
 3. **No provider/account writes until the human approves the plan.** Local credential setup and
    human-submitted credential entry, `init`, and report files can be prepared during onboarding. Explain `plan` and get a
    clear yes before `apply`. Pass `--confirm-live` (live payments **or production data**, e.g. the
-   `auth:test-user` account and `auth-signup`'s throwaway probe), `--confirm-dns` (DNS records) or
+   `auth:test-user` account, `auth-signup`'s throwaway probe and the `auth:recovery` password
+   rotation), `--confirm-dns` (DNS records) or
    `--confirm-destroy` (deletions) only if the human explicitly approved those categories.
 4. **Never buy anything or create accounts for them.** Signups, payment methods, identity checks
    (KYC) and domain purchases are handoffs the human does in their browser.
@@ -225,6 +226,14 @@ Explain the steps by provider, in plain language, and call out:
   `plan` + `apply` rotates the password so `auth-signup` / `auth-session` also prove the confirmed
   account can sign in. Those two checks also sign up one throwaway probe account each run, so `verify`
   writes when `auth.e2e` is on; with it off they skip and nothing is created.
+- `auth:recovery`: only when the human opted in with `auth.recovery: true` **and** a confirmed test
+  account is already recorded (the journey above; a plan says so and waits when it is not). Say plainly
+  that it **rotates that test account's password** — a `--confirm-live` write — through the provider's
+  own recovery calls: it asks for a real recovery email, mints the link with the admin API, exchanges
+  the token for a session and sets the new password with that session. The old and new passwords and
+  the token live only in that run's memory, and the recovery email lands in the human's inbox: clicking
+  it is their step (`auth:recovery-email`, non-blocking, closed by `auth-recovery`). It never touches
+  any other account, and a captcha or the provider's mail throttle stops it with the reason.
 - `warnings` and `findings`, and `unmappedEnv`: env names golive can't fill (e.g. `OPENAI_API_KEY`).
   The human types those into the host's dashboard. Never ask for the value.
 
@@ -286,6 +295,7 @@ Check scope:
 | `auth-policy` | auth signup/confirmation/password policy matches the app and golive.yaml (site URL and redirects are `auth-redirects`); a setting the provider does not report is named, never assumed |
 | `auth-signup` | the `auth.e2e` journey: a fresh probe address gets a confirmation email, cannot sign in before confirming, and the test account reads back confirmed (`email_confirmed_at`) — a sign-in of that account is extra evidence when this run holds its password (golive never sees the inbox: delivery and the click stay human-confirmed) |
 | `auth-session` | the `auth.e2e` journey: the test account's password login returns a session, the token resolves to that user, an anonymous request is refused, and a declared `auth.protectedPath` is not publicly readable |
+| `auth-recovery` | the `auth.recovery` journey: the provider accepts the recovery request for the test account, an address with no account gets the same answer (a different one is account enumeration), the token this run spent is refused when replayed, the new password signs in and the one it replaced is refused, and the token's window is named from `otpExpirySeconds` when the provider reports it (a 429 only warns: the mail throttle decides what a run can prove) |
 | `webhook-unsigned` | the production webhook rejects unsigned POSTs (a non-HTML 401/403 only warns: it may be an auth wall) |
 | `webhook-registered` | the endpoint exists, enabled, for the right URL and events |
 | `stripe-live-ready` | the Stripe account can take live payments |
@@ -299,6 +309,14 @@ rotated it, so `auth-session` skips with `blocked by: no password for the test a
 outside such a run; `auth-signup` needs no password — it passes on the provider's own reads (the
 probe's signup, its refused login, the account's `email_confirmed_at`) and adds the confirmed login as
 extra evidence when that run holds the password. Never report the inbox leg as verified by golive.
+
+`auth-recovery` is opt-in too (`auth.recovery: true`), needs a seeded account (`blocked by:
+auth:test-user` without one) and only passes in the run that carries the `auth:recovery` step: the
+password it set and the token it spent exist there and nowhere else, so a plain `verify` skips with
+`this run holds none of what the recovery check needs`. It spends up to two auth emails per run, so a
+429 warns rather than fails, and it never reads the inbox: the click stays with the human. Treat this
+check as **implemented and mock-covered, not live-validated**: until a live run's report says `pass`
+for it, never present the recovery journey as proven on the human's project.
 
 Finish with a short summary: the live URL, what passed, what is still open (`handoff --json`), and
 every `done: null` / skipped item named as not verified by golive. Say who owns each remaining item —

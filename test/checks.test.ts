@@ -47,7 +47,7 @@ describe('ALL_CHECKS', () => {
     const ids = ALL_CHECKS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.sort()).toEqual(
-      ['accounts', 'auth-policy', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'rls-probe', 'stripe-live-ready', 'webhook-registered', 'webhook-unsigned'].sort(),
+      ['accounts', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'rls-probe', 'stripe-live-ready', 'webhook-registered', 'webhook-unsigned'].sort(),
     );
   });
 });
@@ -786,6 +786,9 @@ describe('auth-signup', () => {
           user: async () => ({ status: 401 }),
           adminUser: async () => (over.gone === true ? null : { status: 200, id: 'usr_1', email: EMAIL, emailConfirmed: over.confirmed ?? true }),
           setPassword: async () => {},
+          requestRecovery: async () => ({ status: 200, accepted: true, emailSent: true, rateLimited: false, captchaRequired: false }),
+          recoverySession: async () => ({ status: 403, code: 'otp_expired', rateLimited: false }),
+          updateOwnPassword: async () => {},
         },
       },
     });

@@ -2,7 +2,8 @@
  * Supabase Auth (GoTrue): the project's own `https://<ref>.supabase.co/auth/v1` user surface.
  *
  * Only this file talks GoTrue. It proves what the management API never can: that a real signup sends
- * a confirmation email, that an unconfirmed account cannot sign in, and that a confirmed one can.
+ * a confirmation email, that an unconfirmed account cannot sign in, that a confirmed one can, and
+ * that a password can be recovered and replaced the way the app's own recovery page does.
  * The project's publishable and secret keys are read in-process through the Management API transport
  * (`supabase.ts` injects the readers) and travel only as HTTP headers or in a request body — never on
  * argv, in state, logs, evidence or reports.
@@ -12,7 +13,7 @@
  * project throws `SupabaseAuthPrereqError`: that is a prerequisite, and callers skip on it.
  */
 import { randomBytes } from 'node:crypto';
-import type { AuthLoginOutcome, AuthSession, AuthSignupOutcome, AuthUserView, AuthUsers, Ctx, Value } from '../core/types.js';
+import type { AuthLoginOutcome, AuthRecoveryLink, AuthRecoveryOutcome, AuthSession, AuthSignupOutcome, AuthUserView, AuthUsers, Ctx, Value } from '../core/types.js';
 import { Secret, redact } from '../core/secret.js';
 import { SupabaseError } from './supabase-api.js';
 
@@ -61,6 +62,9 @@ interface GoTrueUser {
   message?: unknown;
   error?: unknown;
   error_description?: unknown;
+  /** Admin generate-link answers: the one-time token, and the link that embeds it. */
+  hashed_token?: unknown;
+  action_link?: unknown;
 }
 
 const asObject = (v: unknown): GoTrueUser => (v && typeof v === 'object' && !Array.isArray(v) ? (v as GoTrueUser) : {});
@@ -206,16 +210,110 @@ async function login(deps: SupabaseAuthDeps, ctx: Ctx, email: string, password: 
     headers: publicHeaders(requirePublic(keys)),
     body: { email, password },
   });
-  const body = asObject(res.json);
+  return sessionOutcome(res.status, res.json);
+}
+
+/** The session shape GoTrue answers the password grant and the verify endpoints with. */
+function sessionOutcome(status: number, json: unknown): AuthLoginOutcome {
+  const body = asObject(json);
   const who = asObject(body.user);
   const token = str(body.access_token);
   const userId = str(who.id);
-  if (res.status >= 200 && res.status < 300 && token && userId) {
+  if (status >= 200 && status < 300 && token && userId) {
     const session: AuthSession = { accessToken: new Secret('SUPABASE_AUTH_TOKEN', token), userId, emailConfirmed: confirmedOf(who) };
-    return { status: res.status, session, rateLimited: false };
+    return { status, session, rateLimited: false };
   }
+  const detail = detailOf(json);
+  return { status, rateLimited: status === 429, code: [codeOf(json), detail].filter(Boolean).join(' | ').slice(0, 200) || `HTTP ${status}` };
+}
+
+/**
+ * `POST /auth/v1/recover`: GoTrue sends a recovery email and answers every accepted request with the
+ * same 200, whether or not the address has an account (account enumeration is refused by design), so
+ * `accepted` and `emailSent` are that one answer for both. A captcha or the mail throttle is the only
+ * refusal it reports here.
+ */
+async function requestRecovery(deps: SupabaseAuthDeps, ctx: Ctx, email: string): Promise<AuthRecoveryOutcome> {
+  const { ref, keys } = await require(deps, ctx);
+  const res = await ctx.http<GoTrueUser>({
+    url: `${base(ref)}/recover`,
+    method: 'POST',
+    headers: publicHeaders(requirePublic(keys)),
+    body: { email },
+  });
+  const ok = res.status >= 200 && res.status < 300;
   const detail = detailOf(res.json);
-  return { status: res.status, rateLimited: res.status === 429, code: [codeOf(res.json), detail].filter(Boolean).join(' | ').slice(0, 200) || `HTTP ${res.status}` };
+  return {
+    status: res.status,
+    accepted: ok,
+    emailSent: ok,
+    rateLimited: res.status === 429,
+    captchaRequired: !ok && isCaptcha(codeOf(res.json), detail),
+    ...(ok ? {} : { code: [codeOf(res.json), detail].filter(Boolean).join(' | ').slice(0, 200) || `HTTP ${res.status}` }),
+  };
+}
+
+/**
+ * The admin generate-link endpoint: golive mints the token the provider would have emailed, which is
+ * what lets a run prove the recovery flow without reading an inbox. The answer carries the token as
+ * `hashed_token`; older responses only embed it in `action_link` as `token=…`, so that is read as the
+ * fallback. null = the provider has no account for that address.
+ */
+async function recoveryLink(deps: SupabaseAuthDeps, ctx: Ctx, email: string): Promise<AuthRecoveryLink | null> {
+  const { ref, keys } = await require(deps, ctx);
+  const res = await ctx.http<GoTrueUser>({
+    url: `${base(ref)}/admin/generate_link`,
+    method: 'POST',
+    headers: adminHeaders(requireSecret(keys)),
+    body: { type: 'recovery', email },
+  });
+  if (res.status === 404) return null;
+  expectOk(res.status, res.json, `Minting a Supabase recovery link for ${email}`);
+  const body = asObject(res.json);
+  const userId = str(asObject(body.user).id);
+  const token = str(body.hashed_token) ?? tokenParam(str(body.action_link));
+  if (!userId || !token) {
+    throw new SupabaseError(`Supabase answered the recovery link for ${email} without a user id${token ? '' : ' or a token'}, so golive cannot use it.`);
+  }
+  return { userId, token: new Secret('SUPABASE_RECOVERY_TOKEN', token) };
+}
+
+/** The `token` query parameter of a GoTrue `action_link` (an old response shape). */
+function tokenParam(actionLink: string | undefined): string | undefined {
+  if (!actionLink) return undefined;
+  try {
+    return str(new URL(actionLink).searchParams.get('token') ?? undefined);
+  } catch {
+    return undefined;
+  }
+}
+
+/** `POST /auth/v1/verify` with `type=recovery`: the one-time token becomes a session, once. */
+async function recoverySession(deps: SupabaseAuthDeps, ctx: Ctx, token: Secret): Promise<AuthLoginOutcome> {
+  const { ref, keys } = await require(deps, ctx);
+  const res = await ctx.http<GoTrueUser>({
+    url: `${base(ref)}/verify`,
+    method: 'POST',
+    headers: publicHeaders(requirePublic(keys)),
+    body: { type: 'recovery', token_hash: token },
+  });
+  return sessionOutcome(res.status, res.json);
+}
+
+/**
+ * `PUT /auth/v1/user` with the session token: the signed-in user's own password. Unlike the admin
+ * `setPassword` this needs no secret key — it is exactly the call a recovery page makes, so it also
+ * proves the session the recovery token produced is usable for a write.
+ */
+async function updateOwnPassword(deps: SupabaseAuthDeps, ctx: Ctx, session: Secret, password: Secret): Promise<void> {
+  const { ref, keys } = await require(deps, ctx);
+  const res = await ctx.http<GoTrueUser>({
+    url: `${base(ref)}/user`,
+    method: 'PUT',
+    headers: publicHeaders(requirePublic(keys), session),
+    body: { password },
+  });
+  expectOk(res.status, res.json, 'Setting a new password on the signed-in Supabase user');
 }
 
 async function user(deps: SupabaseAuthDeps, ctx: Ctx, token?: Secret): Promise<AuthUserView> {
@@ -261,6 +359,10 @@ export function supabaseAuthUsers(deps: SupabaseAuthDeps): AuthUsers {
     user: (ctx, token) => user(deps, ctx, token),
     adminUser: (ctx, id) => adminUser(deps, ctx, id),
     setPassword: (ctx, id, password) => setPassword(deps, ctx, id, password),
+    requestRecovery: (ctx, email) => requestRecovery(deps, ctx, email),
+    recoveryLink: (ctx, email) => recoveryLink(deps, ctx, email),
+    recoverySession: (ctx, token) => recoverySession(deps, ctx, token),
+    updateOwnPassword: (ctx, session, password) => updateOwnPassword(deps, ctx, session, password),
     destination: (ctx) => destination(deps, ctx),
   };
 }
