@@ -15,7 +15,11 @@ async function registeredUrl(ctx: Ctx): Promise<string | null> {
 
 const looksLikeHtml = (text: string) => /^\s*(<!doctype html|<html)/i.test(text);
 
-/** An unsigned POST to the production webhook route must be rejected (4xx). Sends `{}` only. */
+/**
+ * An unsigned POST to the production webhook route must be rejected (4xx). Sends `{}` only.
+ * A non-HTML 401/403 only warns: an auth wall in front of the route answers just like a handler
+ * rejecting the signature, so neither can be proven from outside (Stripe counts 401/403 as failures).
+ */
 export const webhookUnsignedCheck: Check = {
   id: 'webhook-unsigned',
   title: 'Webhook rejects unsigned requests',
@@ -57,9 +61,19 @@ async function runUnsigned(ctx: Ctx, url: string): Promise<CheckOutcome> {
   if (s >= 500) {
     return result('fail', 'high', [ev], 'The handler crashes on unsigned input. Verify the Stripe signature first and return 400 on failure, before parsing or touching the database; check that STRIPE_WEBHOOK_SECRET is set in production.');
   }
-  // 4xx: rejected. A platform auth wall (HTML page) would also be 401/403 but proves nothing about the handler.
-  if ((s === 401 || s === 403) && looksLikeHtml(r.text)) {
-    return result('warn', 'medium', [ev, 'the response is an HTML page (deployment protection/WAF?), not your handler'], 'Exclude the webhook path from deployment protection / bot challenges, or Stripe deliveries will be blocked too.');
+  // 4xx: rejected. 401/403 alone proves nothing: an auth wall in front of the route (or a gateway)
+  // answers the same way as a handler rejecting the missing signature, and Stripe counts both as
+  // failed deliveries (docs.stripe.com/webhooks — 401/403 under "access restrictions").
+  if (s === 401 || s === 403) {
+    if (looksLikeHtml(r.text)) {
+      return result('warn', 'medium', [ev, 'the response is an HTML page (deployment protection/WAF?), not your handler'], 'Exclude the webhook path from deployment protection / bot challenges, or Stripe deliveries will be blocked too.');
+    }
+    return result(
+      'warn',
+      'high',
+      [ev, 'the body is not HTML, so this may be your handler rejecting the unsigned event — or an auth wall (login/auth middleware, deployment protection, Supabase verify_jwt) rejecting every real delivery too'],
+      'Confirm Stripe can reach the route: no login/auth middleware and no deployment protection on it (Supabase Edge Functions: set `verify_jwt = false` in supabase/config.toml) and the handler itself returns 400 when signature verification fails (Stripe counts 401/403 as failed deliveries). If the handler intentionally returns 403 for invalid signatures, this warning is expected.',
+    );
   }
   return pass([ev]);
 }
@@ -102,7 +116,7 @@ export const webhookRegisteredCheck: Check = {
       return result('fail', 'high', [`no ${mode}-mode endpoint for ${expected}`, ...(others.length ? [`existing endpoints: ${others.join(', ')}`] : [])], ctx.config.stack.hosting && !ctx.adapters.some((a) => a.id === ctx.config.stack.hosting) ? `Your host is guided, so the endpoint is created by hand: follow the \`${ctx.config.stack.payments}:webhook-guided\` item in \`handoff --json\`.` : 'Run `golive plan` and apply the payments-webhook step for production.');
     }
     const enabled = match.find((e) => e.enabled);
-    if (!enabled) return result('fail', 'high', [`${mode}-mode endpoint ${match[0]!.id} for ${expected} is disabled`], 'Enable the endpoint in the Stripe dashboard (Developers → Webhooks), then re-run verify.');
+    if (!enabled) return result('fail', 'high', [`${mode}-mode endpoint ${match[0]!.id} for ${expected} is disabled`], 'Enable the endpoint in the Webhooks tab in Workbench, then re-run verify.');
     const missing = enabled.events.includes('*') ? [] : want.filter((ev) => !enabled.events.includes(ev));
     if (missing.length) {
       return result('fail', 'high', [`${mode}-mode endpoint ${enabled.id} is missing events: ${missing.join(', ')}`], 'Re-run `golive plan` / apply to update the endpoint\'s events.');

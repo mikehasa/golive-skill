@@ -366,7 +366,8 @@ describe('resend CLI transport', () => {
     const ex = mockExec([
       whoami,
       ['resend domains list --json', { stdout: JSON.stringify({ object: 'list', has_more: false, data: [] }) }],
-      ['resend domains create --name example.com --region us-east-1 --json', { stdout: JSON.stringify({ id: 'd_c', name: 'example.com', status: 'not_started' }) }],
+      ['resend domains create --name example.com --region us-east-1 --json', { stdout: JSON.stringify({ id: 'd_c', name: 'example.com', status: 'not_started', region: 'us-east-1', records: MODERN_RECORDS }) }],
+      ['resend domains update d_c --no-open-tracking --no-click-tracking --json', { stdout: JSON.stringify({ object: 'domain', id: 'd_c' }) }],
       ['resend domains get d_c --json', { stdout: JSON.stringify({ object: 'domain', id: 'd_c', name: 'example.com', status: 'not_started', records: MODERN_RECORDS }) }],
       ['resend domains verify d_c --json', { stdout: JSON.stringify({ object: 'domain', id: 'd_c' }) }],
     ]);
@@ -374,7 +375,10 @@ describe('resend CLI transport', () => {
     const r = await sd.ensure(ctx, 'example.com');
     expect(r).toMatchObject({ id: 'd_c' });
     expect(r.records.map((x) => x.name)).toContain('rsend.example.com');
+    // `domains create` offers no tracking flags, so the id it printed feeds one follow-up update
     await sd.verify(ctx, 'd_c');
+    expect(ex.calls.filter((c) => c.args[0] === 'domains').map((c) => c.args.slice(0, 2).join(' '))).toEqual(['domains list', 'domains create', 'domains update', 'domains get', 'domains get', 'domains verify']);
+    expect(ex.calls.find((c) => c.args[1] === 'update')!.args).toEqual(['domains', 'update', 'd_c', '--no-open-tracking', '--no-click-tracking', '--json']);
     expect(ex.calls.some((c) => c.args.join(' ') === 'domains verify d_c --json')).toBe(true);
     for (const c of ex.calls) expect(c.opts?.env).toEqual({ RESEND_API_KEY: '' });
 
@@ -397,6 +401,63 @@ describe('resend CLI transport', () => {
     }
     expect(JSON.stringify(k) + ctx2.logs.join('\n')).not.toContain(MINTED);
     expect(await ts.status(ctx2, 'em_9')).toBe('sent');
+  });
+
+  it('parity: REST disables tracking in the create body, the CLI does it with one follow-up update', async () => {
+    const h = mockHttp([
+      ['GET', `${API}/domains`, () => ({ json: { data: [] } })],
+      ['POST', `${API}/domains`, () => ({ json: { id: 'd_r', name: 'example.com' } })],
+      ['GET', `${API}/domains/d_r`, () => ({ json: { id: 'd_r', name: 'example.com', status: 'not_started', records: MODERN_RECORDS } })],
+    ]);
+    await sd.ensure(testCtx({ exec: noCli().run, http: h.http, tokens: { RESEND_API_KEY: ADMIN } }), 'example.com');
+    expect(h.calls.find((c) => c.method === 'POST')!.body).toEqual({ name: 'example.com', region: 'us-east-1', open_tracking: false, click_tracking: false });
+
+    const ex = mockExec([
+      whoami,
+      ['resend domains list --json', { stdout: JSON.stringify({ data: [] }) }],
+      ['resend domains create', { stdout: JSON.stringify({ id: 'd_c', name: 'example.com', status: 'not_started', region: 'us-east-1', records: MODERN_RECORDS }) }],
+      ['resend domains update', { stdout: JSON.stringify({ object: 'domain', id: 'd_c' }) }],
+      ['resend domains get', { stdout: JSON.stringify({ object: 'domain', id: 'd_c', name: 'example.com', status: 'not_started', records: MODERN_RECORDS }) }],
+    ]);
+    expect(await sd.ensure(testCtx({ exec: ex.run }), 'example.com')).toMatchObject({ id: 'd_c' });
+    const updates = ex.calls.filter((c) => c.args[1] === 'update');
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.args).toEqual(['domains', 'update', 'd_c', '--no-open-tracking', '--no-click-tracking', '--json']);
+  });
+
+  it('adopting an existing domain via the CLI sends no tracking update (create-only, like REST)', async () => {
+    const ex = mockExec([
+      whoami,
+      ['resend domains list --json', { stdout: JSON.stringify({ data: [{ id: 'd_c', name: 'Example.com', status: 'pending' }] }) }],
+      ['resend domains get d_c --json', { stdout: JSON.stringify({ object: 'domain', id: 'd_c', name: 'example.com', status: 'pending', records: MODERN_RECORDS }) }],
+    ]);
+    const ctx = testCtx({ exec: ex.run });
+    expect(await sd.ensure(ctx, 'example.com')).toMatchObject({ id: 'd_c' });
+    expect(ctx.logs.join('\n')).toMatch(/adopting existing Resend domain/);
+    expect(ex.calls.map((c) => c.args.slice(0, 2).join(' '))).toEqual(['whoami --json', 'domains list', 'domains get']);
+  });
+
+  it('a CLI create without a domain id fires no update and keeps the existing error', async () => {
+    const ex = mockExec([
+      whoami,
+      ['resend domains list --json', { stdout: JSON.stringify({ data: [] }) }],
+      ['resend domains create', { stdout: JSON.stringify({ name: 'example.com', status: 'not_started' }) }],
+    ]);
+    const err = (await sd.ensure(testCtx({ exec: ex.run }), 'example.com').catch((e: Error) => e)) as Error;
+    expect(err.message).toMatch(/response had no domain id/);
+    expect(ex.calls.some((c) => c.args[1] === 'update')).toBe(false);
+  });
+
+  it('a rejected tracking update fails the step with the CLI error and runs nothing else', async () => {
+    const ex = mockExec([
+      whoami,
+      ['resend domains list --json', { stdout: JSON.stringify({ data: [] }) }],
+      ['resend domains create', { stdout: JSON.stringify({ id: 'd_c', name: 'example.com' }) }],
+      ['resend domains update', { code: 1, stdout: JSON.stringify({ error: { code: 'update_error', message: 'Domain not found' } }) }],
+    ]);
+    const err = (await sd.ensure(testCtx({ exec: ex.run }), 'example.com').catch((e: Error) => e)) as Error;
+    expect(err.message).toBe('resend domains update failed (exit 1, update_error): Domain not found');
+    expect(ex.calls.map((c) => c.args.slice(0, 2).join(' '))).toEqual(['whoami --json', 'domains list', 'domains create', 'domains update']);
   });
 
   it('CLI errors are actionable and never echo stdout secrets', async () => {

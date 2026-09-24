@@ -8750,7 +8750,7 @@ function keyHowToFix(modes) {
   const appVars = modes.map((m) => APP_KEY_ENV[m]).join(" / ");
   return [
     `Stripe needs a secret key for ${modes.join(" and ")} mode (Stripe has no API that can hand golive a key).`,
-    `In the Stripe Dashboard \u2192 Developers \u2192 API keys, copy the ${modes.join("/")} standard secret key (sk_\u2026), or create a restricted key (rk_\u2026) with ${RESTRICTED_KEY_PERMS}.`,
+    `In the Stripe Dashboard's API keys page (dashboard.stripe.com/apikeys), copy the ${modes.join("/")} standard secret key (sk_\u2026), or create a restricted key (rk_\u2026) with ${RESTRICTED_KEY_PERMS}.`,
     `A standard key is also what golive puts into your app's STRIPE_SECRET_KEY; a restricted key is used only by golive itself and is never copied into the app (then also add a standard key as ${appVars}, or set the app's key on the host yourself).`,
     tokenHowTo(first) + (vars.length > 1 ? ` Add ${vars.slice(1).join(", ")} the same way.` : "")
   ].join(" ");
@@ -8780,9 +8780,9 @@ function stripeError(res, what, mode, keySource) {
   const detail = e.message ? `: ${e.message}` : "";
   let msg;
   if (res.status === 401) {
-    msg = `${what} failed: Stripe rejected the ${mode}-mode key in ${keySource} (invalid, expired or revoked). Copy a current key from Dashboard \u2192 Developers \u2192 API keys. ${tokenHowTo(keySource)}`;
+    msg = `${what} failed: Stripe rejected the ${mode}-mode key in ${keySource} (invalid, expired or revoked). Copy a current key from the Stripe Dashboard's API keys page. ${tokenHowTo(keySource)}`;
   } else if (res.status === 403) {
-    msg = `${what} failed: the ${mode}-mode key in ${keySource} lacks permission${detail}. If it is a restricted key, grant it ${RESTRICTED_KEY_PERMS} in Dashboard \u2192 Developers \u2192 API keys (or use the standard secret key).`;
+    msg = `${what} failed: the ${mode}-mode key in ${keySource} lacks permission${detail}. If it is a restricted key, grant it ${RESTRICTED_KEY_PERMS} on the key in the Stripe Dashboard's API keys page (or use the standard secret key).`;
   } else if (res.status === 404) {
     msg = `${what} failed: not found in ${mode} mode${detail}.`;
   } else if (res.status === 429) {
@@ -8901,10 +8901,10 @@ async function auth3(ctx) {
       if (restricted) {
         return {
           ok: false,
-          howToFix: `The ${m}-mode restricted key in ${source} cannot read its account. Account: Read is required to bind payment writes to the account the human approves; webhook access alone is insufficient. In Dashboard \u2192 Developers \u2192 API keys, grant it ${RESTRICTED_KEY_PERMS}, or use the standard secret key instead. ${tokenHowTo(source)}`
+          howToFix: `The ${m}-mode restricted key in ${source} cannot read its account. Account: Read is required to bind payment writes to the account the human approves; webhook access alone is insufficient. On the Stripe Dashboard's API keys page, grant it ${RESTRICTED_KEY_PERMS}, or use the standard secret key instead. ${tokenHowTo(source)}`
         };
       }
-      return { ok: false, howToFix: `Stripe refused the ${m}-mode key in ${source} (HTTP 403 reading the account). Check in Dashboard \u2192 Developers \u2192 API keys that it is a current key for an active account. ${tokenHowTo(source)}` };
+      return { ok: false, howToFix: `Stripe refused the ${m}-mode key in ${source} (HTTP 403 reading the account). Check on the Stripe Dashboard's API keys page that it is a current key for an active account. ${tokenHowTo(source)}` };
     }
     if (res.status !== 200) {
       return { ok: false, howToFix: `Could not reach Stripe with the ${m}-mode key in ${source} (HTTP ${res.status}). Check your network and https://status.stripe.com, then re-run.` };
@@ -9003,7 +9003,7 @@ function sameSet(a, b) {
 function limitError(mode, all) {
   const ours = all.filter(isGolive).length;
   return new Error(
-    `Stripe allows at most ${MAX_ENDPOINTS_PER_MODE} webhook endpoints per mode and the ${mode}-mode account already has ${all.length} (${ours} created by golive). Delete unused ones in Stripe Dashboard \u2192 Developers \u2192 Webhooks${ours ? " (stale golive ones are tagged managed_by=golive)" : ""}, then re-run.`
+    `Stripe allows at most ${MAX_ENDPOINTS_PER_MODE} webhook endpoints per mode and the ${mode}-mode account already has ${all.length} (${ours} created by golive). Delete unused ones in the Webhooks tab in Workbench${ours ? " (stale golive ones are tagged managed_by=golive)" : ""}, then re-run.`
   );
 }
 function validateSpec(spec) {
@@ -9030,7 +9030,7 @@ async function createEndpoint(ctx, mode, url, events) {
     const res = await stripeCall(ctx, mode, { method: "POST", path: "/v1/webhook_endpoints", form, idempotencyKey: idempotencyKey2, what });
     const id2 = res.json?.id;
     const raw2 = res.json?.secret;
-    if (!id2) throw new Error(`${what}: Stripe returned no endpoint id; check Dashboard \u2192 Developers \u2192 Webhooks before re-running`);
+    if (!id2) throw new Error(`${what}: Stripe returned no endpoint id; check the Webhooks tab in Workbench before re-running`);
     if (typeof raw2 !== "string" || !raw2) {
       throw new Error(`${what}: endpoint ${id2} was created but Stripe returned no signing secret; re-run so golive replaces it`);
     }
@@ -9104,12 +9104,12 @@ async function replace(ctx, id2, mode, opts = {}) {
       oldDeleted = true;
     } catch (e) {
       oldLeft = `delete failed: ${e instanceof Error ? e.message : String(e)}`;
-      ctx.log.warn(`could not delete old Stripe webhook endpoint ${old.id} (${e instanceof Error ? e.message : String(e)}); delete it in Dashboard \u2192 Developers \u2192 Webhooks.`);
+      ctx.log.warn(`could not delete old Stripe webhook endpoint ${old.id} (${e instanceof Error ? e.message : String(e)}); delete it in the Webhooks tab in Workbench.`);
     }
   } else {
     oldLeft = "not created by golive";
     ctx.log.warn(
-      `left Stripe ${mode}-mode webhook endpoint ${old.id} in place because golive did not create it; once the new endpoint ${created.id} works, delete ${old.id} in Dashboard \u2192 Developers \u2192 Webhooks (until then Stripe delivers events to both).`
+      `left Stripe ${mode}-mode webhook endpoint ${old.id} in place because golive did not create it; once the new endpoint ${created.id} works, delete ${old.id} in the Webhooks tab in Workbench (until then Stripe delivers events to both).`
     );
   }
   return { id: created.id, created: true, secret: created.secret, oldDeleted, ...oldLeft ? { oldLeft } : {} };
@@ -11314,7 +11314,11 @@ function cliTransport(ctx, profile) {
   return {
     via: `resend CLI (logged in${profile ? `, profile ${profile}` : ""})`,
     listDomains: async () => listOf(await cli2(ctx, ["domains", "list"])),
-    createDomain: async (name3, region) => cli2(ctx, ["domains", "create", "--name", name3, "--region", region]),
+    createDomain: async (name3, region) => {
+      const created = await cli2(ctx, ["domains", "create", "--name", name3, "--region", region]);
+      if (created?.id) await cli2(ctx, ["domains", "update", created.id, "--no-open-tracking", "--no-click-tracking"]);
+      return created;
+    },
     getDomain: async (id2) => cli2(ctx, ["domains", "get", id2]),
     verifyDomain: async (id2) => {
       await cli2(ctx, ["domains", "verify", id2]);
@@ -14510,9 +14514,9 @@ async function keysStep(ctx, adapter, outputs4, host, target) {
 var secretKeyEnv = (adapter, mode) => `${adapter.id.toUpperCase().replace(/-/g, "_")}_${mode.toUpperCase()}_SECRET_KEY`;
 function keyFix(adapter, key, mode) {
   if (key === "stripe.publishableKey") {
-    return `Ask the human for the ${mode}-mode publishable key (pk_${mode}_\u2026, from the ${adapter.title} dashboard \u2192 Developers \u2192 API keys). It is public (it ships in the browser bundle), so the human may paste it in chat \u2014 but never a secret key (sk_\u2026, rk_\u2026, whsec_\u2026). Then run \`init --stripe-publishable ${mode}=pk_${mode}_\u2026\` and \`plan\` again.`;
+    return `Ask the human for the ${mode}-mode publishable key (pk_${mode}_\u2026, from the ${adapter.title} dashboard's API keys page). It is public (it ships in the browser bundle), so the human may paste it in chat \u2014 but never a secret key (sk_\u2026, rk_\u2026, whsec_\u2026). Then run \`init --stripe-publishable ${mode}=pk_${mode}_\u2026\` and \`plan\` again.`;
   }
-  return `Copy the ${mode}-mode STANDARD secret key (sk_\u2026) from the ${adapter.title} dashboard (Developers \u2192 API keys). ${tokenHowTo(secretKeyEnv(adapter, mode))} If ${secretKeyEnv(adapter, mode)} already holds a restricted key (rk_\u2026) for golive itself, put the app's standard key in ${secretKeyEnv(adapter, mode).replace(/_(TEST|LIVE)_/, "_APP_$1_")} instead \u2014 a restricted operator key is never copied into your app. Then run \`plan\` again.`;
+  return `Copy the ${mode}-mode STANDARD secret key (sk_\u2026) from the ${adapter.title} dashboard's API keys page. ${tokenHowTo(secretKeyEnv(adapter, mode))} If ${secretKeyEnv(adapter, mode)} already holds a restricted key (rk_\u2026) for golive itself, put the app's standard key in ${secretKeyEnv(adapter, mode).replace(/_(TEST|LIVE)_/, "_APP_$1_")} instead \u2014 a restricted operator key is never copied into your app. Then run \`plan\` again.`;
 }
 function missingKeyHandoff(adapter, host, key, mode, names) {
   const pk = key === "stripe.publishableKey";
@@ -14567,7 +14571,7 @@ async function guidedWebhookHandoff(ctx, adapter, hostTitle) {
   return {
     id: `${adapter.id}:webhook-guided`,
     why: `${hostTitle} isn't automated by golive, so golive can't store a webhook signing secret there, and ${adapter.title} reveals it only once, when the endpoint is created.`,
-    action: `In the ${adapter.title} dashboard (Developers \u2192 Webhooks, ${mode} mode), the human adds an endpoint at ${url} for these events: ${cfg2.events.join(", ")}. They copy its signing secret (whsec_\u2026) straight into ${hostTitle}'s Production env as ${names.join(", ")}, never through this chat (it is production-only: not in preview). Make sure nothing blocks POSTs to ${cfg2.path} (password protection, auth middleware, bot challenges), then redeploy production in ${hostTitle} and run \`verify\`.`,
+    action: `In ${adapter.title}'s dashboard (the Webhooks tab in Workbench, ${mode} mode), the human adds an endpoint at ${url} for these events: ${cfg2.events.join(", ")}. They copy its signing secret (whsec_\u2026) straight into ${hostTitle}'s Production env as ${names.join(", ")}, never through this chat (it is production-only: not in preview). Make sure nothing blocks POSTs to ${cfg2.path} (password protection, auth middleware, bot challenges), then redeploy production in ${hostTitle} and run \`verify\`.`,
     blocking: true,
     verifiedBy: "webhook-registered"
   };
@@ -15668,8 +15672,16 @@ async function runUnsigned(ctx, url) {
   if (s >= 500) {
     return result("fail", "high", [ev], "The handler crashes on unsigned input. Verify the Stripe signature first and return 400 on failure, before parsing or touching the database; check that STRIPE_WEBHOOK_SECRET is set in production.");
   }
-  if ((s === 401 || s === 403) && looksLikeHtml(r.text)) {
-    return result("warn", "medium", [ev, "the response is an HTML page (deployment protection/WAF?), not your handler"], "Exclude the webhook path from deployment protection / bot challenges, or Stripe deliveries will be blocked too.");
+  if (s === 401 || s === 403) {
+    if (looksLikeHtml(r.text)) {
+      return result("warn", "medium", [ev, "the response is an HTML page (deployment protection/WAF?), not your handler"], "Exclude the webhook path from deployment protection / bot challenges, or Stripe deliveries will be blocked too.");
+    }
+    return result(
+      "warn",
+      "high",
+      [ev, "the body is not HTML, so this may be your handler rejecting the unsigned event \u2014 or an auth wall (login/auth middleware, deployment protection, Supabase verify_jwt) rejecting every real delivery too"],
+      "Confirm Stripe can reach the route: no login/auth middleware and no deployment protection on it (Supabase Edge Functions: set `verify_jwt = false` in supabase/config.toml) and the handler itself returns 400 when signature verification fails (Stripe counts 401/403 as failed deliveries). If the handler intentionally returns 403 for invalid signatures, this warning is expected."
+    );
   }
   return pass([ev]);
 }
@@ -15706,7 +15718,7 @@ var webhookRegisteredCheck = {
       return result("fail", "high", [`no ${mode}-mode endpoint for ${expected}`, ...others.length ? [`existing endpoints: ${others.join(", ")}`] : []], ctx.config.stack.hosting && !ctx.adapters.some((a) => a.id === ctx.config.stack.hosting) ? `Your host is guided, so the endpoint is created by hand: follow the \`${ctx.config.stack.payments}:webhook-guided\` item in \`handoff --json\`.` : "Run `golive plan` and apply the payments-webhook step for production.");
     }
     const enabled = match.find((e) => e.enabled);
-    if (!enabled) return result("fail", "high", [`${mode}-mode endpoint ${match[0].id} for ${expected} is disabled`], "Enable the endpoint in the Stripe dashboard (Developers \u2192 Webhooks), then re-run verify.");
+    if (!enabled) return result("fail", "high", [`${mode}-mode endpoint ${match[0].id} for ${expected} is disabled`], "Enable the endpoint in the Webhooks tab in Workbench, then re-run verify.");
     const missing = enabled.events.includes("*") ? [] : want.filter((ev) => !enabled.events.includes(ev));
     if (missing.length) {
       return result("fail", "high", [`${mode}-mode endpoint ${enabled.id} is missing events: ${missing.join(", ")}`], "Re-run `golive plan` / apply to update the endpoint's events.");

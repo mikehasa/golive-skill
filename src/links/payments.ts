@@ -181,12 +181,12 @@ const secretKeyEnv = (adapter: Adapter, mode: Mode): string => `${adapter.id.toU
 function keyFix(adapter: Adapter, key: OutputKey, mode: Mode): string {
   if (key === 'stripe.publishableKey') {
     return (
-      `Ask the human for the ${mode}-mode publishable key (pk_${mode}_…, from the ${adapter.title} dashboard → Developers → API keys). ` +
+      `Ask the human for the ${mode}-mode publishable key (pk_${mode}_…, from the ${adapter.title} dashboard's API keys page). ` +
       `It is public (it ships in the browser bundle), so the human may paste it in chat — but never a secret key (sk_…, rk_…, whsec_…). ` +
       `Then run \`init --stripe-publishable ${mode}=pk_${mode}_…\` and \`plan\` again.`
     );
   }
-  return `Copy the ${mode}-mode STANDARD secret key (sk_…) from the ${adapter.title} dashboard (Developers → API keys). ${tokenHowTo(secretKeyEnv(adapter, mode))} If ${secretKeyEnv(adapter, mode)} already holds a restricted key (rk_…) for golive itself, put the app's standard key in ${secretKeyEnv(adapter, mode).replace(/_(TEST|LIVE)_/, '_APP_$1_')} instead — a restricted operator key is never copied into your app. Then run \`plan\` again.`;
+  return `Copy the ${mode}-mode STANDARD secret key (sk_…) from the ${adapter.title} dashboard's API keys page. ${tokenHowTo(secretKeyEnv(adapter, mode))} If ${secretKeyEnv(adapter, mode)} already holds a restricted key (rk_…) for golive itself, put the app's standard key in ${secretKeyEnv(adapter, mode).replace(/_(TEST|LIVE)_/, '_APP_$1_')} instead — a restricted operator key is never copied into your app. Then run \`plan\` again.`;
 }
 
 function missingKeyHandoff(adapter: Adapter, host: Host, key: OutputKey, mode: Mode, names: string[]): HandoffItem {
@@ -267,7 +267,7 @@ async function guidedWebhookHandoff(ctx: Ctx, adapter: Adapter, hostTitle: strin
     id: `${adapter.id}:webhook-guided`,
     why: `${hostTitle} isn't automated by golive, so golive can't store a webhook signing secret there, and ${adapter.title} reveals it only once, when the endpoint is created.`,
     action:
-      `In the ${adapter.title} dashboard (Developers → Webhooks, ${mode} mode), the human adds an endpoint at ${url} for these events: ${cfg.events.join(', ')}. ` +
+      `In ${adapter.title}'s dashboard (the Webhooks tab in Workbench, ${mode} mode), the human adds an endpoint at ${url} for these events: ${cfg.events.join(', ')}. ` +
       `They copy its signing secret (whsec_…) straight into ${hostTitle}'s Production env as ${names.join(', ')}, never through this chat (it is production-only: not in preview). ` +
       `Make sure nothing blocks POSTs to ${cfg.path} (password protection, auth middleware, bot challenges), then redeploy production in ${hostTitle} and run \`verify\`.`,
     blocking: true,

@@ -81,7 +81,7 @@ describe('auth', () => {
     const s = await stripeAdapter.auth(ctx);
     expect(s.ok).toBe(false);
     expect(s.howToFix).toContain('STRIPE_LIVE_SECRET_KEY');
-    expect(s.howToFix).toContain('Developers → API keys');
+    expect(s.howToFix).toContain('API keys page');
     expect(s.howToFix).toMatch(/Never paste the value into this chat/);
     expect(s.howToFix).toContain(credentialsPath());
     expect(s.howToFix).toContain('STRIPE_LIVE_SECRET_KEY=<value>');

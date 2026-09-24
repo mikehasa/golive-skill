@@ -77,7 +77,8 @@ golive automates (after plan approval; live-mode steps also need `--confirm-live
 - **Guided host:** golive can't store the secret there, so a blocking `stripe:webhook-guided` handoff
   asks the human to create the endpoint in the dashboard and copy its `whsec_…` straight into the
   host's Production env (see `guided.md`).
-- Verifies: `webhook-unsigned` (an unsigned POST gets 4xx), `webhook-registered` (enabled endpoint,
+- Verifies: `webhook-unsigned` (an unsigned POST gets 4xx; a non-HTML 401/403 only warns, since an auth
+  wall looks the same as a handler rejecting the signature), `webhook-registered` (enabled endpoint,
   right URL, events covered), `stripe-live-ready` (the account can take live payments), and
   `env-parity` (key names present).
 
@@ -101,12 +102,15 @@ Stays with the human (and why):
 - **The signing secret is shown once.** If golive doesn't have it for an existing endpoint, the plan
   replaces the endpoint: create a new one with the same URL/events, write its secret, then delete the
   old one **only if golive created it**. An endpoint golive didn't create is left in place, and the
-  change log says so; the human deletes it in Dashboard → Developers → Webhooks (until then Stripe
+  change log says so; the human deletes it in the Webhooks tab in Workbench (until then Stripe
   also delivers to it, and those deliveries fail signature checks). The log says "old endpoint
   deleted" only when it was.
 - **Test and live are separate worlds.** Same URL, different secrets. The secret from `stripe listen`
   on a laptop is different again. Mixing them gives "No signatures found matching the expected
   signature for payload".
+- **One sandbox for everything.** Use a single sandbox (or the account's test mode) for keys,
+  endpoints and event tests: golive cannot tell sandboxes apart, so a key from one sandbox and a
+  signing secret from another silently disagree.
 - **The handler must read the raw body.** Parsing JSON first breaks the signature. Next.js App Router:
   `await req.text()`. Express: `express.raw({type:'application/json'})` on the webhook route, mounted
   before `express.json()`.
@@ -127,18 +131,18 @@ Stays with the human (and why):
 |---|---|
 | `doctor`: Stripe not connected, a key is missing | The human adds the per-mode key(s) `doctor` names to the credentials file (§1). `stripe login` doesn't help. No live key yet: `payments.modes.production: test`. |
 | "`STRIPE_LIVE_SECRET_KEY` holds a test-mode key" (or similar) | Wrong key in that line; replace it with the right mode's key. |
-| Stripe rejected the key (401) | Expired, revoked or mistyped. Copy a current key from Dashboard → Developers → API keys into the credentials file. |
+| Stripe rejected the key (401) | Expired, revoked or mistyped. Copy a current key from the API keys page (dashboard.stripe.com/apikeys) into the credentials file. |
 | Permission error (403) with a restricted key | Grant Webhook Endpoints: Write, Events: Read and Account: Read, or use the standard key. |
 | `stripe:secret-key:<mode>` handoff with a restricted key | Expected: restricted keys are never given to the app. Set `STRIPE_APP_<MODE>_SECRET_KEY` (standard `sk_` key) or the human adds the app's key to the host. |
 | "No signatures found matching the expected signature for payload" | Wrong secret (test vs. live, `stripe listen`, old endpoint), or the body was parsed before verifying. |
 | `webhook-unsigned` gets 2xx | The handler doesn't verify signatures. Security fix in code, then re-run `verify`. |
-| `webhook-unsigned` gets 401 / an HTML page | Supabase `verify_jwt` or Deployment Protection is in front of the route. |
+| `webhook-unsigned` warns on a 401/403 | Either an auth wall in front of the route (Supabase `verify_jwt`, Deployment Protection) or a handler that returns 403 for bad signatures on purpose. Fix the wall, or accept the warning. |
 | `webhook-unsigned` gets 404/405 | Wrong path. Fix the route, or `init --webhook-path <path>`. |
 | `webhook-unsigned` gets 3xx | Register the canonical URL. |
 | `webhook-registered` fails on events | `golive.yaml` events differ from the endpoint: `plan` + `apply` fixes it. If the handler needs more events, `init --events a,b` first. |
 | "Use `await constructEventAsync(...)`" | Edge runtime; switch to the async form above. |
 | `stripe-live-ready` fails (`charges_enabled` false) | KYC handoff. Show `requirements.currently_due` in plain words; the human completes it in the Dashboard. |
-| Endpoint limit (16 per mode) | The human deletes unused endpoints in Dashboard → Developers → Webhooks (stale golive ones are tagged `managed_by=golive`), then re-run. |
+| Endpoint limit (16 per mode) | The human deletes unused endpoints in the Webhooks tab in Workbench (stale golive ones are tagged `managed_by=golive`), then re-run. |
 | Apply says the webhook endpoints changed since approval | Someone changed endpoints meanwhile. Run `plan` again and get approval again. |
 | `stripe:webhook-env` handoff (host would refuse the secret) | Fix the var at the host as its `action` says (e.g. split a multi-environment var per environment in the Vercel dashboard), then `plan` again. |
 
