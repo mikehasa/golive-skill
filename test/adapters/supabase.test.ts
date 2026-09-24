@@ -1201,7 +1201,9 @@ describe('supabaseAuthedProbe (the app\'s own session, not anonymity)', () => {
     expect(r).toEqual({ status: 200, rows: 0 });
     expect(calls[0]!.url).toBe(`https://${REF}.supabase.co/rest/v1/todos?select=*&limit=1`);
     expect(calls[0]!.headers.apikey).toBe(PUB_KEY);
-    expect(calls[0]!.headers.authorization).toBe(token.reveal());
+    // The session token carries the `Bearer` scheme: PostgREST reads the value after it, and a bare
+    // JWT resolves to the anonymous role, so the probe would measure the wrong role silently.
+    expect(calls[0]!.headers.authorization).toBe(`Bearer ${token.reveal()}`);
     expect(calls[0]!.headers['accept-profile']).toBe('api');
   });
 

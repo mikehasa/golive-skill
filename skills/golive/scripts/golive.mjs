@@ -8059,7 +8059,8 @@ function view(status, u) {
   return { status, ...id2 ? { id: id2 } : {}, ...email ? { email } : {}, ...id2 ? { emailConfirmed: confirmedOf(u) } : {} };
 }
 function publicHeaders(key, token2) {
-  const bearer2 = token2 ?? (key instanceof Secret ? new Secret(key.name, `Bearer ${key.reveal()}`) : `Bearer ${key}`);
+  const value = token2 ?? key;
+  const bearer2 = value instanceof Secret ? new Secret(value.name, `Bearer ${value.reveal()}`) : `Bearer ${value}`;
   return { apikey: key, Authorization: bearer2, Accept: "application/json" };
 }
 function adminHeaders(key) {
@@ -8920,7 +8921,7 @@ async function supabaseRestProbe(ctx, ref3, table, schema, publishableKey2) {
 }
 async function supabaseAuthedProbe(ctx, ref3, table, schema, publishableKey2, accessToken) {
   assertRef(ref3);
-  const headers = { apikey: publishableKey2, Authorization: accessToken, Accept: "application/json" };
+  const headers = { apikey: publishableKey2, Authorization: new Secret(accessToken.name, `Bearer ${accessToken.reveal()}`), Accept: "application/json" };
   if (schema && schema !== "public") headers["Accept-Profile"] = schema;
   const res = await ctx.http({ url: `https://${ref3}.supabase.co/rest/v1/${encodeURIComponent(table)}?select=*&limit=1`, headers });
   const rows = res.status === 200 && Array.isArray(res.json) ? res.json.length : 0;

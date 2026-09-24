@@ -97,9 +97,16 @@ const base = (ref: string): string => `https://${ref}.supabase.co/auth/v1`;
 /**
  * The public key as the browser client sends it: on `apikey`, and on `Authorization` unless a session
  * token replaces it. Both key shapes work this way (sb_publishable_… and a legacy anon JWT).
+ *
+ * Whatever travels on `Authorization` carries the `Bearer` scheme, the key and a session token alike.
+ * GoTrue reads a scheme-less value as no token at all and answers 401 `no_authorization` ("This
+ * endpoint requires a valid Bearer token"), which makes an authenticated call indistinguishable from
+ * an anonymous one. The header value stays inside a `Secret` (under the name of the value it carries)
+ * so only the transport boundary reveals it.
  */
 function publicHeaders(key: Value, token?: Secret): Record<string, string | Secret> {
-  const bearer = token ?? (key instanceof Secret ? new Secret(key.name, `Bearer ${key.reveal()}`) : `Bearer ${key}`);
+  const value = token ?? key;
+  const bearer = value instanceof Secret ? new Secret(value.name, `Bearer ${value.reveal()}`) : `Bearer ${value}`;
   return { apikey: key, Authorization: bearer, Accept: 'application/json' };
 }
 
