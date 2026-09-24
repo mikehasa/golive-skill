@@ -222,11 +222,14 @@ live-tested milestones**, not a finished category or a completed checklist for y
 - [ ] 🗺️ **Security and abuse controls:** access policies, exposed credentials, security headers,
   rate limits and bot protection. Scoped RLS/advisor and credential-pattern checks exist today.
 - [ ] 🗺️ **Monitoring and alerts:** error tracking, logs, uptime and actionable alerts.
-  Provider suggestions are guided today; verified setup is planned.
+  Provider suggestions are guided today; verified setup is planned. On-demand drift checks exist
+  (`golive status`, below) — continuous monitoring and alerting do not.
 - [ ] 🗺️ **Product analytics:** event validation and consent/data settings, beyond today's guided
   provider suggestions.
 - [ ] 🗺️ **CI/CD and safe releases:** previews, release checks, promotion, rollback and drift
-  detection, building on today's approved CLI deployments.
+  detection, building on today's approved CLI deployments. Drift detection exists as the read-only
+  `golive status` command below (implemented, not yet exercised against a real account); previews,
+  promotion and rollback are still planned.
 - [ ] 🗺️ **Backups and recovery:** retention, restore drills, incident steps and approved cleanup.
   Approved `teardown` removes what golive created; backups and any restore remain manual, supervised work.
 - [x] ✅ **Uninstall / teardown:** ~~an approved inventory of golive-created resources and their removal.~~
@@ -241,7 +244,9 @@ live-tested milestones**, not a finished category or a completed checklist for y
 - [ ] 🚧 **Ownership and handover:** accounts, resources, access, renewal responsibilities and
   maintenance instructions. `golive handoff --write` records the login route, ownership proofs,
   recurring jobs and removal gates in `GOLIVE_HANDOVER.md`, tagging every row as verified, recorded,
-  not verifiable or unknown. Drift detection and a `status` command are not built yet.
+  not verifiable or unknown, and `golive status` re-reads those subjects on demand: it compares the
+  baselines golive recorded with the providers as they are now, and names what it could not read.
+  Drift re-baselining stays manual and approved — the command is implemented, not yet live-validated.
 
 Some steps will always need a person: accepting terms, identity verification, purchases, billing
 choices and reviews that a provider requires. “Guided” should still mean a clear next action,
@@ -291,6 +296,18 @@ not verifiable by golive or unknown; golive read no billing data, so no cost fig
 files contain no secret values, but secret-free metadata can still identify private resources —
 review them before sharing. `--write` never overwrites a file golive did not generate unless
 `--force` is passed.
+
+`golive status` asks the follow-up question: has anything changed behind golive's back since it
+recorded what it did? It compares recorded baselines — the DNS records golive wrote, the environment
+variable **names** it delivered, the registered webhook endpoint, the domain attachment, the database
+project and its connection selectors, the sending domain, the payment account behind the app's keys,
+the host project — with reads taken now, and labels both sides: `expected (recorded by golive <time>)`
+against `observed (read now)`. Each item says who can act: re-run a check, re-plan and apply an
+approved change, or a decision only a human can make. It is read-only: no report file, no provider
+write, no state change, and it exits with `2` when something needs acting on. A provider it cannot read
+is reported as unverifiable — never as clean, and never as a failure — and it never re-baselines
+anything by itself. Drift is deliberately not a gate: `plan`, `apply` and `verify` never consult it.
+Like the Supabase auth path, `status` is **implemented but not yet live-validated**.
 
 ## Credentials and control
 

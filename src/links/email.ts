@@ -1,5 +1,6 @@
 import type { Link } from '../core/plan.js';
 import type { Adapter, Ctx, DnsRecord, DnsZone, EnvStore, EnvTarget, HandoffItem, KeyIssuer, SendingDomain, Step } from '../core/types.js';
+import { rememberDnsWrite } from '../core/dns-baseline.js';
 import { axisStatus, decideEnv, deps, envPreview, errMsg, intentOf, memo, namesFor, observeNames, projectIntent, ready, secretBlocked, step, track, verifyEnvWritten, writeEnv, writesProduction } from './util.js';
 
 type Target = Exclude<EnvTarget, 'development'>;
@@ -85,7 +86,11 @@ function dnsStep(ctx: Ctx, adapter: Adapter, sd: SendingDomain, domain: string, 
     async run(sctx) {
       const { records } = await sd.ensure(sctx, domain);
       const changes: string[] = [];
-      for (const rec of records) changes.push(`${await zone.upsert(sctx, domain, { ...rec, proxied: false })}: ${formatRecord(rec)}`);
+      for (const rec of records) {
+        const outcome = await zone.upsert(sctx, domain, { ...rec, proxied: false });
+        rememberDnsWrite(sctx, domain, dnsAdapter.id, rec, outcome); // what drift compares against later
+        changes.push(`${outcome}: ${formatRecord(rec)}`);
+      }
       return { changes };
     },
   });

@@ -69,8 +69,8 @@ function redact(text) {
   for (const v of values) {
     if (out.includes(v)) out = out.split(v).join(`[redacted ${registry.get(v)} fp:${fingerprint(v)}]`);
   }
-  for (const [re, label2] of PATTERNS) {
-    out = out.replace(re, (m, g1) => label2 === "db-password" && typeof g1 === "string" ? `${g1}[redacted]@` : `[redacted ${label2}]`);
+  for (const [re, label3] of PATTERNS) {
+    out = out.replace(re, (m, g1) => label3 === "db-password" && typeof g1 === "string" ? `${g1}[redacted]@` : `[redacted ${label3}]`);
   }
   return out;
 }
@@ -7811,34 +7811,34 @@ var init_credentials = __esm({
 });
 
 // src/adapters/supabase-credentials.ts
-import { closeSync as closeSync6, constants as constants6, fstatSync as fstatSync6, lstatSync as lstatSync6, openSync as openSync6, readFileSync as readFileSync8 } from "node:fs";
+import { closeSync as closeSync5, constants as constants5, fstatSync as fstatSync5, lstatSync as lstatSync5, openSync as openSync5, readFileSync as readFileSync7 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { dirname as dirname7, isAbsolute as isAbsolute3, join as join9 } from "node:path";
+import { dirname as dirname6, isAbsolute as isAbsolute3, join as join7 } from "node:path";
 function storedFile(path, secret) {
   let fd;
   try {
-    let parent = dirname7(path);
-    while (parent !== dirname7(parent)) {
-      const stat2 = lstatSync6(parent);
+    let parent = dirname6(path);
+    while (parent !== dirname6(parent)) {
+      const stat2 = lstatSync5(parent);
       if (stat2.isSymbolicLink() || !stat2.isDirectory()) throw failure("Supabase CLI storage contains an unsafe path.");
       const owned3 = stat2.uid === 0 || !process.getuid || stat2.uid === process.getuid();
       const protectedTemp = stat2.uid === 0 && (stat2.mode & 512) !== 0;
       if (!owned3 || (stat2.mode & 18) !== 0 && !protectedTemp) throw failure("Supabase CLI storage has an unsafe writable or untrusted parent directory.");
-      parent = dirname7(parent);
+      parent = dirname6(parent);
     }
-    const before = lstatSync6(path);
+    const before = lstatSync5(path);
     const valid = (s) => s.isFile() && s.nlink === 1 && s.size <= 4096 && (!process.getuid || s.uid === process.getuid()) && (s.mode & (secret ? 63 : 18)) === 0;
     if (before.isSymbolicLink() || !valid(before)) throw failure("Supabase CLI storage is not an owner-private regular file.");
-    fd = openSync6(path, constants6.O_RDONLY | constants6.O_NOFOLLOW | constants6.O_NONBLOCK);
-    const current3 = fstatSync6(fd);
+    fd = openSync5(path, constants5.O_RDONLY | constants5.O_NOFOLLOW | constants5.O_NONBLOCK);
+    const current3 = fstatSync5(fd);
     if (!valid(current3) || current3.ino !== before.ino || current3.dev !== before.dev) throw failure("Supabase CLI storage changed while being read.");
-    return readFileSync8(fd, "utf8");
+    return readFileSync7(fd, "utf8");
   } catch (e) {
     if (e?.code === "ENOENT") return void 0;
     if (e instanceof SupabaseCredentialError) throw e;
     throw failure("Supabase CLI storage could not be safely read.");
   } finally {
-    if (fd !== void 0) closeSync6(fd);
+    if (fd !== void 0) closeSync5(fd);
   }
 }
 function credential(value, keychain = false) {
@@ -7866,14 +7866,14 @@ async function readSupabaseCliCredential(ctx, options = {}) {
   }
   const platform2 = options.platform ?? process.platform;
   if (platform2 === "win32") throw failure("Windows Credential Manager reuse is not implemented by golive.");
-  const root = ctx.env("SUPABASE_HOME")?.trim() || join9(options.home ?? homedir3(), ".supabase");
+  const root = ctx.env("SUPABASE_HOME")?.trim() || join7(options.home ?? homedir3(), ".supabase");
   if (!isAbsolute3(root)) throw failure("SUPABASE_HOME must be an absolute path for safe credential reuse.");
-  const profile = ctx.env("SUPABASE_PROFILE") || storedFile(join9(root, "profile"), false)?.trim() || "supabase";
+  const profile = ctx.env("SUPABASE_PROFILE") || storedFile(join7(root, "profile"), false)?.trim() || "supabase";
   if (profile.toLowerCase() !== "supabase") throw failure("The selected Supabase CLI profile is not the supported production supabase profile; golive will not use another profile or API.");
   const noKeyring = ctx.env("SUPABASE_NO_KEYRING") === "1";
   const wsl = options.wsl ?? (platform2 === "linux" && (() => {
     try {
-      return /WSL|Microsoft/.test(readFileSync8("/proc/sys/kernel/osrelease", "utf8"));
+      return /WSL|Microsoft/.test(readFileSync7("/proc/sys/kernel/osrelease", "utf8"));
     } catch {
       return false;
     }
@@ -7891,7 +7891,7 @@ async function readSupabaseCliCredential(ctx, options = {}) {
       if (result2.code !== 44) throw failure("Supabase CLI Keychain access was denied or unavailable; no fallback account was tried. Unlock the keychain and allow the read when macOS asks.");
     }
   }
-  const file = storedFile(join9(root, "access-token"), true);
+  const file = storedFile(join7(root, "access-token"), true);
   return file === void 0 ? void 0 : credential(file);
 }
 async function supabaseCredential(ctx) {
@@ -7916,8 +7916,8 @@ var init_supabase_credentials = __esm({
 });
 
 // src/adapters/supabase-api.ts
-import { existsSync as existsSync4, readFileSync as readFileSync9 } from "node:fs";
-import { join as join10 } from "node:path";
+import { existsSync as existsSync4, readFileSync as readFileSync8 } from "node:fs";
+import { join as join8 } from "node:path";
 function tokenHelp() {
   return `At https://supabase.com/dashboard/account/tokens, create a token scoped to the existing project and the operations needed (API Keys and API Key Secrets Read to reveal keys; Auth Config Read to inspect auth, plus Auth Config and Project Settings Read-write to update it). Creating projects also needs organization/account management access to the intended organization; project-scoped Full access is not enough. In the current Dashboard rollout, that option may be under experimental API tokens; check the token's access scope, not just the Full access label. Use a short expiry. ${tokenHowTo(TOKEN_ENV)}`;
 }
@@ -7929,9 +7929,9 @@ function assertRef(ref3) {
   return ref3;
 }
 function linkedRef(cwd) {
-  const p = join10(cwd, "supabase", ".temp", "project-ref");
+  const p = join8(cwd, "supabase", ".temp", "project-ref");
   if (!existsSync4(p)) return void 0;
-  const ref3 = readFileSync9(p, "utf8").trim();
+  const ref3 = readFileSync8(p, "utf8").trim();
   return REF_RE.test(ref3) ? ref3 : void 0;
 }
 function messageOf(json2) {
@@ -8049,9 +8049,9 @@ __export(supabase_exports, {
   tablesSql: () => tablesSql,
   usesPrisma: () => usesPrisma
 });
-import { randomBytes as randomBytes2 } from "node:crypto";
-import { basename as basename5 } from "node:path";
-async function auth2(ctx) {
+import { randomBytes } from "node:crypto";
+import { basename as basename3 } from "node:path";
+async function auth(ctx) {
   let tok;
   try {
     tok = await supabaseCredential(ctx);
@@ -8113,7 +8113,7 @@ async function scopedAuth(ctx, tok) {
   }
   if (!ref3) {
     try {
-      const target = await creationTarget2(ctx);
+      const target = await creationTarget(ctx);
       return { ok: true, via: `${via} (organization-scoped read access verified for Free organization ${target.scope.id}; creation write permission unverified; plan/apply checks the destination and permissions)` };
     } catch {
       return { ok: false, howToFix: `This token can list projects but cannot read the user profile (HTTP 403), and no existing project is explicitly selected. golive could not verify one eligible Free organization through organization discovery and plan details. Select an accessible existing project with \`golive init --project db=<ref>\`, or check Organizations Read and Organization Settings Read access to the intended Free organization (with Organization Projects Read-write to create). An empty or denied organization list does not prove creation access; project-scoped Full access does not grant that. ${help2}` };
@@ -8143,7 +8143,7 @@ async function tokenNeeds(ctx) {
   return needs;
 }
 function repoName2(ctx) {
-  const s = basename5(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
+  const s = basename3(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
   return s || "app";
 }
 async function cliOrgs(ctx) {
@@ -8185,7 +8185,7 @@ async function listProjects(ctx) {
   }
   return out;
 }
-function remember2(ctx, ref3) {
+function remember(ctx, ref3) {
   ctx.state.save((s) => {
     s.resources[STATE_REF] = ref3;
   });
@@ -8269,10 +8269,10 @@ async function select(ctx, idOrName) {
     throw new SupabaseError(`No Supabase project "${idOrName}" in this account. Available: ${names}.`);
   }
   await ensureUsable(ctx, p);
-  remember2(ctx, p.id);
+  remember(ctx, p.id);
   return { id: p.id, name: p.name, ...p.org ? { scope: { kind: "organization", id: p.org } } : {} };
 }
-async function resolveProject2(ctx, idOrName) {
+async function resolveProject(ctx, idOrName) {
   const all = await listProjects(ctx);
   const byId = all.find((p2) => p2.id === idOrName);
   const matches3 = byId ? [byId] : all.filter((p2) => p2.name === idOrName);
@@ -8324,12 +8324,12 @@ async function freeOrg(ctx, tok) {
   if (free.length > 1) throw new SupabaseError(`Several free Supabase organizations (${free.join(", ")}); create the project in the one you want at https://supabase.com/dashboard/new, then select it.`);
   return free[0];
 }
-async function creationTarget2(ctx) {
+async function creationTarget(ctx) {
   const tok = await supabaseCredential(ctx);
   if (!tok) throw needToken("Selecting a Supabase organization for creation");
   const id2 = await freeOrg(ctx, tok);
-  const label2 = ctx.cache.get(`supabase.orgName:${id2}`);
-  return { scope: { kind: "organization", id: id2, ...typeof label2 === "string" ? { name: label2 } : {} }, region: regionSelection(ctx.config).code };
+  const label3 = ctx.cache.get(`supabase.orgName:${id2}`);
+  return { scope: { kind: "organization", id: id2, ...typeof label3 === "string" ? { name: label3 } : {} }, region: regionSelection(ctx.config).code };
 }
 async function projectStatus(ctx, ref3) {
   const tok = await supabaseCredential(ctx);
@@ -8359,7 +8359,7 @@ async function create(ctx, name3, approvedTarget) {
   const tok = await supabaseCredential(ctx);
   if (!tok) throw needToken("Creating a Supabase project");
   if (approvedTarget) {
-    const now = await creationTarget2(ctx);
+    const now = await creationTarget(ctx);
     if (now.scope.kind !== approvedTarget.scope.kind || now.scope.id !== approvedTarget.scope.id || now.region !== approvedTarget.region) {
       throw new SupabaseError("Supabase project organization or region changed since approval; run `plan` again and re-approve. Nothing was created.");
     }
@@ -8373,7 +8373,7 @@ async function create(ctx, name3, approvedTarget) {
     if (ok) {
       ctx.log.info(`adopting existing Supabase project ${ok.name} (${ok.id})`);
       await ensureUsable(ctx, ok);
-      remember2(ctx, ok.id);
+      remember(ctx, ok.id);
       return { id: ok.id, name: ok.name };
     }
     const why = sameName2.map((p) => `${p.id}: ${notAdoptable(p, home)}`).join("; ");
@@ -8383,7 +8383,7 @@ async function create(ctx, name3, approvedTarget) {
   }
   const org = approvedTarget?.scope.id ?? await freeOrg(ctx, tok);
   const before = new Set(all.map((p) => p.id));
-  const dbPass = new Secret("SUPABASE_DB_PASSWORD", randomBytes2(24).toString("base64url"));
+  const dbPass = new Secret("SUPABASE_DB_PASSWORD", randomBytes(24).toString("base64url"));
   let created;
   try {
     created = await api(
@@ -8408,7 +8408,7 @@ async function create(ctx, name3, approvedTarget) {
   }
   const ref3 = assertRef(refOf(created ?? {}));
   if (approvedTarget) {
-    const actualOrg = typeof created.organization_slug === "string" ? created.organization_slug : (await resolveProject2(ctx, ref3)).scope?.id;
+    const actualOrg = typeof created.organization_slug === "string" ? created.organization_slug : (await resolveProject(ctx, ref3)).scope?.id;
     if (actualOrg !== approvedTarget.scope.id) throw new SupabaseError("Supabase returned an unexpected project organization; inspect the created resource before continuing.");
   }
   vaultPut(dbPassKey(ref3), dbPass);
@@ -8500,7 +8500,7 @@ async function passwordResettable(ctx, ref3) {
   return ctx.state.resource(STATE_CREATED) === ref3 && !vaultGet(dbPassKey(ref3)) && !dbUrlWritten(ctx, ref3) && await supabaseCredential(ctx) !== void 0;
 }
 async function resetDbPassword(ctx, tok, ref3) {
-  const pass2 = new Secret("SUPABASE_DB_PASSWORD", randomBytes2(24).toString("base64url"));
+  const pass2 = new Secret("SUPABASE_DB_PASSWORD", randomBytes(24).toString("base64url"));
   await api(ctx, tok, "PATCH", `/projects/${ref3}/database/password`, "Setting a new database password on the Supabase project golive created", { password: pass2 }, { idempotent: true });
   vaultPut(dbPassKey(ref3), pass2);
   ctx.log.info(`set a new generated database password on Supabase project ${ref3} (created by golive; the one generated at creation was lost with the run that created it, and nothing used it yet)`);
@@ -8803,9 +8803,9 @@ var init_supabase = __esm({
       axes: ["db", "auth"],
       automated: true,
       detect,
-      auth: auth2,
+      auth,
       capabilities: {
-        project: { current, candidates, select, create, resolve: resolveProject2, creationTarget: creationTarget2 },
+        project: { current, candidates, select, create, resolve: resolveProject, creationTarget },
         outputs: { outputs, provides },
         dbAdmin: { tables, advisors },
         authConfig: { get: getAuth, set: setAuth }
@@ -8937,8 +8937,8 @@ __export(stripe_exports, {
   stripeAdapter: () => stripeAdapter,
   stripeKeyFor: () => stripeKeyFor
 });
-import { createHash as createHash6, randomUUID as randomUUID3 } from "node:crypto";
-import { basename as basename6 } from "node:path";
+import { createHash as createHash5, randomUUID as randomUUID3 } from "node:crypto";
+import { basename as basename4 } from "node:path";
 function modesInUse(ctx) {
   const modes = new Set(ctx.config.targets.map((t) => modeFor(ctx.config, t)));
   if (modes.size === 0) modes.add("test");
@@ -8983,7 +8983,7 @@ async function cliHint(ctx) {
     return "";
   }
 }
-async function auth3(ctx) {
+async function auth2(ctx) {
   const modes = modesInUse(ctx);
   const missing = [];
   const problems = [];
@@ -9052,7 +9052,7 @@ function pick(raw2) {
   return { id: raw2.id, url: raw2.url, events: raw2.enabled_events ?? [], enabled: raw2.status === "enabled", metadata: raw2.metadata ?? {} };
 }
 function appName(ctx) {
-  return basename6(ctx.cwd) || "app";
+  return basename4(ctx.cwd) || "app";
 }
 function isGolive(e) {
   return e.metadata.managed_by === "golive";
@@ -9244,7 +9244,7 @@ var init_stripe = __esm({
     init_stripe_api();
     MAX_ENDPOINTS_PER_MODE = 16;
     validAccountId = (id2) => typeof id2 === "string" && /^acct_[A-Za-z0-9]+$/.test(id2);
-    operatorFingerprint = (key) => createHash6("sha256").update(key.reveal()).digest("hex");
+    operatorFingerprint = (key) => createHash5("sha256").update(key.reveal()).digest("hex");
     paymentAccount = {
       identify: (ctx, mode) => paymentIdentity(pinnedCredentials(ctx, mode), mode),
       async bind(ctx, approved, options) {
@@ -9272,7 +9272,7 @@ var init_stripe = __esm({
       axes: ["payments"],
       automated: true,
       detect: (d) => d.providers.payments?.includes("stripe") ?? false,
-      auth: auth3,
+      auth: auth2,
       capabilities: { outputs: { outputs: outputs2, provides: provides2 }, webhooks, paymentAccount }
     };
   }
@@ -10221,13 +10221,13 @@ async function availableKeys(ctx, outputs4, target, requestedKeys) {
 }
 var OUTPUT_KEYS = ["supabase.url", "supabase.publishableKey", "supabase.secretKey", "db.url", "db.directUrl", "stripe.secretKey", "stripe.publishableKey", "stripe.webhookSecret", "resend.apiKey", "app.url"];
 function exposure(ctx) {
-  const seen = /* @__PURE__ */ new Set();
+  const seen2 = /* @__PURE__ */ new Set();
   const findings = [];
   for (const f of [...ctx.detect.findings ?? [], ...mapEnv(ctx.detect.envRefs).findings]) {
     if (f.severity !== "critical") continue;
     const k = `${f.id}|${f.title}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
+    if (seen2.has(k)) continue;
+    seen2.add(k);
     findings.push(f);
   }
   const out = { findings, all: false, names: /* @__PURE__ */ new Set() };
@@ -10339,11 +10339,11 @@ async function dnsInventory(ctx) {
     return a.domain === b.domain ? 0 : a.domain < b.domain ? -1 : 1;
   });
   const out = [];
-  const seen = /* @__PURE__ */ new Set();
+  const seen2 = /* @__PURE__ */ new Set();
   for (const c of candidates3) {
     const unique = `${c.domain}|${recordKey(c.record)}`;
-    if (seen.has(unique)) continue;
-    seen.add(unique);
+    if (seen2.has(unique)) continue;
+    seen2.add(unique);
     out.push({ provider: s.adapter.id, providerTitle: s.adapter.title, domain: c.domain, record: c.record, adapter: s.adapter, listOwned, remove: remove2 });
   }
   return out;
@@ -10401,6 +10401,59 @@ function recordedInventory(ctx) {
 
 // src/core/teardown.ts
 init_secret();
+
+// src/core/dns-baseline.ts
+var DNS_BASELINE_PREFIX = "dns:";
+var BASELINE_TYPES = /* @__PURE__ */ new Set(["A", "AAAA", "CNAME", "TXT", "MX", "CAA"]);
+var normName = (n) => n.trim().replace(/\.$/, "").toLowerCase();
+function dnsBaselineKey(zone, record2) {
+  return `${DNS_BASELINE_PREFIX}${normName(zone)}|${record2.type}|${normName(record2.name)}`;
+}
+function rememberDnsWrite(sctx, zone, provider, record2, outcome) {
+  const key = dnsBaselineKey(zone, record2);
+  const at = outcome === "unchanged" ? parseBaseline(sctx.state.resource(key))?.at ?? (/* @__PURE__ */ new Date()).toISOString() : (/* @__PURE__ */ new Date()).toISOString();
+  const baseline = {
+    provider,
+    zone: normName(zone),
+    type: record2.type,
+    name: normName(record2.name),
+    content: record2.content,
+    ...record2.priority !== void 0 ? { priority: record2.priority } : {},
+    at
+  };
+  sctx.remember(key, JSON.stringify(baseline));
+}
+function readDnsBaselines(state) {
+  const out = [];
+  for (const [key, value] of Object.entries(state.resources).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
+    if (!key.startsWith(DNS_BASELINE_PREFIX)) continue;
+    const b = parseBaseline(value);
+    if (b) out.push(b);
+  }
+  return out;
+}
+function parseBaseline(value) {
+  if (!value) return null;
+  let raw2;
+  try {
+    raw2 = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  const b = raw2;
+  if (typeof b !== "object" || b === null) return null;
+  if (typeof b.provider !== "string" || typeof b.zone !== "string" || typeof b.type !== "string" || !BASELINE_TYPES.has(b.type)) return null;
+  if (typeof b.name !== "string" || typeof b.content !== "string" || typeof b.at !== "string") return null;
+  return {
+    provider: b.provider,
+    zone: normName(b.zone),
+    type: b.type,
+    name: normName(b.name),
+    content: b.content,
+    ...typeof b.priority === "number" ? { priority: b.priority } : {},
+    at: b.at
+  };
+}
 
 // src/links/email.ts
 function emailDomain(ctx) {
@@ -10468,7 +10521,11 @@ function dnsStep(ctx, adapter, sd, domain, dnsAdapter, zone, intent) {
     async run(sctx) {
       const { records: records3 } = await sd.ensure(sctx, domain);
       const changes = [];
-      for (const rec of records3) changes.push(`${await zone.upsert(sctx, domain, { ...rec, proxied: false })}: ${formatRecord(rec)}`);
+      for (const rec of records3) {
+        const outcome = await zone.upsert(sctx, domain, { ...rec, proxied: false });
+        rememberDnsWrite(sctx, domain, dnsAdapter.id, rec, outcome);
+        changes.push(`${outcome}: ${formatRecord(rec)}`);
+      }
       return { changes };
     }
   });
@@ -10746,13 +10803,13 @@ function projectTeardown(project) {
   return { steps: [projectStep(project)], handoffs: [] };
 }
 function projectStep(p) {
-  const label2 = p.name ? `${p.name} (${p.id})` : p.id;
+  const label3 = p.name ? `${p.name} (${p.id})` : p.id;
   return step({
     id: "teardown:project:hosting",
     title: `Delete the ${p.providerTitle} project golive created`,
     kind: "destroy",
     risk: { writes: true, destroy: true },
-    preview: [`delete the ${p.providerTitle} project ${label2} \u2014 golive created it`],
+    preview: [`delete the ${p.providerTitle} project ${label3} \u2014 golive created it`],
     intent: intentOf({ provider: p.provider, project: p.id }),
     async run(sctx) {
       const r = await p.remove(sctx);
@@ -10796,12 +10853,1467 @@ async function approvedPlan(ctx, approvedId, forward) {
   return plan;
 }
 
+// src/core/drift.ts
+init_config();
+
+// src/core/doh.ts
+var TYPE_NUM = { 1: "A", 28: "AAAA", 5: "CNAME", 16: "TXT", 15: "MX", 2: "NS", 6: "SOA", 257: "CAA" };
+function normalizeTxt(data) {
+  const parts = data.match(/"((?:[^"\\]|\\.)*)"/g);
+  return parts ? parts.map((p) => p.slice(1, -1).replace(/\\"/g, '"')).join("") : data;
+}
+function norm(type, data) {
+  if (type === "TXT") return normalizeTxt(data);
+  if (type === "CNAME" || type === "NS") return data.replace(/\.$/, "").toLowerCase();
+  if (type === "MX") return data.replace(/\.$/, "").toLowerCase();
+  return data;
+}
+async function resolve4(ctx, name3, type) {
+  const q2 = `name=${encodeURIComponent(name3)}&type=${type}`;
+  const endpoints = [`https://cloudflare-dns.com/dns-query?${q2}`, `https://dns.google/resolve?${q2}`];
+  let lastErr;
+  for (const url of endpoints) {
+    try {
+      const res = await ctx.http({ url, headers: { accept: "application/dns-json" }, timeoutMs: 1e4 });
+      if (res.status !== 200 || !res.json) throw new Error(`DoH ${res.status}`);
+      const map = (rrs = []) => rrs.filter((a) => TYPE_NUM[a.type]).map((a) => ({ name: a.name.replace(/\.$/, "").toLowerCase(), type: TYPE_NUM[a.type], data: norm(TYPE_NUM[a.type], a.data), ttl: a.TTL }));
+      return { status: res.json.Status, answers: map(res.json.Answer), authority: map(res.json.Authority) };
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw new Error(`DNS lookup failed for ${name3} ${type}: ${String(lastErr)}`);
+}
+async function lookup(ctx, name3, type) {
+  const r = await resolve4(ctx, name3, type);
+  return r.answers.filter((a) => a.type === type && a.name === name3.toLowerCase()).map((a) => a.data);
+}
+async function zoneApex(ctx, host) {
+  const r = await resolve4(ctx, host, "SOA");
+  const soa = [...r.answers, ...r.authority].find((a) => a.type === "SOA");
+  return soa ? soa.name : null;
+}
+async function dnsHost(ctx, domain) {
+  const apex = await zoneApex(ctx, domain) ?? domain;
+  const ns = await lookup(ctx, apex, "NS");
+  const provider = ns.some((n) => n.endsWith(".ns.cloudflare.com")) ? "cloudflare" : ns.some((n) => n.endsWith("vercel-dns.com")) ? "vercel" : ns[0] ? ns[0].split(".").slice(-2).join(".") : null;
+  return { provider, nameservers: ns };
+}
+
+// src/checks/domain.ts
+init_http();
+
+// src/checks/util.ts
+init_http();
+init_secret();
+function result(status, severity, evidence, fix) {
+  const out = { status, severity, evidence: evidence.map(redact) };
+  if (fix) out.fix = redact(fix);
+  return out;
+}
+var pass = (evidence) => result("pass", "info", evidence);
+var skip = (why) => result("skip", "info", [why]);
+var RANK = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+function worst(sevs) {
+  return sevs.reduce((a, b) => RANK[b] > RANK[a] ? b : a, "info");
+}
+function isFailing(s) {
+  return RANK[s] >= RANK.high;
+}
+function errMsg2(e) {
+  return redact(e instanceof Error ? e.message : String(e));
+}
+function trimSlash(url) {
+  return url.replace(/\/+$/, "");
+}
+async function baseUrl(ctx, opts = {}) {
+  const target = opts.target ?? "production";
+  if (target === "production" && ctx.config.domain) return `https://${ctx.config.domain}`;
+  const url = cap(ctx, "hosting", "url");
+  const got = url ? await url.get(ctx, target).catch(() => null) : null;
+  return got ? trimSlash(got) : null;
+}
+var blocked = (by, detail) => skip(`blocked by: ${by}${detail ? ` (${detail})` : ""}`);
+var AUTH_OK = "checks:auth-ok:";
+async function authBlock(ctx, axis) {
+  const a = adapterFor(ctx, axis);
+  if (!a || !a.automated) return null;
+  if (ctx.cache.get(AUTH_OK + a.id) === true) return null;
+  try {
+    if ((await a.auth(ctx)).ok) {
+      ctx.cache.set(AUTH_OK + a.id, true);
+      return null;
+    }
+  } catch {
+  }
+  return `login:${a.id}`;
+}
+function projectAxis(ctx, axis) {
+  if (axis === "hosting" || axis === "db") return axis;
+  if (axis === "auth" && ctx.config.stack.auth && ctx.config.stack.auth === ctx.config.stack.db) return "db";
+  return null;
+}
+async function projectBlock(ctx, axis) {
+  const pa = projectAxis(ctx, axis);
+  if (!pa) return null;
+  const linker = cap(ctx, pa, "project");
+  if (!linker) return null;
+  const cur = await linker.current(ctx).catch(() => null);
+  return cur ? null : `project:${pa}`;
+}
+async function prereq(ctx, axis, opts = {}) {
+  const by = await authBlock(ctx, axis) ?? (opts.project === false ? null : await projectBlock(ctx, axis));
+  return by ? blocked(by) : null;
+}
+function hostVariants(host) {
+  const h = host.toLowerCase();
+  return h.startsWith("www.") ? [h, h.slice(4)] : [h, `www.${h}`];
+}
+async function confirmedProductionUrl(ctx) {
+  const claimed = ctx.config.domain ? `https://${ctx.config.domain}` : "the production URL";
+  const cannot = (why) => ({ ok: false, outcome: skip(`cannot confirm ${claimed} belongs to your project yet (${why})`) });
+  const urlCap = cap(ctx, "hosting", "url");
+  if (!urlCap) return cannot(ctx.config.stack.hosting ? `hosting provider ${ctx.config.stack.hosting} can't report its URL (guided)` : "no hosting provider chosen");
+  const pre = await prereq(ctx, "hosting");
+  if (pre) return { ok: false, outcome: pre };
+  let got;
+  try {
+    got = await urlCap.get(ctx, "production");
+  } catch (e) {
+    return cannot(`the host could not report it: ${errMsg2(e)}`);
+  }
+  if (!got) return ctx.config.domain ? cannot("blocked by: deploy:production; the host reports no production URL") : { ok: false, outcome: blocked("deploy:production", "no production deployment yet") };
+  let u;
+  try {
+    u = new URL(got);
+  } catch {
+    return cannot(`the host reported an invalid URL`);
+  }
+  if (u.protocol !== "https:") return cannot(`the host reported a non-https URL ${u.origin}`);
+  for (const h of hostVariants(u.host)) allowHost(h);
+  return { ok: true, url: trimSlash(u.origin + u.pathname) };
+}
+async function probe(ctx, url, opts = {}) {
+  return ctx.http({ url, method: opts.method ?? "GET", body: opts.body, headers: opts.headers, timeoutMs: opts.timeoutMs ?? 2e4 });
+}
+function addressDomain(from) {
+  if (!from) return void 0;
+  const m = /@([^\s>@]+)>?\s*$/.exec(from.trim());
+  return m?.[1]?.toLowerCase();
+}
+function sendingDomainOf(ctx) {
+  return ctx.config.email?.domain ?? addressDomain(ctx.config.email?.from) ?? ctx.config.domain;
+}
+function globMatch(pattern, url) {
+  let re = "";
+  const p = trimSlash(pattern);
+  for (let i = 0; i < p.length; i++) {
+    const c = p[i];
+    if (c === "*" && p[i + 1] === "*") {
+      re += ".*";
+      i++;
+    } else if (c === "*") re += "[^/.]*";
+    else if (c === "?") re += ".";
+    else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${re}$`, "i").test(trimSlash(url));
+}
+function isLocalhost(url) {
+  try {
+    const h = new URL(url).hostname;
+    return h === "localhost" || h.endsWith(".localhost") || h === "127.0.0.1" || h === "0.0.0.0" || h === "[::1]";
+  } catch {
+    return /localhost|127\.0\.0\.1/.test(url);
+  }
+}
+
+// src/checks/domain.ts
+var PROPAGATION_MS = 48 * 60 * 60 * 1e3;
+var HOSTING_DNS_STEP = "domain:dns";
+function recentlyChanged(ctx) {
+  const rec = ctx.state.get().steps[HOSTING_DNS_STEP];
+  return Boolean(rec && rec.status === "done" && Date.now() - Date.parse(rec.at) < PROPAGATION_MS);
+}
+var domainLiveCheck = {
+  id: "domain-live",
+  title: "Custom domain resolves and serves HTTPS",
+  severity: "high",
+  applies: (ctx) => Boolean(ctx.config.domain),
+  async run(ctx) {
+    const d = ctx.config.domain;
+    const evidence = [];
+    const found = [];
+    const errors = [];
+    for (const type of ["A", "AAAA", "CNAME"]) {
+      try {
+        const vals = await lookup(ctx, d, type);
+        if (vals.length) found.push(`${type} ${vals.slice(0, 3).join(", ")}`);
+      } catch (e) {
+        errors.push(`${type}: ${errMsg2(e)}`);
+      }
+    }
+    if (!found.length) {
+      const ev = [`${d} has no A/AAAA/CNAME records in public DNS`, ...errors];
+      if (recentlyChanged(ctx)) return result("warn", "medium", [...ev, "DNS was changed recently: not propagated yet"], "Wait for DNS to propagate (usually minutes, up to 48h), then re-run verify.");
+      return result("fail", "high", ev, `Point ${d} at your host: run \`golive plan\` (automated DNS) or add the records your host lists for ${d} at your DNS provider.`);
+    }
+    evidence.push(`DNS: ${found.join("; ")}`);
+    const attach = cap(ctx, "hosting", "domain");
+    if (attach) {
+      const pre = await prereq(ctx, "hosting");
+      if (pre) return pre;
+      let st;
+      try {
+        st = await attach.status(ctx, d);
+      } catch (e) {
+        return result("skip", "info", [`cannot confirm ${d} is attached to your ${ctx.config.stack.hosting ?? "hosting"} project: the host domain status is unavailable (${errMsg2(e)})`, ...evidence]);
+      }
+      evidence.push(`host reports domain ${st}`);
+      if (st === "misconfigured") return result("fail", "high", evidence, `${d} is not attached to your hosting project or its DNS does not point at the host. Run \`golive plan\` (it attaches the domain and shows the records the host requires) and fix them at your DNS provider.`);
+      if (st === "pending") {
+        return result("warn", "medium", evidence, `The host has not confirmed ${d} yet: DNS may still be propagating, or domain ownership is not verified (e.g. a TXT challenge because the domain was used by another account). Add any records \`golive plan\` lists, apply, then re-run verify.`);
+      }
+    } else {
+      evidence.push(
+        ctx.config.stack.hosting ? `host attachment not confirmed: ${ctx.config.stack.hosting} can't report domain status (guided), so this checks DNS + HTTPS only` : "host attachment not confirmed: no hosting provider chosen, so this checks DNS + HTTPS only"
+      );
+    }
+    const url = `https://${d}/`;
+    for (const h of hostVariants(d)) allowHost(h);
+    let res;
+    try {
+      res = await probe(ctx, url);
+    } catch (e) {
+      return result("fail", "high", [...evidence, `GET ${url} failed (TLS or connection error): ${errMsg2(e)}`], "The certificate may still be issuing (a few minutes after DNS resolves); if it persists, check the domain status in your host dashboard.");
+    }
+    evidence.push(`GET ${url} \u2192 HTTP ${res.status}${res.headers.location ? ` (\u2192 ${res.headers.location})` : ""}`);
+    if (res.status >= 200 && res.status < 400) return pass(evidence);
+    return result("fail", "high", evidence, `${d} resolves and serves TLS but returns HTTP ${res.status}. Check that the domain is attached to the right project and the production deployment is healthy.`);
+  }
+};
+
+// src/checks/providers.ts
+async function restProbe(ctx, ref3, table, schema, publishableKey2) {
+  const { supabaseRestProbe: supabaseRestProbe2 } = await Promise.resolve().then(() => (init_supabase(), supabase_exports));
+  return supabaseRestProbe2(ctx, ref3, table, schema, publishableKey2);
+}
+async function accountStatus(ctx, mode) {
+  const { stripeAccountStatus: stripeAccountStatus2 } = await Promise.resolve().then(() => (init_stripe(), stripe_exports));
+  return stripeAccountStatus2(ctx, mode);
+}
+
+// src/links/domain.ts
+var domainLink = {
+  id: "domain",
+  async plan(ctx) {
+    const domain = ctx.config.domain;
+    if (!domain) return null;
+    const host = await axisStatus(ctx, "hosting");
+    if (host.kind === "none" || host.kind === "unauthed") return null;
+    if (host.kind === "guided" || !host.adapter.capabilities.domain) {
+      const title = host.kind === "guided" ? host.title : host.adapter.title;
+      return { steps: [], handoffs: [manualAttach(title, domain)] };
+    }
+    const attach = host.adapter.capabilities.domain;
+    const status = await attach.status(ctx, domain).catch(() => "pending");
+    if (status === "ok") return null;
+    const records3 = await attach.requiredRecords(ctx, domain).catch(() => null);
+    const project = await projectIntent(ctx, host.adapter);
+    const steps = track(ctx, [attachStep(ctx, host.adapter, attach, domain, project)]);
+    const handoffs = [];
+    const warnings = [];
+    const dns = await dnsFor(ctx, domain);
+    if (dns.kind === "ready") steps.push(...track(ctx, [dnsStep3(ctx, host.adapter, attach, domain, dns.adapter, dns.zone, records3, project)]));
+    else if (dns.kind === "handoff") handoffs.push(dnsHandoff2(host.adapter, domain, dns.where, records3));
+    else if (dns.kind === "error") warnings.push(`${domain}: ${dns.message}`);
+    if (attach.verify) steps.push(...track(ctx, [verifyStep2(ctx, host.adapter, attach.verify.bind(attach), attach, domain, project)]));
+    return { steps, handoffs, warnings };
+  }
+};
+function attachStep(ctx, adapter, attach, domain, project) {
+  const prev = ctx.state.get().steps["domain:attach"];
+  return step({
+    id: "domain:attach",
+    title: `Attach ${domain} to ${adapter.title}`,
+    kind: "wire",
+    risk: { writes: true },
+    dependsOn: deps(ctx, ["project:hosting"]),
+    preview: [`attach ${domain} to the ${adapter.title} project (no-op if already attached)`],
+    intent: intentOf({ project, domain, previous: prev?.at }),
+    async run(sctx) {
+      await attach.add(sctx, domain);
+      return { changes: [`attached ${domain} to ${adapter.title}`] };
+    }
+  });
+}
+var normName2 = (n) => n.trim().replace(/\.$/, "").toLowerCase();
+function normContent(r) {
+  if (r.type === "TXT") return normalizeTxt(r.content).trim();
+  if (r.type === "CNAME" || r.type === "MX") return r.content.trim().replace(/\.$/, "").toLowerCase();
+  return r.content.trim().replace(/\s+/g, " ").toLowerCase();
+}
+var recordKey2 = (r) => `${r.type} ${normName2(r.name)} ${normContent(r)}${r.priority !== void 0 ? ` ${r.priority}` : ""}`;
+var sameRecords = (a, b) => {
+  const ka = [...new Set(a.map(recordKey2))].sort();
+  const kb = [...new Set(b.map(recordKey2))].sort();
+  return ka.length === kb.length && ka.every((k, i) => k === kb[i]);
+};
+var spfTerms = (c) => c.split(/\s+/).filter((t) => t && t !== "v=spf1" && !/^[-~?+]?all$/.test(t));
+function satisfies(have, want) {
+  if (have.type !== want.type || normName2(have.name) !== normName2(want.name)) return false;
+  const h = normContent(have);
+  const w = normContent(want);
+  if (h === w) return true;
+  return want.type === "TXT" && w.startsWith("v=spf1") && h.startsWith("v=spf1") && spfTerms(w).every((t) => spfTerms(h).includes(t));
+}
+function dnsStep3(ctx, adapter, attach, domain, dnsAdapter, zone, planned, project) {
+  let wrote = [];
+  return step({
+    id: "domain:dns",
+    title: `Point ${domain} at ${adapter.title} via ${dnsAdapter.title}`,
+    kind: "wire",
+    risk: { writes: true, dns: true },
+    dependsOn: deps(ctx, ["domain:attach"]),
+    preview: planned?.length ? planned.map((r) => `upsert at ${dnsAdapter.title}: ${formatRecord(r)} (not proxied)`) : [`upsert at ${dnsAdapter.title} the records ${adapter.title} requires for ${domain} (known after attaching)`],
+    intent: intentOf({ project, zone: `${dnsAdapter.id}:${domain}`, records: planned?.length ? planned.map(recordKey2) : ["(after attach)"] }),
+    async run(sctx) {
+      const records3 = await attach.requiredRecords(sctx, domain);
+      if (planned?.length && !sameRecords(planned, records3)) {
+        throw new Error(
+          `the DNS records ${adapter.title} requires for ${domain} changed since the plan was approved (planned: ${planned.map(formatRecord).join("; ")}; now: ${records3.map(formatRecord).join("; ") || "none"}); nothing was changed at ${dnsAdapter.title}. Run \`plan\` again and re-approve with --confirm-dns.`
+        );
+      }
+      const changes = [];
+      for (const rec of records3) {
+        const outcome = await zone.upsert(sctx, domain, { ...rec, proxied: false });
+        rememberDnsWrite(sctx, domain, dnsAdapter.id, rec, outcome);
+        changes.push(`${outcome}: ${formatRecord(rec)}`);
+      }
+      wrote = records3;
+      return { changes };
+    },
+    // Verify what this step wrote (the zone now serves these records). Public resolution, TLS and
+    // HTTP take minutes to hours, so they are checked by `verify` (domain-live), not here.
+    async verifyInline(vctx) {
+      if (!wrote.length) return [];
+      const id2 = "domain:dns:records";
+      const title = `${dnsAdapter.title} zone has the records for ${domain}`;
+      let have;
+      try {
+        have = await zone.list(vctx, domain);
+      } catch (e) {
+        return [{ id: id2, title, status: "warn", severity: "medium", evidence: [`could not list the ${domain} zone to confirm: ${errMsg(e)}`] }];
+      }
+      const missing = wrote.filter((r) => !have.some((h) => satisfies(h, r)));
+      if (missing.length) {
+        return [{ id: id2, title, status: "fail", severity: "high", evidence: [`missing after upsert: ${missing.map(formatRecord).join("; ")}`], fix: `Check the ${domain} zone at ${dnsAdapter.title}, then re-run apply.` }];
+      }
+      return [{ id: id2, title, status: "pass", severity: "info", evidence: wrote.map(formatRecord) }];
+    }
+  });
+}
+function verifyStep2(ctx, adapter, verify2, attach, domain, project) {
+  const prev = ctx.state.get().steps["domain:verify"];
+  return step({
+    id: "domain:verify",
+    title: `Ask ${adapter.title} to verify ${domain}`,
+    kind: "wire",
+    risk: { writes: true },
+    dependsOn: deps(ctx, ["domain:attach", "domain:dns"]),
+    preview: [
+      `ask ${adapter.title} to verify ownership of ${domain} (if another ${adapter.title} account used this domain, a passing check moves it to this project; DNS still propagating is not a failure)`,
+      ...prev ? [`previous request: ${prev.at}`] : []
+    ],
+    intent: intentOf({ project, domain }),
+    async run(sctx) {
+      const changes = [];
+      try {
+        changes.push(`${domain}: ownership ${await verify2(sctx, domain)}`);
+      } catch (e) {
+        changes.push(`verification request not accepted yet: ${errMsg(e)}`);
+      }
+      const status = await attach.status(sctx, domain).catch(() => "pending");
+      changes.push(`${domain}: ${status}${status === "ok" ? "" : " (DNS/TLS may still be propagating; run `plan` again later, and `verify --only domain-live`)"}`);
+      return { changes };
+    }
+  });
+}
+function dnsHandoff2(adapter, domain, where, records3) {
+  const list4 = records3?.length ? `: ${records3.map(formatRecord).join("; ")}` : ` that ${adapter.title} lists for ${domain} after the domain:attach step (run \`plan\` again to print them)`;
+  return {
+    id: "domain:dns",
+    why: `${domain} must point at ${adapter.title}, and its DNS is at a host golive can't write to.`,
+    action: `At ${where}, add the records${list4}. Turn proxying off for them.`,
+    blocking: true,
+    verifiedBy: "domain-live"
+  };
+}
+function manualAttach(title, domain) {
+  return {
+    id: "domain:attach",
+    why: `golive can't attach domains in ${title}.`,
+    action: `In ${title}, add ${domain} as a custom domain and create the DNS records it shows at your DNS host.`,
+    blocking: true,
+    // A guided host's dashboard setting can't be observed; DNS+HTTPS passing doesn't prove it's attached to YOUR project.
+    manual: true,
+    verifiedBy: "domain-live"
+  };
+}
+
+// src/core/drift.ts
+async function detectDrift(ctx) {
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  const read = readOnlyContext(ctx);
+  const c = { items: [], verified: [], notChecked: [], limits: [STANDING_LIMIT] };
+  await dnsItems(read, at, c);
+  await envItems(read, at, c);
+  await webhookItems(read, at, c);
+  await domainItems(read, at, c);
+  await dbItems(read, at, c);
+  await emailItems(read, at, c);
+  keyItems(read, c);
+  await paymentItems(read, at, c);
+  await hostItems(read, at, c);
+  releaseItems(read, at, c);
+  const items = c.items.sort((a, b) => RANK2[a.severity] - RANK2[b.severity] || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const count = (s) => items.filter((i) => i.severity === s).length;
+  return {
+    version: 1,
+    generatedAt: at,
+    release: { name: ctx.release.name, version: ctx.release.version, bundleDigest: ctx.release.bundleDigest, ref: ctx.release.source.ref },
+    app: { root: ctx.cwd, framework: ctx.detect.framework, ...ctx.config.domain ? { domain: ctx.config.domain } : {} },
+    items,
+    verified: [...new Set(c.verified)].sort(),
+    notChecked: c.notChecked,
+    limits: [...new Set(c.limits)],
+    summary: {
+      items: items.length,
+      actionable: items.filter((i) => i.action !== "none").length,
+      unverifiable: items.filter((i) => i.unverifiable === true).length,
+      high: count("high"),
+      medium: count("medium"),
+      info: count("info")
+    }
+  };
+}
+var RANK2 = { high: 0, medium: 1, info: 2 };
+var STANDING_LIMIT = "status compares only what golive recorded (state, provider markers, its own step evidence) with a read taken now; resources created outside golive, and facts no provider read exposes, are outside it.";
+var ENV_VALUE_LIMIT = "env values are not compared: golive stores a fingerprint, and a host that hides sensitive values answers a read with the name alone. A value rotated or replaced outside golive is invisible here.";
+var KEY_READ_LIMIT = "no read exposes whether a sending key golive issued was revoked outside golive: issuing and revoking are the only capabilities a provider gives golive (see `golive teardown`).";
+function readOnlyContext(ctx) {
+  const state = ctx.state;
+  const unchanging = { get: () => state.get(), resource: (k) => state.resource(k), save: () => {
+  } };
+  return { ...ctx, state: unchanging };
+}
+function once(ctx, key, read) {
+  const k = `drift:${key}`;
+  const hit = ctx.cache.get(k);
+  if (hit) return hit;
+  const p = read();
+  ctx.cache.set(k, p);
+  return p;
+}
+var label = (value, b) => `${value} \u2014 recorded by golive ${b.at ?? "at an unknown time"}${b.ref ? ` (${b.ref})` : ""}`;
+var seen = (value, at) => `${value} \u2014 read now ${at}`;
+var normName3 = (n) => n.trim().replace(/\.$/, "").toLowerCase();
+var asRecord = (b) => ({ type: b.type, name: b.name, content: b.content, ...b.priority !== void 0 ? { priority: b.priority } : {} });
+var publicRecord = (type, name3, value) => ({ type, name: name3, content: type === "MX" ? value.replace(/^\d+\s+/, "") : value });
+var withinPropagation = (at) => Boolean(at && Date.now() - Date.parse(at) < PROPAGATION_MS);
+function isUnreadable(e) {
+  const status = e?.status;
+  if (status === 403 || status === 429 || typeof status === "number" && status >= 500) return true;
+  return /\b(network|timeout|timed out|aborted|fetch failed|ENOTFOUND|ETIMEDOUT|ECONNRESET|ECONNREFUSED|socket hang up|rate limit|rate-limit)\b/i.test(errMsg(e));
+}
+function unreadable(s, capability) {
+  if (s.kind === "unauthed") return `the provider is not logged in (${s.status.howToFix ?? s.adapter.title})`;
+  if (s.kind === "guided") return `the provider (${s.title}) is guided, so golive has no ${capability}`;
+  return "the provider is not configured";
+}
+function stepAt(ctx, ...ids) {
+  const steps = ctx.state.get().steps;
+  for (const id2 of ids) if (steps[id2]?.at) return steps[id2].at;
+  return Object.values(steps).map((r) => r.at).sort().at(-1);
+}
+function unread(c, o) {
+  const reason = errMsg(o.reason);
+  c.items.push({
+    id: o.id,
+    class: o.class,
+    subject: o.subject,
+    expected: label(o.expected, o.baseline),
+    observed: `not read now: ${reason}`,
+    baseline: o.baseline,
+    severity: "info",
+    action: "none",
+    unverifiable: true,
+    evidence: [reason, "this is not a finding, and not proof that nothing changed: golive could not read this subject"],
+    ...o.checkId ? { checkId: o.checkId, suggestedAction: `Restore access to the provider, then re-check with \`golive verify --only ${o.checkId}\`.` } : {}
+  });
+  c.notChecked.push({ subject: o.subject, reason });
+}
+var perhapsDeliberate = (what) => `${what} \u2014 this may be intentional; if you changed it, confirm with \`golive verify\`.`;
+async function dnsItems(ctx, at, c) {
+  const baselines = readDnsBaselines(ctx.state.get());
+  const byZone = /* @__PURE__ */ new Map();
+  for (const b of baselines) byZone.set(b.zone, [...byZone.get(b.zone) ?? [], b]);
+  const email = emailDomain(ctx);
+  if (!baselines.length) {
+    const zones = [...new Set([ctx.config.domain, email].filter((z) => Boolean(z)).map(normName3))];
+    if (zones.length) c.notChecked.push({ subject: `${zones.join(", ")} DNS records`, reason: "golive recorded no per-record DNS baseline for this app (no DNS step ran here, or state predates the baselines), so there is nothing to compare record by record" });
+  }
+  if (byZone.size) {
+    const dns = await once(ctx, "axis:dns", () => axisStatus(ctx, "dns"));
+    const zone = dns.kind === "ready" ? dns.adapter.capabilities.dns : void 0;
+    const zoneTitle = dns.kind === "ready" ? dns.adapter.title : ctx.config.stack.dns ?? "the DNS provider";
+    for (const [name3, list4] of byZone) {
+      const subject = `${name3} zone: ${list4.length} record(s) golive wrote`;
+      const baseline = { source: "state", at: list4.map((b) => b.at).sort().at(-1), ref: dnsBaselineKey(name3, list4[0]) };
+      const checkId = ctx.config.domain && normName3(ctx.config.domain) === name3 ? "domain-live" : email && normName3(email) === name3 ? "email-dns" : void 0;
+      if (!zone) {
+        unread(c, {
+          id: `dns:${name3}:provider`,
+          class: "dns-record",
+          subject,
+          expected: list4.map(formatRecord).join("; "),
+          baseline,
+          reason: unreadable(dns, "DNS zone read"),
+          checkId
+        });
+        continue;
+      }
+      let have;
+      try {
+        have = await once(ctx, `dns:list:${name3}`, () => zone.list(ctx, name3));
+      } catch (e) {
+        unread(c, { id: `dns:${name3}:zone`, class: "dns-record", subject, expected: list4.map(formatRecord).join("; "), baseline, reason: `listing the ${name3} zone failed: ${errMsg(e)}`, checkId });
+        continue;
+      }
+      for (const b of list4) await compareRecord(ctx, at, c, name3, b, have, zoneTitle, checkId);
+    }
+  }
+  await delegationItems(ctx, at, c, byZone);
+}
+async function compareRecord(ctx, at, c, zone, b, have, zoneTitle, checkId) {
+  const baseline = { source: "state", at: b.at, ref: dnsBaselineKey(zone, b) };
+  const subject = `${zone}: ${b.type} ${b.name}`;
+  const want = asRecord(b);
+  const match = have.filter((h) => h.type === b.type && normName3(h.name) === b.name);
+  if (!match.length) {
+    c.items.push({
+      id: `dns:${zone}:${b.type}:${b.name}:missing`,
+      class: "dns-record",
+      subject,
+      expected: label(formatRecord(want), baseline),
+      observed: seen(`${zoneTitle} reports no ${b.type} record at ${b.name}`, at),
+      baseline,
+      severity: "high",
+      action: "reconcile",
+      evidence: [`${zoneTitle} no longer lists the ${b.type} record golive wrote at ${b.name}`, `the zone holds ${have.length} record(s), none at that type and name`],
+      suggestedAction: `Re-apply the DNS step (\`golive plan\`, then \`apply\` with --confirm-dns) to restore it; if removing it was deliberate, remove the app's ${zone} domain instead.`,
+      checkId
+    });
+    return;
+  }
+  if (!match.some((h) => satisfies(h, want))) {
+    c.items.push({
+      id: `dns:${zone}:${b.type}:${b.name}:changed`,
+      class: "dns-record",
+      subject,
+      expected: label(formatRecord(want), baseline),
+      observed: seen(match.map(formatRecord).join("; "), at),
+      baseline,
+      severity: "medium",
+      action: "verify",
+      evidence: [`${b.name} exists at ${zoneTitle} but no longer matches what golive wrote`],
+      suggestedAction: perhapsDeliberate(`the ${b.type} record at ${b.name} was changed after golive wrote it`),
+      checkId
+    });
+    return;
+  }
+  let published;
+  try {
+    published = await once(ctx, `doh:${b.type}:${b.name}`, () => lookup(ctx, b.name, b.type));
+  } catch (e) {
+    c.notChecked.push({ subject, reason: `public DNS lookup failed: ${errMsg(e)}` });
+    return;
+  }
+  if (published.some((v) => satisfies(publicRecord(b.type, b.name, v), want))) {
+    c.verified.push(`${subject} is served by public DNS as golive recorded it`);
+    return;
+  }
+  const fresh = withinPropagation(b.at);
+  const hours = Math.round(PROPAGATION_MS / 36e5);
+  c.items.push({
+    id: `dns:${zone}:${b.type}:${b.name}:public`,
+    class: "dns-public",
+    subject,
+    expected: label(formatRecord(want), baseline),
+    observed: seen(published.length ? `public DNS answers ${published.slice(0, 3).join(", ")}` : "public DNS answers nothing", at),
+    baseline,
+    severity: fresh ? "info" : "medium",
+    action: fresh ? "none" : "verify",
+    evidence: [
+      `${zoneTitle} serves ${formatRecord(want)}, public DNS ${published.length ? `answers ${published.slice(0, 3).join(", ")}` : "answers nothing"}`,
+      fresh ? `that write was ${b.at} (${hours}h propagation window): a cached answer or a zone wildcard can answer first, so this is not a change yet` : `that write was ${b.at}, outside the ${hours}h window golive's checks allow for propagation`,
+      "golive never re-baselines on its own: the recorded value stays until an approved write replaces it"
+    ],
+    suggestedAction: fresh ? "Nothing to do yet: re-run `golive status` once the record TTL has passed, and `golive verify` for the end-to-end answer." : `${perhapsDeliberate(`public DNS does not resolve the ${b.type} record golive wrote at ${b.name}`)} Re-run \`golive plan\`/\`apply --confirm-dns\` if the zone should serve it.`,
+    checkId
+  });
+}
+var NS_PROVIDER = {
+  cloudflare: "cloudflare",
+  "cloudflare.com": "cloudflare",
+  vercel: "vercel",
+  "vercel-dns.com": "vercel",
+  "porkbun.com": "porkbun",
+  "domaincontrol.com": "godaddy",
+  "godaddy.com": "godaddy"
+};
+var servedBy = (nameservers, provider) => nameservers.some((ns) => {
+  const h = ns.toLowerCase().replace(/\.$/, "");
+  const known = NS_PROVIDER[h] ?? Object.keys(NS_PROVIDER).find((s) => h.endsWith(`.${s}`));
+  return known ? NS_PROVIDER[known] === provider : h.includes(provider);
+});
+async function delegationItems(ctx, at, c, byZone) {
+  const zones = /* @__PURE__ */ new Map();
+  for (const [zone, list4] of byZone) {
+    const newest = [...list4].sort((x, y) => x.at < y.at ? -1 : 1).at(-1);
+    zones.set(zone, { provider: newest.provider, at: newest.at, ref: dnsBaselineKey(zone, newest), source: "state" });
+  }
+  for (const [stepId, domain] of [["domain:dns", ctx.config.domain], ["email:dns", emailDomain(ctx)]]) {
+    const step2 = ctx.state.get().steps[stepId];
+    if (!domain || step2?.status !== "done" || !ctx.config.stack.dns) continue;
+    const zone = normName3(domain);
+    if (zones.has(zone)) continue;
+    zones.set(zone, { provider: ctx.config.stack.dns, at: step2.at, ref: stepId, source: "step-evidence" });
+  }
+  for (const [zone, rec] of zones) {
+    const subject = `${zone} name servers`;
+    const baseline = { source: rec.source, ...rec.at ? { at: rec.at } : {}, ...rec.ref ? { ref: rec.ref } : {} };
+    let host;
+    try {
+      host = await once(ctx, `ns:${zone}`, () => dnsHost(ctx, zone));
+    } catch (e) {
+      c.notChecked.push({ subject, reason: `public name-server lookup failed: ${errMsg(e)}` });
+      continue;
+    }
+    if (!host.nameservers.length) {
+      c.notChecked.push({ subject, reason: "public DNS answered no NS records for this zone" });
+      continue;
+    }
+    if (servedBy(host.nameservers, rec.provider)) {
+      c.verified.push(`${zone} is still served by the name servers golive recorded for ${rec.provider} (${host.nameservers.join(", ")})`);
+      continue;
+    }
+    c.items.push({
+      id: `dns:${zone}:delegation`,
+      class: "dns-delegation",
+      subject,
+      expected: label(`${rec.provider} serves the ${zone} zone`, baseline),
+      observed: seen(`public name servers are ${host.nameservers.join(", ")}${host.provider ? ` (${host.provider})` : ""}`, at),
+      baseline,
+      severity: "medium",
+      action: "verify",
+      evidence: [
+        `the records golive wrote for ${zone} live in ${rec.provider}; public DNS now answers different name servers`,
+        "a moved zone and a delegated subdomain look the same from outside, and every record above becomes invisible either way"
+      ],
+      suggestedAction: perhapsDeliberate(`${zone} is no longer served by the name servers golive recorded`) + " If the DNS host really moved, re-run `golive plan` so golive writes records where the zone lives.",
+      checkId: "domain-live"
+    });
+  }
+}
+function recordedEnvNames(state) {
+  const byKey = /* @__PURE__ */ new Map();
+  const add = (name3, target, at) => {
+    if (target !== "development" && target !== "preview" && target !== "production") return;
+    byKey.set(`${name3}@${target}`, { name: name3, target, ...at ? { at } : {} });
+  };
+  for (const [key, rec] of Object.entries(state.secrets)) {
+    const m = /^(.*)@([a-z-]+)$/.exec(key);
+    if (m) add(m[1], m[2], rec.at);
+  }
+  for (const key of Object.keys(state.resources)) {
+    const m = /^env:(.*)@([a-z-]+)$/.exec(key);
+    if (m && !byKey.has(`${m[1]}@${m[2]}`)) add(m[1], m[2]);
+  }
+  return [...byKey.values()].sort((a, b) => a.target === b.target ? a.name < b.name ? -1 : 1 : a.target < b.target ? -1 : 1);
+}
+async function envItems(ctx, at, c) {
+  const recorded = recordedEnvNames(ctx.state.get());
+  if (!recorded.length) return;
+  c.limits.push(ENV_VALUE_LIMIT);
+  const host = await once(ctx, "axis:hosting", () => axisStatus(ctx, "hosting"));
+  const env = host.kind === "ready" ? host.adapter.capabilities.env : void 0;
+  const hostTitle = host.kind === "ready" ? host.adapter.title : ctx.config.stack.hosting ?? "the hosting provider";
+  if (!env) {
+    unread(c, {
+      id: "env:names",
+      class: "env-name",
+      subject: `host env names (${recorded.length} recorded)`,
+      expected: recorded.map((r) => `${r.name}@${r.target}`).join(", "),
+      baseline: { source: "state", at: recorded.map((r) => r.at).filter(Boolean).sort().at(-1) },
+      reason: unreadable(host, "host env read"),
+      checkId: "env-parity"
+    });
+  } else {
+    for (const target of [...new Set(recorded.map((r) => r.target))]) {
+      const names = recorded.filter((r) => r.target === target);
+      const subject = `${target} env names at ${hostTitle}`;
+      let present;
+      try {
+        present = new Set(await once(ctx, `env:names:${target}`, () => env.listNames(ctx, target)));
+      } catch (e) {
+        unread(c, { id: `env:${target}`, class: "env-name", subject, expected: names.map((n) => n.name).join(", "), baseline: { source: "state" }, reason: `listing ${target} env names failed: ${errMsg(e)}`, checkId: "env-parity" });
+        continue;
+      }
+      const missing = names.filter((n) => !present.has(n.name));
+      if (!missing.length) {
+        c.verified.push(`${subject}: all ${names.length} name(s) golive delivered are still present`);
+        continue;
+      }
+      for (const m of missing) {
+        c.items.push({
+          id: `env:${target}:${m.name}`,
+          class: "env-name",
+          subject: `${m.name} (${target})`,
+          expected: label(`${m.name} exists in ${target}`, { source: "state", ...m.at ? { at: m.at } : {}, ref: envSourceKey(m.name, target) }),
+          observed: seen(`${hostTitle} reports no ${m.name} in ${target}`, at),
+          baseline: { source: "state", ...m.at ? { at: m.at } : {}, ref: envSourceKey(m.name, target) },
+          severity: "high",
+          action: "reconcile",
+          evidence: [
+            `golive delivered ${m.name} to ${target}${m.at ? ` at ${m.at}` : ""} and the host no longer lists it`,
+            `the app reads ${m.name} at runtime: without it the deployment fails or falls back to a default`
+          ],
+          suggestedAction: `Re-apply the env step (\`golive plan\`, then \`apply\`) or set ${m.name} in the ${hostTitle} dashboard yourself \u2014 never paste the value into chat. Then redeploy.`,
+          checkId: "env-parity"
+        });
+      }
+    }
+  }
+  c.items.push({
+    id: "env:values",
+    class: "env-name",
+    subject: "env values",
+    expected: "the values golive delivered (fingerprints in state, never the values)",
+    observed: "not readable, now or later",
+    baseline: { source: "state" },
+    severity: "info",
+    action: "none",
+    unverifiable: true,
+    evidence: [ENV_VALUE_LIMIT, "treat every env value as unverified by this comparison; rotate one deliberately and golive will re-write it on the next approved apply"],
+    checkId: "env-parity"
+  });
+}
+var WEBHOOK_KEY2 = /^([a-z0-9-]+)\.(test|live)\.webhookEndpointId$/;
+async function webhookItems(ctx, at, c) {
+  const recorded = Object.entries(ctx.state.get().resources).filter(([k]) => WEBHOOK_KEY2.test(k)).map(([key, id2]) => ({ key, id: id2, provider: WEBHOOK_KEY2.exec(key)[1], mode: WEBHOOK_KEY2.exec(key)[2] })).sort((a, b) => a.key < b.key ? -1 : 1);
+  if (!recorded.length) return;
+  const registeredAt = stepAt(ctx, "payments:webhook:production");
+  const pay = await once(ctx, "axis:payments", () => axisStatus(ctx, "payments"));
+  const registry2 = pay.kind === "ready" ? pay.adapter.capabilities.webhooks : void 0;
+  for (const r of recorded) {
+    const subject = `${r.provider} ${r.mode}-mode webhook endpoint ${r.id}`;
+    const baseline = { source: "provider-marker", ...registeredAt ? { at: registeredAt } : {}, ref: r.key };
+    if (!registry2) {
+      unread(c, {
+        id: `webhook:${r.mode}`,
+        class: "webhook-endpoint",
+        subject,
+        expected: `the ${r.mode}-mode endpoint ${r.id} still exists`,
+        baseline,
+        reason: unreadable(pay, "endpoint list"),
+        checkId: "webhook-registered"
+      });
+      continue;
+    }
+    let endpoints;
+    try {
+      endpoints = await once(ctx, `webhooks:list:${r.mode}`, () => registry2.list(ctx, r.mode));
+    } catch (e) {
+      unread(c, { id: `webhook:${r.mode}`, class: "webhook-endpoint", subject, expected: `the ${r.mode}-mode endpoint ${r.id} still exists`, baseline, reason: `listing ${r.mode}-mode endpoints failed: ${errMsg(e)}`, checkId: "webhook-registered" });
+      continue;
+    }
+    const want = ctx.config.payments?.webhook?.events ?? [];
+    const found = endpoints.find((e) => e.id === r.id);
+    if (found) {
+      if (!found.enabled) {
+        c.items.push({
+          id: `webhook:${r.mode}:disabled`,
+          class: "webhook-endpoint",
+          subject,
+          expected: label(`the ${r.mode}-mode endpoint ${r.id} is enabled`, baseline),
+          observed: seen(`endpoint ${r.id} is disabled`, at),
+          baseline,
+          severity: "medium",
+          action: "reconcile",
+          evidence: [`a disabled endpoint receives nothing: ${want.join(", ") || "every configured event"} is not delivered`],
+          suggestedAction: `Re-apply the webhook step (\`golive plan\`, then \`apply\`) or re-enable ${r.id} in the ${r.provider} dashboard; events that arrived while it was disabled are lost.`,
+          checkId: "webhook-registered"
+        });
+        continue;
+      }
+      const missing = found.events.includes("*") ? [] : want.filter((ev) => !found.events.includes(ev));
+      if (missing.length) {
+        c.items.push({
+          id: `webhook:${r.mode}:events`,
+          class: "webhook-endpoint",
+          subject,
+          expected: label(`endpoint ${r.id} covers ${want.join(", ")}`, baseline),
+          observed: seen(`endpoint ${r.id} covers ${found.events.join(", ") || "no events"}`, at),
+          baseline,
+          severity: "medium",
+          action: "reconcile",
+          evidence: [`the app's handler expects ${missing.join(", ")}; the endpoint no longer subscribes to them`],
+          suggestedAction: "Re-apply the webhook step (`golive plan`, then `apply`) to restore the event list.",
+          checkId: "webhook-registered"
+        });
+        continue;
+      }
+      c.verified.push(`${subject} exists, is enabled and covers ${want.length} configured event(s)`);
+      continue;
+    }
+    const url = await once(ctx, "webhook:url", () => webhookUrl(ctx));
+    const replacement = registry2.find && url ? await once(ctx, `webhooks:find:${r.mode}:${url}`, () => registry2.find(ctx, url, r.mode).catch(() => null)) : null;
+    if (replacement) {
+      c.items.push({
+        id: `webhook:${r.mode}:replaced`,
+        class: "webhook-endpoint",
+        subject,
+        expected: label(`the ${r.mode}-mode endpoint golive registered (${r.id})`, baseline),
+        observed: seen(`endpoint ${replacement.id} now serves ${replacement.url}`, at),
+        baseline,
+        severity: "medium",
+        action: "verify",
+        evidence: [
+          `the recorded endpoint is gone; ${replacement.id} answers for the same URL${replacement.owned ? "" : " but was not created by golive"}`,
+          "the signing secret in the app belongs to the recorded endpoint, so signature verification fails until it matches again"
+        ],
+        suggestedAction: `${perhapsDeliberate(`the ${r.mode}-mode webhook endpoint was replaced`)} If ${replacement.id} should receive the events, re-apply the webhook step so the app gets its signing secret.`,
+        checkId: "webhook-registered"
+      });
+      continue;
+    }
+    c.items.push({
+      id: `webhook:${r.mode}:gone`,
+      class: "webhook-endpoint",
+      subject,
+      expected: label(`the ${r.mode}-mode endpoint golive registered (${r.id}) exists`, baseline),
+      observed: seen(`no ${r.mode}-mode endpoint with that id (${endpoints.length} endpoint(s) listed)`, at),
+      baseline,
+      severity: "high",
+      action: "reconcile",
+      evidence: [`the endpoint golive registered is gone: ${want.join(", ") || "the configured events"} is not delivered`, "payments keep being taken while the app never hears about them"],
+      suggestedAction: url ? `Re-apply the webhook step (\`golive plan\`, then \`apply\`): it registers an endpoint for ${url} and stores the new signing secret.` : "Set the app domain or deploy production, then re-apply the webhook step so golive knows which URL to register.",
+      checkId: "webhook-registered"
+    });
+  }
+}
+async function webhookUrl(ctx) {
+  const path = ctx.config.payments?.webhook?.path;
+  if (!path) return null;
+  const base = await once(ctx, "production:url", () => productionUrl(ctx));
+  return base ? joinUrl(base, path) : null;
+}
+async function domainItems(ctx, at, c) {
+  const domain = ctx.config.domain;
+  if (!domain) return;
+  const step2 = ctx.state.get().steps["domain:attach"];
+  if (step2?.status !== "done") {
+    if (ctx.config.stack.hosting) c.notChecked.push({ subject: `${domain} host attachment`, reason: "golive has no completed domain:attach step for this app, so it recorded no attachment to compare" });
+    return;
+  }
+  const baseline = { source: "step-evidence", at: step2.at, ref: "domain:attach" };
+  const subject = `${domain} attachment at ${ctx.config.stack.hosting}`;
+  const host = await once(ctx, "axis:hosting", () => axisStatus(ctx, "hosting"));
+  const attach = host.kind === "ready" ? host.adapter.capabilities.domain : void 0;
+  const hostTitle = host.kind === "ready" ? host.adapter.title : ctx.config.stack.hosting ?? "the hosting provider";
+  if (!attach) {
+    unread(c, {
+      id: "domain:attach",
+      class: "domain-attach",
+      subject,
+      expected: `${domain} is attached`,
+      baseline,
+      reason: unreadable(host, "domain read"),
+      checkId: "domain-live"
+    });
+    return;
+  }
+  let status;
+  try {
+    status = await once(ctx, `domain:status:${domain}`, () => attach.status(ctx, domain));
+  } catch (e) {
+    unread(c, { id: "domain:attach", class: "domain-attach", subject, expected: `${domain} is attached`, baseline, reason: `reading the host's domain status failed: ${errMsg(e)}`, checkId: "domain-live" });
+    return;
+  }
+  if (status === "misconfigured") {
+    c.items.push({
+      id: "domain:attach",
+      class: "domain-attach",
+      subject,
+      expected: label(`${domain} is attached and pointing at this project`, baseline),
+      observed: seen(`${hostTitle} reports the domain misconfigured`, at),
+      baseline,
+      severity: "high",
+      action: "reconcile",
+      evidence: ["the host no longer serves this domain for the project: it was detached, or its DNS stopped pointing at the host"],
+      suggestedAction: "Run `golive plan` and apply the domain:attach / domain:dns steps again (with --confirm-dns); if the domain should move, detach it in the host dashboard instead.",
+      checkId: "domain-live"
+    });
+  } else if (status === "pending") {
+    const fresh = withinPropagation(step2.at);
+    c.items.push({
+      id: "domain:attach",
+      class: "domain-attach",
+      subject,
+      expected: label(`${domain} is attached and verified`, baseline),
+      observed: seen(`${hostTitle} reports the domain pending`, at),
+      baseline,
+      severity: fresh ? "info" : "medium",
+      action: fresh ? "none" : "verify",
+      evidence: [fresh ? `golive asked the host to attach it at ${step2.at} (inside the propagation window)` : `golive attached it at ${step2.at} and the host has still not confirmed it`],
+      suggestedAction: fresh ? "Nothing to do yet: DNS and the host's ownership check take minutes." : `${perhapsDeliberate(`${domain} is still pending at ${hostTitle}`)} Re-run \`golive plan\` so the attach/verify steps are asked again, and \`golive verify --only domain-live\`.`,
+      checkId: "domain-live"
+    });
+  } else {
+    c.verified.push(`${subject}: the host reports the domain ok`);
+  }
+  await requiredRecordItems(ctx, at, c, domain, attach);
+}
+async function requiredRecordItems(ctx, at, c, domain, attach) {
+  if (!attach.requiredRecords) return;
+  const zone = normName3(domain);
+  const baselines = readDnsBaselines(ctx.state.get()).filter((b) => b.zone === zone || b.name === zone || b.name.endsWith(`.${zone}`));
+  if (!baselines.length) return;
+  let required;
+  try {
+    required = await once(ctx, `domain:required:${domain}`, () => attach.requiredRecords(ctx, domain));
+  } catch (e) {
+    c.notChecked.push({ subject: `${domain} records the host requires`, reason: `reading the host's required records failed: ${errMsg(e)}` });
+    return;
+  }
+  for (const rec of required) {
+    const b = baselines.find((x) => x.type === rec.type && x.name === normName3(rec.name));
+    if (!b) {
+      c.items.push({
+        id: `dns:${zone}:required:${rec.type}:${normName3(rec.name)}`,
+        class: "dns-record",
+        subject: `${zone}: ${rec.type} ${normName3(rec.name)} (host requirement)`,
+        expected: "no such record was recorded when golive wrote the DNS",
+        observed: seen(`the host now requires ${formatRecord(rec)}`, at),
+        baseline: { source: "provider-marker", ref: "domain:attach" },
+        severity: "info",
+        action: "none",
+        evidence: ["the host asks for a record golive never wrote (a new ownership challenge or a per-project target)"],
+        suggestedAction: "Nothing to fix here on its own: run `golive plan` and apply the domain:dns step if the domain should publish it.",
+        checkId: "domain-live"
+      });
+      continue;
+    }
+    if (satisfies(asRecord(b), rec)) continue;
+    c.items.push({
+      id: `dns:${zone}:required:${rec.type}:${normName3(rec.name)}`,
+      class: "dns-record",
+      subject: `${zone}: ${rec.type} ${normName3(rec.name)} (host requirement)`,
+      expected: label(formatRecord(rec), { source: "state", at: b.at, ref: dnsBaselineKey(zone, b) }),
+      observed: seen(`the host now requires ${formatRecord(rec)}`, at),
+      baseline: { source: "state", at: b.at, ref: dnsBaselineKey(zone, b) },
+      severity: "medium",
+      action: "reconcile",
+      evidence: [`the host changed the ${rec.type} record it wants at ${normName3(rec.name)}: it asked for ${b.content} when golive wrote it`],
+      suggestedAction: `Run \`golive plan\` and re-approve with --confirm-dns: golive refuses to write records that changed since approval, and the domain stays unverified until they match.`,
+      checkId: "domain-live"
+    });
+  }
+}
+var DB_PROJECT_KEYS = { supabase: "supabase.ref", neon: "neon.projectId" };
+var DB_SELECTOR_FIELDS = { branchId: "branch", branch: "branch", database: "database", role: "role" };
+async function dbItems(ctx, at, c) {
+  const provider = ctx.config.stack.db;
+  if (!provider) return;
+  const projectKey = DB_PROJECT_KEYS[provider] ?? projectStateKeys(provider).id;
+  const recordedId = ctx.state.resource(projectKey);
+  if (!recordedId) {
+    c.notChecked.push({ subject: "database project", reason: `state records no ${provider} project to compare (${projectKey})` });
+    return;
+  }
+  const baseline = { source: "state", at: stepAt(ctx, "project:db"), ref: projectKey };
+  const selectors = Object.entries(DB_SELECTOR_FIELDS).map(([suffix, field]) => ({ field, value: ctx.state.resource(`${provider}.${suffix}`), key: `${provider}.${suffix}` })).filter((s2) => Boolean(s2.value));
+  const subject = `${provider} project ${recordedId}`;
+  const s = await once(ctx, "axis:db", () => axisStatus(ctx, "db"));
+  if (s.kind !== "ready") {
+    unread(c, {
+      id: "db:project",
+      class: "db-selectors",
+      subject,
+      expected: `project ${recordedId} is readable`,
+      baseline,
+      reason: unreadable(s, "project read"),
+      checkId: dbCheckId(adapterFor(ctx, "db"))
+    });
+    return;
+  }
+  const linker = s.adapter.capabilities.project;
+  if (!linker) {
+    unread(c, { id: "db:project", class: "db-selectors", subject, expected: `project ${recordedId} is readable`, baseline, reason: `${s.adapter.title} exposes no project read`, checkId: dbCheckId(s.adapter) });
+    return;
+  }
+  const found = linker.resolve ? await once(ctx, `db:resolve:${provider}`, async () => {
+    try {
+      return { ok: true, ref: await linker.resolve(ctx, recordedId) };
+    } catch (e) {
+      return { ok: false, error: e };
+    }
+  }) : null;
+  if (found && !found.ok) {
+    if (isUnreadable(found.error)) {
+      unread(c, { id: "db:project", class: "db-selectors", subject, expected: `project ${recordedId} is readable`, baseline, reason: `reading the recorded project failed: ${errMsg(found.error)}`, checkId: dbCheckId(s.adapter) });
+    } else {
+      c.items.push({
+        id: "db:project",
+        class: "db-selectors",
+        subject,
+        expected: label(`the ${provider} project ${recordedId} exists and is visible to this account`, baseline),
+        observed: seen(`golive could not read it: ${errMsg(found.error)}`, at),
+        baseline,
+        severity: "high",
+        action: "human",
+        evidence: [
+          `every env value golive delivered for the database was taken from ${recordedId}`,
+          "a deleted project, a renamed one and a credential that lost access all answer this way: golive cannot tell them apart"
+        ],
+        suggestedAction: `Confirm ${recordedId} in the ${s.adapter.title} dashboard. If it is gone, restore it or create a replacement, then re-run \`golive plan\`; nothing is touched until you approve a new plan.`,
+        checkId: dbCheckId(s.adapter)
+      });
+    }
+    return;
+  }
+  if (found?.ok && found.ref.id !== recordedId) {
+    c.items.push({
+      id: "db:project",
+      class: "db-selectors",
+      subject,
+      expected: label(`the ${provider} project ${recordedId}`, baseline),
+      observed: seen(`resolving it returns ${found.ref.name ?? found.ref.id} (${found.ref.id})`, at),
+      baseline,
+      severity: "medium",
+      action: "verify",
+      evidence: ["the provider resolves the recorded id to a different project now"],
+      suggestedAction: `${perhapsDeliberate("the recorded database project now resolves to another one")} Re-run \`golive plan\` before any env write.`,
+      checkId: dbCheckId(s.adapter)
+    });
+    return;
+  }
+  if (found?.ok) c.verified.push(`${subject} is still readable (${found.ref.name ?? found.ref.id})`);
+  else {
+    unread(c, {
+      id: "db:project",
+      class: "db-selectors",
+      subject,
+      expected: `the ${provider} project ${recordedId} exists`,
+      baseline,
+      reason: `${s.adapter.title} exposes no exact project read, so golive could not confirm ${recordedId} still exists (the project this repo links was compared instead)`,
+      checkId: dbCheckId(s.adapter)
+    });
+  }
+  const current3 = await once(ctx, `db:current:${provider}`, async () => {
+    try {
+      return { ok: true, ref: await linker.current(ctx) };
+    } catch (e) {
+      return { ok: false, error: e };
+    }
+  });
+  if (current3.ok && current3.ref && current3.ref.id !== recordedId) {
+    c.items.push({
+      id: "db:current",
+      class: "db-selectors",
+      subject,
+      expected: label(`this repo uses ${recordedId}`, baseline),
+      observed: seen(`the repo now resolves to ${current3.ref.name ?? current3.ref.id} (${current3.ref.id})`, at),
+      baseline,
+      severity: "medium",
+      action: "verify",
+      evidence: [
+        "the database the repo points at changed since golive recorded it",
+        "env values golive manages are only re-written from the project recorded here, so the app may still hold the old connection string"
+      ],
+      suggestedAction: `${perhapsDeliberate(`the ${provider} project this app uses changed`)} Re-run \`golive plan\` so env writes, the plan and state agree on one project.`,
+      checkId: dbCheckId(s.adapter)
+    });
+  }
+  const identity = s.adapter.capabilities.outputs?.identity;
+  if (!selectors.length) return;
+  if (!identity) {
+    unread(c, { id: "db:selectors", class: "db-selectors", subject: `${subject} connection selectors`, expected: selectors.map((x) => `${x.field}=${x.value}`).join(", "), baseline: { ...baseline, ref: selectors[0].key }, reason: `${s.adapter.title} reports no connection selectors, so the recorded branch/database/role cannot be compared`, checkId: dbCheckId(s.adapter) });
+    return;
+  }
+  const now = await once(ctx, `db:identity:${provider}`, async () => {
+    try {
+      const raw2 = await identity(ctx);
+      const parsed = JSON.parse(raw2);
+      if (!parsed || typeof parsed !== "object") throw new Error(`the reported identity is not a mapping: ${raw2}`);
+      const fields = {};
+      for (const [k, v] of Object.entries(parsed)) if (typeof v === "string") fields[k] = v;
+      return { ok: true, fields };
+    } catch (e) {
+      return { ok: false, error: e };
+    }
+  });
+  if (!now.ok) {
+    unread(c, { id: "db:selectors", class: "db-selectors", subject: `${subject} connection selectors`, expected: selectors.map((x) => `${x.field}=${x.value}`).join(", "), baseline: { ...baseline, ref: selectors[0].key }, reason: `reading the connection selectors failed: ${errMsg(now.error)}`, checkId: dbCheckId(s.adapter) });
+    return;
+  }
+  const changed2 = selectors.filter((x) => now.fields[x.field] !== void 0 && now.fields[x.field] !== x.value);
+  const unknown = selectors.filter((x) => now.fields[x.field] === void 0);
+  if (!changed2.length) {
+    c.verified.push(`${subject} connection selectors unchanged (${selectors.map((x) => `${x.field}=${x.value}`).join(", ")})`);
+    if (unknown.length) c.notChecked.push({ subject: `${subject} connection selectors`, reason: `the provider did not report ${unknown.map((x) => x.field).join(", ")}` });
+    return;
+  }
+  c.items.push({
+    id: "db:selectors",
+    class: "db-selectors",
+    subject: `${subject} connection selectors`,
+    expected: label(changed2.map((x) => `${x.field}=${x.value}`).join(", "), { ...baseline, ref: changed2[0].key }),
+    observed: seen(changed2.map((x) => `${x.field}=${now.fields[x.field]}`).join(", "), at),
+    baseline: { ...baseline, ref: changed2[0].key },
+    severity: "medium",
+    action: "verify",
+    evidence: [
+      "the branch/database/role golive wrote the app's connection values from is no longer what the provider resolves",
+      "a different branch or database can mean different data, and golive will not rewrite managed env names until a new plan is approved"
+    ],
+    suggestedAction: `${perhapsDeliberate("the database connection selectors changed")} If the app should use the new selectors, re-run \`golive plan\` and apply the env step.`,
+    checkId: dbCheckId(s.adapter)
+  });
+}
+function dbCheckId(adapter) {
+  return adapter?.capabilities.dbConnection ? "db-connection" : "rls-probe";
+}
+async function emailItems(ctx, at, c) {
+  const provider = ctx.config.stack.email;
+  if (!provider) return;
+  const id2 = ctx.state.resource(`${provider}.domainId`);
+  if (!id2) return;
+  const subject = `${provider} sending domain ${emailDomain(ctx) ?? id2}`;
+  const baseline = { source: "provider-marker", at: stepAt(ctx, "email:domain"), ref: `${provider}.domainId` };
+  const s = await once(ctx, "axis:email", () => axisStatus(ctx, "email"));
+  const sd = s.kind === "ready" ? s.adapter.capabilities.sendingDomain : void 0;
+  if (!sd) {
+    unread(c, {
+      id: "email:domain",
+      class: "email-domain",
+      subject,
+      expected: `sending domain ${id2} is verified`,
+      baseline,
+      reason: unreadable(s, "sending-domain read"),
+      checkId: "email-verified"
+    });
+    return;
+  }
+  let status;
+  try {
+    status = await once(ctx, `email:status:${provider}`, () => sd.status(ctx, id2));
+  } catch (e) {
+    unread(c, { id: "email:domain", class: "email-domain", subject, expected: `sending domain ${id2} is verified`, baseline, reason: `reading the sending domain failed: ${errMsg(e)}`, checkId: "email-verified" });
+    return;
+  }
+  if (status === "verified") {
+    c.verified.push(`${subject}: the provider still reports it verified`);
+    return;
+  }
+  const fresh = withinPropagation(stepAt(ctx, "email:verify", "email:dns"));
+  if (status === "failed") {
+    c.items.push({
+      id: "email:domain",
+      class: "email-domain",
+      subject,
+      expected: label(`sending domain ${id2} is verified`, baseline),
+      observed: seen("the provider reports it failed to verify", at),
+      baseline,
+      severity: "high",
+      action: "reconcile",
+      evidence: ["the provider cannot find the DNS records it needs: mail sent through the app's key will be rejected or land in spam"],
+      suggestedAction: "Re-apply the email steps (`golive plan`, then `apply` with --confirm-dns), or fix the records shown in the provider dashboard if they were changed there.",
+      checkId: "email-verified"
+    });
+    return;
+  }
+  c.items.push({
+    id: "email:domain",
+    class: "email-domain",
+    subject,
+    expected: label(`sending domain ${id2} is verified`, baseline),
+    observed: seen(`the provider reports it ${status}`, at),
+    baseline,
+    severity: fresh ? "info" : "medium",
+    action: fresh ? "none" : "verify",
+    evidence: [fresh ? "golive asked for verification inside the propagation window: providers re-check DNS on their own schedule" : "the provider has not confirmed the domain in that time, and it was verified before golive recorded it"],
+    suggestedAction: fresh ? "Nothing to do yet: re-run `golive verify --only email-verified` later." : "Re-apply the email step to re-request verification, and `golive verify --only email-dns` to see which record is missing.",
+    checkId: "email-verified"
+  });
+}
+function keyItems(ctx, c) {
+  const keys3 = Object.entries(ctx.state.get().resources).filter(([k]) => /^[a-z0-9-]+\.keyId@[a-z-]+$/.test(k)).sort(([a], [b]) => a < b ? -1 : 1);
+  if (!keys3.length) return;
+  c.limits.push(KEY_READ_LIMIT);
+  for (const [key, id2] of keys3) {
+    const [head, target] = key.split("@");
+    const provider = head.replace(/\.keyId$/, "");
+    c.items.push({
+      id: `key:${provider}:${target}`,
+      class: "sending-key",
+      subject: `${provider} sending key for ${target} (${id2})`,
+      expected: `the key golive issued (${id2}) is still the one the app uses`,
+      observed: "not readable: the provider exposes no key read",
+      baseline: { source: "state", at: stepAt(ctx, `email:key:${target}`), ref: key },
+      severity: "info",
+      action: "none",
+      unverifiable: true,
+      evidence: [KEY_READ_LIMIT, "a key revoked in the provider dashboard keeps failing until the app is given a new one; `golive teardown` can revoke it on request, but nothing can confirm it still works"]
+    });
+    c.notChecked.push({ subject: `${provider} sending key ${id2}`, reason: "the provider exposes no read for an issued key (issue and revoke only)" });
+  }
+}
+function recordedPayments(state, provider) {
+  const out = [];
+  for (const [key, value] of Object.entries(state.resources).sort(([a], [b]) => a < b ? -1 : 1)) {
+    const m = /^env:(.+)@(preview|production)$/.exec(key);
+    if (!m) continue;
+    const parts = value.split("|");
+    if (parts.length !== 5) continue;
+    const [outputKey, source, mode, , accountId] = parts;
+    if (!/^stripe\.(secretKey|publishableKey)$/.test(outputKey) || source !== provider) continue;
+    if (mode !== "test" && mode !== "live") continue;
+    if (!/^[A-Za-z0-9_]{4,64}$/.test(accountId)) continue;
+    const at = state.secrets[`${m[1]}@${m[2]}`]?.at;
+    out.push({ name: m[1], target: m[2], key, mode, accountId, ...at ? { at } : {} });
+  }
+  return out;
+}
+async function paymentItems(ctx, at, c) {
+  const provider = ctx.config.stack.payments;
+  if (!provider) return;
+  const recorded = recordedPayments(ctx.state.get(), provider);
+  if (!recorded.length) return;
+  const pay = await once(ctx, "axis:payments", () => axisStatus(ctx, "payments"));
+  const account2 = pay.kind === "ready" ? pay.adapter.capabilities.paymentAccount : void 0;
+  for (const r of recorded) {
+    const subject = `${provider} ${r.mode}-mode account (${r.name}@${r.target})`;
+    const baseline = { source: "state", ...r.at ? { at: r.at } : {}, ref: r.key };
+    const wantMode = modeFor(ctx.config, r.target);
+    if (wantMode !== r.mode) {
+      c.items.push({
+        id: `payments:${r.target}:mode`,
+        class: "payment-account",
+        subject,
+        expected: label(`${r.name} holds a ${r.mode}-mode value`, baseline),
+        observed: seen(`golive.yaml now says ${r.target} uses ${wantMode} mode`, at),
+        baseline,
+        severity: "medium",
+        action: "reconcile",
+        evidence: [`the app's ${r.name} was delivered from ${provider} ${r.mode} mode; the configuration asks for ${wantMode} mode`],
+        suggestedAction: "Run `golive plan` and apply the payments/env step: golive re-writes managed names when the mode behind them changes."
+      });
+    }
+    if (!account2) {
+      unread(c, {
+        id: `payments:${r.mode}`,
+        class: "payment-account",
+        subject,
+        expected: `the credential reads the ${r.mode}-mode account ${r.accountId}`,
+        baseline,
+        reason: unreadable(pay, "account read")
+      });
+      continue;
+    }
+    const identity = await once(ctx, `payments:identify:${r.mode}`, async () => {
+      try {
+        return { ok: true, accountId: (await account2.identify(ctx, r.mode)).accountId };
+      } catch (e) {
+        return { ok: false, error: e };
+      }
+    });
+    if (!identity.ok) {
+      unread(c, { id: `payments:${r.mode}`, class: "payment-account", subject, expected: `the credential reads the ${r.mode}-mode account ${r.accountId}`, baseline, reason: `reading the account failed: ${errMsg(identity.error)}` });
+      continue;
+    }
+    if (identity.accountId === r.accountId) {
+      c.verified.push(`${subject}: the ${r.mode}-mode credential still reads ${r.accountId}`);
+      continue;
+    }
+    c.items.push({
+      id: `payments:${r.mode}:account`,
+      class: "payment-account",
+      subject,
+      expected: label(`the credential belongs to ${r.accountId}`, baseline),
+      observed: seen(`the credential now reads ${identity.accountId}`, at),
+      baseline,
+      severity: "high",
+      action: "human",
+      evidence: [
+        `the app's ${r.name} was delivered from account ${r.accountId}; golive can only see account ${identity.accountId} now`,
+        "payments, webhooks and keys read here belong to the other account: the app's configuration is not covered by this read"
+      ],
+      suggestedAction: `Sign in to ${r.accountId} again (or set the credential back), then re-run \`golive plan\`: approvals bind the account, so env writes are re-checked against it.`
+    });
+  }
+  if (provider === "stripe" && recorded.some((r) => r.mode === "live")) {
+    const subject = "stripe live account readiness";
+    const baseline = { source: "state", at: recorded.filter((r) => r.mode === "live").map((r) => r.at).filter(Boolean).sort().at(-1), ref: recorded.find((r) => r.mode === "live").key };
+    try {
+      const st = await once(ctx, "payments:status:live", () => accountStatus(ctx, "live"));
+      if (st.chargesEnabled) c.verified.push(`${subject}: charges_enabled`);
+      else {
+        c.items.push({
+          id: "payments:live:readiness",
+          class: "payment-account",
+          subject,
+          expected: label("the live account can take payments (charges_enabled)", baseline),
+          observed: seen(`charges_enabled: ${st.chargesEnabled}, details_submitted: ${st.detailsSubmitted}`, at),
+          baseline,
+          severity: "high",
+          action: "human",
+          evidence: ["the app was wired for live payments, and the account no longer reports charges_enabled"],
+          suggestedAction: "Finish Stripe account activation yourself (business details, identity verification, bank account) at https://dashboard.stripe.com/account/onboarding, then re-run `golive verify`.",
+          checkId: "stripe-live-ready"
+        });
+      }
+    } catch (e) {
+      const denied = e?.status === 403;
+      unread(c, {
+        id: "payments:live:readiness",
+        class: "payment-account",
+        subject,
+        expected: "the live account can take payments (charges_enabled)",
+        baseline,
+        reason: denied ? "this credential cannot read the account (restricted key without Account: Read): readiness is unknown, not drift" : `reading the account failed: ${errMsg(e)}`,
+        checkId: "stripe-live-ready"
+      });
+    }
+  }
+}
+async function hostItems(ctx, at, c) {
+  const provider = ctx.config.stack.hosting;
+  if (!provider) return;
+  const keys3 = projectStateKeys(provider);
+  const recordedId = ctx.state.resource(keys3.id);
+  if (!recordedId) return;
+  const subject = `${provider} project ${ctx.state.resource(keys3.name) ?? recordedId}`;
+  const baseline = { source: "state", at: stepAt(ctx, "project:hosting"), ref: keys3.id };
+  const host = await once(ctx, "axis:hosting", () => axisStatus(ctx, "hosting"));
+  const linker = host.kind === "ready" ? host.adapter.capabilities.project : void 0;
+  if (!linker) {
+    unread(c, {
+      id: "project:hosting",
+      class: "host-project",
+      subject,
+      expected: `this repo is linked to ${recordedId}`,
+      baseline,
+      reason: unreadable(host, "project read")
+    });
+  } else {
+    const current3 = await once(ctx, `project:current:${provider}`, async () => {
+      try {
+        return { ok: true, ref: await linker.current(ctx) };
+      } catch (e) {
+        return { ok: false, error: e };
+      }
+    });
+    if (!current3.ok && isUnreadable(current3.error)) {
+      unread(c, { id: "project:hosting", class: "host-project", subject, expected: `this repo is linked to ${recordedId}`, baseline, reason: `reading the linked project failed: ${errMsg(current3.error)}` });
+    } else if (current3.ok && current3.ref && current3.ref.id === recordedId) {
+      c.verified.push(`${subject}: still the project this repo links (${recordedId})`);
+    } else {
+      let exists = null;
+      if (linker.resolve) {
+        const r = await once(ctx, `project:resolve:${provider}`, async () => {
+          try {
+            await linker.resolve(ctx, recordedId);
+            return { ok: true };
+          } catch {
+            return { ok: false };
+          }
+        });
+        exists = r.ok;
+      }
+      const linked = current3.ok ? current3.ref ? `${current3.ref.name ?? current3.ref.id} (${current3.ref.id})` : "nothing" : errMsg(current3.error);
+      c.items.push({
+        id: "project:hosting",
+        class: "host-project",
+        subject,
+        expected: label(`this repo is linked to ${recordedId}`, baseline),
+        observed: seen(`the provider resolves this repo to ${linked}`, at),
+        baseline,
+        severity: "medium",
+        action: "verify",
+        evidence: [
+          `state records ${recordedId}${ctx.state.resource(createdProjectKey(provider)) === recordedId ? ", which golive created" : ", which golive adopted"}`,
+          exists === null ? "golive could not read the recorded project to say whether it still exists" : exists ? "that project still exists at the provider" : "that project is not readable at the provider now"
+        ],
+        suggestedAction: `${perhapsDeliberate("the hosting project this repo links to changed")} Re-run \`golive plan\` so deploys, env writes and state point at the same project.`
+      });
+    }
+  }
+  const marker = ctx.state.resource(createdProjectKey(provider));
+  if (marker && marker !== recordedId) {
+    c.items.push({
+      id: "project:hosting:marker",
+      class: "host-project",
+      subject: `${provider} project creation marker`,
+      expected: label(`the creation marker names ${recordedId}`, { source: "provider-marker", at: baseline.at, ref: createdProjectKey(provider) }),
+      observed: seen(`it names ${marker}`, at),
+      baseline: { source: "provider-marker", ...baseline.at ? { at: baseline.at } : {}, ref: createdProjectKey(provider) },
+      severity: "medium",
+      action: "verify",
+      evidence: ["state's marker and the linked project disagree, so `golive teardown` treats the project as adopted and will not delete it"],
+      suggestedAction: "Confirm which project golive created. If it is the linked one, re-plan and apply the project step so the marker and the link agree again."
+    });
+  }
+}
+function releaseItems(ctx, at, c) {
+  const pending = pendingRedeploy(ctx);
+  if (pending) {
+    c.items.push({
+      id: "release:redeploy",
+      class: "release-state",
+      subject: "production deployment",
+      expected: label("a deploy picked up the production env write", { source: "step-evidence", at: pending, ref: "redeploy:production" }),
+      observed: seen("no production deploy has happened since", at),
+      baseline: { source: "step-evidence", at: pending, ref: "redeploy:production" },
+      severity: "medium",
+      action: "reconcile",
+      evidence: [`golive wrote production env at ${pending} and recorded that a deploy is still needed`, "production keeps serving the values from before that write until it is deployed"],
+      suggestedAction: "Run `golive plan` and apply the `deploy:production` step (or deploy in the host dashboard) so production uses the env the plan approved."
+    });
+  }
+  for (const [id2, rec] of Object.entries(ctx.state.get().steps).sort(([a], [b]) => a < b ? -1 : 1)) {
+    if (rec.status !== "failed") continue;
+    c.items.push({
+      id: `release:step:${id2}`,
+      class: "release-state",
+      subject: `step ${id2}`,
+      expected: label(`${id2} completed`, { source: "step-evidence", at: rec.at, ref: id2 }),
+      observed: seen(`the last run failed${rec.error ? `: ${rec.error}` : ""}`, at),
+      baseline: { source: "step-evidence", at: rec.at, ref: id2 },
+      severity: "medium",
+      action: "verify",
+      evidence: [`state records a failed ${id2} from ${rec.at}${rec.planId ? ` (plan ${rec.planId})` : ""}`, "a failed step stops the run: everything after it never ran"],
+      suggestedAction: "Fix the cause, then re-run `golive apply --plan <planId>` (completed steps are skipped) or `golive plan` if the intent changed."
+    });
+  }
+}
+
 // src/core/runner.ts
 init_secret();
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash6 } from "node:crypto";
 var PlanMismatchError = class extends Error {
 };
-function errMsg2(e) {
+function errMsg3(e) {
   return redact(e instanceof Error ? e.message : String(e));
 }
 async function runCheck(ctx, check) {
@@ -10811,7 +12323,7 @@ async function runCheck(ctx, check) {
     const r = await check.run(ctx);
     return { id: check.id, title: check.title, ...r, durationMs: Date.now() - t0 };
   } catch (e) {
-    return { id: check.id, title: check.title, status: "fail", severity: check.severity, evidence: [`check errored: ${errMsg2(e)}`], durationMs: Date.now() - t0 };
+    return { id: check.id, title: check.title, status: "fail", severity: check.severity, evidence: [`check errored: ${errMsg3(e)}`], durationMs: Date.now() - t0 };
   }
 }
 async function applyPlan(ctx, plan, checks, opts) {
@@ -10887,7 +12399,7 @@ async function applyPlan(ctx, plan, checks, opts) {
         try {
           results.push(...await step2.verifyInline(ctx));
         } catch (e) {
-          results.push({ id: `${step2.id}:verify`, title: `verify ${step2.id}`, status: "fail", severity: "high", evidence: [`verification errored: ${errMsg2(e)}`] });
+          results.push({ id: `${step2.id}:verify`, title: `verify ${step2.id}`, status: "fail", severity: "high", evidence: [`verification errored: ${errMsg3(e)}`] });
         }
       }
       const bad = results.filter((r) => r.status === "fail");
@@ -10899,7 +12411,7 @@ async function applyPlan(ctx, plan, checks, opts) {
       record(ctx, step2, plan.id, "done", res.changes);
       outcomes.push({ id: step2.id, status: "done", changes: res.changes, checks: results });
     } catch (e) {
-      const msg = errMsg2(e);
+      const msg = errMsg3(e);
       record(ctx, step2, plan.id, "failed", [], msg);
       outcomes.push({ id: step2.id, status: "failed", changes: [], checks: [], error: msg, next: "fix the error above, then re-run apply (completed steps are skipped)" });
       break;
@@ -10942,7 +12454,7 @@ function stepContext(ctx) {
   };
 }
 function stepHash(step2) {
-  return createHash5("sha256").update(JSON.stringify({ preview: step2.preview, intent: step2.intent ?? "", destination: step2.destination, risk: step2.risk, dependsOn: step2.dependsOn, kind: step2.kind })).digest("hex").slice(0, 12);
+  return createHash6("sha256").update(JSON.stringify({ preview: step2.preview, intent: step2.intent ?? "", destination: step2.destination, risk: step2.risk, dependsOn: step2.dependsOn, kind: step2.kind })).digest("hex").slice(0, 12);
 }
 function record(ctx, step2, planId2, status, changes, error) {
   ctx.state.save((s) => {
@@ -10958,24 +12470,24 @@ init_credentials();
 init_credentials();
 init_secret();
 import { execFile, execFileSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomBytes as randomBytes2 } from "node:crypto";
 import {
-  closeSync as closeSync5,
-  constants as constants5,
+  closeSync as closeSync6,
+  constants as constants6,
   fchmodSync as fchmodSync2,
-  fstatSync as fstatSync5,
+  fstatSync as fstatSync6,
   fsyncSync,
   linkSync,
-  lstatSync as lstatSync5,
+  lstatSync as lstatSync6,
   mkdirSync as mkdirSync5,
-  openSync as openSync5,
+  openSync as openSync6,
   readSync,
   renameSync as renameSync4,
   unlinkSync as unlinkSync2,
   writeFileSync as writeFileSync5
 } from "node:fs";
 import { platform } from "node:os";
-import { basename as basename3, dirname as dirname6, join as join7, resolve as resolve4 } from "node:path";
+import { basename as basename5, dirname as dirname7, join as join9, resolve as resolve5 } from "node:path";
 var MAX_VALUE_BYTES = 16 * 1024;
 var MAX_FILE_BYTES = 1024 * 1024;
 var DIALOG_SECONDS = 180;
@@ -10992,7 +12504,7 @@ async function promptCredential(name3, options = {}) {
   if (!/^[A-Z_][A-Z0-9_]{0,127}$/.test(name3)) throw new Error("Use a credential variable name containing uppercase letters, digits and underscores.");
   if (options.language !== void 0 && options.language !== "en" && options.language !== "zh") throw new Error("Credential prompt language must be en or zh.");
   if (options.replace !== void 0 && typeof options.replace !== "boolean") throw new Error("Credential replacement must be explicitly enabled.");
-  const path = resolve4(credentialsPath());
+  const path = resolve5(credentialsPath());
   const base = { name: name3, path, envOverride: Boolean(process.env[name3]) };
   const unavailable = (reason) => ({ ...base, status: "unavailable", reason });
   if (platform() !== "darwin") return unavailable("unsupported-platform");
@@ -11111,7 +12623,7 @@ function uid() {
 }
 function statOrMissing(path) {
   try {
-    return lstatSync5(path);
+    return lstatSync6(path);
   } catch (error) {
     if (error.code === "ENOENT") return void 0;
     throw error;
@@ -11141,9 +12653,9 @@ function checkAcl(path) {
 function directories(path, create5) {
   const owner = uid();
   const paths = [];
-  for (let current3 = dirname6(path); ; current3 = dirname6(current3)) {
+  for (let current3 = dirname7(path); ; current3 = dirname7(current3)) {
     paths.unshift(current3);
-    if (dirname6(current3) === current3) break;
+    if (dirname7(current3) === current3) break;
   }
   const out = /* @__PURE__ */ new Map();
   for (const current3 of paths) {
@@ -11154,13 +12666,13 @@ function directories(path, create5) {
       } catch (error) {
         if (error.code !== "EEXIST") throw error;
       }
-      info = lstatSync5(current3);
+      info = lstatSync6(current3);
     }
     if (!info) break;
     if (info.isSymbolicLink() || !info.isDirectory() || info.uid !== owner && info.uid !== 0) throw new SafeFailure("unsafe-path");
     const sharedSticky = info.uid === 0 && (info.mode & 512) !== 0;
     if ((info.mode & 18) !== 0 && !sharedSticky) throw new SafeFailure("unsafe-path");
-    if (current3 === dirname6(path) && info.uid !== owner) throw new SafeFailure("unsafe-path");
+    if (current3 === dirname7(path) && info.uid !== owner) throw new SafeFailure("unsafe-path");
     checkAcl(current3);
     out.set(current3, info);
   }
@@ -11178,9 +12690,9 @@ function snapshot(path) {
   if (!before) return { directories: parents, content: null };
   safeFile(before);
   checkAcl(path);
-  const fd = openSync5(path, constants5.O_RDONLY | constants5.O_NOFOLLOW | constants5.O_NONBLOCK);
+  const fd = openSync6(path, constants6.O_RDONLY | constants6.O_NOFOLLOW | constants6.O_NONBLOCK);
   try {
-    const opened = fstatSync5(fd);
+    const opened = fstatSync6(fd);
     safeFile(opened);
     if (!sameFile(before, opened)) throw new SafeFailure("concurrent-change");
     const buffer = Buffer.alloc(MAX_FILE_BYTES + 1);
@@ -11195,12 +12707,12 @@ function snapshot(path) {
     const text = bytes.toString("utf8");
     const content3 = text ? new Secret("credential-file", text) : null;
     if (!Buffer.from(text, "utf8").equals(bytes)) throw new SafeFailure("unsafe-path");
-    const after = fstatSync5(fd);
-    const current3 = lstatSync5(path);
+    const after = fstatSync6(fd);
+    const current3 = lstatSync6(path);
     if (!sameFile(opened, after) || !sameFile(after, current3)) throw new SafeFailure("concurrent-change");
     return { directories: parents, file: after, content: content3 };
   } finally {
-    closeSync5(fd);
+    closeSync6(fd);
   }
 }
 function raw(snapshot3) {
@@ -11251,7 +12763,7 @@ function saveAtomically(path, before, name3, value) {
   const lockPath = `${path}.prompt.lock`;
   let lock;
   try {
-    lock = openSync5(lockPath, constants5.O_CREAT | constants5.O_EXCL | constants5.O_WRONLY | constants5.O_NOFOLLOW, 384);
+    lock = openSync6(lockPath, constants6.O_CREAT | constants6.O_EXCL | constants6.O_WRONLY | constants6.O_NOFOLLOW, 384);
   } catch (error) {
     if (error.code === "EEXIST") throw new SafeFailure("concurrent-change");
     throw error;
@@ -11262,21 +12774,21 @@ function saveAtomically(path, before, name3, value) {
   let cleanupRequired = false;
   let failure2;
   try {
-    lockInfo = fstatSync5(lock);
+    lockInfo = fstatSync6(lock);
     const current3 = snapshot(path);
     if (changed(before, current3)) throw new SafeFailure("concurrent-change");
     const content3 = updated(before, name3, value);
-    const tempPath = join7(dirname6(path), `.${basename3(path)}-${randomBytes(12).toString("hex")}.tmp`);
-    const fd = openSync5(tempPath, constants5.O_CREAT | constants5.O_EXCL | constants5.O_WRONLY | constants5.O_NOFOLLOW, 384);
+    const tempPath = join9(dirname7(path), `.${basename5(path)}-${randomBytes2(12).toString("hex")}.tmp`);
+    const fd = openSync6(tempPath, constants6.O_CREAT | constants6.O_EXCL | constants6.O_WRONLY | constants6.O_NOFOLLOW, 384);
     temp = { path: tempPath, fd };
-    temp.info = fstatSync5(fd);
+    temp.info = fstatSync6(fd);
     fchmodSync2(fd, 384);
-    safeFile(fstatSync5(fd));
+    safeFile(fstatSync6(fd));
     checkAcl(tempPath);
     writeFileSync5(fd, content3.reveal(), { encoding: "utf8" });
     fsyncSync(fd);
     if (changed(before, snapshot(path))) throw new SafeFailure("concurrent-change");
-    const staged = lstatSync5(tempPath);
+    const staged = lstatSync6(tempPath);
     if (staged.isSymbolicLink() || staged.dev !== temp.info.dev || staged.ino !== temp.info.ino) throw new SafeFailure("concurrent-change");
     safeFile(staged);
     checkAcl(tempPath);
@@ -11297,14 +12809,14 @@ function saveAtomically(path, before, name3, value) {
   } finally {
     if (temp) {
       try {
-        closeSync5(temp.fd);
+        closeSync6(temp.fd);
       } catch {
         cleanupRequired = true;
       }
       if (!removeOwned(temp.path, temp.info)) cleanupRequired = true;
     }
     try {
-      closeSync5(lock);
+      closeSync6(lock);
     } catch {
       cleanupRequired = true;
     }
@@ -11324,8 +12836,8 @@ init_secret();
 // src/adapters/vercel-api.ts
 init_credentials();
 init_secret();
-import { readFileSync as readFileSync7 } from "node:fs";
-import { join as join8 } from "node:path";
+import { readFileSync as readFileSync9 } from "node:fs";
+import { join as join10 } from "node:path";
 var API_BASE = "https://api.vercel.com";
 var CLI_TIMEOUT = 12e4;
 var TOKEN_WHERE = "Create a team-scoped token with an expiry at https://vercel.com/account/tokens.";
@@ -11373,7 +12885,7 @@ async function resolveSession(ctx) {
 function readLinkFile(ctx) {
   const candidates3 = [];
   try {
-    candidates3.push(readFileSync7(join8(ctx.cwd, ".vercel", "project.json"), "utf8"));
+    candidates3.push(readFileSync9(join10(ctx.cwd, ".vercel", "project.json"), "utf8"));
   } catch {
   }
   const fromDetect = ctx.detect.configs[".vercel/project.json"];
@@ -11469,41 +12981,8 @@ function parseJson(text) {
   }
 }
 
-// src/core/doh.ts
-var TYPE_NUM = { 1: "A", 28: "AAAA", 5: "CNAME", 16: "TXT", 15: "MX", 2: "NS", 6: "SOA", 257: "CAA" };
-function normalizeTxt(data) {
-  const parts = data.match(/"((?:[^"\\]|\\.)*)"/g);
-  return parts ? parts.map((p) => p.slice(1, -1).replace(/\\"/g, '"')).join("") : data;
-}
-function norm(type, data) {
-  if (type === "TXT") return normalizeTxt(data);
-  if (type === "CNAME" || type === "NS") return data.replace(/\.$/, "").toLowerCase();
-  if (type === "MX") return data.replace(/\.$/, "").toLowerCase();
-  return data;
-}
-async function resolve5(ctx, name3, type) {
-  const q2 = `name=${encodeURIComponent(name3)}&type=${type}`;
-  const endpoints = [`https://cloudflare-dns.com/dns-query?${q2}`, `https://dns.google/resolve?${q2}`];
-  let lastErr;
-  for (const url of endpoints) {
-    try {
-      const res = await ctx.http({ url, headers: { accept: "application/dns-json" }, timeoutMs: 1e4 });
-      if (res.status !== 200 || !res.json) throw new Error(`DoH ${res.status}`);
-      const map = (rrs = []) => rrs.filter((a) => TYPE_NUM[a.type]).map((a) => ({ name: a.name.replace(/\.$/, "").toLowerCase(), type: TYPE_NUM[a.type], data: norm(TYPE_NUM[a.type], a.data), ttl: a.TTL }));
-      return { status: res.json.Status, answers: map(res.json.Answer), authority: map(res.json.Authority) };
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-  throw new Error(`DNS lookup failed for ${name3} ${type}: ${String(lastErr)}`);
-}
-async function lookup(ctx, name3, type) {
-  const r = await resolve5(ctx, name3, type);
-  return r.answers.filter((a) => a.type === type && a.name === name3.toLowerCase()).map((a) => a.data);
-}
-
 // src/adapters/vercel-project.ts
-import { basename as basename4 } from "node:path";
+import { basename as basename6 } from "node:path";
 function toInfo(raw2) {
   if (!raw2?.id || !raw2.name) return null;
   const alias = raw2.targets?.production?.alias;
@@ -11515,7 +12994,7 @@ async function projectInfo(ctx, idOrName, scopeId) {
   if (!info) throw new VercelError(`Vercel returned an unexpected project shape for "${idOrName}".`);
   return info;
 }
-function remember(ctx, p) {
+function remember2(ctx, p) {
   ctx.state.save((s) => {
     s.resources["vercel.projectId"] = p.id;
     s.resources["vercel.projectName"] = p.name;
@@ -11547,7 +13026,7 @@ function validProjectName(name3) {
   return /^[a-z0-9]([a-z0-9._-]{0,98}[a-z0-9])?$/.test(name3) && !name3.includes("---");
 }
 var scopeRef = (id2, name3) => ({ kind: id2.startsWith("team_") ? "team" : "account", id: id2, ...name3 ? { name: name3 } : {} });
-async function creationTarget(ctx) {
+async function creationTarget2(ctx) {
   const s = await session(ctx);
   const configured = orgId(ctx);
   if (configured?.startsWith("team_")) {
@@ -11561,16 +13040,16 @@ async function creationTarget(ctx) {
   if (!result2.user?.id || configured && result2.user.id !== configured) throw new VercelError("Vercel could not confirm the selected personal account. Check the account scope and re-plan.");
   return { scope: scopeRef(result2.user.id, result2.user.username) };
 }
-async function resolveProject(ctx, idOrName) {
+async function resolveProject2(ctx, idOrName) {
   const p = await projectInfo(ctx, idOrName);
   if (!p.accountId) throw new VercelError("Vercel did not identify the project owner; re-plan after its team/account can be confirmed.");
   const s = await session(ctx);
-  const label2 = s.kind === "cli" && s.user.team?.id === p.accountId ? s.user.team.name ?? s.user.team.slug : void 0;
-  return { id: p.id, name: p.name, scope: scopeRef(p.accountId, label2) };
+  const label3 = s.kind === "cli" && s.user.team?.id === p.accountId ? s.user.team.name ?? s.user.team.slug : void 0;
+  return { id: p.id, name: p.name, scope: scopeRef(p.accountId, label3) };
 }
 var vercelProject = {
-  creationTarget,
-  resolve: resolveProject,
+  creationTarget: creationTarget2,
+  resolve: resolveProject2,
   async current(ctx) {
     const stateId = ctx.state.resource("vercel.projectId");
     const stateName = ctx.state.resource("vercel.projectName");
@@ -11589,7 +13068,7 @@ var vercelProject = {
     }
   },
   async candidates(ctx) {
-    const q2 = encodeURIComponent(basename4(ctx.cwd));
+    const q2 = encodeURIComponent(basename6(ctx.cwd));
     const res = await vercelApi(ctx, "GET", `/v10/projects?search=${q2}&limit=20`);
     return (res.projects ?? []).map(toInfo).filter((p) => p !== null).map(({ id: id2, name: name3 }) => ({ id: id2, name: name3 }));
   },
@@ -11601,7 +13080,7 @@ var vercelProject = {
       if (isNotFound(e)) throw new VercelError(`Vercel project "${idOrName}" was not found in the current team scope. List candidates with \`golive plan\` or create it.`, 404, "not_found");
       throw e;
     }
-    remember(ctx, p);
+    remember2(ctx, p);
     ctx.log.info(`vercel: using project ${p.name} (${p.id})`);
     return { id: p.id, name: p.name, ...p.accountId ? { scope: scopeRef(p.accountId) } : {} };
   },
@@ -11610,14 +13089,14 @@ var vercelProject = {
       throw new VercelError(`"${name3}" is not a valid Vercel project name: use lowercase letters, digits, ".", "_" or "-" (max 100 chars, no "---").`);
     }
     if (approvedTarget) {
-      const now = await creationTarget(ctx);
+      const now = await creationTarget2(ctx);
       if (now.scope.id !== approvedTarget.scope.id || now.scope.kind !== approvedTarget.scope.kind) throw new VercelError("Vercel project creation scope changed since approval; run `plan` again and re-approve.");
     }
     const selectedScope = approvedTarget?.scope.id;
     try {
       const existing = await projectInfo(ctx, name3, selectedScope);
       if (approvedTarget) throw new VercelError("A Vercel project with this name appeared after approval. Run `plan` again and approve the exact existing project or choose another name.");
-      remember(ctx, existing);
+      remember2(ctx, existing);
       ctx.log.info(`vercel: adopted existing project ${existing.name} (${existing.id})`);
       return { id: existing.id, name: existing.name };
     } catch (e) {
@@ -11628,7 +13107,7 @@ var vercelProject = {
     const p = toInfo(raw2);
     if (!p) throw new VercelError(`Vercel did not return the new project "${name3}"; check the dashboard before retrying.`);
     if (approvedTarget && p.accountId !== approvedTarget.scope.id) throw new VercelError("Vercel returned an unexpected project owner; inspect the created resource before continuing.");
-    remember(ctx, p);
+    remember2(ctx, p);
     rememberCreated(ctx, p.id);
     ctx.log.info(`vercel: created project ${p.name} (${p.id})`);
     return { id: p.id, name: p.name, ...approvedTarget ? { scope: approvedTarget.scope } : {} };
@@ -11793,10 +13272,10 @@ function isTxtNotReady(e) {
 }
 async function publicDnsPointsElsewhere(ctx, domain, want) {
   try {
-    const seen = (await lookup(ctx, domain, want.type === "A" ? "A" : "CNAME")).map(strip);
-    if (seen.length === 0) return false;
+    const seen2 = (await lookup(ctx, domain, want.type === "A" ? "A" : "CNAME")).map(strip);
+    if (seen2.length === 0) return false;
     const vercelish = (v) => v === strip(want.content) || v.endsWith(".vercel-dns.com") || /\.vercel-dns-\d+\.com$/.test(v) || v === FALLBACK_A;
-    return !seen.some(vercelish);
+    return !seen2.some(vercelish);
   } catch {
     return false;
   }
@@ -11930,7 +13409,7 @@ async function updateRow(ctx, projectId, row, key, value, type) {
 
 // src/adapters/vercel.ts
 var DEPLOY_TIMEOUT = 15 * 6e4;
-async function auth(ctx) {
+async function auth3(ctx) {
   try {
     const s = await session(ctx);
     if (s.kind === "cli") {
@@ -12049,7 +13528,7 @@ var vercelAdapter = {
     if (d.providers.hosting?.includes("vercel")) return true;
     return Object.keys(d.configs).some((k) => k === "vercel.json" || k.startsWith(".vercel/") || k === ".vercel");
   },
-  auth,
+  auth: auth3,
   capabilities: {
     project: vercelProject,
     env: vercelEnv,
@@ -12089,7 +13568,7 @@ function fqdnFor(name3, domain) {
 }
 function normalizeRecords(domain, records3, warn) {
   const out = [];
-  const seen = /* @__PURE__ */ new Set();
+  const seen2 = /* @__PURE__ */ new Set();
   for (const r of records3 ?? []) {
     const type = String(r.type ?? "").toUpperCase();
     if (!TYPES.has(type) || !r.value) {
@@ -12101,8 +13580,8 @@ function normalizeRecords(domain, records3, warn) {
     const ttl = toInt(r.ttl);
     if (ttl !== void 0) rec.ttl = ttl;
     const k = `${rec.type}|${rec.name}|${rec.content}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
+    if (seen2.has(k)) continue;
+    seen2.add(k);
     out.push(rec);
   }
   return out;
@@ -12479,13 +13958,13 @@ var mech = (t) => t.replace(/^[+\-~?]/, "").toLowerCase();
 var passes = (t) => !/^[-~?]/.test(t);
 function mergeSpf(existing, wanted, name3) {
   const have = terms(existing);
-  const seen = /* @__PURE__ */ new Map();
-  for (const t of have) if (!seen.has(mech(t))) seen.set(mech(t), t);
+  const seen2 = /* @__PURE__ */ new Map();
+  for (const t of have) if (!seen2.has(mech(t))) seen2.set(mech(t), t);
   const current3 = ["v=spf1", ...have].join(" ");
   const added = [];
   for (const t of terms(wanted)) {
     if (ALL.test(t) || MODIFIER.test(t)) continue;
-    const prior = seen.get(mech(t));
+    const prior = seen2.get(mech(t));
     if (prior !== void 0) {
       if (passes(t) && !passes(prior)) {
         throw new Error(
@@ -12494,7 +13973,7 @@ function mergeSpf(existing, wanted, name3) {
       }
       continue;
     }
-    seen.set(mech(t), t);
+    seen2.set(mech(t), t);
     added.push(t);
   }
   if (!added.length) return { content: current3, added };
@@ -12564,12 +14043,12 @@ function apiError2(what, res) {
   }
   return new CloudflareError(redact(`Cloudflare ${what} failed: HTTP ${res.status} ${detail}.${hint}`), res.status, codes);
 }
-function normName(n) {
+function normName4(n) {
   const s = n.trim().replace(/\.$/, "").toLowerCase();
   return domainToASCII(s) || s;
 }
 function zoneCandidates(domain) {
-  const labels = normName(domain).split(".");
+  const labels = normName4(domain).split(".");
   const out = [];
   for (let i = 0; i <= labels.length - 2; i++) out.push(labels.slice(i).join("."));
   return out;
@@ -12586,7 +14065,7 @@ async function findZone(ctx, domain, ignoreCache = false) {
   }
   for (const n of names) {
     const env = await api2(ctx, "GET", `/zones?name=${encodeURIComponent(n)}&status=active&per_page=5`, `zone lookup for ${n}`);
-    const z = (env.result ?? []).find((x) => normName(x.name) === n && (x.status ?? "active") === "active");
+    const z = (env.result ?? []).find((x) => normName4(x.name) === n && (x.status ?? "active") === "active");
     if (z) {
       ctx.state.save((s) => void (s.resources[zoneKey(n)] = z.id));
       return { zone: { id: z.id, name: n }, cached: false };
@@ -12598,7 +14077,7 @@ async function requireZone(ctx, domain) {
   const found = await findZone(ctx, domain);
   if (found) return found;
   throw new Error(
-    `No active Cloudflare zone for ${normName(domain)} is visible to this API token (tried ${zoneCandidates(domain).join(", ")}). Either the domain is not in this Cloudflare account, its nameservers are not yet delegated to Cloudflare (zone status "pending": set the nameservers Cloudflare shows at your registrar), or the token is scoped to other zones (add this zone to its Zone Resources).`
+    `No active Cloudflare zone for ${normName4(domain)} is visible to this API token (tried ${zoneCandidates(domain).join(", ")}). Either the domain is not in this Cloudflare account, its nameservers are not yet delegated to Cloudflare (zone status "pending": set the nameservers Cloudflare shows at your registrar), or the token is scoped to other zones (add this zone to its Zone Resources).`
   );
 }
 async function withZone(ctx, domain, run) {
@@ -12618,7 +14097,7 @@ async function withZone(ctx, domain, run) {
     }
     if (!fresh) {
       throw new Error(
-        `The cached Cloudflare zone ${zone.name} was rejected (${e.message}), and no active zone for ${normName(domain)} is visible to this API token anymore. The zone may have been deleted or re-created, its nameservers may have changed, or the token may have been re-scoped or revoked; check the Cloudflare dashboard, then run \`plan\` again.`
+        `The cached Cloudflare zone ${zone.name} was rejected (${e.message}), and no active zone for ${normName4(domain)} is visible to this API token anymore. The zone may have been deleted or re-created, its nameservers may have changed, or the token may have been re-scoped or revoked; check the Cloudflare dashboard, then run \`plan\` again.`
       );
     }
     if (fresh.zone.id !== zone.id) {
@@ -12639,14 +14118,14 @@ async function fetchRecords(ctx, zone, query = "") {
     if (page >= (env.result_info?.total_pages ?? 1)) return out;
   }
 }
-function normContent(type, content3) {
+function normContent2(type, content3) {
   if (type === "TXT") return normalizeTxt(content3);
   if (type === "CNAME" || type === "MX") return content3.trim().replace(/\.$/, "").toLowerCase();
   if (type === "AAAA") return content3.trim().toLowerCase();
   return content3.trim().replace(/\s+/g, " ");
 }
 function toDnsRecord(r) {
-  const rec = { type: r.type, name: normName(r.name), content: normContent(r.type, r.content) };
+  const rec = { type: r.type, name: normName4(r.name), content: normContent2(r.type, r.content) };
   if (r.ttl !== void 0) rec.ttl = r.ttl;
   if (r.priority !== void 0) rec.priority = r.priority;
   if (r.proxied !== void 0) rec.proxied = r.proxied;
@@ -12655,17 +14134,17 @@ function toDnsRecord(r) {
 var isOwned = (r) => (r.comment ?? "").startsWith(OWNED_PREFIX);
 var describe = (r) => `${r.type} ${short(r.content)}${r.proxied ? " (proxied)" : ""}`;
 var short = (s) => s.length > 80 ? `${s.slice(0, 77)}...` : s;
-function recordKey2(want) {
+function recordKey3(want) {
   if (ADDRESS.has(want.type)) return `cloudflare.recordId:${want.type}:${want.name}`;
   if (want.type === "TXT" && isSpf(want.content)) return `cloudflare.recordId:TXT:${want.name}:spf`;
   return `cloudflare.recordId:${want.type}:${want.name}:${fingerprint(want.content)}`;
 }
 function remember3(ctx, want, id2) {
-  if (ctx.state.resource(recordKey2(want)) !== id2) ctx.state.save((s) => void (s.resources[recordKey2(want)] = id2));
+  if (ctx.state.resource(recordKey3(want)) !== id2) ctx.state.save((s) => void (s.resources[recordKey3(want)] = id2));
 }
 function forgetStale(ctx, want, id2) {
   const prefix = `cloudflare.recordId:${want.type}:${want.name}:`;
-  const keep = recordKey2(want);
+  const keep = recordKey3(want);
   ctx.state.save((s) => {
     for (const [k, v] of Object.entries(s.resources)) if (k.startsWith(prefix) && k !== keep && v === id2) delete s.resources[k];
   });
@@ -12776,7 +14255,7 @@ async function replaceOwned(ctx, zone, conflicts, want) {
   return "updated";
 }
 function normalizeWanted(record2) {
-  const w = { ...record2, name: normName(record2.name), content: normContent(record2.type, record2.content) };
+  const w = { ...record2, name: normName4(record2.name), content: normContent2(record2.type, record2.content) };
   if (!TYPES2.has(w.type)) throw new Error(`Cloudflare DNS: unsupported record type ${String(w.type)}`);
   return w;
 }
@@ -12798,8 +14277,8 @@ var cloudflareDns = {
     return withZone(ctx, domain, async (zone) => {
       const want = normalizeWanted(record2);
       if (!inZone(want.name, zone.name)) throw new Error(`Cloudflare DNS: ${want.name} is not inside the zone ${zone.name}; nothing was deleted.`);
-      const here = (await fetchRecords(ctx, zone, `name.exact=${encodeURIComponent(want.name)}`)).filter((r) => normName(r.name) === want.name);
-      const matches3 = here.filter((r) => r.type === want.type && normContent(r.type, r.content) === want.content);
+      const here = (await fetchRecords(ctx, zone, `name.exact=${encodeURIComponent(want.name)}`)).filter((r) => normName4(r.name) === want.name);
+      const matches3 = here.filter((r) => r.type === want.type && normContent2(r.type, r.content) === want.content);
       if (!matches3.length) return "unchanged";
       if (matches3.length > 1) {
         throw new Error(
@@ -12827,8 +14306,8 @@ var cloudflareDns = {
     return withZone(ctx, domain, async (zone) => {
       const want = normalizeWanted(record2);
       if (!inZone(want.name, zone.name)) throw new Error(`Cloudflare DNS: ${want.name} is not inside the zone ${zone.name}; nothing was changed.`);
-      const here = (await fetchRecords(ctx, zone, `name.exact=${encodeURIComponent(want.name)}`)).filter((r) => normName(r.name) === want.name);
-      const same2 = here.find((r) => r.type === want.type && normContent(r.type, r.content) === want.content);
+      const here = (await fetchRecords(ctx, zone, `name.exact=${encodeURIComponent(want.name)}`)).filter((r) => normName4(r.name) === want.name);
+      const same2 = here.find((r) => r.type === want.type && normContent2(r.type, r.content) === want.content);
       if (same2) return adopt(ctx, zone, same2, want);
       cnameExclusivity(zone, here, want);
       if (want.type === "TXT" && isSpf(want.content)) return mergeSpfAt(ctx, zone, here, want);
@@ -12838,7 +14317,7 @@ var cloudflareDns = {
       }
       const kind = singleKind(want.type, want.name, want.content);
       if (kind) {
-        const stale = here.filter((r) => r.type === want.type && singleKind(r.type, want.name, normContent(r.type, r.content)) === kind);
+        const stale = here.filter((r) => r.type === want.type && singleKind(r.type, want.name, normContent2(r.type, r.content)) === kind);
         if (stale.length) return replaceOwned(ctx, zone, stale, want);
       }
       return create2(ctx, zone, want);
@@ -13037,7 +14516,7 @@ async function delegatedZone(ctx, host) {
     const candidate = labels.slice(i).join(".");
     let result2;
     try {
-      result2 = await resolve5(ctx, candidate, "NS");
+      result2 = await resolve4(ctx, candidate, "NS");
     } catch {
       throw new GoDaddyError("GoDaddy DNS: public nameserver lookup failed; no writes were attempted.");
     }
@@ -13109,7 +14588,7 @@ function content(type, data) {
   if (type === "CNAME" || type === "MX") return name(data);
   return type === "AAAA" ? data.trim().toLowerCase() : data.trim();
 }
-function publicRecord(r, zone) {
+function publicRecord2(r, zone) {
   const value = r.type === "CAA" ? `${r.flag} ${r.tag} "${r.data}"` : content(r.type, r.data);
   return {
     type: r.type,
@@ -13202,12 +14681,12 @@ var godaddyDns = {
   async list(ctx, domain) {
     const found = await zoneAndRecords(ctx, domain);
     if (!found) throw new GoDaddyError("GoDaddy does not serve accessible authoritative DNS for this domain. Use its current DNS provider.");
-    return found.records.filter((r) => TYPES3.has(r.type)).map((r) => publicRecord(r, found.zone));
+    return found.records.filter((r) => TYPES3.has(r.type)).map((r) => publicRecord2(r, found.zone));
   },
   async listOwned(ctx, domain) {
     const found = await zoneAndRecords(ctx, domain);
     if (!found) throw new GoDaddyError("GoDaddy does not serve accessible authoritative DNS for this domain. Use its current DNS provider.");
-    return found.records.filter((r) => TYPES3.has(r.type) && owned(ctx, found.zone, r)).map((r) => publicRecord(r, found.zone));
+    return found.records.filter((r) => TYPES3.has(r.type) && owned(ctx, found.zone, r)).map((r) => publicRecord2(r, found.zone));
   },
   async remove(ctx, domain, record2) {
     const found = await zoneAndRecords(ctx, domain);
@@ -13404,7 +14883,7 @@ async function findZone2(ctx, domain) {
 async function withinAuthority(ctx, target, zone) {
   let current3 = target.replace(/^\*\./, "");
   while (current3 !== zone) {
-    const answer = await resolve5(ctx, current3, "NS");
+    const answer = await resolve4(ctx, current3, "NS");
     if (answer.status !== 0 && answer.status !== 3) throw new Error(`Cannot confirm DNS delegation for ${current3}; retry before changing records.`);
     if (answer.answers.some((r) => r.type === "NS" && r.name === current3)) return false;
     current3 = current3.split(".").slice(1).join(".");
@@ -13675,7 +15154,7 @@ function identifier(value) {
   if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value) || isRegisteredSecret(value)) throw new NetlifyError("Netlify returned an invalid resource identity.");
   return value;
 }
-function label(value) {
+function label2(value) {
   if (typeof value !== "string" || !value.trim() || value.length > 160 || /[\r\n\x00-\x1f]/.test(value) || isRegisteredSecret(value)) throw new NetlifyError("Netlify returned an invalid resource label.");
   return redact(value);
 }
@@ -13798,7 +15277,7 @@ function account(raw2) {
   const p = object3(raw2);
   const capacity = p.capabilities && typeof p.capabilities === "object" ? p.capabilities.sites : void 0;
   const plan = typeof p.type_name === "string" ? p.type_name : p.type;
-  return { id: identifier(p.id), name: label(p.name), slug: identifier(p.slug), free: typeof plan === "string" && plan.trim().toLowerCase() === "free", included: num(capacity?.included), used: num(capacity?.used) };
+  return { id: identifier(p.id), name: label2(p.name), slug: identifier(p.slug), free: typeof plan === "string" && plan.trim().toLowerCase() === "free", included: num(capacity?.included), used: num(capacity?.used) };
 }
 async function accountInfo(ctx, id2) {
   const a = account(await netlifyRead(ctx, "getAccount", `/accounts/${encodeURIComponent(identifier(id2))}`, { account_id: id2 }));
@@ -13814,7 +15293,7 @@ async function requireFreeAccount(ctx, id2, creating = false) {
 function siteInfo(raw2) {
   const p = object3(raw2);
   const published = p.published_deploy && typeof p.published_deploy === "object" ? p.published_deploy : void 0;
-  return { id: identifier(p.id), name: label(p.name), accountId: identifier(p.account_id), accountSlug: identifier(p.account_slug), sslUrl: publicOrigin(p.ssl_url), publishedId: published?.id ? identifier(published.id) : null };
+  return { id: identifier(p.id), name: label2(p.name), accountId: identifier(p.account_id), accountSlug: identifier(p.account_slug), sslUrl: publicOrigin(p.ssl_url), publishedId: published?.id ? identifier(published.id) : null };
 }
 function ref(p) {
   return { id: p.id, name: p.name, scope: { kind: "team", id: p.accountId, name: p.accountSlug } };
@@ -13957,16 +15436,16 @@ async function list2(ctx, site) {
   const params = { account_id: site.accountId, site_id: site.id };
   const raw2 = await netlifyRead(ctx, "getEnvVars", `/accounts/${encodeURIComponent(site.accountId)}/env?site_id=${encodeURIComponent(site.id)}`, params);
   if (!Array.isArray(raw2)) throw new NetlifyError("Netlify returned an invalid environment inventory.");
-  const seen = /* @__PURE__ */ new Set();
+  const seen2 = /* @__PURE__ */ new Set();
   return raw2.map((value) => {
     const r = object3(value);
     const key = envKey(r.key);
-    if (seen.has(key) || !Array.isArray(r.scopes) || !Array.isArray(r.values)) throw new NetlifyError("Netlify environment metadata is ambiguous; inspect it before changing values.");
-    seen.add(key);
+    if (seen2.has(key) || !Array.isArray(r.scopes) || !Array.isArray(r.values)) throw new NetlifyError("Netlify environment metadata is ambiguous; inspect it before changing values.");
+    seen2.add(key);
     return {
       key,
-      scopes: r.scopes.map((s) => label(s).replace("post-processing", "post_processing")),
-      contexts: r.values.map((v) => label(object3(v).context)),
+      scopes: r.scopes.map((s) => label2(s).replace("post-processing", "post_processing")),
+      contexts: r.values.map((v) => label2(object3(v).context)),
       secret: r.is_secret === true
     };
   });
@@ -14209,7 +15688,7 @@ async function freeOrg2(ctx) {
 }
 async function projects(ctx, orgId2) {
   const found = [];
-  const seen = /* @__PURE__ */ new Set();
+  const seen2 = /* @__PURE__ */ new Set();
   let cursor;
   for (let page = 0; page < 100; page++) {
     const query = new URLSearchParams({ org_id: orgId2, limit: "400", ...cursor ? { cursor } : {} });
@@ -14224,8 +15703,8 @@ async function projects(ctx, orgId2) {
     if (data.pagination === void 0) return found;
     cursor = str2(obj(data.pagination).cursor);
     if (!batch.length) return found;
-    if (seen.has(cursor)) throw new NeonError("Neon project pagination did not advance.");
-    seen.add(cursor);
+    if (seen2.has(cursor)) throw new NeonError("Neon project pagination did not advance.");
+    seen2.add(cursor);
   }
   throw new NeonError("Neon project inventory exceeded the pagination safety limit.");
 }
@@ -14351,10 +15830,10 @@ async function connection(ctx, s, pooled) {
     throw new NeonError("Neon returned an invalid connection URI; value omitted.");
   }
   const allowed = /* @__PURE__ */ new Set(["sslmode", "channel_binding"]);
-  const seen = /* @__PURE__ */ new Set();
+  const seen2 = /* @__PURE__ */ new Set();
   for (const [key, v] of uri.searchParams) {
-    if (!allowed.has(key) || seen.has(key) || key === "channel_binding" && !["require", "prefer"].includes(v)) throw new NeonError("Neon connection URI contains unsupported query parameters; value omitted.");
-    seen.add(key);
+    if (!allowed.has(key) || seen2.has(key) || key === "channel_binding" && !["require", "prefer"].includes(v)) throw new NeonError("Neon connection URI contains unsupported query parameters; value omitted.");
+    seen2.add(key);
   }
   if (uri.hash) throw new NeonError("Neon connection URI contains an unexpected fragment; value omitted.");
   const expectedHost = pooled ? s.host.replace(".", "-pooler.") : s.host;
@@ -14635,16 +16114,16 @@ function pinStep(axis, adapter, linker, planned, source, account2) {
     }
   });
 }
-function selectStep(ctx, axis, adapter, linker, idOrName, label2, account2, planned) {
+function selectStep(ctx, axis, adapter, linker, idOrName, label3, account2, planned) {
   memo(ctx).pendingProjects.set(axis, "select");
   return step({
     id: `project:${axis}`,
-    title: `Use existing ${adapter.title} project ${label2}`,
+    title: `Use existing ${adapter.title} project ${label3}`,
     kind: "provision",
     risk: { writes: true },
-    preview: [`Use existing ${adapter.title} project ${label2}${planned ? ` (${planned.id})${scopeOf(planned)}` : ""} for ${axis} (links it locally; nothing is changed at ${adapter.title})`, ...account2 ? [account2] : []],
+    preview: [`Use existing ${adapter.title} project ${label3}${planned ? ` (${planned.id})${scopeOf(planned)}` : ""} for ${axis} (links it locally; nothing is changed at ${adapter.title})`, ...account2 ? [account2] : []],
     intent: intentOf({ select: `${adapter.id}:${idOrName}` }),
-    destination: { axis, provider: adapter.id, providerTitle: adapter.title, action: "select", project: { ...planned ? { id: planned.id } : {}, name: label2 }, ...planned?.scope ? { scope: planned.scope } : {}, ...account2 ? { access: account2 } : {} },
+    destination: { axis, provider: adapter.id, providerTitle: adapter.title, action: "select", project: { ...planned ? { id: planned.id } : {}, name: label3 }, ...planned?.scope ? { scope: planned.scope } : {}, ...account2 ? { access: account2 } : {} },
     async run(sctx) {
       if (planned && linker.resolve) {
         const now = await linker.resolve(sctx, planned.id);
@@ -14856,7 +16335,7 @@ function guidedHost(ctx, title, mapped) {
     const names = uniq(forTarget.map((m) => m.name));
     if (!names.length) continue;
     const mode = modeFor(ctx.config, t);
-    const label2 = (n) => {
+    const label3 = (n) => {
       const key = forTarget.find((m) => m.name === n)?.key;
       if (pay && (key === "stripe.secretKey" || key === "stripe.publishableKey")) return `${n} (${pay} ${mode}-mode key: ${key === "stripe.secretKey" ? `sk_${mode}_\u2026` : `pk_${mode}_\u2026`})`;
       if (pay && key === "stripe.webhookSecret") return `${n} (signing secret of the ${mode}-mode production webhook endpoint)`;
@@ -14866,166 +16345,12 @@ function guidedHost(ctx, title, mapped) {
     handoffs.push({
       id: `env:${t}`,
       why: `${title} isn't automated by golive, so the app's env vars must be added in its dashboard.`,
-      action: `In ${title}, add these env vars for the ${t} environment: ${names.map(label2).join(", ")}.${skipped} The human copies each value from its provider's dashboard straight into ${title}'s dashboard, never through this chat.`,
+      action: `In ${title}, add these env vars for the ${t} environment: ${names.map(label3).join(", ")}.${skipped} The human copies each value from its provider's dashboard straight into ${title}'s dashboard, never through this chat.`,
       blocking: true,
       verifiedBy: "env-parity"
     });
   }
   return { steps: [], handoffs };
-}
-
-// src/links/domain.ts
-var domainLink = {
-  id: "domain",
-  async plan(ctx) {
-    const domain = ctx.config.domain;
-    if (!domain) return null;
-    const host = await axisStatus(ctx, "hosting");
-    if (host.kind === "none" || host.kind === "unauthed") return null;
-    if (host.kind === "guided" || !host.adapter.capabilities.domain) {
-      const title = host.kind === "guided" ? host.title : host.adapter.title;
-      return { steps: [], handoffs: [manualAttach(title, domain)] };
-    }
-    const attach = host.adapter.capabilities.domain;
-    const status = await attach.status(ctx, domain).catch(() => "pending");
-    if (status === "ok") return null;
-    const records3 = await attach.requiredRecords(ctx, domain).catch(() => null);
-    const project = await projectIntent(ctx, host.adapter);
-    const steps = track(ctx, [attachStep(ctx, host.adapter, attach, domain, project)]);
-    const handoffs = [];
-    const warnings = [];
-    const dns = await dnsFor(ctx, domain);
-    if (dns.kind === "ready") steps.push(...track(ctx, [dnsStep3(ctx, host.adapter, attach, domain, dns.adapter, dns.zone, records3, project)]));
-    else if (dns.kind === "handoff") handoffs.push(dnsHandoff2(host.adapter, domain, dns.where, records3));
-    else if (dns.kind === "error") warnings.push(`${domain}: ${dns.message}`);
-    if (attach.verify) steps.push(...track(ctx, [verifyStep2(ctx, host.adapter, attach.verify.bind(attach), attach, domain, project)]));
-    return { steps, handoffs, warnings };
-  }
-};
-function attachStep(ctx, adapter, attach, domain, project) {
-  const prev = ctx.state.get().steps["domain:attach"];
-  return step({
-    id: "domain:attach",
-    title: `Attach ${domain} to ${adapter.title}`,
-    kind: "wire",
-    risk: { writes: true },
-    dependsOn: deps(ctx, ["project:hosting"]),
-    preview: [`attach ${domain} to the ${adapter.title} project (no-op if already attached)`],
-    intent: intentOf({ project, domain, previous: prev?.at }),
-    async run(sctx) {
-      await attach.add(sctx, domain);
-      return { changes: [`attached ${domain} to ${adapter.title}`] };
-    }
-  });
-}
-var normName2 = (n) => n.trim().replace(/\.$/, "").toLowerCase();
-function normContent2(r) {
-  if (r.type === "TXT") return normalizeTxt(r.content).trim();
-  if (r.type === "CNAME" || r.type === "MX") return r.content.trim().replace(/\.$/, "").toLowerCase();
-  return r.content.trim().replace(/\s+/g, " ").toLowerCase();
-}
-var recordKey3 = (r) => `${r.type} ${normName2(r.name)} ${normContent2(r)}${r.priority !== void 0 ? ` ${r.priority}` : ""}`;
-var sameRecords = (a, b) => {
-  const ka = [...new Set(a.map(recordKey3))].sort();
-  const kb = [...new Set(b.map(recordKey3))].sort();
-  return ka.length === kb.length && ka.every((k, i) => k === kb[i]);
-};
-var spfTerms = (c) => c.split(/\s+/).filter((t) => t && t !== "v=spf1" && !/^[-~?+]?all$/.test(t));
-function satisfies(have, want) {
-  if (have.type !== want.type || normName2(have.name) !== normName2(want.name)) return false;
-  const h = normContent2(have);
-  const w = normContent2(want);
-  if (h === w) return true;
-  return want.type === "TXT" && w.startsWith("v=spf1") && h.startsWith("v=spf1") && spfTerms(w).every((t) => spfTerms(h).includes(t));
-}
-function dnsStep3(ctx, adapter, attach, domain, dnsAdapter, zone, planned, project) {
-  let wrote = [];
-  return step({
-    id: "domain:dns",
-    title: `Point ${domain} at ${adapter.title} via ${dnsAdapter.title}`,
-    kind: "wire",
-    risk: { writes: true, dns: true },
-    dependsOn: deps(ctx, ["domain:attach"]),
-    preview: planned?.length ? planned.map((r) => `upsert at ${dnsAdapter.title}: ${formatRecord(r)} (not proxied)`) : [`upsert at ${dnsAdapter.title} the records ${adapter.title} requires for ${domain} (known after attaching)`],
-    intent: intentOf({ project, zone: `${dnsAdapter.id}:${domain}`, records: planned?.length ? planned.map(recordKey3) : ["(after attach)"] }),
-    async run(sctx) {
-      const records3 = await attach.requiredRecords(sctx, domain);
-      if (planned?.length && !sameRecords(planned, records3)) {
-        throw new Error(
-          `the DNS records ${adapter.title} requires for ${domain} changed since the plan was approved (planned: ${planned.map(formatRecord).join("; ")}; now: ${records3.map(formatRecord).join("; ") || "none"}); nothing was changed at ${dnsAdapter.title}. Run \`plan\` again and re-approve with --confirm-dns.`
-        );
-      }
-      const changes = [];
-      for (const rec of records3) changes.push(`${await zone.upsert(sctx, domain, { ...rec, proxied: false })}: ${formatRecord(rec)}`);
-      wrote = records3;
-      return { changes };
-    },
-    // Verify what this step wrote (the zone now serves these records). Public resolution, TLS and
-    // HTTP take minutes to hours, so they are checked by `verify` (domain-live), not here.
-    async verifyInline(vctx) {
-      if (!wrote.length) return [];
-      const id2 = "domain:dns:records";
-      const title = `${dnsAdapter.title} zone has the records for ${domain}`;
-      let have;
-      try {
-        have = await zone.list(vctx, domain);
-      } catch (e) {
-        return [{ id: id2, title, status: "warn", severity: "medium", evidence: [`could not list the ${domain} zone to confirm: ${errMsg(e)}`] }];
-      }
-      const missing = wrote.filter((r) => !have.some((h) => satisfies(h, r)));
-      if (missing.length) {
-        return [{ id: id2, title, status: "fail", severity: "high", evidence: [`missing after upsert: ${missing.map(formatRecord).join("; ")}`], fix: `Check the ${domain} zone at ${dnsAdapter.title}, then re-run apply.` }];
-      }
-      return [{ id: id2, title, status: "pass", severity: "info", evidence: wrote.map(formatRecord) }];
-    }
-  });
-}
-function verifyStep2(ctx, adapter, verify2, attach, domain, project) {
-  const prev = ctx.state.get().steps["domain:verify"];
-  return step({
-    id: "domain:verify",
-    title: `Ask ${adapter.title} to verify ${domain}`,
-    kind: "wire",
-    risk: { writes: true },
-    dependsOn: deps(ctx, ["domain:attach", "domain:dns"]),
-    preview: [
-      `ask ${adapter.title} to verify ownership of ${domain} (if another ${adapter.title} account used this domain, a passing check moves it to this project; DNS still propagating is not a failure)`,
-      ...prev ? [`previous request: ${prev.at}`] : []
-    ],
-    intent: intentOf({ project, domain }),
-    async run(sctx) {
-      const changes = [];
-      try {
-        changes.push(`${domain}: ownership ${await verify2(sctx, domain)}`);
-      } catch (e) {
-        changes.push(`verification request not accepted yet: ${errMsg(e)}`);
-      }
-      const status = await attach.status(sctx, domain).catch(() => "pending");
-      changes.push(`${domain}: ${status}${status === "ok" ? "" : " (DNS/TLS may still be propagating; run `plan` again later, and `verify --only domain-live`)"}`);
-      return { changes };
-    }
-  });
-}
-function dnsHandoff2(adapter, domain, where, records3) {
-  const list4 = records3?.length ? `: ${records3.map(formatRecord).join("; ")}` : ` that ${adapter.title} lists for ${domain} after the domain:attach step (run \`plan\` again to print them)`;
-  return {
-    id: "domain:dns",
-    why: `${domain} must point at ${adapter.title}, and its DNS is at a host golive can't write to.`,
-    action: `At ${where}, add the records${list4}. Turn proxying off for them.`,
-    blocking: true,
-    verifiedBy: "domain-live"
-  };
-}
-function manualAttach(title, domain) {
-  return {
-    id: "domain:attach",
-    why: `golive can't attach domains in ${title}.`,
-    action: `In ${title}, add ${domain} as a custom domain and create the DNS records it shows at your DNS host.`,
-    blocking: true,
-    // A guided host's dashboard setting can't be observed; DNS+HTTPS passing doesn't prove it's attached to YOUR project.
-    manual: true,
-    verifiedBy: "domain-live"
-  };
 }
 
 // src/links/payments.ts
@@ -15399,7 +16724,7 @@ async function webhookStep2(ctx, adapter, wh, host) {
 }
 
 // src/links/auth.ts
-var isLocalhost = (u) => Boolean(u && /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:|\/|$)/i.test(u));
+var isLocalhost2 = (u) => Boolean(u && /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:|\/|$)/i.test(u));
 var authRedirectsLink = {
   id: "auth-redirects",
   async plan(ctx) {
@@ -15421,7 +16746,7 @@ var authRedirectsLink = {
         return { steps: [], handoffs: [], warnings: [`reading ${au.adapter.title} auth settings failed (${errMsg(e)}); auth redirects left out of this plan`] };
       }
     }
-    if (isLocalhost(before.siteUrl)) warnings.push(`${au.adapter.title} site URL is ${before.siteUrl} (localhost): production sign-in emails and redirects would point at a developer machine`);
+    if (isLocalhost2(before.siteUrl)) warnings.push(`${au.adapter.title} site URL is ${before.siteUrl} (localhost): production sign-in emails and redirects would point at a developer machine`);
     const { urls: wanted, preview: previewUrls } = await desiredRedirects(ctx, prod);
     if (ctx.config.targets.includes("preview") && !ctx.config.auth?.previewRedirects) {
       warnings.push(
@@ -15674,130 +16999,6 @@ function deployRun(adapter, deployer) {
   };
 }
 
-// src/checks/util.ts
-init_http();
-init_secret();
-function result(status, severity, evidence, fix) {
-  const out = { status, severity, evidence: evidence.map(redact) };
-  if (fix) out.fix = redact(fix);
-  return out;
-}
-var pass = (evidence) => result("pass", "info", evidence);
-var skip = (why) => result("skip", "info", [why]);
-var RANK = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
-function worst(sevs) {
-  return sevs.reduce((a, b) => RANK[b] > RANK[a] ? b : a, "info");
-}
-function isFailing(s) {
-  return RANK[s] >= RANK.high;
-}
-function errMsg3(e) {
-  return redact(e instanceof Error ? e.message : String(e));
-}
-function trimSlash(url) {
-  return url.replace(/\/+$/, "");
-}
-async function baseUrl(ctx, opts = {}) {
-  const target = opts.target ?? "production";
-  if (target === "production" && ctx.config.domain) return `https://${ctx.config.domain}`;
-  const url = cap(ctx, "hosting", "url");
-  const got = url ? await url.get(ctx, target).catch(() => null) : null;
-  return got ? trimSlash(got) : null;
-}
-var blocked = (by, detail) => skip(`blocked by: ${by}${detail ? ` (${detail})` : ""}`);
-var AUTH_OK = "checks:auth-ok:";
-async function authBlock(ctx, axis) {
-  const a = adapterFor(ctx, axis);
-  if (!a || !a.automated) return null;
-  if (ctx.cache.get(AUTH_OK + a.id) === true) return null;
-  try {
-    if ((await a.auth(ctx)).ok) {
-      ctx.cache.set(AUTH_OK + a.id, true);
-      return null;
-    }
-  } catch {
-  }
-  return `login:${a.id}`;
-}
-function projectAxis(ctx, axis) {
-  if (axis === "hosting" || axis === "db") return axis;
-  if (axis === "auth" && ctx.config.stack.auth && ctx.config.stack.auth === ctx.config.stack.db) return "db";
-  return null;
-}
-async function projectBlock(ctx, axis) {
-  const pa = projectAxis(ctx, axis);
-  if (!pa) return null;
-  const linker = cap(ctx, pa, "project");
-  if (!linker) return null;
-  const cur = await linker.current(ctx).catch(() => null);
-  return cur ? null : `project:${pa}`;
-}
-async function prereq(ctx, axis, opts = {}) {
-  const by = await authBlock(ctx, axis) ?? (opts.project === false ? null : await projectBlock(ctx, axis));
-  return by ? blocked(by) : null;
-}
-function hostVariants(host) {
-  const h = host.toLowerCase();
-  return h.startsWith("www.") ? [h, h.slice(4)] : [h, `www.${h}`];
-}
-async function confirmedProductionUrl(ctx) {
-  const claimed = ctx.config.domain ? `https://${ctx.config.domain}` : "the production URL";
-  const cannot = (why) => ({ ok: false, outcome: skip(`cannot confirm ${claimed} belongs to your project yet (${why})`) });
-  const urlCap = cap(ctx, "hosting", "url");
-  if (!urlCap) return cannot(ctx.config.stack.hosting ? `hosting provider ${ctx.config.stack.hosting} can't report its URL (guided)` : "no hosting provider chosen");
-  const pre = await prereq(ctx, "hosting");
-  if (pre) return { ok: false, outcome: pre };
-  let got;
-  try {
-    got = await urlCap.get(ctx, "production");
-  } catch (e) {
-    return cannot(`the host could not report it: ${errMsg3(e)}`);
-  }
-  if (!got) return ctx.config.domain ? cannot("blocked by: deploy:production; the host reports no production URL") : { ok: false, outcome: blocked("deploy:production", "no production deployment yet") };
-  let u;
-  try {
-    u = new URL(got);
-  } catch {
-    return cannot(`the host reported an invalid URL`);
-  }
-  if (u.protocol !== "https:") return cannot(`the host reported a non-https URL ${u.origin}`);
-  for (const h of hostVariants(u.host)) allowHost(h);
-  return { ok: true, url: trimSlash(u.origin + u.pathname) };
-}
-async function probe(ctx, url, opts = {}) {
-  return ctx.http({ url, method: opts.method ?? "GET", body: opts.body, headers: opts.headers, timeoutMs: opts.timeoutMs ?? 2e4 });
-}
-function addressDomain(from) {
-  if (!from) return void 0;
-  const m = /@([^\s>@]+)>?\s*$/.exec(from.trim());
-  return m?.[1]?.toLowerCase();
-}
-function sendingDomainOf(ctx) {
-  return ctx.config.email?.domain ?? addressDomain(ctx.config.email?.from) ?? ctx.config.domain;
-}
-function globMatch(pattern, url) {
-  let re = "";
-  const p = trimSlash(pattern);
-  for (let i = 0; i < p.length; i++) {
-    const c = p[i];
-    if (c === "*" && p[i + 1] === "*") {
-      re += ".*";
-      i++;
-    } else if (c === "*") re += "[^/.]*";
-    else if (c === "?") re += ".";
-    else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  }
-  return new RegExp(`^${re}$`, "i").test(trimSlash(url));
-}
-function isLocalhost2(url) {
-  try {
-    const h = new URL(url).hostname;
-    return h === "localhost" || h.endsWith(".localhost") || h === "127.0.0.1" || h === "0.0.0.0" || h === "[::1]";
-  } catch {
-    return /localhost|127\.0\.0\.1/.test(url);
-  }
-}
-
 // src/checks/netlify-public-access.ts
 var NETLIFY_PUBLIC_ACCESS_CHECK = "netlify-public-access";
 function netlifyPublicAccessApplies(ctx) {
@@ -15903,20 +17104,20 @@ var accountsCheck = {
     const evidence = [];
     const fixes = [];
     for (const [id2, { adapter, axes }] of chosen) {
-      const label2 = `${id2} (${axes.join(", ")})`;
+      const label3 = `${id2} (${axes.join(", ")})`;
       if (!adapter || !adapter.automated) {
-        evidence.push(`${label2}: guided provider, no login needed by golive`);
+        evidence.push(`${label3}: guided provider, no login needed by golive`);
         continue;
       }
       try {
         const st = await adapter.auth(ctx);
-        if (st.ok) evidence.push(`${label2}: ok${st.via ? ` via ${st.via}` : ""}`);
+        if (st.ok) evidence.push(`${label3}: ok${st.via ? ` via ${st.via}` : ""}`);
         else {
-          evidence.push(`${label2}: not connected`);
+          evidence.push(`${label3}: not connected`);
           fixes.push(`${adapter.title}: ${st.howToFix ?? `log in with the ${adapter.title} CLI in a separate terminal window (Claude Code's \`!\` prefix has no interactive terminal)`}`);
         }
       } catch (e) {
-        evidence.push(`${label2}: auth check errored: ${errMsg3(e)}`);
+        evidence.push(`${label3}: auth check errored: ${errMsg2(e)}`);
         fixes.push(`${adapter.title}: check that its CLI is installed and logged in, then re-run`);
       }
     }
@@ -15986,10 +17187,10 @@ var envParityCheck = {
         names = new Set(await env.listNames(ctx, target));
       } catch (e) {
         if (isHiddenEnv(e)) {
-          block(`the hosting token's role cannot read ${target} env vars`, `${target}: ${errMsg3(e)}`);
+          block(`the hosting token's role cannot read ${target} env vars`, `${target}: ${errMsg2(e)}`);
           continue;
         }
-        return result("fail", "high", [`could not list ${target} env names: ${errMsg3(e)}`], "Re-run verify; if it persists, check the hosting login with `golive doctor`.");
+        return result("fail", "high", [`could not list ${target} env names: ${errMsg2(e)}`], "Re-run verify; if it persists, check the hosting login with `golive doctor`.");
       }
       const mm = [];
       for (const m of mapped) {
@@ -16183,15 +17384,15 @@ var bundleSecretsCheck = {
     try {
       bundle = await fetchBundle(ctx, base);
     } catch (e) {
-      return result("warn", "medium", [`could not fetch ${base}/: ${errMsg3(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
+      return result("warn", "medium", [`could not fetch ${base}/: ${errMsg2(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
     }
-    const seen = /* @__PURE__ */ new Set();
+    const seen2 = /* @__PURE__ */ new Set();
     const hits = [];
     for (const f of bundle.files) {
       for (const h of scanSecrets(f)) {
         const key = `${h.secret.fingerprint}@${h.path}`;
-        if (!seen.has(key)) {
-          seen.add(key);
+        if (!seen2.has(key)) {
+          seen2.add(key);
           hits.push(h);
         }
       }
@@ -16228,16 +17429,6 @@ var bundleSecretsCheck = {
     return pass([scanned, "no credential patterns found", ...bundle.notes]);
   }
 };
-
-// src/checks/providers.ts
-async function restProbe(ctx, ref3, table, schema, publishableKey2) {
-  const { supabaseRestProbe: supabaseRestProbe2 } = await Promise.resolve().then(() => (init_supabase(), supabase_exports));
-  return supabaseRestProbe2(ctx, ref3, table, schema, publishableKey2);
-}
-async function accountStatus(ctx, mode) {
-  const { stripeAccountStatus: stripeAccountStatus2 } = await Promise.resolve().then(() => (init_stripe(), stripe_exports));
-  return stripeAccountStatus2(ctx, mode);
-}
 
 // src/checks/rls.ts
 var MAX_TABLES = 60;
@@ -16280,7 +17471,7 @@ async function probeTable(ctx, ref3, key, t) {
   try {
     r = await restProbe(ctx, ref3, t.name, t.schema, key);
   } catch (e) {
-    return { severity: "medium", line: `${fq}: probe failed (${errMsg3(e)})` };
+    return { severity: "medium", line: `${fq}: probe failed (${errMsg2(e)})` };
   }
   if (r.status === 200 && r.rows > 0) return { severity: "critical", line: `anyone can read ${fq} (anonymous GET returned rows)` };
   if (r.status === 200 && !t.rls) return { severity: "high", line: `${fq} is exposed with RLS disabled (empty today; without RLS anyone with the public key can read and write it)` };
@@ -16309,7 +17500,7 @@ var rlsCheck = {
     try {
       tables2 = (await admin.tables(ctx)).filter((t) => !INTERNAL.test(t.schema));
     } catch (e) {
-      return result("fail", "high", [`could not list tables: ${errMsg3(e)}`], "Re-run verify; if it persists, check the Supabase login with `golive doctor`.");
+      return result("fail", "high", [`could not list tables: ${errMsg2(e)}`], "Re-run verify; if it persists, check the Supabase login with `golive doctor`.");
     }
     let noKey = false;
     if (tables2.length) {
@@ -16337,7 +17528,7 @@ var rlsCheck = {
           });
         }
       } catch (e) {
-        evidence.push(`advisors unavailable: ${errMsg3(e)}`);
+        evidence.push(`advisors unavailable: ${errMsg2(e)}`);
       }
     }
     const sev = worst(issues.map((i) => i.severity));
@@ -16375,7 +17566,7 @@ var dbConnectionCheck = {
       return result(
         "fail",
         "high",
-        [`read-only database probe failed: ${errMsg3(e)}`],
+        [`read-only database probe failed: ${errMsg2(e)}`],
         "Confirm the selected project, branch, database and role, then re-run verify. Do not paste connection strings into chat."
       );
     }
@@ -16416,7 +17607,7 @@ async function runUnsigned(ctx, url) {
   try {
     r = await probe(ctx, url, { method: "POST", body: {}, headers: { "user-agent": "golive-verify" } });
   } catch (e) {
-    return result("fail", "high", [`POST ${url} failed: ${errMsg3(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
+    return result("fail", "high", [`POST ${url} failed: ${errMsg2(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
   }
   const ev = `POST ${url} without Stripe-Signature \u2192 HTTP ${r.status}`;
   const s = r.status;
@@ -16471,7 +17662,7 @@ var webhookRegisteredCheck = {
         match = endpoints.filter((e) => e.url === expected);
       }
     } catch (e) {
-      return result("fail", "high", [`could not list ${mode}-mode webhook endpoints: ${errMsg3(e)}`], "Re-run verify; if it persists, check the Stripe login with `golive doctor`.");
+      return result("fail", "high", [`could not list ${mode}-mode webhook endpoints: ${errMsg2(e)}`], "Re-run verify; if it persists, check the Stripe login with `golive doctor`.");
     }
     if (!match.length) {
       const others = endpoints.map((e) => e.url).slice(0, 5);
@@ -16504,7 +17695,7 @@ var stripeLiveReadyCheck = {
       if (e.status === 403) {
         return result("warn", "medium", ["live readiness unknown: this key cannot read the Stripe account (restricted key without Account: Read)"], "Check Settings \u2192 Account in the Stripe Dashboard, or give the key Account: Read, then re-run verify.");
       }
-      return result("fail", "high", [`could not read the live Stripe account: ${errMsg3(e)}`], "Re-run verify; if it persists, check the Stripe login with `golive doctor`.");
+      return result("fail", "high", [`could not read the live Stripe account: ${errMsg2(e)}`], "Re-run verify; if it persists, check the Stripe login with `golive doctor`.");
     }
     const ev = [`charges_enabled: ${st.chargesEnabled}`, `details_submitted: ${st.detailsSubmitted}`];
     if (st.chargesEnabled) return pass(ev);
@@ -16537,12 +17728,12 @@ var authRedirectsCheck = {
     try {
       cfg2 = await auth8.get(ctx);
     } catch (e) {
-      return result("fail", "high", [`could not read auth settings: ${errMsg3(e)}`], "Re-run verify; if it persists, check the auth provider with `golive doctor`.");
+      return result("fail", "high", [`could not read auth settings: ${errMsg2(e)}`], "Re-run verify; if it persists, check the auth provider with `golive doctor`.");
     }
     const problems = [];
     const evidence = [`production URL: ${prod}`, `site URL: ${cfg2.siteUrl ?? "(unset)"}`];
     if (!cfg2.siteUrl) problems.push("site URL is not set");
-    else if (isLocalhost2(cfg2.siteUrl)) problems.push(`site URL is localhost (${cfg2.siteUrl}): emails and OAuth will send production users to localhost`);
+    else if (isLocalhost(cfg2.siteUrl)) problems.push(`site URL is localhost (${cfg2.siteUrl}): emails and OAuth will send production users to localhost`);
     else if (trimSlash(cfg2.siteUrl) !== prod) problems.push(`site URL ${cfg2.siteUrl} is not the production URL`);
     const paths = ctx.config.auth?.redirectPaths;
     if (paths?.length) {
@@ -16554,7 +17745,7 @@ var authRedirectsCheck = {
       if (!onProd.length) problems.push(`redirect allowlist has no entry for ${prod}`);
       else evidence.push(`redirect allowlist covers ${prod} (${onProd.slice(0, 3).join(", ")})`);
     }
-    const local = cfg2.redirectUrls.filter(isLocalhost2);
+    const local = cfg2.redirectUrls.filter(isLocalhost);
     if (problems.length) {
       return result("fail", "high", [...problems, ...evidence], `Run \`golive plan\` and apply the auth-redirects step (sets site URL to ${prod} and adds ${prod}/** to the allowlist).`);
     }
@@ -16585,7 +17776,7 @@ var authPolicyCheck = {
     try {
       cfg2 = await auth8.get(ctx);
     } catch (e) {
-      return result("fail", "high", [`could not read ${provider} auth settings: ${errMsg3(e)}`], "Re-run verify; if it persists, check the auth provider with `golive doctor`.");
+      return result("fail", "high", [`could not read ${provider} auth settings: ${errMsg2(e)}`], "Re-run verify; if it persists, check the auth provider with `golive doctor`.");
     }
     const issues = [];
     const evidence = [];
@@ -16687,7 +17878,7 @@ async function q(ctx, name3, type, errors) {
   try {
     return await lookup(ctx, name3, type);
   } catch (e) {
-    errors.push(`${type} ${name3}: ${errMsg3(e)}`);
+    errors.push(`${type} ${name3}: ${errMsg2(e)}`);
     return [];
   }
 }
@@ -16718,10 +17909,10 @@ function satisfies2(rec, published) {
 async function checkProviderRecords(ctx, records3, issues, ok, errors) {
   for (const rec of records3) {
     const published = await q(ctx, rec.name, rec.type, errors);
-    const label2 = `${rec.type} ${rec.name}`;
-    if (satisfies2(rec, published)) ok.push(`${label2}: matches ${short2(rec.content)}`);
-    else if (published.length) issues.push({ severity: "high", line: `${label2} is ${short2(published[0])} but the provider expects ${short2(rec.content)}` });
-    else issues.push({ severity: "high", line: `${label2} is missing (the provider expects ${short2(rec.content)})` });
+    const label3 = `${rec.type} ${rec.name}`;
+    if (satisfies2(rec, published)) ok.push(`${label3}: matches ${short2(rec.content)}`);
+    else if (published.length) issues.push({ severity: "high", line: `${label3} is ${short2(published[0])} but the provider expects ${short2(rec.content)}` });
+    else issues.push({ severity: "high", line: `${label3} is missing (the provider expects ${short2(rec.content)})` });
   }
 }
 var isSpf2 = (t) => /^v=spf1\b/i.test(t);
@@ -16797,7 +17988,7 @@ var emailDnsCheck = {
           if (got.length) records3 = got;
           else notes.push(`${provider} listed no DNS records for ${d}; checked common record locations instead`);
         } catch (e) {
-          notes.push(`could not read ${provider}'s record list (${errMsg3(e)}); checked common record locations instead`);
+          notes.push(`could not read ${provider}'s record list (${errMsg2(e)}); checked common record locations instead`);
         }
       }
     }
@@ -16833,79 +18024,13 @@ var emailVerifiedCheck = {
     try {
       st = await sd.status(ctx, id2);
     } catch (e) {
-      return result("fail", "high", [`could not read ${provider} domain ${id2}: ${errMsg3(e)}`], "Re-run verify; if it persists, check the email provider with `golive doctor`.");
+      return result("fail", "high", [`could not read ${provider} domain ${id2}: ${errMsg2(e)}`], "Re-run verify; if it persists, check the email provider with `golive doctor`.");
     }
     const ev = [`${provider} domain ${d} (${id2}): ${st}`];
     if (st === "verified") return pass(ev);
     if (st === "pending") return result("warn", "medium", ev, "DNS checks are still running at the provider (can take minutes to hours after records are added). Re-run verify later.");
     if (st === "not_started") return result("warn", "medium", ev, "Verification has not been requested yet: re-run apply (the email-domain step triggers it) once the DNS records exist.");
     return result("fail", "high", ev, `The provider could not find the DNS records. Compare the records for ${d} in the provider dashboard with your DNS (see the \`email-dns\` check), fix them, then re-run apply.`);
-  }
-};
-
-// src/checks/domain.ts
-init_http();
-var PROPAGATION_MS = 48 * 60 * 60 * 1e3;
-var HOSTING_DNS_STEP = "domain:dns";
-function recentlyChanged(ctx) {
-  const rec = ctx.state.get().steps[HOSTING_DNS_STEP];
-  return Boolean(rec && rec.status === "done" && Date.now() - Date.parse(rec.at) < PROPAGATION_MS);
-}
-var domainLiveCheck = {
-  id: "domain-live",
-  title: "Custom domain resolves and serves HTTPS",
-  severity: "high",
-  applies: (ctx) => Boolean(ctx.config.domain),
-  async run(ctx) {
-    const d = ctx.config.domain;
-    const evidence = [];
-    const found = [];
-    const errors = [];
-    for (const type of ["A", "AAAA", "CNAME"]) {
-      try {
-        const vals = await lookup(ctx, d, type);
-        if (vals.length) found.push(`${type} ${vals.slice(0, 3).join(", ")}`);
-      } catch (e) {
-        errors.push(`${type}: ${errMsg3(e)}`);
-      }
-    }
-    if (!found.length) {
-      const ev = [`${d} has no A/AAAA/CNAME records in public DNS`, ...errors];
-      if (recentlyChanged(ctx)) return result("warn", "medium", [...ev, "DNS was changed recently: not propagated yet"], "Wait for DNS to propagate (usually minutes, up to 48h), then re-run verify.");
-      return result("fail", "high", ev, `Point ${d} at your host: run \`golive plan\` (automated DNS) or add the records your host lists for ${d} at your DNS provider.`);
-    }
-    evidence.push(`DNS: ${found.join("; ")}`);
-    const attach = cap(ctx, "hosting", "domain");
-    if (attach) {
-      const pre = await prereq(ctx, "hosting");
-      if (pre) return pre;
-      let st;
-      try {
-        st = await attach.status(ctx, d);
-      } catch (e) {
-        return result("skip", "info", [`cannot confirm ${d} is attached to your ${ctx.config.stack.hosting ?? "hosting"} project: the host domain status is unavailable (${errMsg3(e)})`, ...evidence]);
-      }
-      evidence.push(`host reports domain ${st}`);
-      if (st === "misconfigured") return result("fail", "high", evidence, `${d} is not attached to your hosting project or its DNS does not point at the host. Run \`golive plan\` (it attaches the domain and shows the records the host requires) and fix them at your DNS provider.`);
-      if (st === "pending") {
-        return result("warn", "medium", evidence, `The host has not confirmed ${d} yet: DNS may still be propagating, or domain ownership is not verified (e.g. a TXT challenge because the domain was used by another account). Add any records \`golive plan\` lists, apply, then re-run verify.`);
-      }
-    } else {
-      evidence.push(
-        ctx.config.stack.hosting ? `host attachment not confirmed: ${ctx.config.stack.hosting} can't report domain status (guided), so this checks DNS + HTTPS only` : "host attachment not confirmed: no hosting provider chosen, so this checks DNS + HTTPS only"
-      );
-    }
-    const url = `https://${d}/`;
-    for (const h of hostVariants(d)) allowHost(h);
-    let res;
-    try {
-      res = await probe(ctx, url);
-    } catch (e) {
-      return result("fail", "high", [...evidence, `GET ${url} failed (TLS or connection error): ${errMsg3(e)}`], "The certificate may still be issuing (a few minutes after DNS resolves); if it persists, check the domain status in your host dashboard.");
-    }
-    evidence.push(`GET ${url} \u2192 HTTP ${res.status}${res.headers.location ? ` (\u2192 ${res.headers.location})` : ""}`);
-    if (res.status >= 200 && res.status < 400) return pass(evidence);
-    return result("fail", "high", evidence, `${d} resolves and serves TLS but returns HTTP ${res.status}. Check that the domain is attached to the right project and the production deployment is healthy.`);
   }
 };
 
@@ -18267,15 +19392,15 @@ function limits(ctx, input) {
 }
 async function currentProjects(ctx) {
   const out = /* @__PURE__ */ new Map();
-  const seen = /* @__PURE__ */ new Map();
+  const seen2 = /* @__PURE__ */ new Map();
   for (const axis of ["hosting", "db"]) {
     const adapter = adapterFor(ctx, axis);
     const linker = adapter?.capabilities.project;
     if (!adapter || !linker) continue;
-    let read = seen.get(adapter.id);
+    let read = seen2.get(adapter.id);
     if (!read) {
       read = linker.current(ctx).catch(() => null);
-      seen.set(adapter.id, read);
+      seen2.set(adapter.id, read);
     }
     out.set(axis, await read);
   }
@@ -18700,8 +19825,8 @@ function retirementLine(r) {
 }
 function manualLines(m) {
   const out = [];
-  const label2 = m.kind === "recurring" ? "recurring" : m.blocking ? "blocking" : "open";
-  out.push(`- **[${label2}]** ${m.action}${m.url ? ` (${m.url})` : ""} ${tag(m.provenance)}`);
+  const label3 = m.kind === "recurring" ? "recurring" : m.blocking ? "blocking" : "open";
+  out.push(`- **[${label3}]** ${m.action}${m.url ? ` (${m.url})` : ""} ${tag(m.provenance)}`);
   out.push(`  - Why: ${m.why ?? m.title}`);
   if (m.kind === "handoff") out.push(`  - Handoff id: \`${m.title}\``);
   else out.push(`  - Job: \`${m.title}\``);
@@ -18753,6 +19878,8 @@ Commands (add --json for machine output; --cwd <dir> to target another repo):
   apply --plan <id> --yes    Execute the approved plan. Risky steps also need --confirm-live /
         [--confirm-live] [--confirm-dns] [--confirm-destroy] [--only id,id] [--force]
   verify [--only id,id]      Run live checks; writes .golive/report.json and GOLIVE_REPORT.md.
+  status                     Has anything changed behind golive's back? Recorded baselines vs reads
+                             taken now (read-only, writes no file). Exit 2 = something to act on.
   handoff                    What only the human can do (logins, KYC, payments), and whether it's done.
        [--write] [--force]   --write also writes .golive/handover.json and GOLIVE_HANDOVER.md (the
                              ownership/renewal document); --force replaces files golive did not write.
@@ -18888,6 +20015,13 @@ async function main(argv) {
       writeFileSync6(reportPaths.markdown, renderReport(report));
       emit({ ok: report.summary.fail === 0, report, reportPaths }, { json: json2 });
       return report.summary.fail === 0 ? 0 : 2;
+    }
+    case "status": {
+      const drift = await detectDrift(ctx);
+      const actionable = drift.items.filter((i) => i.action !== "none");
+      const note = drift.notChecked.length ? `${drift.notChecked.length} subject(s) could not be compared this run (see notChecked): golive did not read them, so this is not a clean bill of health` : void 0;
+      emit({ ok: actionable.length === 0, ...drift, ...note ? { note } : {} }, { json: json2 });
+      return actionable.length ? 2 : 0;
     }
     case "handoff": {
       const plan = await buildPlan(ctx, linkList(), { unmappedEnv: env.unmapped, warnings: [] });
