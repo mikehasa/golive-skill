@@ -434,10 +434,10 @@ domain renewal), how removal works, and the commands that re-check each subject.
 `[verified by golive]`, `[recorded <date>, not re-checked]`, `[not verifiable by golive]` or
 `[unknown]` — treat the last three as unverified, and never present the document as drift detection,
 because nothing was re-checked unless its row says so (use `status` to re-check those subjects). It
-contains no secret values, but it names
-accounts and resources: tell the human to review it before sharing it. The CLI's report is
-`GOLIVE_REPORT.md`; `HANDOFF.local.md` is unrelated private local notes that golive never reads or
-writes.
+contains no secret values, but it names accounts and resources: tell the human to review it before
+sharing it. The CLI's report is `GOLIVE_REPORT.md`. Recommend adding `.golive/`, `GOLIVE_REPORT.md`
+and `GOLIVE_HANDOVER.md` to the app's own `.gitignore`: state, report and handover carry resource ids
+and account names, while credential values live outside the repo in the private credentials file.
 
 ## More detail (load only what you need)
 

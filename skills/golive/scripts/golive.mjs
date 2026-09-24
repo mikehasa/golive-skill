@@ -15947,6 +15947,7 @@ var netlifyProject = {
       delete s.resources["netlify.siteId"];
       delete s.resources["netlify.siteName"];
       delete s.resources["netlify.createdProjectId"];
+      delete s.resources["netlify.previewDeployId"];
     });
     return { removed: true };
   }

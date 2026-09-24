@@ -306,7 +306,9 @@ lives); retirement (the teardown inventory with its `--confirm-destroy` / `--con
 provenance footer. Every row carries `[verified by golive]`, `[recorded <date>, not re-checked]`,
 `[not verifiable by golive]` or `[unknown]`. Treat the last three as unverified: this document is not
 drift detection. It holds no secret values, but it names accounts and resources — review it before
-sharing it.
+sharing it. Recommend adding `.golive/`, `GOLIVE_REPORT.md` and `GOLIVE_HANDOVER.md` to the app's own
+`.gitignore`: state, report and handover carry resource ids and account names, while credential
+values live outside the repo in the private credentials file.
 
 ## 4. Verify
 

@@ -10,3 +10,7 @@ dist/
 .fixtures-local/
 # private local agent handoff notes, never published
 HANDOFF.local.md
+# golive state, report and handover: resource ids and account names, never published
+.golive/
+GOLIVE_REPORT.md
+GOLIVE_HANDOVER.md
