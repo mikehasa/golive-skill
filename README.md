@@ -12,8 +12,8 @@ can be observed, and make unfinished work clear. No GoLive account, hosted backe
 
 > **Early alpha · 0.1.0-alpha.1**
 > We are starting with **hosting + database: two choices each**. Vercel + Supabase and Netlify +
-> Neon passed disposable live tests; custom-domain DNS, transactional email and test-mode payments
-> have since passed their own disposable validations. The broader
+> Neon passed disposable live tests; custom-domain DNS, transactional email, test-mode payments and
+> Supabase authentication have since passed their own disposable validations. The broader
 > [roadmap](#the-full-go-live-checklist-and-roadmap) is our direction, not a claim that it is all built.
 
 [Install](#install) · [Use GoLive](#use-golive) · [See the workflow](#what-a-run-looks-like) · [Alpha scope](#what-this-alpha-supports) · [Roadmap](#the-full-go-live-checklist-and-roadmap) · [Contribute](CONTRIBUTING.md)
@@ -160,14 +160,18 @@ token. A new user's first-account setup and every application framework have not
 Experimental adapters also exist for Supabase Auth configuration, the Supabase Auth signup journey and
 Cloudflare DNS. Supabase Auth settings — signup, email confirmation, minimum password length, the
 mailer it uses, plus the site URL and redirect allowlist — are automated through an approved plan and
-re-read for evidence, but **that whole path has not been exercised against a live project yet**: it is
-implemented, not live-validated. The same holds for the opt-in signup journey (`auth.e2e`): one
-approved step seeds a real test account (`auth:test-user`, needs `--confirm-live`), the human clicks
-the confirmation link in their own inbox (`auth:confirm-email`), and the `auth-signup`/`auth-session`
-checks prove the signup email, the enforced confirmation, the session and a protected route — code
-and mocked coverage exist, **no live signup, email delivery or session has been verified yet**. The
-domain journey is **not a validated alpha path yet** either; the DNS, email and test-mode payment
-paths listed above are the tested ones. See [provider scope](docs/PROVIDERS.md) and
+re-read for evidence, and that path passed a disposable live run: the policy write held in the
+read-back (`password minimum length: 6 → 12`) and `auth-policy` ended with the built-in-mailer
+advisory as its only finding. The opt-in signup journey (`auth.e2e`) passed the same run: one approved
+step seeded a real test account (`auth:test-user`, needs `--confirm-live`), the address could not sign
+in before confirming (`email_not_confirmed`), and the `auth-signup`/`auth-session` checks proved the
+signup email, the enforced confirmation, the confirmed login, the session token and the anonymous
+refusal. Two limits stay: the confirmation was applied through the Auth admin API rather than the
+seeded account's own email click, and inbox delivery is human-confirmed by design — golive never sees
+the inbox. `auth.protectedPath` and the signed-in table probe were not exercised (that run had no app
+route and no exposed tables). The domain journey is **not a validated alpha path yet** either; the
+DNS, email and test-mode payment paths listed above are the tested ones, and other auth providers
+stay guided. See [provider scope](docs/PROVIDERS.md) and
 [observed validation](docs/VALIDATION.md).
 
 ## The full go-live checklist and roadmap
@@ -200,12 +204,15 @@ live-tested milestones**, not a finished category or a completed checklist for y
 - [ ] 🚧 **Authentication:** signup, login, sessions, password recovery and account isolation.
   Supabase auth policy (signup, email confirmation, minimum password length, mailer) and the site
   URL/redirect allowlist are written through an approved plan, re-read for evidence and verified
-  by the `auth-policy`/`auth-redirects` checks — implemented, not yet exercised against a live
-  project. The opt-in journey (`auth.e2e: true`) goes further: the `auth:test-user` step seeds a real
-  test account, the human clicks the confirmation link in their inbox (`auth:confirm-email`), and the
-  `auth-signup`/`auth-session` checks prove the signup email, the enforced confirmation, the session
-  and a declared protected path — **implemented and mock-covered only; no live signup, delivery or
-  session has been validated**. Password recovery and account isolation still need work.
+  by the `auth-policy`/`auth-redirects` checks — exercised in an approved disposable run, where the
+  policy write held at a twelve-character minimum. The opt-in journey (`auth.e2e: true`) passed the
+  same run: the `auth:test-user` step seeded a real test account, that address could not sign in
+  before confirming, and the `auth-signup`/`auth-session` checks proved the signup email, the enforced
+  confirmation, the confirmed login and the session token — **live-validated for Supabase on that
+  disposable project, where the confirmation came through the Auth admin API instead of the seeded
+  email click, inbox delivery stayed human-confirmed, and no declared protected path or exposed table
+  was available to probe**. Other auth providers stay guided; password recovery and account isolation
+  still need work.
 - [ ] 🗺️ **OAuth / social login / SSO:** client registration, consent screens, scopes, callback
   URLs and provider reviews. Current auth-provider setup is guided.
 - [x] ✅ **Payments and subscriptions:** ~~Prove test-mode checkout and webhook acceptance with Stripe.~~
@@ -235,8 +242,9 @@ live-tested milestones**, not a finished category or a completed checklist for y
   provider suggestions.
 - [ ] 🗺️ **CI/CD and safe releases:** previews, release checks, promotion, rollback and drift
   detection, building on today's approved CLI deployments. Drift detection exists as the read-only
-  `golive status` command below (implemented, not yet exercised against a real account); previews,
-  promotion and rollback are still planned.
+  `golive status` command below (it ran read-only in the auth validation and had nothing actionable
+  once that journey passed, but the DNS, environment, webhook and deployment baselines it compares
+  still lack live evidence); previews, promotion and rollback are still planned.
 - [ ] 🗺️ **Backups and recovery:** retention, restore drills, incident steps and approved cleanup.
   Approved `teardown` removes what golive created; backups and any restore remain manual, supervised work.
 - [x] ✅ **Uninstall / teardown:** ~~an approved inventory of golive-created resources and their removal.~~
@@ -253,7 +261,8 @@ live-tested milestones**, not a finished category or a completed checklist for y
   recurring jobs and removal gates in `GOLIVE_HANDOVER.md`, tagging every row as verified, recorded,
   not verifiable or unknown, and `golive status` re-reads those subjects on demand: it compares the
   baselines golive recorded with the providers as they are now, and names what it could not read.
-  Drift re-baselining stays manual and approved — the command is implemented, not yet live-validated.
+  Drift re-baselining stays manual and approved — the command is implemented and ran read-only in the
+  auth validation, but a live validation of every drift subject is still pending.
 
 Some steps will always need a person: accepting terms, identity verification, purchases, billing
 choices and reviews that a provider requires. “Guided” should still mean a clear next action,
@@ -261,8 +270,9 @@ the right page, the right permissions, a check afterward, and a return to the sa
 When the app itself needs code changes, GoLive should give the coding agent a concrete task and
 recheck the result. It should not make you coordinate a dozen disconnected setup conversations.
 
-**Next up:** complete and live-test the remaining launch journeys—authentication, live-mode payment
-flows and the Cloudflare DNS adapter—then expand app architectures and ongoing operations.
+**Next up:** complete and live-test the remaining launch journeys—the rest of authentication
+(password recovery and account isolation), live-mode payment flows and the Cloudflare DNS
+adapter—then expand app architectures and ongoing operations.
 
 These are directions, not release dates. A capability should graduate from experimental only after
 its account setup, connection, verification and recovery have been exercised. Contributions toward
@@ -314,7 +324,9 @@ approved change, or a decision only a human can make. It is read-only: no report
 write, no state change, and it exits with `2` when something needs acting on. A provider it cannot read
 is reported as unverifiable — never as clean, and never as a failure — and it never re-baselines
 anything by itself. Drift is deliberately not a gate: `plan`, `apply` and `verify` never consult it.
-Like the Supabase auth path, `status` is **implemented but not yet live-validated**.
+`status` is **implemented**, and it ran read-only during the Supabase auth validation (a failed step
+surfaced as actionable, then an empty list once it completed), but a live validation of the remaining
+drift subjects is still pending.
 
 ## Credentials and control
 
