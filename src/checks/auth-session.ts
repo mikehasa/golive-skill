@@ -9,6 +9,11 @@ import { adapterFor, blocked, cap, confirmedProductionUrl, errMsg, prereq, probe
 
 /** How many exposed tables the signed-in probe reads: enough to notice a table-wide denial. */
 const MAX_TABLES = 10;
+/** How many table names the evidence prints per verdict before it says how many more there were. */
+const MAX_NAMED = 4;
+
+/** What one table probe showed: the summary counts these, the evidence names them. */
+type Verdict = 'reachable' | 'denied' | 'undecided';
 
 interface Issue {
   severity: CheckOutcome['severity'];
@@ -20,7 +25,9 @@ interface Issue {
  * The session half of the authentication journey: the seeded account signs in with its password, the
  * session token is accepted by `GET /auth/v1/user` for the SAME user, the same endpoint refuses an
  * anonymous request, and — when `auth.protectedPath` names an app route — that route is not publicly
- * readable. The last leg is an active probe of the host-confirmed production URL only.
+ * readable, corroborated against the public root so an edge wall cannot pass for the app's refusal.
+ * The protected-path leg is an active probe of the host-confirmed production URL only, reading at
+ * most two URLs: the declared path, and the root that must stay public.
  *
  * The table probe uses the signed-in token, not anonymity (`rls-probe` owns that): it notices an
  * `authenticated` role that cannot reach any exposed table, which is a missing GRANT, not a leak.
@@ -117,7 +124,8 @@ export const authSessionCheck: Check = {
       const confirmed = await confirmedProductionUrl(ctx);
       if (!confirmed.ok) blockedLeg = confirmed.outcome;
       else {
-        const url = `${trimSlash(confirmed.url)}${path}`;
+        const base = trimSlash(confirmed.url);
+        const url = `${base}${path}`;
         let r;
         try {
           r = await probe(ctx, url, { headers: { 'user-agent': 'golive-verify' } });
@@ -135,8 +143,11 @@ export const authSessionCheck: Check = {
               `Make ${path} require a session (redirect to sign-in, or answer 401/403 when there is no session). If the route renders a sign-in page with 200 instead, pick a path that redirects in \`auth.protectedPath\` — golive cannot tell a rendered sign-in page from a public page.`,
             );
           }
-          if (r.status === 401 || r.status === 403) evidence.push(`${line}: protected without a session`);
-          else if (r.status >= 300 && r.status < 400) evidence.push(`${line}: redirected out of the route without a session`);
+          if (r.status === 401 || r.status === 403) {
+            const leg = await publicRouteRead(ctx, base, url, line, r.status);
+            if (leg.evidence) evidence.push(leg.evidence);
+            if (leg.issue) issues.push(leg.issue);
+          } else if (r.status >= 300 && r.status < 400) evidence.push(`${line}: redirected out of the route without a session`);
           else issues.push({ severity: 'medium', line: `${line}: golive could not establish protection (a 404 usually means the path in auth.protectedPath is wrong or not deployed)` });
         }
       }
@@ -157,9 +168,53 @@ export const authSessionCheck: Check = {
 };
 
 /**
- * Read the app's exposed tables AS the signed-in user. Every table refusing the `authenticated` role
- * is the signature of a missing GRANT (new projects no longer grant new tables automatically); a
- * reachable table is evidence, not a leak finding — anonymity is `rls-probe`'s job.
+ * The declared protected path answered 401/403 — which is also what a WAF, edge rule, visitor access
+ * or a maintenance page answers. One more request to the route that must stay public (the production
+ * root, never a second guess at the app's routing) separates the two: a root that answers normally
+ * scopes the refusal to this path, a walled root means golive cannot attribute it to the app, and
+ * anything else is reported as what it was. Never more than these two URLs are read.
+ */
+async function publicRouteRead(ctx: Ctx, base: string, url: string, line: string, status: number): Promise<{ evidence?: string; issue?: Issue }> {
+  const root = `${base}/`;
+  let rootStatus: number;
+  try {
+    // A declared path that IS the root needs no second request: the same read already answered.
+    rootStatus = root === url ? status : (await probe(ctx, root, { headers: { 'user-agent': 'golive-verify' } })).status;
+  } catch (e) {
+    return {
+      issue: {
+        severity: 'medium',
+        line: `${line}: golive could not attribute the refusal to the app, because the public root ${root} could not be read (${errMsg(e)})`,
+        fix: `Re-run verify: the protected-path leg stays unconfirmed until ${root}, the route that must stay public, can be read anonymously.`,
+      },
+    };
+  }
+  if (rootStatus >= 200 && rootStatus < 300) {
+    return { evidence: `${line}: protected without a session, and the public root ${root} answered HTTP ${rootStatus} to the same anonymous request, so the refusal is scoped to this path rather than a wall over the whole origin` };
+  }
+  if (rootStatus === 401 || rootStatus === 403) {
+    return {
+      issue: {
+        severity: 'medium',
+        line: `${line}: inconclusive, because the public root ${root} also answered HTTP ${rootStatus} — a WAF, edge rule, visitor access or a maintenance page refuses the whole origin the same way, so golive cannot tell its refusal from the app's`,
+        fix: `Make ${root} answer as the public page it must be (turn off the protection wall, visitor access or the maintenance page for production), then re-run verify: while the whole origin is walled, golive cannot confirm that ${url} is protected by your app.`,
+      },
+    };
+  }
+  return {
+    issue: {
+      severity: 'medium',
+      line: `${line}: golive could not attribute the refusal to the app, because the public root ${root} answered HTTP ${rootStatus} rather than a normal page`,
+      fix: `Make ${root} answer normally to an anonymous request, then re-run verify: only a readable public route shows that ${url} is refused by the app rather than by something in front of it.`,
+    },
+  };
+}
+
+/**
+ * Read the app's exposed tables AS the signed-in user, and name them. Every table refusing the
+ * `authenticated` role is the signature of a missing GRANT (new projects no longer grant new tables
+ * automatically); a reachable table is evidence, not a leak finding — anonymity is `rls-probe`'s job.
+ * The count line stays, and each verdict names up to MAX_NAMED of its tables so it can be audited.
  */
 async function signedInTables(ctx: Ctx, ref: string, token: Secret): Promise<{ lines: string[]; issue?: Issue }> {
   const admin = cap(ctx, 'db', 'dbAdmin');
@@ -180,20 +235,28 @@ async function signedInTables(ctx: Ctx, ref: string, token: Secret): Promise<{ l
   }
   if (!tables.length) return { lines: ['no tables in exposed schemas'] };
   const batch = tables.slice(0, MAX_TABLES);
-  let reachable = 0;
-  let denied = 0;
-  let other = 0;
+  const read: Array<{ fq: string; verdict: Verdict }> = [];
   for (const t of batch) {
+    let verdict: Verdict;
     try {
       const r = await authedRestProbe(ctx, ref, t.name, t.schema, key, token);
-      if (r.status === 200) reachable++;
-      else if ([401, 403, 404, 406].includes(r.status) || r.code === '42501') denied++;
-      else other++;
+      verdict = r.status === 200 ? 'reachable' : [401, 403, 404, 406].includes(r.status) || r.code === '42501' ? 'denied' : 'undecided';
     } catch {
-      other++;
+      verdict = 'undecided';
     }
+    read.push({ fq: `${t.schema}.${t.name}`, verdict });
   }
-  const lines = [`probed ${batch.length} exposed table(s) as the signed-in user: ${reachable} reachable, ${denied} denied, ${other} undecided`];
+  const count = (v: Verdict) => read.filter((t) => t.verdict === v).length;
+  const denied = count('denied');
+  const lines = [
+    `probed ${batch.length} exposed table(s) as the signed-in user: ${count('reachable')} reachable, ${denied} denied, ${count('undecided')} undecided`,
+    ...(['reachable', 'denied', 'undecided'] as const).flatMap((v) => {
+      const names = read.filter((t) => t.verdict === v).map((t) => t.fq);
+      if (!names.length) return [];
+      const beyond = names.length - MAX_NAMED;
+      return [`${v}: ${names.slice(0, MAX_NAMED).join(', ')}${beyond > 0 ? ` (+${beyond} more)` : ''}`];
+    }),
+  ];
   if (tables.length > batch.length) lines.push(`${tables.length - batch.length} further table(s) were not probed`);
   if (denied === batch.length) {
     return {

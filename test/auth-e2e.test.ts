@@ -493,6 +493,49 @@ describe('auth-session check', () => {
     expect(r.fix).toMatch(/grant select on <table> to authenticated/);
   });
 
+  it('names the tables it probed as the signed-in user, one line per verdict', async () => {
+    const { http } = mockHttp([
+      ['GET', `${PROD}/dashboard`, () => ({ status: 302, headers: { location: '/login' } })],
+    ]);
+    const { ctx } = seededCtx({
+      http,
+      arrange: (w) => {
+        w.adapters.find((a) => a.id === 'fakedb')!.capabilities.dbAdmin!.tables = async () => [table('orders'), table('profiles'), table('events')];
+      },
+    });
+    authedProbe.mockImplementation(async (_c, _ref, name) =>
+      name === 'profiles' ? { status: 403, rows: 0, code: '42501' } : name === 'events' ? { status: 500, rows: 0 } : { status: 200, rows: 0 });
+    const r = await run(authSessionCheck, ctx);
+    expect(r.status).toBe('pass');
+    const text = r.evidence.join('\n');
+    expect(text).toMatch(/probed 3 exposed table\(s\) as the signed-in user: 1 reachable, 1 denied, 1 undecided/);
+    // The count stays, and each table behind it is named so the line can be audited.
+    expect(text).toMatch(/^reachable: public\.orders$/m);
+    expect(text).toMatch(/^denied: public\.profiles$/m);
+    expect(text).toMatch(/^undecided: public\.events$/m);
+  });
+
+  it('caps the table names it prints, and says how many were beyond the cap', async () => {
+    const { http } = mockHttp([['GET', `${PROD}/dashboard`, () => ({ status: 302, headers: { location: '/login' } })]]);
+    const names = ['t01', 't02', 't03', 't04', 't05', 't06', 't07', 't08', 't09', 't10', 't11', 't12'];
+    const { ctx } = seededCtx({
+      http,
+      arrange: (w) => {
+        w.adapters.find((a) => a.id === 'fakedb')!.capabilities.dbAdmin!.tables = async () => names.map((n) => table(n));
+      },
+    });
+    authedProbe.mockImplementation(async (_c, _ref, name) => (Number(name.slice(1)) <= 6 ? { status: 200, rows: 0 } : { status: 403, rows: 0, code: '42501' }));
+    const r = await run(authSessionCheck, ctx);
+    expect(r.status).toBe('pass');
+    const text = r.evidence.join('\n');
+    expect(text).toMatch(/probed 10 exposed table\(s\) as the signed-in user: 6 reachable, 4 denied, 0 undecided/);
+    expect(text).toMatch(/^reachable: public\.t01, public\.t02, public\.t03, public\.t04 \(\+2 more\)$/m);
+    expect(text).toMatch(/^denied: public\.t07, public\.t08, public\.t09, public\.t10$/m);
+    expect(text).toMatch(/2 further table\(s\) were not probed/);
+    // A large schema is summarized, not dumped: the fifth name and the unprobed ones are absent.
+    expect(text).not.toMatch(/public\.t05|public\.t11/);
+  });
+
   it('passes with a session, an anonymous refusal and a protected route', async () => {
     const { http } = mockHttp([['GET', `${PROD}/dashboard`, () => ({ status: 307, headers: { location: '/login' } })]]);
     const r = await run(authSessionCheck, seededCtx({ http }).ctx);
@@ -500,8 +543,59 @@ describe('auth-session check', () => {
     expect(r.evidence.join('\n')).toMatch(/anonymous GET https:\/\/shop\.fakehost\.app\/dashboard → HTTP 307 \(→ \/login\): redirected out of the route without a session/);
   });
 
+  it('corroborates a refused protected path with the public root, in exactly two requests', async () => {
+    const { http, calls } = mockHttp([
+      ['GET', `${PROD}/dashboard`, () => ({ status: 401 })],
+      ['GET', `${PROD}/`, () => ({ status: 200, text: '<html>shop</html>' })],
+    ]);
+    const r = await run(authSessionCheck, seededCtx({ http }).ctx);
+    expect(r.status).toBe('pass');
+    expect(r.evidence.join('\n')).toMatch(
+      /anonymous GET https:\/\/shop\.fakehost\.app\/dashboard → HTTP 401: protected without a session, and the public root https:\/\/shop\.fakehost\.app\/ answered HTTP 200 to the same anonymous request, so the refusal is scoped to this path rather than a wall over the whole origin/,
+    );
+    expect(calls.map((c) => c.url)).toEqual([`${PROD}/dashboard`, `${PROD}/`]);
+  });
+
+  it('does not report protection when the public root is walled too', async () => {
+    const { http } = mockHttp([
+      ['GET', `${PROD}/dashboard`, () => ({ status: 401 })],
+      ['GET', `${PROD}/`, () => ({ status: 401, text: '<html>denied</html>' })],
+    ]);
+    const r = await run(authSessionCheck, seededCtx({ http }).ctx);
+    expect(r.status).toBe('warn');
+    expect(r.severity).toBe('medium');
+    const text = r.evidence.join('\n');
+    expect(text).toMatch(
+      /anonymous GET https:\/\/shop\.fakehost\.app\/dashboard → HTTP 401: inconclusive, because the public root https:\/\/shop\.fakehost\.app\/ also answered HTTP 401 — a WAF, edge rule, visitor access or a maintenance page refuses the whole origin the same way/,
+    );
+    // An edge wall answers the same way the app would: the leg claims no protection at all.
+    expect(text).not.toMatch(/protected without a session/);
+    expect(r.fix).toMatch(/turn off the protection wall, visitor access or the maintenance page for production/);
+  });
+
+  it('keeps a refusal inconclusive when the public root is neither normal nor a wall', async () => {
+    const { http } = mockHttp([
+      ['GET', `${PROD}/dashboard`, () => ({ status: 403 })],
+      ['GET', `${PROD}/`, () => ({ status: 404 })],
+    ]);
+    const r = await run(authSessionCheck, seededCtx({ http }).ctx);
+    expect(r.status).toBe('warn');
+    expect(r.evidence.join('\n')).toMatch(/could not attribute the refusal to the app, because the public root https:\/\/shop\.fakehost\.app\/ answered HTTP 404 rather than a normal page/);
+  });
+
+  it('reads the declared path once when that path is the site root itself', async () => {
+    const { http, calls } = mockHttp([['GET', `${PROD}/`, () => ({ status: 401 })]]);
+    const { ctx } = seededCtx({ http, config: { auth: { e2e: true, testEmail: EMAIL, protectedPath: '/' } } });
+    const r = await run(authSessionCheck, ctx);
+    expect(r.status).toBe('warn');
+    expect(calls.map((c) => c.url)).toEqual([`${PROD}/`]);
+  });
+
   it("does not take over rls-probe's job: no anonymous table probe", async () => {
-    const { http, calls } = mockHttp([['GET', `${PROD}/dashboard`, () => ({ status: 401 })]]);
+    const { http, calls } = mockHttp([
+      ['GET', `${PROD}/dashboard`, () => ({ status: 401 })],
+      ['GET', `${PROD}/`, () => ({ status: 200, text: '<html>shop</html>' })],
+    ]);
     const { ctx } = seededCtx({
       http,
       arrange: (w) => {

@@ -19471,6 +19471,7 @@ var authSignupCheck = {
 init_secret();
 init_supabase_auth();
 var MAX_TABLES2 = 10;
+var MAX_NAMED = 4;
 var authSessionCheck = {
   id: "auth-session",
   title: "A confirmed test account signs in and its session is accepted",
@@ -19555,7 +19556,8 @@ var authSessionCheck = {
       const confirmed = await confirmedProductionUrl(ctx);
       if (!confirmed.ok) blockedLeg = confirmed.outcome;
       else {
-        const url = `${trimSlash(confirmed.url)}${path}`;
+        const base2 = trimSlash(confirmed.url);
+        const url = `${base2}${path}`;
         let r;
         try {
           r = await probe(ctx, url, { headers: { "user-agent": "golive-verify" } });
@@ -19573,8 +19575,11 @@ var authSessionCheck = {
               `Make ${path} require a session (redirect to sign-in, or answer 401/403 when there is no session). If the route renders a sign-in page with 200 instead, pick a path that redirects in \`auth.protectedPath\` \u2014 golive cannot tell a rendered sign-in page from a public page.`
             );
           }
-          if (r.status === 401 || r.status === 403) evidence.push(`${line}: protected without a session`);
-          else if (r.status >= 300 && r.status < 400) evidence.push(`${line}: redirected out of the route without a session`);
+          if (r.status === 401 || r.status === 403) {
+            const leg = await publicRouteRead(ctx, base2, url, line, r.status);
+            if (leg.evidence) evidence.push(leg.evidence);
+            if (leg.issue) issues.push(leg.issue);
+          } else if (r.status >= 300 && r.status < 400) evidence.push(`${line}: redirected out of the route without a session`);
           else issues.push({ severity: "medium", line: `${line}: golive could not establish protection (a 404 usually means the path in auth.protectedPath is wrong or not deployed)` });
         }
       }
@@ -19590,6 +19595,40 @@ var authSessionCheck = {
     return result("pass", "info", lines);
   }
 };
+async function publicRouteRead(ctx, base2, url, line, status) {
+  const root = `${base2}/`;
+  let rootStatus;
+  try {
+    rootStatus = root === url ? status : (await probe(ctx, root, { headers: { "user-agent": "golive-verify" } })).status;
+  } catch (e) {
+    return {
+      issue: {
+        severity: "medium",
+        line: `${line}: golive could not attribute the refusal to the app, because the public root ${root} could not be read (${errMsg2(e)})`,
+        fix: `Re-run verify: the protected-path leg stays unconfirmed until ${root}, the route that must stay public, can be read anonymously.`
+      }
+    };
+  }
+  if (rootStatus >= 200 && rootStatus < 300) {
+    return { evidence: `${line}: protected without a session, and the public root ${root} answered HTTP ${rootStatus} to the same anonymous request, so the refusal is scoped to this path rather than a wall over the whole origin` };
+  }
+  if (rootStatus === 401 || rootStatus === 403) {
+    return {
+      issue: {
+        severity: "medium",
+        line: `${line}: inconclusive, because the public root ${root} also answered HTTP ${rootStatus} \u2014 a WAF, edge rule, visitor access or a maintenance page refuses the whole origin the same way, so golive cannot tell its refusal from the app's`,
+        fix: `Make ${root} answer as the public page it must be (turn off the protection wall, visitor access or the maintenance page for production), then re-run verify: while the whole origin is walled, golive cannot confirm that ${url} is protected by your app.`
+      }
+    };
+  }
+  return {
+    issue: {
+      severity: "medium",
+      line: `${line}: golive could not attribute the refusal to the app, because the public root ${root} answered HTTP ${rootStatus} rather than a normal page`,
+      fix: `Make ${root} answer normally to an anonymous request, then re-run verify: only a readable public route shows that ${url} is refused by the app rather than by something in front of it.`
+    }
+  };
+}
 async function signedInTables(ctx, ref3, token2) {
   const admin = cap(ctx, "db", "dbAdmin");
   const outputs4 = cap(ctx, "db", "outputs");
@@ -19609,20 +19648,28 @@ async function signedInTables(ctx, ref3, token2) {
   }
   if (!tables2.length) return { lines: ["no tables in exposed schemas"] };
   const batch = tables2.slice(0, MAX_TABLES2);
-  let reachable = 0;
-  let denied = 0;
-  let other = 0;
+  const read = [];
   for (const t of batch) {
+    let verdict;
     try {
       const r = await authedRestProbe(ctx, ref3, t.name, t.schema, key, token2);
-      if (r.status === 200) reachable++;
-      else if ([401, 403, 404, 406].includes(r.status) || r.code === "42501") denied++;
-      else other++;
+      verdict = r.status === 200 ? "reachable" : [401, 403, 404, 406].includes(r.status) || r.code === "42501" ? "denied" : "undecided";
     } catch {
-      other++;
+      verdict = "undecided";
     }
+    read.push({ fq: `${t.schema}.${t.name}`, verdict });
   }
-  const lines = [`probed ${batch.length} exposed table(s) as the signed-in user: ${reachable} reachable, ${denied} denied, ${other} undecided`];
+  const count = (v) => read.filter((t) => t.verdict === v).length;
+  const denied = count("denied");
+  const lines = [
+    `probed ${batch.length} exposed table(s) as the signed-in user: ${count("reachable")} reachable, ${denied} denied, ${count("undecided")} undecided`,
+    ...["reachable", "denied", "undecided"].flatMap((v) => {
+      const names = read.filter((t) => t.verdict === v).map((t) => t.fq);
+      if (!names.length) return [];
+      const beyond = names.length - MAX_NAMED;
+      return [`${v}: ${names.slice(0, MAX_NAMED).join(", ")}${beyond > 0 ? ` (+${beyond} more)` : ""}`];
+    })
+  ];
   if (tables2.length > batch.length) lines.push(`${tables2.length - batch.length} further table(s) were not probed`);
   if (denied === batch.length) {
     return {

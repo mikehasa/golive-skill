@@ -193,8 +193,12 @@ click in the inbox. Both checks are opt-in:
 - `auth-session` requires a session for the seeded account, requires `GET /auth/v1/user` to return
   the same user, requires an anonymous request to be 401, and — with `auth.protectedPath` — requires
   an anonymous GET of the host-confirmed production URL plus that path to redirect or answer
-  401/403 (a 200 fails; a 404 warns). Its table probe uses the session token: anonymity stays
-  `rls-probe`'s job.
+  401/403 (a 200 fails; a 404 warns). A 401/403 there is corroborated with one more anonymous GET of
+  the production root: an edge wall (a WAF, edge rule, visitor access, a maintenance page) refuses
+  the root too, so the leg reports **inconclusive** (warn, naming the wall) instead of protection
+  whenever the public route is not readable. Its table probe uses the session token — anonymity
+  stays `rls-probe`'s job — and names the schema-qualified tables it read per verdict (up to four
+  names each, then `+N more`), so the count line can be audited back to a table.
 
 Both checks write when they run (one throwaway account per run) and skip, never fail, without the
 opt-in, without `auth.testEmail`, without a usable provider credential, or when a captcha blocks the
@@ -325,9 +329,10 @@ missing: `login:<adapter>`, `project:hosting`, `project:db`, `deploy:production`
 plain reason (e.g. `no publishable/anon key`, `the hosting token's role cannot read production env
 vars`). Only `accounts` fails for login problems; fix it first, then re-run `verify`.
 
-**Active probes** (`bundle-secrets`, `webhook-unsigned`, `auth-session`'s protected-path GET,
-`auth-isolation`'s route reads and its one marker row per test account, and the key `rls-probe` takes
-from the bundle) only target the production URL the hosting adapter reports
+**Active probes** (`bundle-secrets`, `webhook-unsigned`, `auth-session`'s protected-path GET and the
+public-root GET that corroborates it, `auth-isolation`'s route reads and its one marker row per test
+account, and the key `rls-probe` takes from the bundle) only target the production URL the hosting
+adapter reports
 for the linked project, never `config.domain` directly. If the host can't confirm it, the check skips with `cannot confirm <url>
 belongs to your project yet`. If the host reports another origin than `config.domain` (e.g. the domain
 isn't verified at Vercel yet), `webhook-unsigned` probes the host's URL and says so. `domain-live`
@@ -346,7 +351,7 @@ state — and a protected preview skips instead of being reported as scanned.
 | `auth-redirects` | site URL and allowlist point at production, no localhost | guided auth; `blocked by: deploy:production` |
 | `auth-policy` | the reported signup/confirmation/password policy matches golive.yaml `auth` (below 12 characters or a built-in mailer only warns); evidence lists the effective values | guided auth; `blocked by: login:<id>` / `project:<axis>`; the provider reports no policy fields |
 | `auth-signup` | a fresh probe address got a confirmation email, could not sign in before confirming, and the seeded account reads back confirmed (`email_confirmed_at`) — the confirmed account's own sign-in is extra evidence when this run holds its password (delivery stays human-confirmed) | `auth.e2e` off; no `auth.testEmail`; guided auth; `blocked by: login:<id>` / `auth:test-user`; a captcha blocks signup; **warns** on a 429 or while the account is still unconfirmed |
-| `auth-session` | the seeded account's session is accepted for the same user, an anonymous request is 401, and a declared `auth.protectedPath` is not publicly readable | `auth.e2e` off; guided auth; `blocked by: login:<id>` / `auth:test-user` / `no password for the test account in this run`; **warns** on a 429, an unconfirmed account, every exposed table denying the signed-in user, or an inconclusive protected-path answer |
+| `auth-session` | the seeded account's session is accepted for the same user, an anonymous request is 401, and a declared `auth.protectedPath` is refused while the production root still answers (each refusal is corroborated against that public route); the signed-in table probe names the tables it read per verdict | `auth.e2e` off; guided auth; `blocked by: login:<id>` / `auth:test-user` / `no password for the test account in this run`; **warns** on a 429, an unconfirmed account, every exposed table denying the signed-in user, or an inconclusive protected-path answer (the root is walled or unreadable too) |
 | `auth-recovery` | the recorded account's recovery request is accepted for sending, an address with no account gets the same answer (no account enumeration), the token this run spent is refused on replay, the new password signs in and the replaced one is refused, and the token window is named from `otpExpirySeconds` when reported | `auth.recovery` off; guided auth; `blocked by: login:<id>` / `auth:test-user`; no rotation in this run (`this run holds none of what the recovery check needs`); a captcha blocks a scripted request; **warns** on a 429 for either request or a login leg, never fails |
 | `auth-isolation` | two accounts golive seeded and recorded sign in, both declared routes refuse an anonymous request, each account's identity route answers with its own id (never the other's), and each account's rows route returns its own marker row and none of the other's | `auth.isolation` off; no `auth.identityPath`/`auth.isolationPath` declared; guided auth; `blocked by: login:<id>` / `auth:test-user` / `auth:isolation` / `no password for … in this run`; production URL not confirmed; a route answers 404 or refuses the session token (the app-code task is named); a route does not accept the marker write; a 429 from the provider or the app. **Fails critical** on an anonymous 200, a crossed id or another account's marker; **warns** while an account is unconfirmed, on an inconclusive status, or when nothing in the answer is attributable |
 | `webhook-unsigned` | an unsigned POST gets 4xx from the handler (a non-HTML 401/403 only warns — ambiguous between a rejection and an auth wall) | production URL not confirmed |

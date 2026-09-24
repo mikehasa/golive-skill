@@ -198,14 +198,22 @@ What it proves, with the evidence to match:
   `GET /auth/v1/user` to return that same user, requires an anonymous `GET /auth/v1/user` to be 401,
   and — only with `protectedPath` — requires an anonymous GET of the confirmed production URL plus
   that path to redirect to sign-in or answer 401/403. A 200 there is a failure; a 404 only warns
-  (the path is probably wrong). Live-validated on 2026-09-24 against a deployed Vercel fixture: the
-  declared route answered `401` anonymously (`protected without a session`).
+  (the path is probably wrong). A 401/403 is corroborated with one more anonymous GET of the
+  production root: when that public route answers normally the whole origin is not walled, so the
+  refusal is scoped to this path, and when the root is walled or unreadable too the leg is
+  **inconclusive** (warn, naming the wall, not a pass) — a WAF, edge rule, visitor access or a
+  maintenance page answers 401/403 without your app involved. Live-validated
+  on 2026-09-24 against a deployed Vercel fixture: the declared route answered `401` anonymously
+  (the pre-corroboration wording, `protected without a session`); the root comparison itself has
+  mocked coverage only.
 - **The app can read its own tables.** The checks probe the exposed tables AS the signed-in user
   (anonymity stays `rls-probe`'s job). Every table refusing the `authenticated` role warns: new
   projects no longer `GRANT` new tables automatically, so the app may be missing a migration.
-  Live-validated on 2026-09-24: the probe read the project's one exposed RLS-protected table
-  (`1 reachable, 0 denied, 0 undecided`), which also live-exercises the `supabaseAuthedProbe` bearer
-  fix; the line is a count, not the table's name.
+  The probe names the tables it read, schema-qualified and grouped by verdict (`reachable:`,
+  `denied:`, `undecided:`), up to four per line with `+N more` when a schema has more, so the
+  count can be audited back to a table. Live-validated on 2026-09-24: the probe read the project's
+  one exposed RLS-protected table (`1 reachable, 0 denied, 0 undecided`), which also live-exercises
+  the `supabaseAuthedProbe` bearer fix; that run's line was a count without the table's name.
 
 What stays human, and why the evidence says so:
 
@@ -414,7 +422,8 @@ account isolation as proven on a human's project until a live report says `pass`
 | `auth-signup` fails "accepted without sending a confirmation email" | `mailer_autoconfirm` is on (users are confirmed automatically): set `auth.requireEmailConfirm: true`, `plan` + `apply`, and re-run. If the address already had an account, that is why nothing was sent — see the next row. |
 | `auth:test-user` says the address already has an account | Supabase answers a duplicate signup without sending mail. golive adopts that account and rotates its password; delete it in the dashboard (Authentication → Users) or set another `auth.testEmail` to start clean. |
 | `auth-session` fails on the declared protected path (HTTP 200) | The route is served without a session. Make it redirect to sign-in or answer 401/403; if it renders a sign-in page with 200, choose a path that redirects in `auth.protectedPath`. A 404 there only warns: the path is probably wrong or not deployed. |
-| `auth-session` warns the signed-in user is denied by every table | The `authenticated` role has no `GRANT` (new projects stopped granting new tables automatically). Add the grant plus RLS policies in a migration, then re-run verify. |
+| `auth-session` warns the protected-path answer is inconclusive | The production root answered 401/403 (or something that is not a normal page) to the same anonymous request, so an edge rule, WAF, visitor access or maintenance page is refusing the whole origin: golive cannot tell that wall from your app's own refusal, and the leg is not a pass. Make the root publicly readable, keep the declared path refused, and re-run verify. |
+| `auth-session` warns the signed-in user is denied by every table | The `authenticated` role has no `GRANT` (new projects stopped granting new tables automatically); the `denied:` evidence line names the tables. Add the grant plus RLS policies in a migration, then re-run verify. |
 | `auth.recovery` check | Start with `auth.e2e: true`, `auth.testEmail` and `auth.recovery: true` in `golive.yaml`, seed and confirm the test account, then `plan` + `apply --confirm-live` (the `auth:recovery` step sends a real recovery email and rotates that account's password) and re-run `verify`. |
 | `plan` warns `auth.recovery is on … no test account is recorded yet` | The recovery rotation only touches the account `auth:test-user` seeds. Apply the plan that seeds it (`auth.e2e: true`, `auth.testEmail`), click the confirmation link, then run `plan` again. |
 | `plan` warns the test account `is not confirmed yet` (with `auth.recovery`) | A recovery of an unconfirmed address sends a confirmation, not a recovery link, so the rotation waits. Click the confirmation link in that inbox, then run `plan` again. |
@@ -446,11 +455,12 @@ account isolation as proven on a human's project until a live report says `pass`
 - GoTrue answer shapes still modelled from its documented behaviour: an obfuscated duplicate signup
   and a captcha refusal. The disposable live run (2026-09-23) exercised an accepted signup, the
   confirmation email request, the `email_not_confirmed` login refusal and the 429 rate-limit refusal.
-- What the app-side evidence cannot show: the signed-in table probe reports a count, not the table
-  names, and any 401/403 on the declared `auth.protectedPath` counts as protected — a WAF, edge rule
-  or maintenance page would read the same, so the refusal is not attributed to the app. Both legs
-  were live-exercised on 2026-09-24 against a deployed Vercel fixture; both limits are tracked in
-  #30. Inbox
+- What the 2026-09-24 app-side evidence shows, and what has changed since: that run's signed-in probe
+  read the project's one table as a count, and any 401/403 on the declared `auth.protectedPath` read
+  as protection — a WAF, edge rule or maintenance page would have read the same. Both were evidence
+  limits, not wrong results; the change tracked as #30 fixed the text (the probe names the tables per
+  verdict, and a refused path is corroborated against the public root, so an origin-wide wall makes
+  the leg inconclusive). Neither fix has been live-exercised yet: they are mock-covered. Inbox
   delivery and the human's click stay human-confirmed by design, and the confirmations in both runs
   were applied through the Auth Admin API (`PUT /auth/v1/admin/users/<id>` with `email_confirm:
   true`) rather than by clicking the seeded account's own email.
