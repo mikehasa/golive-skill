@@ -157,13 +157,17 @@ supervision. Cross-pairings have mocked coverage, not equivalent live proof. Sup
 reuse separately passed read-only verification; the complete deployment test used an explicit
 token. A new user's first-account setup and every application framework have not been validated.
 
-Experimental adapters also exist for Supabase Auth configuration and Cloudflare DNS. Supabase Auth
-settings — signup, email confirmation, minimum password length, the mailer it uses, plus the site
-URL and redirect allowlist — are automated through an approved plan and re-read for evidence, but
-**that whole path has not been exercised against a live project yet**: it is implemented, not
-live-validated. The complete auth journey (a real signup and a delivered confirmation email) and the
-domain journey are **not validated alpha paths yet**; the DNS, email and test-mode payment paths
-listed above are the tested ones. See [provider scope](docs/PROVIDERS.md) and
+Experimental adapters also exist for Supabase Auth configuration, the Supabase Auth signup journey and
+Cloudflare DNS. Supabase Auth settings — signup, email confirmation, minimum password length, the
+mailer it uses, plus the site URL and redirect allowlist — are automated through an approved plan and
+re-read for evidence, but **that whole path has not been exercised against a live project yet**: it is
+implemented, not live-validated. The same holds for the opt-in signup journey (`auth.e2e`): one
+approved step seeds a real test account (`auth:test-user`, needs `--confirm-live`), the human clicks
+the confirmation link in their own inbox (`auth:confirm-email`), and the `auth-signup`/`auth-session`
+checks prove the signup email, the enforced confirmation, the session and a protected route — code
+and mocked coverage exist, **no live signup, email delivery or session has been verified yet**. The
+domain journey is **not a validated alpha path yet** either; the DNS, email and test-mode payment
+paths listed above are the tested ones. See [provider scope](docs/PROVIDERS.md) and
 [observed validation](docs/VALIDATION.md).
 
 ## The full go-live checklist and roadmap
@@ -195,10 +199,13 @@ live-tested milestones**, not a finished category or a completed checklist for y
 
 - [ ] 🚧 **Authentication:** signup, login, sessions, password recovery and account isolation.
   Supabase auth policy (signup, email confirmation, minimum password length, mailer) and the site
-  URL/redirect allowlist are now written through an approved plan, re-read for evidence and verified
+  URL/redirect allowlist are written through an approved plan, re-read for evidence and verified
   by the `auth-policy`/`auth-redirects` checks — implemented, not yet exercised against a live
-  project. The complete journey (a real signup, confirmation email, session and recovery flow) still
-  needs validation.
+  project. The opt-in journey (`auth.e2e: true`) goes further: the `auth:test-user` step seeds a real
+  test account, the human clicks the confirmation link in their inbox (`auth:confirm-email`), and the
+  `auth-signup`/`auth-session` checks prove the signup email, the enforced confirmation, the session
+  and a declared protected path — **implemented and mock-covered only; no live signup, delivery or
+  session has been validated**. Password recovery and account isolation still need work.
 - [ ] 🗺️ **OAuth / social login / SSO:** client registration, consent screens, scopes, callback
   URLs and provider reviews. Current auth-provider setup is guided.
 - [x] ✅ **Payments and subscriptions:** ~~Prove test-mode checkout and webhook acceptance with Stripe.~~

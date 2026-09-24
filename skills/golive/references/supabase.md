@@ -130,9 +130,14 @@ golive automates (after plan approval):
   report back appears as `not confirmed:` instead of a silent success. Only the settings this API is
   known to return are ever read or written; `smtp_pass` is write-only (the API answers a hash), so an
   SMTP write can never be confirmed from the read-back.
+- **Runs the signup journey** when the human opted in with `auth.e2e: true` (see below): the
+  `auth:test-user` step seeds one test account through the project's own `/auth/v1` signup endpoint,
+  `auth:confirm-email` hands the inbox click over, and the `auth-signup`/`auth-session` checks prove
+  the rest.
 - Verifies: `rls-probe` (tables not readable with the public key, plus security advisors, read-only),
   `auth-redirects` (production URLs, no `localhost`), `auth-policy` (signup/confirmation/password
-  policy and the mailer, with the effective values as evidence), `env-parity` (names on the host).
+  policy and the mailer, with the effective values as evidence), `auth-signup`/`auth-session` (the
+  journey above, when opted in), `env-parity` (names on the host).
 
 Stays with the human (and why):
 - **The database password of an existing project.** Supabase only reveals it at creation, so a
@@ -141,13 +146,72 @@ Stays with the human (and why):
   dashboard (breaks anything else using the old one). Or the app skips a DB URL if it only uses the
   Supabase client.
 - **Fixing RLS findings.** You (the agent) write the migration/policy change; the human approves it.
-  golive never write-probes production data.
+  golive never write-probes your application's data tables. With `auth.e2e: true` it does create auth
+  **test users** (see below) — that opt-in is exactly what covers them.
 - **Custom SMTP for auth emails.** Not automated yet. The human sets it in the Supabase dashboard
   (Authentication → SMTP), pasting a sending key straight from the email provider (see `resend.md`).
   Until then `auth-policy` warns that auth emails still use the built-in mailer (rate-limited, meant
   for testing); setting `auth.smtp: provider` in `golive.yaml` is how a human accepts that
   deliberately. Never ask for the SMTP password in chat: the human enters it in the dashboard.
 - Restoring a paused project, plan upgrades, billing, creating OAuth apps (e.g. Google sign-in).
+
+### The signup journey (`auth.e2e`)
+
+Opt-in, three keys in `golive.yaml`:
+
+```yaml
+auth:
+  e2e: true                      # accept that this journey writes real auth users
+  testEmail: you+go-live@example.com   # the human's own inbox (plus-addressing is fine)
+  protectedPath: /dashboard      # an app route that must require a session
+```
+
+What it proves, with the evidence to match:
+
+- **Signup sends mail.** `auth-signup` signs up a fresh probe address (`testEmail` plus a random
+  `+gl-…` tag, so it always reaches the same inbox) and requires a confirmation email.
+- **Confirmation is enforced.** The check immediately tries a password login for that same
+  unconfirmed address and requires `email_not_confirmed`. An account that can sign in before its
+  address is confirmed is a failure, not a warning.
+- **The human's click is visible.** After they click, the seeded account reads back with
+  `email_confirmed_at` set through the admin API.
+- **A session works.** `auth-session` signs in as the seeded account, requires
+  `GET /auth/v1/user` to return that same user, requires an anonymous `GET /auth/v1/user` to be 401,
+  and — only with `protectedPath` — requires an anonymous GET of the confirmed production URL plus
+  that path to redirect to sign-in or answer 401/403. A 200 there is a failure; a 404 only warns
+  (the path is probably wrong).
+- **The app can read its own tables.** The checks probe the exposed tables AS the signed-in user
+  (anonymity stays `rls-probe`'s job). Every table refusing the `authenticated` role warns: new
+  projects no longer `GRANT` new tables automatically, so the app may be missing a migration.
+
+What stays human, and why the evidence says so:
+
+- **Email delivery and the click.** golive cannot read an inbox. It never claims delivery: it reports
+  the provider's own confirmation state. `auth:confirm-email` is closed only by `auth-signup` passing,
+  and until then the report says the address is not confirmed yet.
+- **The generated password.** `auth:test-user` generates one per run (32 random characters) and keeps
+  it in that run's memory only — never in state, a report or evidence. A later run re-runs the step
+  with a new password for the same account (recorded as `supabase.testUserId` + the address in
+  `.golive/state.json`), which is how a `verify`-only run ends up skipping with
+  `blocked by: no password for the test account in this run`. Run `plan` + `apply` after the human
+  clicks, then re-run `verify`: the step re-runs, and both checks run against the live account.
+
+Caveats to pass on before enabling it:
+
+- **It writes real users.** One test account per project, plus one throwaway probe account on every
+  run of these two checks (every `verify` with `auth.e2e: true`, and the `apply` that carries the
+  step). Both live in the project's user list until someone deletes them. `auth:test-user` carries
+  `--confirm-live` for exactly this, and nothing here is a purchase.
+- **The built-in mailer is rate-limited** (a handful of auth emails per hour). Supabase then answers
+  HTTP 429: `auth-signup` warns, `auth:test-user` fails with instructions, and the fix is waiting for
+  the limit to reset or configuring custom SMTP. Check the spam folder — a project without DMARC
+  often lands there.
+- **A captcha on signup** (`hcaptcha`/`turnstile`) makes a scripted journey impossible: the step
+  fails and `auth-signup` skips, never fails. Turn the auth captcha off for this project, or accept
+  that the journey stays manual.
+- **One account per address.** If the address already has a Supabase account, signup sends nothing
+  and answers with an obfuscated user: the step adopts that account (rotating its password) and says
+  so. Delete the test account in the dashboard to start over, or use another `auth.testEmail`.
 
 ## 3. Explain these in plain words
 
@@ -202,6 +266,16 @@ Stays with the human (and why):
 | `auth:settings` changes say `not confirmed: …` | Supabase does not return that setting through the API, so golive cannot confirm it. Confirm it in the dashboard; the rest of the write is unaffected. |
 | `auth-policy` warns about the built-in mailer | Supabase's default SMTP is rate-limited; set custom SMTP (§2, a manual dashboard step) or accept it with `auth.smtp: provider`. Turn off link tracking at the email provider. |
 | Magic-link emails broken or slow | Supabase's default SMTP is rate-limited; custom SMTP is a manual dashboard step (§2). Turn off link tracking at the email provider. |
+| `auth.e2e` journey | Start with `auth.e2e: true`, `auth.testEmail` and `auth.protectedPath` in `golive.yaml`, then `plan` + `apply --confirm-live` (the `auth:test-user` step creates a real account). Click the link in that inbox, then `plan` + `apply` again and re-run `verify`. |
+| `auth-signup` skips with `blocked by: auth:test-user` | No test account is seeded yet: run `plan` + `apply` with `auth.e2e: true` first. |
+| `auth-signup`/`auth-session` skip with `blocked by: no password for the test account in this run` | The generated password exists only in the run that seeded or rotated it, so a `verify`-only run cannot sign in. Run `plan` + `apply` again (the step re-runs with a new password), then re-run `verify`. |
+| `auth-signup` says the test account is not confirmed yet | The human has not clicked that link. golive cannot read an inbox; the `auth:confirm-email` handoff stays open until `auth-signup` passes. Check spam (the built-in mailer is rate-limited and new domains often land there). |
+| `auth-signup` warns "rate-limited (HTTP 429)" | Supabase's built-in mailer limit (or a per-project email rate limit) refused the send. Wait for it to reset, raise `rate_limit_email_sent` / configure custom SMTP (§2), then re-run verify. |
+| `auth:test-user` fails with "wants a captcha" | Auth captcha (hcaptcha/turnstile) is on for the project: turn it off for a test journey, or keep the journey manual. A scripted signup cannot pass a captcha. |
+| `auth-signup` fails "accepted without sending a confirmation email" | `mailer_autoconfirm` is on (users are confirmed automatically): set `auth.requireEmailConfirm: true`, `plan` + `apply`, and re-run. If the address already had an account, that is why nothing was sent — see the next row. |
+| `auth:test-user` says the address already has an account | Supabase answers a duplicate signup without sending mail. golive adopts that account and rotates its password; delete it in the dashboard (Authentication → Users) or set another `auth.testEmail` to start clean. |
+| `auth-session` fails on the declared protected path (HTTP 200) | The route is served without a session. Make it redirect to sign-in or answer 401/403; if it renders a sign-in page with 200, choose a path that redirects in `auth.protectedPath`. A 404 there only warns: the path is probably wrong or not deployed. |
+| `auth-session` warns the signed-in user is denied by every table | The `authenticated` role has no `GRANT` (new projects stopped granting new tables automatically). Add the grant plus RLS policies in a migration, then re-run verify. |
 
 ## Unverified
 
@@ -210,3 +284,8 @@ Stays with the human (and why):
 - The auth policy write path (`auth:settings`, read-back confirmation and the `auth-policy` check) is
   mock-covered only: it has never been run against a real project, and which policy fields the
   Management API actually echoes back is unconfirmed.
+- The signup journey (`auth:test-user`, the `auth-signup`/`auth-session` checks, the GoTrue request
+  shapes and the `/auth/v1` responses they read) is implemented and mock-covered only: no live
+  signup, confirmation email or session has been exercised against a real project yet. The exact
+  GoTrue answer shapes (an obfuscated duplicate signup, a captcha refusal, the 429 error code) are
+  modelled from its documented behaviour.

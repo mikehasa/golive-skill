@@ -19,7 +19,7 @@ import { domainLiveCheck } from '../src/checks/domain.js';
 import { addressDomain, confirmedProductionUrl, globMatch, hostVariants } from '../src/checks/util.js';
 import { restProbe, accountStatus } from '../src/checks/providers.js';
 
-vi.mock('../src/checks/providers.js', () => ({ restProbe: vi.fn(), accountStatus: vi.fn() }));
+vi.mock('../src/checks/providers.js', () => ({ restProbe: vi.fn(), accountStatus: vi.fn(), authedRestProbe: vi.fn() }));
 const probeMock = vi.mocked(restProbe);
 const accountMock = vi.mocked(accountStatus);
 
@@ -46,7 +46,7 @@ describe('ALL_CHECKS', () => {
     const ids = ALL_CHECKS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.sort()).toEqual(
-      ['accounts', 'auth-policy', 'auth-redirects', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'rls-probe', 'stripe-live-ready', 'webhook-registered', 'webhook-unsigned'].sort(),
+      ['accounts', 'auth-policy', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'rls-probe', 'stripe-live-ready', 'webhook-registered', 'webhook-unsigned'].sort(),
     );
   });
 });
@@ -899,6 +899,8 @@ describe('domain-live', () => {
 // ── read-only guarantee ─────────────────────────────────────────────────────────────────────────
 
 describe('read-only', () => {
+  // The only writes a check makes are the probes a human opted into: the unsigned webhook POST, and
+  // (with `auth.e2e: true`) the throwaway signup `auth-signup` performs.
   it('no check sends a write method except the unsigned webhook POST of {}', async () => {
     const { http, calls } = mockHttp([
       dohRoute({ 'A shop.example.com': ['1.2.3.4'] }),
@@ -916,6 +918,19 @@ describe('read-only', () => {
     const writes = calls.filter((c) => c.method !== 'GET');
     expect(writes).toHaveLength(1);
     expect(writes[0]).toMatchObject({ method: 'POST', url: 'https://shop.example.com/api/stripe', body: {} });
+  });
+
+  it('the signup checks do nothing at all until auth.e2e opts in', async () => {
+    const { http, calls } = mockHttp([]);
+    const ctx = testCtx({ http, config: { stack: { hosting: 'vercel', db: 'supabase', auth: 'supabase' } }, adapters: [hosting()] });
+    for (const id of ['auth-signup', 'auth-session']) {
+      const c = ALL_CHECKS.find((x) => x.id === id)!;
+      expect(c.applies(ctx)).toBe(true);
+      const r = await c.run(ctx);
+      expect(r.status).toBe('skip');
+      expect(r.evidence[0]).toMatch(/auth\.e2e is not enabled/);
+    }
+    expect(calls).toHaveLength(0);
   });
 });
 

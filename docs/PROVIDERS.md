@@ -50,7 +50,7 @@ identities match. Neon delegates supported stored-login access to its CLI.
 
 | Area | Adapter | Scope |
 | --- | --- | --- |
-| Auth | Supabase Auth | Production Site URL and redirect configuration, plus the auth policy from golive.yaml; custom SMTP stays a manual dashboard step. Implemented and verified by re-reading; not yet exercised live. |
+| Auth | Supabase Auth | Production Site URL and redirect configuration, plus the auth policy from golive.yaml; custom SMTP stays a manual dashboard step. The opt-in signup journey (`auth.e2e: true`) adds one approved step that seeds a real test account (`auth:test-user`, `--confirm-live`), the human's click in their inbox (`auth:confirm-email`) and the `auth-signup`/`auth-session` checks (confirmation email, enforced confirmation, session, declared protected path). Implemented and verified by re-reading; not yet exercised live. |
 | Payments | Stripe | Test-mode env wiring, webhook registration and signed-event acceptance passed a disposable run; live-mode payments, refunds, entitlements and subscriptions remain open |
 | Email | Resend | Sending-domain setup, DNS wiring, scoped-key issuance and a real send through the app's environment key passed a disposable run (delivered; spam folder on a fresh subdomain); Auth SMTP and bounce handling remain open |
 | DNS | Cloudflare | Records in an existing authoritative zone; no domain purchase, renewal, transfer or nameserver changes. Live validation pending. |
@@ -70,8 +70,17 @@ closes signup, requires email confirmation and sets the minimum password length,
 does the site URL and allowlist. Only settings the endpoint is known to return are read or written,
 every write is followed by re-reading them, and a field the provider does not report back is named
 as unconfirmed instead of assumed. The `auth-policy` and `auth-redirects` checks carry that evidence.
-Neither proves a real signup, a delivered confirmation email or an app session — that journey is
-still open, and this path has not been exercised against a live project yet.
+The opt-in signup journey (`auth.e2e: true` with `auth.testEmail`, and `auth.protectedPath` for an app
+route) now exercises the user surface itself: `auth:test-user` creates one real test account through
+the project's own signup endpoint (needs `--confirm-live`; the generated password stays in that run's
+memory and only the user id and address are recorded), the `auth:confirm-email` handoff leaves the
+inbox click with the human, and the `auth-signup`/`auth-session` checks require a confirmation email,
+an immediate login refusal for the unconfirmed address, the `email_confirmed_at` the human's click
+produces, a working session, a refused anonymous request and a declared protected path that is not
+publicly readable. golive cannot read an inbox, so delivery and the click always stay
+human-confirmed. This journey is implemented and mock-covered only: it has not been run against a
+real project, so no live signup, delivered confirmation email or app session has been validated yet,
+and the provider's own rate limits (auth email throttling) and captcha settings can block it.
 
 ## Guided providers
 

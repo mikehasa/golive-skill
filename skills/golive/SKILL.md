@@ -1,6 +1,6 @@
 ---
 name: golive
-description: Take an agent-written app from repo to live production on the user's OWN accounts, with providers they choose (hosting, database, auth, payments, email, domain/DNS). The human connects accounts and approves changes; supported wiring operations run through a local CLI and produce verification evidence with explicit limits. Use when the user wants to ship, deploy, go live, launch, publish, or put their app online, or asks to wire up env vars, webhooks, auth settings (signup, email confirmation, password policy), auth redirects, email DNS or a custom domain.
+description: Take an agent-written app from repo to live production on the user's OWN accounts, with providers they choose (hosting, database, auth, payments, email, domain/DNS). The human connects accounts and approves changes; supported wiring operations run through a local CLI and produce verification evidence with explicit limits. Use when the user wants to ship, deploy, go live, launch, publish, or put their app online, or asks to wire up env vars, webhooks, auth settings (signup, email confirmation, password policy), a real signup → confirmation email → login journey, auth redirects, email DNS or a custom domain.
 ---
 
 # golive: ship this app to production, on the user's own accounts
@@ -57,7 +57,8 @@ Never update between a plan and its apply. A changed release requires a new plan
    chat. Never `sk_`, `rk_` or `whsec_`.
 3. **No provider/account writes until the human approves the plan.** Local credential setup and
    human-submitted credential entry, `init`, and report files can be prepared during onboarding. Explain `plan` and get a
-   clear yes before `apply`. Pass `--confirm-live` (live payments), `--confirm-dns` (DNS records) or
+   clear yes before `apply`. Pass `--confirm-live` (live payments **or production data**, e.g. the
+   `auth:test-user` account and `auth-signup`'s throwaway probe), `--confirm-dns` (DNS records) or
    `--confirm-destroy` (deletions) only if the human explicitly approved those categories.
 4. **Never buy anything or create accounts for them.** Signups, payment methods, identity checks
    (KYC) and domain purchases are handoffs the human does in their browser.
@@ -215,6 +216,14 @@ Explain the steps by provider, in plain language, and call out:
   re-run `plan`) and the redirects from the production URL. They are separate steps, each writing
   only what differs; show the `before → after` lines as the change being approved. Never ask for the
   SMTP password — custom SMTP stays a manual dashboard step.
+- `auth:test-user`: only when the human opted in with `auth.e2e: true`, `auth.testEmail` and (for the
+  app route) `auth.protectedPath`. Say plainly that it **creates a real account in their project**
+  (a `--confirm-live` write), that the generated password lives only in that run, and that the
+  confirmation email goes to their inbox: clicking that link is their one manual step
+  (`auth:confirm-email`). After they click, run `plan` + `apply` again — the step re-runs (a new
+  password on the same account) and `auth-signup` / `auth-session` then prove the confirmed account
+  can sign in. Those two checks also sign up one throwaway probe account each run, so `verify` writes
+  when `auth.e2e` is on; with it off they skip and nothing is created.
 - `warnings` and `findings`, and `unmappedEnv`: env names golive can't fill (e.g. `OPENAI_API_KEY`).
   The human types those into the host's dashboard. Never ask for the value.
 
@@ -274,11 +283,19 @@ Check scope:
 | `db-connection` | selected Neon database and role accept a fixed read-only query; does not verify migrations, deployed app access or user isolation |
 | `auth-redirects` | auth site URL / redirect allowlist point at production |
 | `auth-policy` | auth signup/confirmation/password policy matches the app and golive.yaml (site URL and redirects are `auth-redirects`); a setting the provider does not report is named, never assumed |
+| `auth-signup` | the `auth.e2e` journey: a fresh probe address gets a confirmation email, cannot sign in before confirming, the test account reads back confirmed and can then sign in (golive never sees the inbox: delivery and the click stay human-confirmed) |
+| `auth-session` | the `auth.e2e` journey: the test account's password login returns a session, the token resolves to that user, an anonymous request is refused, and a declared `auth.protectedPath` is not publicly readable |
 | `webhook-unsigned` | the production webhook rejects unsigned POSTs (a non-HTML 401/403 only warns: it may be an auth wall) |
 | `webhook-registered` | the endpoint exists, enabled, for the right URL and events |
 | `stripe-live-ready` | the Stripe account can take live payments |
 | `email-dns` | the sending domain's SPF/DKIM/DMARC records are published |
 | `email-verified` | the email provider marks the domain verified |
+
+`auth-signup` and `auth-session` are opt-in: without `auth.e2e: true` in `golive.yaml` they skip with
+that reason and create nothing. With it on, each run signs up one throwaway probe account (address
+`auth.testEmail` plus a plus-tag) and `auth-signup` may skip with `blocked by: no password for the
+test account in this run` — that password exists only in the run that seeded or rotated it, so the
+journey's evidence comes from an `apply` run. Never report the inbox leg as verified by golive.
 
 Finish with a short summary: the live URL, what passed, what is still open (`handoff --json`), and
 every `done: null` / skipped item named as not verified by golive. Say who owns each remaining item —

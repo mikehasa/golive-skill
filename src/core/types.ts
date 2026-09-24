@@ -141,6 +141,7 @@ export interface Capabilities {
   sendingDomain: SendingDomain;
   testSend: TestSend;
   keys: KeyIssuer;
+  authUsers?: AuthUsers;
 }
 
 /** Secret-free payment destination and operator credential identity, bound into approvals. */
@@ -373,6 +374,78 @@ export interface AuthConfig {
   get(ctx: Ctx): Promise<AuthSettings>;
   /** Write the patch, then re-read the provider's settings before reporting what applied. */
   set(ctx: Ctx, patch: AuthWrite): Promise<AuthWriteOutcome>;
+}
+
+// ── Auth users (the signup → confirmation → login journey) ──────────────────────────────────────
+
+/**
+ * What one signup did, as the provider answers it. `confirmationSent` is the claim the `auth-signup`
+ * check turns into evidence: a project with confirmation off answers with a session instead, and an
+ * address that already has an account answers 2xx without sending anything.
+ */
+export interface AuthSignupOutcome {
+  status: number;
+  /** The new user's id, when the provider returns one (it returns a session instead when no confirmation is needed). */
+  userId?: string;
+  /** An email for a NEW account was sent (or queued by the provider). */
+  confirmationSent: boolean;
+  /** The address already had an account, so nothing was sent. */
+  existing: boolean;
+  /** The provider's mailer or request limit refused this request (HTTP 429). */
+  rateLimited: boolean;
+  /** The project wants a human challenge (captcha) that a scripted signup cannot pass. */
+  captchaRequired: boolean;
+  /** Secret-free provider error code on a refusal (e.g. `signup_disabled`). */
+  code?: string;
+}
+
+/** A signed-in session. The token is a Secret: it is only ever sent as a header, never printed. */
+export interface AuthSession {
+  accessToken: Secret;
+  userId: string;
+  /** The provider has `email_confirmed_at` for this user. */
+  emailConfirmed: boolean;
+}
+
+export interface AuthLoginOutcome {
+  status: number;
+  /** Present when the password grant succeeded. */
+  session?: AuthSession;
+  /** The provider refused: its error code (`email_not_confirmed`, `invalid_credentials`, …). */
+  code?: string;
+  /** The provider rate-limited the request (HTTP 429). */
+  rateLimited: boolean;
+}
+
+/** One user as the provider's own API reports it. Never a token, never a password. */
+export interface AuthUserView {
+  status: number;
+  id?: string;
+  email?: string;
+  /** `email_confirmed_at` (or `confirmed_at`) is set. */
+  emailConfirmed?: boolean;
+}
+
+/**
+ * The user surface of the chosen auth provider, used to prove a real signup → confirmation email →
+ * login journey. `signup` and `setPassword` are WRITES, so only an approved step calls them; the
+ * read-only calls back `auth-signup` and `auth-session`. Refusals come back as outcomes (`status`,
+ * `code`) so a check can tell "the provider said no" from a broken transport; a missing credential or
+ * unlinked project throws, because an unusable prerequisite is something a caller skips on.
+ */
+export interface AuthUsers {
+  /** Create one user through the provider's signup endpoint (a WRITE). */
+  signup(ctx: Ctx, email: string, password: Secret): Promise<AuthSignupOutcome>;
+  /** Password grant (`POST /auth/v1/token?grant_type=password`). */
+  login(ctx: Ctx, email: string, password: Secret): Promise<AuthLoginOutcome>;
+  /** The user behind a session token; without one, the anonymous answer (401) the app would get. */
+  user(ctx: Ctx, token?: Secret): Promise<AuthUserView>;
+  /** Admin read of one user by id. null = the provider no longer has it. */
+  adminUser(ctx: Ctx, id: string): Promise<AuthUserView | null>;
+  /** Replace a seeded user's password (admin API; a WRITE, used to re-prove login in a later run). */
+  setPassword(ctx: Ctx, id: string, password: Secret): Promise<void>;
+  /** Non-secret destination of the auth project, or null when none is selected. */
+  destination(ctx: Ctx): Promise<{ ref: string; url: string } | null>;
 }
 
 export interface WebhookEnsureResult {
@@ -622,6 +695,15 @@ export interface ShipConfig {
     passwordMinLength?: number;
     /** Which mailer auth emails should use: the auth provider's own, or the app's email provider. */
     smtp?: 'provider' | 'resend';
+    /**
+     * Opt in to the signup → confirmation → login journey: the `auth:test-user` step seeds a test
+     * account and the `auth-signup`/`auth-session` checks prove it. Both write to the real project.
+     */
+    e2e?: boolean;
+    /** The human's own address (plus-addressing allowed) that receives the test account's emails. */
+    testEmail?: string;
+    /** An app route that must require a session (a protected path); checked anonymously. */
+    protectedPath?: string;
   };
   /** Project chosen per axis (id or name), e.g. { hosting: "my-app", db: "abcd1234efgh" }. */
   projects?: Partial<Record<Axis, string>>;

@@ -6,7 +6,7 @@ import { blocked, cap, confirmedProductionUrl, errMsg, isFailing, pass, prereq, 
 export const MAX_TABLES = 60;
 
 /** Schemas Supabase manages itself; never exposed through the app's REST API by default. */
-const INTERNAL = /^(auth|storage|extensions|realtime|vault|pgsodium|pgsodium_masks|graphql|graphql_public|net|cron|supabase_.*|pg_.*|information_schema|_realtime|_analytics)$/;
+export const INTERNAL_SCHEMAS = /^(auth|storage|extensions|realtime|vault|pgsodium|pgsodium_masks|graphql|graphql_public|net|cron|supabase_.*|pg_.*|information_schema|_realtime|_analytics)$/;
 
 interface Issue {
   severity: Severity;
@@ -93,7 +93,7 @@ export const rlsCheck: Check = {
 
     let tables: TableInfo[];
     try {
-      tables = (await admin.tables(ctx)).filter((t) => !INTERNAL.test(t.schema));
+      tables = (await admin.tables(ctx)).filter((t) => !INTERNAL_SCHEMAS.test(t.schema));
     } catch (e) {
       return result('fail', 'high', [`could not list tables: ${errMsg(e)}`], 'Re-run verify; if it persists, check the Supabase login with `golive doctor`.');
     }
