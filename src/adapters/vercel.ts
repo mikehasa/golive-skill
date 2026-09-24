@@ -95,7 +95,9 @@ interface DeployJson {
   reason?: string;
   message?: string;
   url?: string;
-  deployment?: { url?: string };
+  /** The deployment's own id (`dpl_…`), on the shapes that print it next to the URL. */
+  id?: string;
+  deployment?: { id?: string; url?: string };
 }
 
 const vercelDeploy: Deployer = {
@@ -127,10 +129,16 @@ const vercelDeploy: Deployer = {
         : 'Fix the cause above and deploy again (if it was a build error, `vercel inspect --logs <deployment-url>` in your terminal shows the full logs).';
       throw new VercelError(`vercel deploy (${target}) failed${j?.reason ? ` (${j.reason})` : ''}: ${why.slice(0, 400)}. ${next}`, undefined, j?.reason);
     }
-    const url = normaliseUrl((j?.deployment ?? j)?.url) ?? lastVercelUrl(r.stdout);
+    const out = j?.deployment ?? j;
+    const printed = normaliseUrl(out?.url);
+    const url = printed ?? lastVercelUrl(r.stdout);
     if (!url) throw new VercelError('vercel deploy succeeded but printed no deployment URL; check `vercel ls` in your terminal.');
     ctx.log.info(`vercel: deployed ${target} → ${url} (this unique URL is protected by default; probe the production domain instead)`);
-    return { url };
+    // The provider's own identity for THIS deployment (`deployment.id` in the non-interactive
+    // envelope, `id` on the older plain object). Output that carried only a URL carries no identity:
+    // leave it unset rather than deriving one from the URL.
+    const id = printed ? out?.id?.trim() : undefined;
+    return id ? { url, id } : { url };
   },
 };
 

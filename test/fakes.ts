@@ -69,6 +69,8 @@ export function fakeWorld() {
     deploys: 0,
     /** When set, the next deploy throws this (then clears it), like a failing build. */
     deployError: null as string | null,
+    /** The deployment identity the fake host reports; null = a provider that reports none. */
+    deployId: 'dpl_fake1' as string | null,
     /** Whether the fake host exposes DomainAttach.verify, and what it returns. */
     withDomainVerify: true,
     verifyResult: 'pending' as 'verified' | 'pending',
@@ -157,7 +159,8 @@ export function fakeWorld() {
           }
           host.deploys++;
           host.urls[t] ??= 'https://shop.fakehost.app';
-          return { url: 'https://shop-abc123.fakehost.app' };
+          const url = 'https://shop-abc123.fakehost.app';
+          return host.deployId ? { url, id: host.deployId } : { url };
         },
       },
       domain: {

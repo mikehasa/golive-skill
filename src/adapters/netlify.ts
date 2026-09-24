@@ -53,11 +53,11 @@ const deploy: Deployer = {
       if (!d.production || fresh.publishedId !== d.id) throw new NetlifyError('Netlify has not confirmed this deployment as the selected site’s published production deployment.');
       const url = fresh.sslUrl ?? d.url;
       if (!url) throw new NetlifyError('Netlify returned no verified HTTPS deployment URL.');
-      return { url };
+      return { url, id: d.id };
     }
     if (d.production || !d.url) throw new NetlifyError('Netlify did not confirm a draft URL for this preview deployment.');
     ctx.state.save(s => { s.resources['netlify.previewDeployId'] = d.id; });
-    return { url: d.url };
+    return { url: d.url, id: d.id };
   },
 };
 

@@ -7672,6 +7672,16 @@ function parseConfig(text) {
     }
     cfg2.auth = auth8;
   }
+  const release = raw2.release;
+  if (release !== void 0) {
+    if (!release || typeof release !== "object" || Array.isArray(release)) throw new ConfigError(`${CONFIG_FILE}: release must be a mapping of opt-in release settings`);
+    for (const [key, value] of Object.entries(release)) {
+      if (!Object.hasOwn(RELEASE_SETTINGS, key)) throw new ConfigError(`${CONFIG_FILE}: unknown release setting; expected ${Object.keys(RELEASE_SETTINGS).join(", ")} (no credentials)`);
+      const problem = RELEASE_SETTINGS[key](value);
+      if (problem) throw new ConfigError(`${CONFIG_FILE}: release.${key} ${problem}`);
+    }
+    cfg2.release = release;
+  }
   const projects2 = raw2.projects;
   if (projects2) {
     for (const [k, v] of Object.entries(projects2)) {
@@ -7692,7 +7702,7 @@ function isDomain(s) {
 function modeFor(cfg2, target) {
   return cfg2.payments?.modes?.[target] ?? (target === "production" ? "live" : "test");
 }
-var import_yaml, CONFIG_FILE, ConfigError, AUTH_SETTINGS;
+var import_yaml, CONFIG_FILE, ConfigError, AUTH_SETTINGS, RELEASE_SETTINGS;
 var init_config = __esm({
   "src/core/config.ts"() {
     "use strict";
@@ -7712,6 +7722,9 @@ var init_config = __esm({
       testEmail: (v) => typeof v === "string" && /^[^@\s+]+(\+[^@\s]+)?@[^@\s]+\.[^@\s]+$/.test(v) ? null : 'must be the address the test account uses, like "you+go-live@example.com" (plus-addressing allowed; never a password)',
       protectedPath: (v) => typeof v === "string" && v.startsWith("/") ? null : 'must be an app route starting with "/", e.g. "/dashboard" (the page that must require a session)',
       recovery: (v) => typeof v === "boolean" ? null : "must be true or false"
+    };
+    RELEASE_SETTINGS = {
+      preview: (v) => typeof v === "boolean" ? null : "must be true or false"
     };
   }
 });
@@ -10381,9 +10394,21 @@ async function productionUrl(ctx) {
   if (!lastDeployAt(ctx)) return null;
   return hostUrl(ctx, "production");
 }
-var DEPLOYED_KEY = "deployed:production";
-var REDEPLOY_KEY = "redeploy:production";
+var deployedKey = (target) => `deployed:${target}`;
+var redeployKey = (target) => `redeploy:${target}`;
+var deployedIdKey = (target) => `${deployedKey(target)}:id`;
+var DEPLOYED_KEY = deployedKey("production");
+var REDEPLOY_KEY = redeployKey("production");
 var DEPLOY_STEPS = ["deploy:production", "deploy:production:final"];
+function recordDeploy(ctx, provider, target, deployment) {
+  ctx.state.save((s) => {
+    const at = (/* @__PURE__ */ new Date()).toISOString();
+    s.resources[deployedKey(target)] = at;
+    delete s.resources[redeployKey(target)];
+    if (deployment.id) s.resources[deployedIdKey(target)] = [provider, deployment.id, deployment.url, at].join("|");
+    else delete s.resources[deployedIdKey(target)];
+  });
+}
 function lastDeployAt(ctx) {
   const at = ctx.state.resource(DEPLOYED_KEY);
   if (at) return at;
@@ -13859,10 +13884,13 @@ var vercelDeploy = {
       const next = isBuildFailure(j?.reason) ? "Fix the build error and deploy again; run `vercel inspect --logs <deployment-url>` in your terminal for full build logs." : "Fix the cause above and deploy again (if it was a build error, `vercel inspect --logs <deployment-url>` in your terminal shows the full logs).";
       throw new VercelError(`vercel deploy (${target}) failed${j?.reason ? ` (${j.reason})` : ""}: ${why.slice(0, 400)}. ${next}`, void 0, j?.reason);
     }
-    const url = normaliseUrl((j?.deployment ?? j)?.url) ?? lastVercelUrl(r.stdout);
+    const out = j?.deployment ?? j;
+    const printed = normaliseUrl(out?.url);
+    const url = printed ?? lastVercelUrl(r.stdout);
     if (!url) throw new VercelError("vercel deploy succeeded but printed no deployment URL; check `vercel ls` in your terminal.");
     ctx.log.info(`vercel: deployed ${target} \u2192 ${url} (this unique URL is protected by default; probe the production domain instead)`);
-    return { url };
+    const id2 = printed ? out?.id?.trim() : void 0;
+    return id2 ? { url, id: id2 } : { url };
   }
 };
 function cliMissing() {
@@ -15929,13 +15957,13 @@ var deploy = {
       if (!d.production || fresh.publishedId !== d.id) throw new NetlifyError("Netlify has not confirmed this deployment as the selected site\u2019s published production deployment.");
       const url = fresh.sslUrl ?? d.url;
       if (!url) throw new NetlifyError("Netlify returned no verified HTTPS deployment URL.");
-      return { url };
+      return { url, id: d.id };
     }
     if (d.production || !d.url) throw new NetlifyError("Netlify did not confirm a draft URL for this preview deployment.");
     ctx.state.save((s) => {
       s.resources["netlify.previewDeployId"] = d.id;
     });
-    return { url: d.url };
+    return { url: d.url, id: d.id };
   }
 };
 var netlifyAdapter = {
@@ -17612,12 +17640,9 @@ function verifiers(ctx, dependsOn, moreFollows) {
 }
 function deployRun(adapter, deployer) {
   return async (sctx) => {
-    const { url } = await deployer.deploy(sctx, "production");
-    sctx.state.save((s) => {
-      s.resources[DEPLOYED_KEY] = (/* @__PURE__ */ new Date()).toISOString();
-      delete s.resources[REDEPLOY_KEY];
-    });
-    return { changes: [`deployed production on ${adapter.title}: ${url}`] };
+    const deployment = await deployer.deploy(sctx, "production");
+    recordDeploy(sctx, adapter.id, "production", deployment);
+    return { changes: [`deployed production on ${adapter.title}: ${deployment.url}`] };
   };
 }
 

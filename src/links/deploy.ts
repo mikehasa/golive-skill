@@ -1,6 +1,6 @@
 import type { Link } from '../core/plan.js';
 import type { Adapter, Ctx, Deployer, Step } from '../core/types.js';
-import { DEPLOYED_KEY, REDEPLOY_KEY, deps, intentOf, lastDeployAt, memo, pendingRedeploy, ready, step, track } from './util.js';
+import { deps, intentOf, lastDeployAt, memo, pendingRedeploy, ready, recordDeploy, step, track } from './util.js';
 
 const WEBHOOK_STEP = 'payments:webhook:production';
 
@@ -114,11 +114,8 @@ function verifiers(ctx: Ctx, dependsOn: string[], moreFollows: boolean): string[
 
 function deployRun(adapter: Adapter, deployer: Deployer): Step['run'] {
   return async (sctx) => {
-    const { url } = await deployer.deploy(sctx, 'production');
-    sctx.state.save((s) => {
-      s.resources[DEPLOYED_KEY] = new Date().toISOString();
-      delete s.resources[REDEPLOY_KEY]; // this deployment picked up every env write so far
-    });
-    return { changes: [`deployed production on ${adapter.title}: ${url}`] };
+    const deployment = await deployer.deploy(sctx, 'production');
+    recordDeploy(sctx, adapter.id, 'production', deployment);
+    return { changes: [`deployed production on ${adapter.title}: ${deployment.url}`] };
   };
 }

@@ -472,6 +472,7 @@ describe('teardown: webhooks, keys and the host project', () => {
 // ── Deploy facts and the post-delete re-read ────────────────────────────────────────────────────
 
 const DEPLOY_AT = '2026-09-24T04:46:23.199Z';
+const DEPLOY_ID = `fakehost|dpl_1|https://shop.fakehost.app|${DEPLOY_AT}`;
 
 /**
  * The created project plus the deploy facts a successful production deploy records in state, with a
@@ -484,7 +485,7 @@ const OTHER_FACTS = {
 };
 const stateWithDeploys = (): ShipState => ({
   ...emptyState(),
-  resources: { ...CREATED_PROJECT, 'deployed:production': DEPLOY_AT, ...OTHER_FACTS.resources },
+  resources: { ...CREATED_PROJECT, 'deployed:production': DEPLOY_AT, 'deployed:production:id': DEPLOY_ID, ...OTHER_FACTS.resources },
   steps: {
     'deploy:production': { status: 'done', hash: 'h1', at: DEPLOY_AT, planId: 'plan_1' },
     'deploy:production:final': { status: 'done', hash: 'h2', at: DEPLOY_AT, planId: 'plan_1' },
@@ -506,6 +507,7 @@ describe('teardown: deploy facts of a removed project', () => {
     const out = await apply(ctx, await build());
     expect(out.map((o) => [o.id, o.status])).toEqual([['teardown:project:hosting', 'done']]);
     expect(ctx.state.resource('deployed:production')).toBeUndefined();
+    expect(ctx.state.resource('deployed:production:id')).toBeUndefined(); // the removed project's deployment identity goes with it
     expect(ctx.state.get().steps['deploy:production']).toBeUndefined();
     expect(ctx.state.get().steps['deploy:production:final']).toBeUndefined();
     expect(ctx.state.get().steps['teardown:project:hosting']?.status).toBe('done'); // the teardown evidence stays
@@ -539,6 +541,7 @@ describe('teardown: deploy facts of a removed project', () => {
       const out = await apply(ctx, plan);
       expect(out.map((o) => [o.id, o.status]), c.what).toEqual([['teardown:project:hosting', c.status]]);
       expect(ctx.state.resource('deployed:production'), c.what).toBe(DEPLOY_AT);
+      expect(ctx.state.resource('deployed:production:id'), c.what).toBe(DEPLOY_ID);
       expect(ctx.state.get().steps['deploy:production']?.status, c.what).toBe('done');
       expect(ctx.state.get().steps['deploy:production:final']?.status, c.what).toBe('done');
     }
