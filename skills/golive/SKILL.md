@@ -65,7 +65,10 @@ Never update between a plan and its apply. A changed release requires a new plan
    (KYC) and domain purchases are handoffs the human does in their browser.
 5. **A handoff is closed only by a passing check**, not by anyone saying "done". `done: false` is
    open. `done: null` (a `manual` item, or its check skipped) cannot be verified by golive: confirm it
-   with the human and name it as **not verified by golive** in your final summary.
+   with the human and name it as **not verified by golive** in your final summary. A skipped check's
+   evidence names the recorded outcome of the step it verifies when state has one, so a `done: null`
+   item never contradicts `.golive/state.json`: if the evidence says the step is recorded done, the
+   work ran and only this invocation could not re-check it — say that, not that it is unproven.
 6. **Stay neutral.** Present provider options without steering. If they already use something, keep it.
 
 ## How the human connects accounts
@@ -395,9 +398,12 @@ extra evidence when that run holds the password. Never report the inbox leg as v
 auth:test-user` without one) and only passes in the run that carries the `auth:recovery` step: the
 password it set and the token it spent exist there and nowhere else, so a plain `verify` skips with
 `this run holds none of what the recovery check needs`. It spends up to two auth emails per run, so a
-429 warns rather than fails, and it never reads the inbox: the click stays with the human. Treat this
-check as **implemented and mock-covered, not live-validated**: until a live run's report says `pass`
-for it, never present the recovery journey as proven on the human's project.
+429 warns rather than fails, and it never reads the inbox: the click stays with the human. This check
+**passed a disposable live run on 2026-09-24** (accepted request, an unknown address answered
+identically, the spent token refused on replay, the new password signing in and the one it replaced
+refused), so the journey is proven for Supabase — but only in the exact pass that report carries: the
+human's inbox click stays human-confirmed, and a project's captcha or mail throttle can still make a
+run skip or warn. Never present the inbox leg as verified by golive.
 
 `auth-isolation` is opt-in too (`auth.isolation: true`, plus `auth.identityPath` and
 `auth.isolationPath`), needs the second account the `auth:isolation` step seeds (`blocked by:

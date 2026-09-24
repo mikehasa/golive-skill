@@ -392,7 +392,7 @@ function resourceRows(ctx: Ctx, inventory: Inventory, projects: Map<Axis, Projec
       id: r.id,
       ownership: r.created ? 'created' : 'adopted',
       proof: r.created
-        ? `${r.providerTitle} has no creation marker to read; state records this id as the ${subject} golive created (${r.key})`
+        ? `state's creation marker (${r.markers.join(', ')}) names this id as the ${subject} golive created (${r.key})`
         : `state records this ${subject} (${r.key}) without golive's creation marker, so golive does not claim it`,
       removable: false, // no provider capability: removal is a manual handoff
       provenance: { kind: 'recorded', at: recordedAt(ctx, r.kind === 'database-project' ? RECORDING_STEP.database : RECORDING_STEP.domain) },

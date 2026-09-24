@@ -586,7 +586,12 @@ export interface WebhookRegistry {
 }
 
 export interface SendingDomain {
-  ensure(ctx: Ctx, domain: string): Promise<{ id: string; records: DnsRecord[] }>;
+  /**
+   * Ensure the domain exists and return the records it needs. `created` is true only when THIS call
+   * created the domain: a provider that adopted an existing one leaves it unset, so golive never
+   * records a creation marker for a domain it did not make.
+   */
+  ensure(ctx: Ctx, domain: string): Promise<{ id: string; records: DnsRecord[]; created?: boolean }>;
   status(ctx: Ctx, id: string): Promise<'verified' | 'pending' | 'failed' | 'not_started'>;
   verify(ctx: Ctx, id: string): Promise<void>;
   /** Read-only: the records the domain needs (ensure() is a write). */

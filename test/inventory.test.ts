@@ -65,7 +65,7 @@ describe('inventory', () => {
     expect(inv.project).toMatchObject({ provider: 'fakehost', id: 'prj_1', name: 'shop', created: true });
     expect(inv.recorded.map((r) => [r.provider, r.id, r.created])).toEqual([
       ['supabase', 'abcdefghijklmnop', true],
-      ['resend', 'dom_42', true],
+      ['resend', 'dom_42', false], // recorded, but state holds no creation marker: adopted, never claimed
     ]);
   });
 
@@ -74,6 +74,21 @@ describe('inventory', () => {
     expect(adopted.project).toMatchObject({ created: false });
     const otherDb = await setup({ ...STATE, resources: { ...STATE.resources, 'supabase.createdByGolive': 'someone-else' } }).inventory();
     expect(otherDb.recorded.find((r) => r.provider === 'supabase')).toMatchObject({ created: false });
+  });
+
+  it('records a sending domain golive created as its own, and one it adopted as recorded-but-not-provable', async () => {
+    // The live defect: the Resend spec declared `createdBy: []`, and `[].every(...)` is true, so every
+    // recorded sending domain read as "created by golive" — including one the run only adopted. A human
+    // following that handoff could delete a domain that belonged to the account before the run.
+    const adopted = await setup().inventory();
+    expect(adopted.recorded.find((r) => r.provider === 'resend')).toMatchObject({ created: false, markers: ['resend.createdDomainId'] });
+
+    const created = await setup({ ...STATE, resources: { ...STATE.resources, 'resend.createdDomainId': 'dom_42' } }).inventory();
+    expect(created.recorded.find((r) => r.provider === 'resend')).toMatchObject({ created: true, markers: ['resend.createdDomainId'] });
+
+    // A marker naming another domain proves nothing about this one.
+    const stale = await setup({ ...STATE, resources: { ...STATE.resources, 'resend.createdDomainId': 'dom_older' } }).inventory();
+    expect(stale.recorded.find((r) => r.provider === 'resend')).toMatchObject({ created: false });
   });
 
   it('keeps a recorded resource golive cannot remove, without a removal handle', async () => {

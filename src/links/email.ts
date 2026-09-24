@@ -1,5 +1,5 @@
 import type { Link } from '../core/plan.js';
-import type { Adapter, Ctx, DnsRecord, DnsZone, EnvStore, EnvTarget, HandoffItem, KeyIssuer, SendingDomain, Step } from '../core/types.js';
+import type { Adapter, Ctx, DnsRecord, DnsZone, EnvStore, EnvTarget, HandoffItem, KeyIssuer, SendingDomain, Step, StepContext } from '../core/types.js';
 import { rememberDnsWrite } from '../core/dns-baseline.js';
 import { axisStatus, decideEnv, deps, envPreview, errMsg, intentOf, memo, namesFor, observeNames, projectIntent, ready, secretBlocked, step, track, verifyEnvWritten, writeEnv, writesProduction } from './util.js';
 
@@ -67,10 +67,20 @@ function domainStep(adapter: Adapter, sd: SendingDomain, domain: string, idKey: 
     intent: intentOf({ id: idIntent, domain }),
     async run(sctx) {
       const d = await sd.ensure(sctx, domain);
-      sctx.remember(idKey, d.id);
+      rememberDomain(sctx, adapter.id, idKey, d);
       return { changes: [`sending domain ${domain} (${d.id}) needs these DNS records:`, ...d.records.map(formatRecord)] };
     },
   });
+}
+
+/**
+ * Record the provider's domain id, plus a creation marker ONLY when this call created the domain.
+ * `teardown` reads that marker to tell a domain golive made from one it merely adopted: without it,
+ * a handoff could invite a human to delete a sending domain that predates the app.
+ */
+function rememberDomain(sctx: StepContext, provider: string, idKey: string, d: { id: string; created?: boolean }): void {
+  sctx.remember(idKey, d.id);
+  if (d.created) sctx.remember(`${provider}.createdDomainId`, d.id);
 }
 
 function dnsStep(ctx: Ctx, adapter: Adapter, sd: SendingDomain, domain: string, dnsAdapter: Adapter, zone: DnsZone, intent: string): Step {
@@ -84,9 +94,12 @@ function dnsStep(ctx: Ctx, adapter: Adapter, sd: SendingDomain, domain: string, 
     intent,
     verifyWith: ['email-dns'],
     async run(sctx) {
-      const { records } = await sd.ensure(sctx, domain);
+      const ensured = await sd.ensure(sctx, domain);
+      // The domain step normally created or adopted it already; should a re-created domain reach this
+      // step first, the marker is recorded here so its ownership stays provable.
+      rememberDomain(sctx, adapter.id, `${adapter.id}.domainId`, ensured);
       const changes: string[] = [];
-      for (const rec of records) {
+      for (const rec of ensured.records) {
         const outcome = await zone.upsert(sctx, domain, { ...rec, proxied: false });
         rememberDnsWrite(sctx, domain, dnsAdapter.id, rec, outcome); // what drift compares against later
         changes.push(`${outcome}: ${formatRecord(rec)}`);

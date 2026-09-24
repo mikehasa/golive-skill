@@ -181,6 +181,7 @@ you get the specific blocker and next action. See [guided provider scope](docs/P
 | **Vercel + GoDaddy (custom domain)** | The same journey on a second subdomain, including the ownership TXT challenge Vercel requested after attaching |
 | **Vercel + Resend (email)** | Sending-domain setup, DNS records, domain verification and a real send through the app's own environment key (delivered; the fresh subdomain landed in spam) |
 | **Vercel + Stripe (test payments)** | Test-mode keys and webhook registration, an unsigned-request rejection, and a real test-card payment delivered as a signature-verified event |
+| **Supabase Auth (SMTP + password recovery)** | Custom-SMTP write read back with the raised auth email rate limit, and the whole recovery rotation on the seeded test account — accepted request, identical answer for an unknown address, spent token refused on replay, new password signing in and the old one refused |
 
 These were approved disposable runs on existing accounts; completed test resources were deleted
 afterward, and recent runs' disposable projects and records are cleaned up under the same
@@ -217,15 +218,17 @@ authenticated user, so the probe's bearer fix is no longer mock-covered. What th
 show: that run's table line is a count rather than table names, and any 401 counted as protected — a
 WAF or maintenance page would read the same; both were fixed afterwards (issue #30: the probe names
 the tables it read, and a refused protected path is corroborated against the public root, with mocked
-coverage and no live re-run yet). Password recovery is **implemented
-on the same provider and not live-validated yet**: `auth.recovery: true` adds one approved step
-(`auth:recovery`, needs `--confirm-live`) that rotates that recorded test account's password through
-the provider's own recovery calls — request the email, mint the link with the admin API, exchange it
-for a session, set the new password with that session — and the `auth-recovery` check proves the
-outcome: the request is accepted, an address with no account gets the same answer (no account
-enumeration), the spent token is refused on replay, the new password signs in and the one it replaced
-does not. The inbox click and any captcha stay with the human (the `auth:recovery-email` handoff says
-so); the live run that exercises it comes separately. Account isolation is implemented on the same
+coverage and no live re-run yet). Password recovery is **live-validated on the same provider**: the
+same 2026-09-24 run carried `auth.smtp: resend` (the custom-SMTP write and the raised auth email rate
+limit, both read back) and `auth.recovery: true`, whose one approved step (`auth:recovery`, needs
+`--confirm-live`) rotated that recorded test account's password through the provider's own recovery
+calls — request the email, mint the link with the admin API, exchange it for a session, set the new
+password with that session — and the `auth-recovery` check passed every leg: the request was accepted,
+an address with no account got the same answer (no account enumeration), the spent token was refused
+on replay, the new password signed in and the one it replaced did not. The inbox click and any captcha
+stay with the human (the `auth:recovery-email` handoff says so), the SMTP password is write-only (the
+provider answers a hash, so the read-back proves the settings, not a delivery), and the account was
+confirmed through the Auth admin API rather than the owner's click. Account isolation is implemented on the same
 provider too: `auth.isolation: true` with `auth.identityPath` and `auth.isolationPath` adds one
 approved step (`auth:isolation`, needs `--confirm-live`) that seeds a
 **second** real test account — the address derived from `auth.testEmail`, the password again only in
@@ -238,7 +241,14 @@ checked with one unique marker row per account written **through that route** wi
 session and read back, so another account's marker in the answer is a cross-account read and fails
 critically. When the routes are not declared, the non-blocking `auth:isolation-routes` handoff hands
 the app-code task over; a 404 or a refused session skips with that task named, never as a pass.
-Both are **implemented and mock-covered, not live-validated yet** — their live runs come separately.
+Account isolation is **implemented and mock-covered, not live-validated yet** — its live run comes
+separately. The recovery run's own output contained two defects, both fixed here with mocked
+regressions: `teardown` reported the owner's *adopted* sending domain as created by golive (an empty
+creation-marker list made `[].every()` true, so every recorded domain read as golive's), and the
+`auth:recovery-email` handoff showed a standalone `verify` skip as its evidence while state recorded
+that step done. Its third finding is open as [issue #52](https://github.com/mikehasa/golive-skill/issues/52):
+Resend kept reporting that domain verified while the records it lists were absent from the zone's
+authoritative nameserver, so `email-verified` can pass on a domain whose mail cannot authenticate.
 The DNS, email and test-mode payment paths listed above are the tested ones, with the custom-domain
 runs using Porkbun and GoDaddy record writes; **Cloudflare DNS specifically is not a validated alpha
 path yet**, and other auth providers stay guided. See [provider scope](docs/PROVIDERS.md) and
@@ -282,10 +292,13 @@ live-tested milestones**, not a finished category or a completed checklist for y
   disposable projects, where the confirmation came through the Auth admin API instead of the seeded
   email click, inbox delivery stayed human-confirmed, and a later run proved a declared protected
   path (an anonymous 401) and a signed-in read of an RLS-protected table, reported as a count rather
-  than a table name**. Password recovery is implemented on the same provider and covered by mocked
-  tests (`auth.recovery: true` adds the `auth:recovery` step and the `auth-recovery` check, which
-  proves no account enumeration, a one-time token and the replaced password); its live run still needs
-  work. Account isolation — the other half, and the one earlier runs could not exercise — is
+  than a table name**. Password recovery is **live-validated on the same provider** (`auth.recovery:
+  true` adds the `auth:recovery` step and the `auth-recovery` check, which proved no account
+  enumeration, a one-time token and the replaced password on a disposable project; the confirmation
+  came through the Auth admin API, the inbox click stays human-confirmed, and two output defects that
+  run found — a false "created by golive" ownership claim and a handoff evidence text contradicting
+  the recorded step — are fixed with mocked regressions). Account isolation — the other half, and the
+  one earlier runs could not exercise — is
   implemented and mock-covered the same way: `auth.isolation: true` with `auth.identityPath` and
   `auth.isolationPath` adds the `auth:isolation` step (a second real test account, confirmed through
   the provider's admin API and recorded by id and address) and the `auth-isolation` check, which
@@ -306,8 +319,13 @@ live-tested milestones**, not a finished category or a completed checklist for y
   same write, because the provider keeps that limit with custom SMTP. `auth-policy` then reports
   `custom SMTP via Resend` instead of warning about the built-in mailer. The password is write-only (the
   provider answers a hash), so the read-back confirms the settings and a real auth email is the only full
-  proof. **Implemented and mock-covered, not live-validated**; bounce handling and richer message content
-  still need validation.
+  proof. **Live-validated on a disposable project (2026-09-24)**: the same run wrote the custom SMTP and
+  read it back (`smtp.resend.com`, port 465, user `resend`, sender `auth@mail.trytofu.xyz`) together with
+  `auth email rate limit: 2 → 30 per hour`, issued the SMTP key by itself and revoked it in teardown, and
+  `auth-policy` then read `custom SMTP via Resend` with 30 auth emails/hour — settings and rate limit
+  only, since the password itself can never be read back. Bounce handling, richer message content and
+  actual inbox delivery (human-confirmed by design, and doubtful on that run's domain — see
+  [issue #52](https://github.com/mikehasa/golive-skill/issues/52)) still need validation.
 - [x] ✅ **Domains / DNS / HTTPS:** ~~Prove domain attachment, DNS wiring and HTTPS serving on host+DNS pairs.~~
   Tested: Vercel attachment with Porkbun and GoDaddy record writes under `--confirm-dns`, ownership
   verification and HTTPS 200 on disposable subdomains. The Cloudflare DNS adapter, redirects and
@@ -390,9 +408,9 @@ the right page, the right permissions, a check afterward, and a return to the sa
 When the app itself needs code changes, GoLive should give the coding agent a concrete task and
 recheck the result. It should not make you coordinate a dozen disconnected setup conversations.
 
-**Next up:** complete and live-test the remaining launch journeys—the live runs for password recovery
-and account isolation (both implemented and mock-covered on Supabase, not yet exercised against a real
-project), live-mode payment flows and the Cloudflare DNS adapter—then expand app architectures and
+**Next up:** complete and live-test the remaining launch journeys—the live run for account isolation
+(implemented and mock-covered on Supabase, not yet exercised against a real project), live-mode
+payment flows and the Cloudflare DNS adapter—then expand app architectures and
 ongoing operations.
 
 These are directions, not release dates. A capability should graduate from experimental only after

@@ -371,21 +371,25 @@ const sendingDomain: SendingDomain = {
     const t = await transport(ctx);
     const existing = (await t.listDomains()).find((d) => sameName(d.name, domain));
     let id: string;
+    let created = false;
     if (existing) {
       id = existing.id;
       ctx.log.info(`adopting existing Resend domain ${existing.name} (${id}, ${existing.status ?? 'unknown status'})`);
     } else {
       const region = regionFor(ctx);
-      const created = await t.createDomain(domain, region);
-      if (!created?.id) throw new Error(`Resend create domain ${domain}: response had no domain id`);
-      id = created.id;
+      const made = await t.createDomain(domain, region);
+      if (!made?.id) throw new Error(`Resend create domain ${domain}: response had no domain id`);
+      id = made.id;
+      created = true;
       ctx.log.info(`created Resend domain ${domain} (${id}, region ${region})`);
     }
     // The list endpoint omits records; always re-read the full domain.
     const full = await t.getDomain(id);
     const records = normalizeRecords(full.name ?? domain, full.records, (m) => ctx.log.warn(m));
     if (records.length === 0) ctx.log.warn(`Resend returned no DNS records for ${domain}; check https://resend.com/domains`);
-    return { id, records };
+    // `created` travels back so the link can record the creation marker: this is the only moment
+    // golive knows the domain is its own rather than the owner's.
+    return { id, records, ...(created ? { created: true } : {}) };
   },
 
   async status(ctx, id) {

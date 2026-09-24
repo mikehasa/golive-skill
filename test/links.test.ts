@@ -183,6 +183,8 @@ describe('golden path', () => {
     expect(st.secrets['NEXT_PUBLIC_SITE_URL@production']).toBeDefined();
     expect(st.resources['fakepay.live.webhookEndpointId']).toBe('we_1');
     expect(st.resources['fakemail.domainId']).toBe('dom_example.com');
+    // The domain this run created carries golive's creation marker; an adopted one records none.
+    expect(st.resources['fakemail.createdDomainId']).toBe('dom_example.com');
     expect(st.resources['fakemail.keyId@production']).toMatch(/^key_/);
 
     // Side effects on the other providers.
@@ -620,6 +622,20 @@ describe('dns + email', () => {
     const plan = await build(ctx);
     expect(ids(plan)).not.toContain('email:key:production');
     expect(ids(plan)).toContain('email:key:preview');
+  });
+
+  it('records a creation marker for a domain it created, and none for one it adopted', async () => {
+    const created = setup();
+    await apply(created.ctx, await build(created.ctx));
+    expect(created.ctx.state.resource('fakemail.domainId')).toBe('dom_example.com');
+    expect(created.ctx.state.resource('fakemail.createdDomainId')).toBe('dom_example.com');
+
+    // The owner's domain already exists at the provider: adopted, so no marker is ever recorded — the
+    // shape that must not be reported as golive-created.
+    const adopted = setup({ arrange: (w) => w.mail.domains.set('example.com', { id: 'dom_example.com', status: 'verified' }) });
+    await apply(adopted.ctx, await build(adopted.ctx));
+    expect(adopted.ctx.state.resource('fakemail.domainId')).toBe('dom_example.com');
+    expect(adopted.ctx.state.resource('fakemail.createdDomainId')).toBeUndefined();
   });
 
   it('picks the sending domain from email.domain, then email.from, then domain', () => {

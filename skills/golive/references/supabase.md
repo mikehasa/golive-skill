@@ -155,7 +155,14 @@ golive automates (after plan approval):
   non-secret fields (`auth:smtp:applied`) and the `auth-policy` check reports
   `custom SMTP via Resend` instead of the built-in-mailer warning, and the journeys that send real
   mail run after it. The password is never compared, because the API never returns it: the read-back
-  confirms the settings, and a real auth email arriving is the only full proof.
+  confirms the settings, and a real auth email arriving is the only full proof. Live-validated on
+  2026-09-24 on a disposable project: the approved apply wrote the mailer and the rate limit in one
+  request and read both back (`SMTP host: (not set) → smtp.resend.com`, `SMTP port: (not set) → 465`,
+  `SMTP user: (not set) → resend`, `sender address: (not set) → auth@mail.trytofu.xyz`, `auth email
+  rate limit: 2 → 30 per hour`), issuing one sending key for SMTP alone and recording it as
+  `resend.keyId@smtp` (revoked in that run's teardown), and `auth-policy` then read `custom SMTP via
+  Resend` with `rate limit: 30 auth emails/hour`. What that evidence is not: the password (write-only —
+  reported `not confirmed`) and delivery, which needs an inbox golive cannot read.
 - **Runs the signup journey** when the human opted in with `auth.e2e: true` (see below): the
   `auth:test-user` step seeds one test account through the project's own `/auth/v1` signup endpoint,
   `auth:confirm-email` hands the inbox click over, and the `auth-signup`/`auth-session` checks prove
@@ -320,8 +327,17 @@ What `auth-recovery` proves, and what stays human:
   passing; golive never reads the inbox. A captcha on the project blocks the scripted request, so the
   check skips instead of claiming a pass.
 
-This is **implemented and mock-covered, not live-validated yet**: the live run that exercises it (and
-the `docs/VALIDATION.md` row recording it) comes separately.
+Live-validated on 2026-09-24 on a disposable project, in one apply that also carried the SMTP write
+above: the request was accepted for sending (HTTP 200), the admin-minted link was exchanged for a
+session, the new password was set with it, and `auth-recovery` passed every leg — an address with no
+account answered identically (HTTP 200 both, no enumeration), the spent token refused on replay (403
+`otp_expired`), the new password signing in, the replaced one refused (`invalid_credentials`), and the
+provider's 3600 s OTP window (`otpExpirySeconds`) named. The row recording it is in
+`docs/VALIDATION.md`. What that run cannot show: the click in the inbox (golive never reads one), and
+whether the message was ever delivered — its HTTP 200s are the provider accepting the send, and the
+run's sending domain was the subject of [#52](https://github.com/mikehasa/golive-skill/issues/52).
+A separate `verify` still skips the check, by design: the token and both passwords exist only in the
+rotating run's memory.
 
 ### The account-isolation journey (`auth.isolation`)
 
@@ -474,17 +490,18 @@ account isolation as proven on a human's project until a live report says `pass`
 
 - Whether publishable keys are blocked from `/rest/v1/` exactly like anon keys (assumed yes).
 - The exact enforcement date for removing legacy keys ("late 2026", not final).
-- Custom SMTP writes: mock-covered, and the 2026-09-24 live run reached the write — the provider's
-  validation rejected the port's number (`smtp_port: Invalid input: expected string, received
-  number`, fixed by sending the string), so an accepted write and its read-back are still unobserved
-  live. The auth email rate limit is written in the same request (`rate_limit_email_sent`, 30 per hour
-  or `auth.emailRateLimitPerHour`): **implemented and mock-covered, not live-validated** — no live run
-  has yet read back a raised limit, and the field is the one setting here whose refusal golive only
-  warns about (the provider is free to keep its own value). `smtp_pass` is write-only (the API answers
-  a hash), so even after a real run the read-back
-  confirms only host/port/user/sender — never that the key in effect is the recorded one, or that
-  mail leaves the project. The auth email throttle's exact behaviour is also unconfirmed — the live
-  project's `rate_limit_email_sent: 2` accepted one send and refused the next 25 seconds later
+- Custom SMTP writes: **live-validated on 2026-09-24** — the accepted write and its read-back are
+  observed (`smtp.resend.com`, port 465, user `resend`, sender `auth@mail.trytofu.xyz`) together with
+  the auth email rate limit raised in the same request (`auth email rate limit: 2 → 30 per hour`,
+  `rate_limit_email_sent`), after an earlier run's 400 on the port (`smtp_port: Invalid input: expected
+  string, received number`) was fixed by sending the string. What remains unverified: `smtp_pass` is
+  write-only (the API answers
+  a hash), so the read-back
+  confirms only host/port/user/sender and the limit — never that the key in effect is the recorded one,
+  or that mail leaves the project; the rate limit is still the one setting whose refusal golive only
+  warns about (the provider is free to keep its own value); and the auth email throttle's exact
+  behaviour is also unconfirmed — this run's project accepted every send it made at 30/hour, while an
+  earlier project's `rate_limit_email_sent: 2` accepted one send and refused the next 25 seconds later
   rather than allowing a clean two per window.
 - GoTrue answer shapes still modelled from its documented behaviour: an obfuscated duplicate signup
   and a captcha refusal. The disposable live run (2026-09-23) exercised an accepted signup, the

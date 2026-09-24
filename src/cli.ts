@@ -24,7 +24,7 @@ import { detectDrift } from './core/drift.js';
 import { applyPlan, runCheck, PlanMismatchError } from './core/runner.js';
 import { credentialsStatus, setupCredentials } from './core/credentials.js';
 import { promptCredential } from './core/credential-prompt.js';
-import { AXES, type Axis, type Check, type CheckResult, type Ctx, type HandoffItem, type Report, type ShipConfig } from './core/types.js';
+import { AXES, type Axis, type Check, type CheckResult, type Ctx, type HandoffItem, type Report, type ShipConfig, type Step } from './core/types.js';
 import { ADAPTERS, CHECKS, adapterById, adapterFor, checkMap, linkList } from './registry.js';
 import { GUIDED } from './adapters/index.js';
 import { detect } from './detect/index.js';
@@ -193,7 +193,7 @@ async function main(argv: string[]): Promise<number> {
         only,
         force: flags.force === true,
       });
-      const hs = await handoffStatus(ctx, plan.handoffs);
+      const hs = await handoffStatus(ctx, plan.handoffs, [], true, plan.steps);
       const openBlocking = hs.filter((h) => h.blocking && h.done === false);
       const allDone = outcomes.every((o) => o.status === 'done' || o.status === 'skipped');
       // Nothing ran because humans still have to act → not "ok", even though nothing failed.
@@ -219,7 +219,7 @@ async function main(argv: string[]): Promise<number> {
         omittedCheckIds,
       };
       const plan = await buildPlan(ctx, linkList(), { unmappedEnv: env.unmapped, warnings: [] }).catch(() => null);
-      const report = await makeReport(ctx, results, await handoffStatus(ctx, plan?.handoffs ?? [], results, false), verification);
+      const report = await makeReport(ctx, results, await handoffStatus(ctx, plan?.handoffs ?? [], results, false, plan?.steps ?? []), verification);
       const reportPaths = { json: join(cwd, '.golive/report.json'), markdown: join(cwd, 'GOLIVE_REPORT.md') };
       mkdirSync(join(cwd, '.golive'), { recursive: true });
       writeFileSync(reportPaths.json, JSON.stringify(report, null, 2) + '\n');
@@ -246,7 +246,7 @@ async function main(argv: string[]): Promise<number> {
     }
     case 'handoff': {
       const plan = await buildPlan(ctx, linkList(), { unmappedEnv: env.unmapped, warnings: [] });
-      const items = await handoffStatus(ctx, plan.handoffs);
+      const items = await handoffStatus(ctx, plan.handoffs, [], true, plan.steps);
       const unverified = items.filter((i) => i.done === null);
       const note = unverified.length ? 'items with done:null cannot be verified by golive — confirm them with the human and name them as unverified in your summary' : undefined;
       if (flags.write !== true) {
@@ -293,8 +293,13 @@ function checkRuns(check: Check, ctx: Ctx): boolean {
 /**
  * Whether each handoff is closed. Only a passing check closes one; `manual` items (or ones whose
  * check can't run for this stack) are `done: null` = cannot be verified by golive.
+ *
+ * `steps` is the plan these handoffs came from, used for one thing: a check that has to skip is this
+ * invocation's limit, not a statement about the run that did the work (`auth-recovery` needs secrets
+ * only the rotating run held), so the recorded outcome of a step the check verifies is printed with
+ * the skip instead of letting the evidence read as if the work never happened.
  */
-async function handoffStatus(ctx: Ctx, handoffs: HandoffItem[], ran: CheckResult[] = [], runAdditionalChecks = true): Promise<Array<HandoffItem & { done: boolean | null; evidence: string[] }>> {
+async function handoffStatus(ctx: Ctx, handoffs: HandoffItem[], ran: CheckResult[] = [], runAdditionalChecks = true, steps: readonly Step[] = []): Promise<Array<HandoffItem & { done: boolean | null; evidence: string[] }>> {
   const checks = checkMap();
   const out = [];
   for (const h of handoffs) {
@@ -309,13 +314,34 @@ async function handoffStatus(ctx: Ctx, handoffs: HandoffItem[], ran: CheckResult
     }
     const existing = ran.find((x) => x.id === h.verifiedBy);
     if (!existing && !runAdditionalChecks) {
-      out.push({ ...h, done: null, evidence: ['not run in this verification invocation'] });
+      out.push({ ...h, done: null, evidence: [...recordedStepEvidence(ctx, steps, h.verifiedBy), 'not run in this verification invocation'] });
       continue;
     }
     const r = existing ?? (await runCheck(ctx, checks.get(h.verifiedBy)!));
-    out.push({ ...h, done: r.status === 'pass' ? true : r.status === 'skip' ? null : false, evidence: r.evidence });
+    out.push({ ...h, done: r.status === 'pass' ? true : r.status === 'skip' ? null : false, evidence: [...(r.status === 'skip' ? recordedStepEvidence(ctx, steps, h.verifiedBy) : []), ...r.evidence] });
   }
   return out;
+}
+
+/**
+ * What state records about the plan steps that name this check as their verification. A skip says the
+ * check could not run here; it must not be the only word when the step it verifies is recorded done,
+ * because that reads as "this never ran" while `.golive/state.json` says it did. Empty when no step
+ * verifies with this check id or state holds no record for it.
+ */
+function recordedStepEvidence(ctx: Ctx, steps: readonly Step[], checkId: string): string[] {
+  const lines: string[] = [];
+  for (const s of steps) {
+    if (!s.verifyWith.includes(checkId)) continue;
+    const rec = ctx.state.get().steps[s.id];
+    if (!rec) continue;
+    lines.push(
+      rec.status === 'done'
+        ? `the \`${s.id}\` step this check verifies is recorded done in .golive/state.json (plan ${rec.planId}, ${rec.at}): the apply that carried it did the work the step records and its checks raised no failure, so this invocation's inability to re-run the check is not evidence the work was skipped`
+        : `the \`${s.id}\` step this check verifies is recorded failed in .golive/state.json (plan ${rec.planId}, ${rec.at}): ${rec.error ?? 'no error was recorded'} — that recorded outcome stands, whatever this invocation reports`
+    );
+  }
+  return lines;
 }
 
 function suggestStack(d: Awaited<ReturnType<typeof detect>>): Partial<Record<Axis, string>> {

@@ -160,6 +160,22 @@ describe('handover: data', () => {
     expect(doc.retirement.find((r) => r.resource.includes('(prj_1)'))).toMatchObject({ removable: false, how: expect.stringMatching(/adopted this project/) });
   });
 
+  it('claims a sending domain as golive-owned only when the creation marker names it', async () => {
+    // The fixture records `resend.domainId` with no creation marker — the shape a run that adopted
+    // the owner's domain leaves behind, which the live defect reported as golive-created.
+    const row = (doc: HandoverDoc) => doc.resources.find((r) => r.kind === 'sending domain')!;
+
+    const adopted = await setup().build();
+    expect(row(adopted)).toMatchObject({ ownership: 'adopted', removable: false });
+    expect(row(adopted).proof).toMatch(/without golive's creation marker/);
+    expect(adopted.retirement.some((r) => r.resource.includes('send.example.com'))).toBe(false); // nothing golive may retire
+
+    const created = await setup({ state: { ...STATE, resources: { ...STATE.resources, 'resend.createdDomainId': 'dom_42' } } }).build();
+    expect(row(created)).toMatchObject({ ownership: 'created' });
+    expect(row(created).proof).toContain('resend.createdDomainId');
+    expect(created.retirement.find((r) => r.resource.includes('send.example.com'))).toMatchObject({ removable: false });
+  });
+
   it('states no cost figure and points at the provider billing pages instead', async () => {
     const doc = await setup().build();
     expect(doc.costs.map((c) => c.providerTitle)).toEqual(['FakeHost', 'FakeDB', 'FakePay', 'FakeMail', 'FakeDNS']);
