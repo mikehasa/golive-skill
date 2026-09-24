@@ -584,12 +584,12 @@ var require_directives = __commonJS({
        * Given a fully resolved tag, returns its printable string form,
        * taking into account current tag prefixes and defaults.
        */
-      tagString(tag) {
+      tagString(tag2) {
         for (const [handle, prefix] of Object.entries(this.tags)) {
-          if (tag.startsWith(prefix))
-            return handle + escapeTagName(tag.substring(prefix.length));
+          if (tag2.startsWith(prefix))
+            return handle + escapeTagName(tag2.substring(prefix.length));
         }
-        return tag[0] === "!" ? tag : `!<${tag}>`;
+        return tag2[0] === "!" ? tag2 : `!<${tag2}>`;
       }
       toString(doc) {
         const lines = this.yaml.explicit ? [`%YAML ${this.yaml.version || "1.2"}`] : [];
@@ -1568,7 +1568,7 @@ ${indent}${start}${value}${end}`;
       const str2 = value.replace(/\n+/g, `$&
 ${indent}`);
       if (actualString) {
-        const test = (tag) => tag.default && tag.tag !== "tag:yaml.org,2002:str" && tag.test?.test(str2);
+        const test = (tag2) => tag2.default && tag2.tag !== "tag:yaml.org,2002:str" && tag2.test?.test(str2);
         const { compat, tags } = ctx.doc.schema;
         if (tags.some(test) || compat?.some(test))
           return quotedString(value, ctx);
@@ -1698,9 +1698,9 @@ var require_stringify = __commonJS({
         anchors$1.add(anchor);
         props.push(`&${anchor}`);
       }
-      const tag = node.tag ?? (tagObj.default ? null : tagObj.tag);
-      if (tag)
-        props.push(doc.directives.tagString(tag));
+      const tag2 = node.tag ?? (tagObj.default ? null : tagObj.tag);
+      if (tag2)
+        props.push(doc.directives.tagString(tag2));
       return props.join(" ");
     }
     function stringify(item, ctx, onComment, onChompKeep) {
@@ -1908,7 +1908,7 @@ var require_merge = __commonJS({
       }),
       stringify: () => MERGE_KEY
     };
-    var isMergeKey = (ctx, key) => (merge.identify(key) || identity.isScalar(key) && (!key.type || key.type === Scalar.Scalar.PLAIN) && merge.identify(key.value)) && ctx?.doc.schema.tags.some((tag) => tag.tag === merge.tag && tag.default);
+    var isMergeKey = (ctx, key) => (merge.identify(key) || identity.isScalar(key) && (!key.type || key.type === Scalar.Scalar.PLAIN) && merge.identify(key.value)) && ctx?.doc.schema.tags.some((tag2) => tag2.tag === merge.tag && tag2.default);
     function addMergeToJSMap(ctx, map, value) {
       const source = resolveAliasValue(ctx, value);
       if (identity.isSeq(source))
@@ -2575,14 +2575,14 @@ var require_bool = __commonJS({
 var require_stringifyNumber = __commonJS({
   "node_modules/.pnpm/yaml@2.9.1/node_modules/yaml/dist/stringify/stringifyNumber.js"(exports) {
     "use strict";
-    function stringifyNumber({ format, minFractionDigits, tag, value }) {
+    function stringifyNumber({ format, minFractionDigits, tag: tag2, value }) {
       if (typeof value === "bigint")
         return String(value);
       const num2 = typeof value === "number" ? value : Number(value);
       if (!isFinite(num2))
         return isNaN(num2) ? ".nan" : num2 < 0 ? "-.inf" : ".inf";
       let n = Object.is(value, -0) ? "-0" : JSON.stringify(value);
-      if (!format && minFractionDigits && (!tag || tag === "tag:yaml.org,2002:float") && /^-?\d/.test(n) && !n.includes("e")) {
+      if (!format && minFractionDigits && (!tag2 || tag2 === "tag:yaml.org,2002:float") && /^-?\d/.test(n) && !n.includes("e")) {
         let i = n.indexOf(".");
         if (i < 0) {
           i = n.length;
@@ -3457,17 +3457,17 @@ var require_tags = __commonJS({
         }
       }
       if (Array.isArray(customTags)) {
-        for (const tag of customTags)
-          tags = tags.concat(tag);
+        for (const tag2 of customTags)
+          tags = tags.concat(tag2);
       } else if (typeof customTags === "function") {
         tags = customTags(tags.slice());
       }
       if (addMergeTag)
         tags = tags.concat(merge.merge);
-      return tags.reduce((tags2, tag) => {
-        const tagObj = typeof tag === "string" ? tagsByName[tag] : tag;
+      return tags.reduce((tags2, tag2) => {
+        const tagObj = typeof tag2 === "string" ? tagsByName[tag2] : tag2;
         if (!tagObj) {
-          const tagName = JSON.stringify(tag);
+          const tagName = JSON.stringify(tag2);
           const keys3 = Object.keys(tagsByName).map((key) => JSON.stringify(key)).join(", ");
           throw new Error(`Unknown custom tag ${tagName}; use one of ${keys3}`);
         }
@@ -3707,7 +3707,7 @@ var require_Document = __commonJS({
           options = replacer;
           replacer = void 0;
         }
-        const { aliasDuplicateObjects, anchorPrefix, flow, keepUndefined, onTagObj, tag } = options ?? {};
+        const { aliasDuplicateObjects, anchorPrefix, flow, keepUndefined, onTagObj, tag: tag2 } = options ?? {};
         const { onAnchor, setAnchors, sourceObjects } = anchors.createNodeAnchors(
           this,
           // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
@@ -3722,7 +3722,7 @@ var require_Document = __commonJS({
           schema: this.schema,
           sourceObjects
         };
-        const node = createNode.createNode(value, tag, ctx);
+        const node = createNode.createNode(value, tag2, ctx);
         if (flow && identity.isCollection(node))
           node.flow = true;
         setAnchors();
@@ -3981,7 +3981,7 @@ var require_resolve_props = __commonJS({
       let reqSpace = false;
       let tab = null;
       let anchor = null;
-      let tag = null;
+      let tag2 = null;
       let newlineAfterProp = null;
       let comma = null;
       let found = null;
@@ -4027,7 +4027,7 @@ var require_resolve_props = __commonJS({
               commentSep += token2.source;
             atNewline = true;
             hasNewline = true;
-            if (anchor || tag)
+            if (anchor || tag2)
               newlineAfterProp = token2;
             hasSpace = true;
             break;
@@ -4043,9 +4043,9 @@ var require_resolve_props = __commonJS({
             reqSpace = true;
             break;
           case "tag": {
-            if (tag)
+            if (tag2)
               onError(token2, "MULTIPLE_TAGS", "A node can have at most one tag");
-            tag = token2;
+            tag2 = token2;
             start ?? (start = token2.offset);
             atNewline = false;
             hasSpace = false;
@@ -4053,7 +4053,7 @@ var require_resolve_props = __commonJS({
             break;
           }
           case indicator:
-            if (anchor || tag)
+            if (anchor || tag2)
               onError(token2, "BAD_PROP_ORDER", `Anchors and tags must be after the ${token2.source} indicator`);
             if (found)
               onError(token2, "UNEXPECTED_TOKEN", `Unexpected ${token2.source} in ${flow ?? "collection"}`);
@@ -4091,7 +4091,7 @@ var require_resolve_props = __commonJS({
         comment,
         hasNewline,
         anchor,
-        tag,
+        tag: tag2,
         newlineAfterProp,
         end,
         start: start ?? end
@@ -4188,8 +4188,8 @@ var require_resolve_block_map = __commonJS({
     var utilFlowIndentCheck = require_util_flow_indent_check();
     var utilMapIncludes = require_util_map_includes();
     var startColMsg = "All mapping items must start at the same column";
-    function resolveBlockMap({ composeNode, composeEmptyNode }, ctx, bm, onError, tag) {
-      const NodeClass = tag?.nodeClass ?? YAMLMap.YAMLMap;
+    function resolveBlockMap({ composeNode, composeEmptyNode }, ctx, bm, onError, tag2) {
+      const NodeClass = tag2?.nodeClass ?? YAMLMap.YAMLMap;
       const map = new NodeClass(ctx.schema);
       if (ctx.atRoot)
         ctx.atRoot = false;
@@ -4292,8 +4292,8 @@ var require_resolve_block_seq = __commonJS({
     var YAMLSeq = require_YAMLSeq();
     var resolveProps = require_resolve_props();
     var utilFlowIndentCheck = require_util_flow_indent_check();
-    function resolveBlockSeq({ composeNode, composeEmptyNode }, ctx, bs, onError, tag) {
-      const NodeClass = tag?.nodeClass ?? YAMLSeq.YAMLSeq;
+    function resolveBlockSeq({ composeNode, composeEmptyNode }, ctx, bs, onError, tag2) {
+      const NodeClass = tag2?.nodeClass ?? YAMLSeq.YAMLSeq;
       const seq = new NodeClass(ctx.schema);
       if (ctx.atRoot)
         ctx.atRoot = false;
@@ -4393,10 +4393,10 @@ var require_resolve_flow_collection = __commonJS({
     var utilMapIncludes = require_util_map_includes();
     var blockMsg = "Block collections are not allowed within flow collections";
     var isBlock = (token2) => token2 && (token2.type === "block-map" || token2.type === "block-seq");
-    function resolveFlowCollection({ composeNode, composeEmptyNode }, ctx, fc, onError, tag) {
+    function resolveFlowCollection({ composeNode, composeEmptyNode }, ctx, fc, onError, tag2) {
       const isMap = fc.start.source === "{";
       const fcName = isMap ? "flow map" : "flow sequence";
-      const NodeClass = tag?.nodeClass ?? (isMap ? YAMLMap.YAMLMap : YAMLSeq.YAMLSeq);
+      const NodeClass = tag2?.nodeClass ?? (isMap ? YAMLMap.YAMLMap : YAMLSeq.YAMLSeq);
       const coll = new NodeClass(ctx.schema);
       coll.flow = true;
       const atRoot = ctx.atRoot;
@@ -4584,8 +4584,8 @@ var require_compose_collection = __commonJS({
     var resolveBlockMap = require_resolve_block_map();
     var resolveBlockSeq = require_resolve_block_seq();
     var resolveFlowCollection = require_resolve_flow_collection();
-    function resolveCollection(CN, ctx, token2, onError, tagName, tag) {
-      const coll = token2.type === "block-map" ? resolveBlockMap.resolveBlockMap(CN, ctx, token2, onError, tag) : token2.type === "block-seq" ? resolveBlockSeq.resolveBlockSeq(CN, ctx, token2, onError, tag) : resolveFlowCollection.resolveFlowCollection(CN, ctx, token2, onError, tag);
+    function resolveCollection(CN, ctx, token2, onError, tagName, tag2) {
+      const coll = token2.type === "block-map" ? resolveBlockMap.resolveBlockMap(CN, ctx, token2, onError, tag2) : token2.type === "block-seq" ? resolveBlockSeq.resolveBlockSeq(CN, ctx, token2, onError, tag2) : resolveFlowCollection.resolveFlowCollection(CN, ctx, token2, onError, tag2);
       const Coll = coll.constructor;
       if (tagName === "!" || tagName === Coll.tagName) {
         coll.tag = Coll.tagName;
@@ -4610,12 +4610,12 @@ var require_compose_collection = __commonJS({
       if (!tagToken || !tagName || tagName === "!" || tagName === YAMLMap.YAMLMap.tagName && expType === "map" || tagName === YAMLSeq.YAMLSeq.tagName && expType === "seq") {
         return resolveCollection(CN, ctx, token2, onError, tagName);
       }
-      let tag = ctx.schema.tags.find((t) => t.tag === tagName && t.collection === expType);
-      if (!tag) {
+      let tag2 = ctx.schema.tags.find((t) => t.tag === tagName && t.collection === expType);
+      if (!tag2) {
         const kt = ctx.schema.knownTags[tagName];
         if (kt?.collection === expType) {
           ctx.schema.tags.push(Object.assign({}, kt, { default: false }));
-          tag = kt;
+          tag2 = kt;
         } else {
           if (kt) {
             onError(tagToken, "BAD_COLLECTION_TYPE", `${kt.tag} used for ${expType} collection, but expects ${kt.collection ?? "scalar"}`, true);
@@ -4625,13 +4625,13 @@ var require_compose_collection = __commonJS({
           return resolveCollection(CN, ctx, token2, onError, tagName);
         }
       }
-      const coll = resolveCollection(CN, ctx, token2, onError, tagName, tag);
-      const res = tag.resolve?.(coll, (msg) => onError(tagToken, "TAG_RESOLVE_FAILED", msg), ctx.options) ?? coll;
+      const coll = resolveCollection(CN, ctx, token2, onError, tagName, tag2);
+      const res = tag2.resolve?.(coll, (msg) => onError(tagToken, "TAG_RESOLVE_FAILED", msg), ctx.options) ?? coll;
       const node = identity.isNode(res) ? res : new Scalar.Scalar(res);
       node.range = coll.range;
       node.tag = tagName;
-      if (tag?.format)
-        node.format = tag.format;
+      if (tag2?.format)
+        node.format = tag2.format;
       return node;
     }
     exports.composeCollection = composeCollection;
@@ -5053,18 +5053,18 @@ var require_compose_scalar = __commonJS({
     function composeScalar(ctx, token2, tagToken, onError) {
       const { value, type, comment, range } = token2.type === "block-scalar" ? resolveBlockScalar.resolveBlockScalar(ctx, token2, onError) : resolveFlowScalar.resolveFlowScalar(token2, ctx.options.strict, onError);
       const tagName = tagToken ? ctx.directives.tagName(tagToken.source, (msg) => onError(tagToken, "TAG_RESOLVE_FAILED", msg)) : null;
-      let tag;
+      let tag2;
       if (ctx.options.stringKeys && ctx.atKey) {
-        tag = ctx.schema[identity.SCALAR];
+        tag2 = ctx.schema[identity.SCALAR];
       } else if (tagName)
-        tag = findScalarTagByName(ctx.schema, value, tagName, tagToken, onError);
+        tag2 = findScalarTagByName(ctx.schema, value, tagName, tagToken, onError);
       else if (token2.type === "scalar")
-        tag = findScalarTagByTest(ctx, value, token2, onError);
+        tag2 = findScalarTagByTest(ctx, value, token2, onError);
       else
-        tag = ctx.schema[identity.SCALAR];
+        tag2 = ctx.schema[identity.SCALAR];
       let scalar;
       try {
-        const res = tag.resolve(value, (msg) => onError(tagToken ?? token2, "TAG_RESOLVE_FAILED", msg), ctx.options);
+        const res = tag2.resolve(value, (msg) => onError(tagToken ?? token2, "TAG_RESOLVE_FAILED", msg), ctx.options);
         scalar = identity.isScalar(res) ? res : new Scalar.Scalar(res);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
@@ -5077,8 +5077,8 @@ var require_compose_scalar = __commonJS({
         scalar.type = type;
       if (tagName)
         scalar.tag = tagName;
-      if (tag.format)
-        scalar.format = tag.format;
+      if (tag2.format)
+        scalar.format = tag2.format;
       if (comment)
         scalar.comment = comment;
       return scalar;
@@ -5087,17 +5087,17 @@ var require_compose_scalar = __commonJS({
       if (tagName === "!")
         return schema[identity.SCALAR];
       const matchWithTest = [];
-      for (const tag of schema.tags) {
-        if (!tag.collection && tag.tag === tagName) {
-          if (tag.default && tag.test)
-            matchWithTest.push(tag);
+      for (const tag2 of schema.tags) {
+        if (!tag2.collection && tag2.tag === tagName) {
+          if (tag2.default && tag2.test)
+            matchWithTest.push(tag2);
           else
-            return tag;
+            return tag2;
         }
       }
-      for (const tag of matchWithTest)
-        if (tag.test?.test(value))
-          return tag;
+      for (const tag2 of matchWithTest)
+        if (tag2.test?.test(value))
+          return tag2;
       const kt = schema.knownTags[tagName];
       if (kt && !kt.collection) {
         schema.tags.push(Object.assign({}, kt, { default: false, test: void 0 }));
@@ -5107,17 +5107,17 @@ var require_compose_scalar = __commonJS({
       return schema[identity.SCALAR];
     }
     function findScalarTagByTest({ atKey, directives, schema }, value, token2, onError) {
-      const tag = schema.tags.find((tag2) => (tag2.default === true || atKey && tag2.default === "key") && tag2.test?.test(value)) || schema[identity.SCALAR];
+      const tag2 = schema.tags.find((tag3) => (tag3.default === true || atKey && tag3.default === "key") && tag3.test?.test(value)) || schema[identity.SCALAR];
       if (schema.compat) {
-        const compat = schema.compat.find((tag2) => tag2.default && tag2.test?.test(value)) ?? schema[identity.SCALAR];
-        if (tag.tag !== compat.tag) {
-          const ts = directives.tagString(tag.tag);
+        const compat = schema.compat.find((tag3) => tag3.default && tag3.test?.test(value)) ?? schema[identity.SCALAR];
+        if (tag2.tag !== compat.tag) {
+          const ts = directives.tagString(tag2.tag);
           const cs = directives.tagString(compat.tag);
           const msg = `Value may be parsed as either ${ts} or ${cs}`;
           onError(token2, "TAG_RESOLVE_FAILED", msg, true);
         }
       }
-      return tag;
+      return tag2;
     }
     exports.composeScalar = composeScalar;
   }
@@ -5166,20 +5166,20 @@ var require_compose_node = __commonJS({
     var CN = { composeNode, composeEmptyNode };
     function composeNode(ctx, token2, props, onError) {
       const atKey = ctx.atKey;
-      const { spaceBefore, comment, anchor, tag } = props;
+      const { spaceBefore, comment, anchor, tag: tag2 } = props;
       let node;
       let isSrcToken = true;
       switch (token2.type) {
         case "alias":
           node = composeAlias(ctx, token2, onError);
-          if (anchor || tag)
+          if (anchor || tag2)
             onError(token2, "ALIAS_PROPS", "An alias node must not specify any properties");
           break;
         case "scalar":
         case "single-quoted-scalar":
         case "double-quoted-scalar":
         case "block-scalar":
-          node = composeScalar.composeScalar(ctx, token2, tag, onError);
+          node = composeScalar.composeScalar(ctx, token2, tag2, onError);
           if (anchor)
             node.anchor = anchor.source.substring(1);
           break;
@@ -5206,7 +5206,7 @@ var require_compose_node = __commonJS({
         onError(anchor, "BAD_ALIAS", "Anchor cannot be an empty string");
       if (atKey && ctx.options.stringKeys && (!identity.isScalar(node) || typeof node.value !== "string" || node.tag && node.tag !== "tag:yaml.org,2002:str")) {
         const msg = "With stringKeys, all keys must be strings";
-        onError(tag ?? token2, "NON_STRING_KEY", msg);
+        onError(tag2 ?? token2, "NON_STRING_KEY", msg);
       }
       if (spaceBefore)
         node.spaceBefore = true;
@@ -5220,14 +5220,14 @@ var require_compose_node = __commonJS({
         node.srcToken = token2;
       return node;
     }
-    function composeEmptyNode(ctx, offset, before, pos, { spaceBefore, comment, anchor, tag, end }, onError) {
+    function composeEmptyNode(ctx, offset, before, pos, { spaceBefore, comment, anchor, tag: tag2, end }, onError) {
       const token2 = {
         type: "scalar",
         offset: utilEmptyScalarPosition.emptyScalarPosition(offset, before, pos),
         indent: -1,
         source: ""
       };
-      const node = composeScalar.composeScalar(ctx, token2, tag, onError);
+      const node = composeScalar.composeScalar(ctx, token2, tag2, onError);
       if (anchor) {
         node.anchor = anchor.source.substring(1);
         if (node.anchor === "")
@@ -9172,7 +9172,7 @@ var init_stripe = __esm({
 
 // src/cli.ts
 import { writeFileSync as writeFileSync6, mkdirSync as mkdirSync6 } from "node:fs";
-import { join as join17, resolve as resolve8 } from "node:path";
+import { join as join18, resolve as resolve8 } from "node:path";
 import { dirname as dirname9, basename as basename11 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
@@ -9910,9 +9910,6 @@ function planView(plan) {
   };
 }
 
-// src/core/teardown.ts
-init_secret();
-
 // src/links/util.ts
 init_secret();
 import { basename as basename2 } from "node:path";
@@ -10167,6 +10164,136 @@ async function projectIntent(ctx, adapter) {
   return `${adapter.id}:${await projectIdentity(ctx, adapter, { planning: true }) ?? "?"}`;
 }
 
+// src/core/inventory.ts
+var MODES = ["test", "live"];
+var ENV_TARGETS = ["development", "preview", "production"];
+var PROJECT_STATE = {
+  vercel: { id: "vercel.projectId", name: "vercel.projectName" },
+  netlify: { id: "netlify.siteId", name: "netlify.siteName" }
+};
+function createdProjectKey(provider) {
+  return `${provider}.createdProjectId`;
+}
+function projectStateKeys(provider) {
+  return PROJECT_STATE[provider] ?? { id: `${provider}.projectId`, name: `${provider}.projectName` };
+}
+var RECORDED = [
+  { axis: "db", provider: "supabase", providerTitle: "Supabase", kind: "database-project", idKey: "supabase.ref", createdBy: ["supabase.createdByGolive"], needs: "the Supabase dashboard", where: "the dashboard" },
+  { axis: "db", provider: "neon", providerTitle: "Neon", kind: "database-project", idKey: "neon.projectId", nameKey: "neon.createdProjectName", createdBy: ["neon.createdProjectId"], needs: "the Neon console", where: "the Neon console", extra: "; Neon may keep a recovery window" },
+  { axis: "email", provider: "resend", providerTitle: "Resend", kind: "sending-domain", idKey: "resend.domainId", createdBy: [], needs: "the Resend dashboard", where: "the Resend dashboard", extra: "; any keys golive issued are revoked in the steps of this plan when applicable" }
+];
+async function buildInventory(ctx) {
+  const webhooks2 = await webhookInventory(ctx);
+  const dnsRecords = await dnsInventory(ctx);
+  const sendingKeys = await keyInventory(ctx);
+  const project = await projectInventory(ctx);
+  return { webhooks: webhooks2, dnsRecords, sendingKeys, project, recorded: recordedInventory(ctx) };
+}
+function titleOf(ctx, provider) {
+  return ctx.adapters.find((a) => a.id === provider)?.title ?? provider;
+}
+var WEBHOOK_KEY = /^([a-z0-9-]+)\.(test|live)\.webhookEndpointId$/;
+async function webhookInventory(ctx) {
+  const s = await axisStatus(ctx, "payments");
+  const ready2 = s.kind === "ready" ? s : null;
+  const out = [];
+  const stateKeys = Object.keys(ctx.state.get().resources).sort();
+  for (const mode of MODES) {
+    for (const stateKey of stateKeys) {
+      const m = WEBHOOK_KEY.exec(stateKey);
+      if (!m || m[2] !== mode) continue;
+      const provider = m[1];
+      const id2 = ctx.state.resource(stateKey);
+      if (!id2) continue;
+      const remove2 = ready2 && ready2.adapter.id === provider ? ready2.adapter.capabilities.webhooks?.remove : void 0;
+      out.push({ provider, providerTitle: titleOf(ctx, provider), key: stateKey, mode, id: id2, ...ready2 && remove2 ? { removal: { adapter: ready2.adapter, remove: remove2 } } : {} });
+    }
+  }
+  return out;
+}
+async function dnsInventory(ctx) {
+  const domains = inventoryDomains(ctx);
+  if (!domains.length) return [];
+  const s = await axisStatus(ctx, "dns");
+  if (s.kind !== "ready") return [];
+  const zone = s.adapter.capabilities.dns;
+  const listOwned = zone?.listOwned;
+  const remove2 = zone?.remove;
+  if (!zone || !listOwned || !remove2) return [];
+  const candidates3 = [];
+  for (const domain of domains) {
+    for (const record2 of await listOwned(ctx, domain)) candidates3.push({ domain, record: record2 });
+  }
+  candidates3.sort((a, b) => {
+    const ka = recordKey(a.record);
+    const kb = recordKey(b.record);
+    if (ka !== kb) return ka < kb ? -1 : 1;
+    return a.domain === b.domain ? 0 : a.domain < b.domain ? -1 : 1;
+  });
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const c of candidates3) {
+    const unique = `${c.domain}|${recordKey(c.record)}`;
+    if (seen.has(unique)) continue;
+    seen.add(unique);
+    out.push({ provider: s.adapter.id, providerTitle: s.adapter.title, domain: c.domain, record: c.record, adapter: s.adapter, listOwned, remove: remove2 });
+  }
+  return out;
+}
+function inventoryDomains(ctx) {
+  const byZone = /* @__PURE__ */ new Map();
+  for (const d of [ctx.config.domain, ctx.config.email?.domain]) {
+    if (d && !byZone.has(d.toLowerCase())) byZone.set(d.toLowerCase(), d);
+  }
+  return [...byZone.values()];
+}
+var recordKey = (r) => `${r.type} ${r.name} ${r.content}`;
+var KEY_STATE = /^([a-z0-9-]+)\.keyId@([a-z-]+)$/;
+async function keyInventory(ctx) {
+  const s = await axisStatus(ctx, "email");
+  const ready2 = s.kind === "ready" ? s : null;
+  const out = [];
+  for (const stateKey of Object.keys(ctx.state.get().resources).sort()) {
+    const m = KEY_STATE.exec(stateKey);
+    if (!m) continue;
+    const provider = m[1];
+    const target = m[2];
+    const id2 = ctx.state.resource(stateKey);
+    if (!id2 || !isEnvTarget(target)) continue;
+    const revoke = ready2 && ready2.adapter.id === provider ? ready2.adapter.capabilities.keys?.revoke : void 0;
+    out.push({ provider, providerTitle: titleOf(ctx, provider), key: stateKey, target, id: id2, ...ready2 && revoke ? { revocation: { adapter: ready2.adapter, revoke } } : {} });
+  }
+  return out;
+}
+var isEnvTarget = (v) => ENV_TARGETS.includes(v);
+async function projectInventory(ctx) {
+  const s = await axisStatus(ctx, "hosting");
+  if (s.kind !== "ready") return null;
+  const adapter = s.adapter;
+  const remove2 = adapter.capabilities.project?.remove;
+  if (!remove2) return null;
+  const keys3 = projectStateKeys(adapter.id);
+  const current3 = ctx.state.resource(keys3.id);
+  if (!current3) return null;
+  const name3 = ctx.state.resource(keys3.name);
+  const created = ctx.state.resource(createdProjectKey(adapter.id)) === current3;
+  return { provider: adapter.id, providerTitle: adapter.title, keys: keys3, id: current3, ...name3 ? { name: name3 } : {}, created, remove: remove2 };
+}
+function recordedInventory(ctx) {
+  const out = [];
+  for (const spec of RECORDED) {
+    const id2 = ctx.state.resource(spec.idKey);
+    if (!id2) continue;
+    const created = spec.createdBy.every((k) => ctx.state.resource(k) === id2);
+    const name3 = spec.kind === "sending-domain" ? ctx.config.email?.domain ?? id2 : (spec.nameKey ? ctx.state.resource(spec.nameKey) : void 0) ?? id2;
+    out.push({ axis: spec.axis, provider: spec.provider, providerTitle: spec.providerTitle, kind: spec.kind, key: spec.idKey, id: id2, name: name3, created, needs: spec.needs, where: spec.where, ...spec.extra ? { extra: spec.extra } : {} });
+  }
+  return out;
+}
+
+// src/core/teardown.ts
+init_secret();
+
 // src/links/email.ts
 function emailDomain(ctx) {
   const c = ctx.config.email;
@@ -10341,63 +10468,46 @@ async function keyStep(ctx, adapter, keys3, hostAdapter, env, domain, target, na
 }
 
 // src/core/teardown.ts
-var MODES = ["test", "live"];
-var ENV_TARGETS = ["development", "preview", "production"];
-var PROJECT_STATE = {
-  vercel: { id: "vercel.projectId", name: "vercel.projectName" },
-  netlify: { id: "netlify.siteId", name: "netlify.siteName" }
-};
-var createdKey = (provider) => `${provider}.createdProjectId`;
 async function buildTeardownPlan(ctx) {
   assertCompatibleState(ctx.state.get(), ctx.release);
   if (ctx.config.version !== ctx.release.schemas.config) {
     throw new Error("Configuration schema is incompatible with this release. Preserve config and state; use a compatible release before planning.");
   }
-  const webhooks2 = await webhookTeardown(ctx);
-  const dns = await dnsSteps(ctx);
-  const keys3 = await emailKeyTeardown(ctx);
-  const project = await projectTeardown(ctx);
-  const steps = [...webhooks2.steps, ...dns, ...keys3.steps, ...project.steps];
+  const inventory2 = await buildInventory(ctx);
+  const webhooks2 = webhookTeardown(inventory2.webhooks);
+  const keys3 = keyTeardown(inventory2.sendingKeys);
+  const project = projectTeardown(inventory2.project);
+  const steps = [...webhooks2.steps, ...dnsSteps(inventory2.dnsRecords), ...keys3.steps, ...project.steps];
   const stepIds = /* @__PURE__ */ new Set();
   for (const s of steps) {
     if (stepIds.has(s.id)) throw new Error(`teardown: two resources map to step ${s.id}, so golive cannot plan an unambiguous deletion. Resolve the duplicate and re-run.`);
     stepIds.add(s.id);
   }
-  const handoffs = [...dbHandoffs(ctx), ...emailHandoffs(ctx), ...webhooks2.handoffs, ...keys3.handoffs, ...project.handoffs];
+  const handoffs = [...dbHandoffs(inventory2.recorded), ...emailHandoffs(inventory2.recorded), ...webhooks2.handoffs, ...keys3.handoffs, ...project.handoffs];
   const ordered = orderSteps(steps);
   return { id: planId(ordered, handoffs, ctx.release), release: structuredClone(ctx.release), steps: ordered, handoffs, unmappedEnv: [], warnings: [] };
 }
-var WEBHOOK_KEY = /^([a-z0-9-]+)\.(test|live)\.webhookEndpointId$/;
-async function webhookTeardown(ctx) {
-  const s = await axisStatus(ctx, "payments");
-  const ready2 = s.kind === "ready" ? s : null;
+function webhookTeardown(webhooks2) {
   const steps = [];
   const handoffs = [];
-  const stateKeys = Object.keys(ctx.state.get().resources).sort();
-  for (const mode of MODES) {
-    for (const stateKey of stateKeys) {
-      const m = WEBHOOK_KEY.exec(stateKey);
-      if (!m || m[2] !== mode) continue;
-      const providerId = m[1];
-      const id2 = ctx.state.resource(stateKey);
-      if (!id2) continue;
-      const remove2 = ready2 && ready2.adapter.id === providerId ? ready2.adapter.capabilities.webhooks?.remove : void 0;
-      if (ready2 && remove2) {
-        steps.push(webhookStep(ready2.adapter, remove2, mode, id2));
-        continue;
-      }
-      handoffs.push({
-        id: `teardown:webhook:${providerId}:${mode}`,
-        why: `a ${providerId} ${mode}-mode webhook endpoint golive created (${id2}) is recorded, but golive cannot remove it right now (the provider is not signed in or has no removal support)`,
-        action: `Delete the endpoint ${id2} in the ${providerId} dashboard if intended; it still points at the URL it was registered with.`,
-        blocking: false,
-        manual: true
-      });
+  for (const w of webhooks2) {
+    if (w.removal) {
+      steps.push(webhookStep(w, w.removal));
+      continue;
     }
+    handoffs.push({
+      id: `teardown:webhook:${w.provider}:${w.mode}`,
+      why: `a ${w.provider} ${w.mode}-mode webhook endpoint golive created (${w.id}) is recorded, but golive cannot remove it right now (the provider is not signed in or has no removal support)`,
+      action: `Delete the endpoint ${w.id} in the ${w.provider} dashboard if intended; it still points at the URL it was registered with.`,
+      blocking: false,
+      manual: true
+    });
   }
   return { steps, handoffs };
 }
-function webhookStep(adapter, remove2, mode, id2) {
+function webhookStep(w, removal) {
+  const { adapter, remove: remove2 } = removal;
+  const { mode, id: id2 } = w;
   return step({
     id: `teardown:webhook:${adapter.id}:${mode}`,
     title: `Delete the ${adapter.title} ${mode}-mode webhook endpoint golive created`,
@@ -10414,54 +10524,25 @@ function webhookStep(adapter, remove2, mode, id2) {
     }
   });
 }
-async function dnsSteps(ctx) {
-  const domains = teardownDomains(ctx);
-  if (!domains.length) return [];
-  const s = await axisStatus(ctx, "dns");
-  if (s.kind !== "ready") return [];
-  const zone = s.adapter.capabilities.dns;
-  const listOwned = zone?.listOwned;
-  const remove2 = zone?.remove;
-  if (!zone || !listOwned || !remove2) return [];
-  const candidates3 = [];
-  for (const domain of domains) {
-    for (const record2 of await listOwned(ctx, domain)) candidates3.push({ domain, record: record2 });
-  }
-  candidates3.sort((a, b) => {
-    const ka = recordKey(a.record);
-    const kb = recordKey(b.record);
-    if (ka !== kb) return ka < kb ? -1 : 1;
-    return a.domain === b.domain ? 0 : a.domain < b.domain ? -1 : 1;
-  });
+function dnsSteps(records3) {
   const steps = [];
-  const seenCandidates = /* @__PURE__ */ new Set();
   const byStepId = /* @__PURE__ */ new Map();
-  for (const c of candidates3) {
-    const unique = `${c.domain}|${recordKey(c.record)}`;
-    if (seenCandidates.has(unique)) continue;
-    seenCandidates.add(unique);
-    const id2 = `teardown:dns:${s.adapter.id}:${c.record.type}:${c.record.name.toLowerCase()}`;
+  for (const r of records3) {
+    const id2 = `teardown:dns:${r.provider}:${r.record.type}:${r.record.name.toLowerCase()}`;
     const prior = byStepId.get(id2);
     if (prior) {
       throw new Error(
-        `teardown: ${formatRecord(prior.record)} in ${prior.domain} and ${formatRecord(c.record)} in ${c.domain} would both be step ${id2}, so golive cannot tell which record to delete. Delete the extra record yourself in the provider dashboard, then run teardown again.`
+        `teardown: ${formatRecord(prior.record)} in ${prior.domain} and ${formatRecord(r.record)} in ${r.domain} would both be step ${id2}, so golive cannot tell which record to delete. Delete the extra record yourself in the provider dashboard, then run teardown again.`
       );
     }
-    byStepId.set(id2, c);
-    steps.push(dnsStep2(s.adapter, c.domain, c.record, id2, listOwned, remove2));
+    byStepId.set(id2, r);
+    steps.push(dnsStep2(r, id2));
   }
   return steps;
 }
-function teardownDomains(ctx) {
-  const byZone = /* @__PURE__ */ new Map();
-  for (const d of [ctx.config.domain, ctx.config.email?.domain]) {
-    if (d && !byZone.has(d.toLowerCase())) byZone.set(d.toLowerCase(), d);
-  }
-  return [...byZone.values()];
-}
-var recordKey = (r) => `${r.type} ${r.name} ${r.content}`;
 var sameRecord = (a, b) => a.type === b.type && a.content === b.content && a.name.toLowerCase() === b.name.toLowerCase();
-function dnsStep2(adapter, domain, record2, id2, listOwned, remove2) {
+function dnsStep2(r, id2) {
+  const { adapter, domain, record: record2, listOwned, remove: remove2 } = r;
   return step({
     id: id2,
     title: `Delete the ${adapter.title} record golive created (${record2.type} ${record2.name})`,
@@ -10490,7 +10571,7 @@ function dnsStep2(adapter, domain, record2, id2, listOwned, remove2) {
           fix: `Check ${adapter.title} access, then confirm ${formatRecord(record2)} is gone.`
         }];
       }
-      if (owned3.some((r) => sameRecord(r, record2))) {
+      if (owned3.some((x) => sameRecord(x, record2))) {
         return [{
           id: checkId,
           title,
@@ -10504,36 +10585,27 @@ function dnsStep2(adapter, domain, record2, id2, listOwned, remove2) {
     }
   });
 }
-var KEY_STATE = /^([a-z0-9-]+)\.keyId@([a-z-]+)$/;
-async function emailKeyTeardown(ctx) {
-  const s = await axisStatus(ctx, "email");
-  const ready2 = s.kind === "ready" ? s : null;
+function keyTeardown(keys3) {
   const steps = [];
   const handoffs = [];
-  for (const stateKey of Object.keys(ctx.state.get().resources).sort()) {
-    const m = KEY_STATE.exec(stateKey);
-    if (!m) continue;
-    const providerId = m[1];
-    const target = m[2];
-    const id2 = ctx.state.resource(stateKey);
-    if (!id2 || !isEnvTarget(target)) continue;
-    const revoke = ready2 && ready2.adapter.id === providerId ? ready2.adapter.capabilities.keys?.revoke : void 0;
-    if (ready2 && revoke) {
-      steps.push(emailKeyStep(ready2.adapter, target, id2, revoke));
+  for (const k of keys3) {
+    if (k.revocation) {
+      steps.push(emailKeyStep(k, k.revocation));
       continue;
     }
     handoffs.push({
-      id: `teardown:key:${providerId}:${target}`,
-      why: `a ${providerId} sending key golive issued for ${target} (${id2}) is recorded, but golive cannot revoke it right now (the provider is not signed in or has no revoke support)`,
-      action: `Revoke the key ${id2} in the ${providerId} dashboard if intended.`,
+      id: `teardown:key:${k.provider}:${k.target}`,
+      why: `a ${k.provider} sending key golive issued for ${k.target} (${k.id}) is recorded, but golive cannot revoke it right now (the provider is not signed in or has no revoke support)`,
+      action: `Revoke the key ${k.id} in the ${k.provider} dashboard if intended.`,
       blocking: false,
       manual: true
     });
   }
   return { steps, handoffs };
 }
-var isEnvTarget = (v) => ENV_TARGETS.includes(v);
-function emailKeyStep(adapter, target, id2, revoke) {
+function emailKeyStep(k, revocation) {
+  const { adapter, revoke } = revocation;
+  const { target, id: id2 } = k;
   return step({
     id: `teardown:key:${adapter.id}:${target}`,
     title: `Revoke the ${adapter.title} sending key golive issued for ${target}`,
@@ -10549,83 +10621,56 @@ function emailKeyStep(adapter, target, id2, revoke) {
     }
   });
 }
-async function projectTeardown(ctx) {
-  const s = await axisStatus(ctx, "hosting");
-  if (s.kind !== "ready") return { steps: [], handoffs: [] };
-  const adapter = s.adapter;
-  const remove2 = adapter.capabilities.project?.remove;
-  if (!remove2) return { steps: [], handoffs: [] };
-  const keys3 = PROJECT_STATE[adapter.id] ?? { id: `${adapter.id}.projectId`, name: `${adapter.id}.projectName` };
-  const current3 = ctx.state.resource(keys3.id);
-  if (!current3) return { steps: [], handoffs: [] };
-  const name3 = ctx.state.resource(keys3.name);
-  if (ctx.state.resource(createdKey(adapter.id)) !== current3) {
+function projectTeardown(project) {
+  if (!project) return { steps: [], handoffs: [] };
+  if (!project.created) {
     return {
       steps: [],
       handoffs: [{
         id: "teardown:project:hosting",
-        why: `the ${adapter.title} project ${current3} was adopted (not created by golive), so golive will not delete it`,
-        action: `If the project should go away, delete it in the ${adapter.title} dashboard; keep it if the app continues elsewhere.`,
+        why: `the ${project.providerTitle} project ${project.id} was adopted (not created by golive), so golive will not delete it`,
+        action: `If the project should go away, delete it in the ${project.providerTitle} dashboard; keep it if the app continues elsewhere.`,
         blocking: false,
         manual: true
       }]
     };
   }
-  return { steps: [projectStep(adapter, current3, name3, keys3, remove2)], handoffs: [] };
+  return { steps: [projectStep(project)], handoffs: [] };
 }
-function projectStep(adapter, current3, name3, keys3, remove2) {
-  const label2 = name3 ? `${name3} (${current3})` : current3;
+function projectStep(p) {
+  const label2 = p.name ? `${p.name} (${p.id})` : p.id;
   return step({
     id: "teardown:project:hosting",
-    title: `Delete the ${adapter.title} project golive created`,
+    title: `Delete the ${p.providerTitle} project golive created`,
     kind: "destroy",
     risk: { writes: true, destroy: true },
-    preview: [`delete the ${adapter.title} project ${label2} \u2014 golive created it`],
-    intent: intentOf({ provider: adapter.id, project: current3 }),
+    preview: [`delete the ${p.providerTitle} project ${label2} \u2014 golive created it`],
+    intent: intentOf({ provider: p.provider, project: p.id }),
     async run(sctx) {
-      const r = await remove2(sctx);
-      if (r.removed) return { changes: [`deleted project ${current3}`] };
+      const r = await p.remove(sctx);
+      if (r.removed) return { changes: [`deleted project ${p.id}`] };
       const reason = r.reason ?? "the provider kept the project";
-      if (sctx.state.resource(keys3.id) !== current3 || sctx.state.resource(createdKey(adapter.id)) !== current3) return { changes: [`left as is: ${reason}`] };
-      throw new Error(`could not delete the ${adapter.title} project ${current3}: ${redact(reason)}`);
+      if (sctx.state.resource(p.keys.id) !== p.id || sctx.state.resource(createdProjectKey(p.provider)) !== p.id) return { changes: [`left as is: ${reason}`] };
+      throw new Error(`could not delete the ${p.providerTitle} project ${p.id}: ${redact(reason)}`);
     }
   });
 }
-function dbHandoffs(ctx) {
-  const out = [];
-  const supabaseRef = ctx.state.resource("supabase.ref");
-  if (supabaseRef && ctx.state.resource("supabase.createdByGolive") === supabaseRef) {
-    out.push({
-      id: "teardown:db:supabase",
-      why: `the Supabase project ${supabaseRef} was created by golive, and deleting it needs the Supabase dashboard`,
-      action: `Delete the Supabase project ${supabaseRef} in the dashboard if intended.`,
-      blocking: false,
-      manual: true
-    });
-  }
-  const neonProject = ctx.state.resource("neon.projectId");
-  if (neonProject && ctx.state.resource("neon.createdProjectId") === neonProject) {
-    out.push({
-      id: "teardown:db:neon",
-      why: `the Neon project ${neonProject} was created by golive, and deleting it needs the Neon console`,
-      action: `Delete the Neon project ${neonProject} in the Neon console if intended; Neon may keep a recovery window.`,
-      blocking: false,
-      manual: true
-    });
-  }
-  return out;
+function dbHandoffs(recorded) {
+  return recorded.filter((r) => r.axis === "db" && r.created).map(manualHandoff);
 }
-function emailHandoffs(ctx) {
-  const domainId = ctx.state.resource("resend.domainId");
-  if (!domainId) return [];
-  const label2 = ctx.config.email?.domain ?? domainId;
-  return [{
-    id: "teardown:email:resend",
-    why: `the Resend sending domain ${label2} was created by golive, and deleting it needs the Resend dashboard`,
-    action: `Delete the sending domain ${label2} in the Resend dashboard if intended; any keys golive issued are revoked in the steps of this plan when applicable.`,
+function emailHandoffs(recorded) {
+  return recorded.filter((r) => r.kind === "sending-domain" && r.created).map(manualHandoff);
+}
+function manualHandoff(r) {
+  const subject = r.kind === "database-project" ? `${r.providerTitle} project ${r.id}` : `${r.providerTitle} sending domain ${r.name}`;
+  const thing = r.kind === "database-project" ? `the ${r.providerTitle} project ${r.id}` : `the sending domain ${r.name}`;
+  return {
+    id: `teardown:${r.axis === "db" ? "db" : "email"}:${r.provider}`,
+    why: `the ${subject} was created by golive, and deleting it needs ${r.needs}`,
+    action: `Delete ${thing} in ${r.where} if intended${r.extra ?? ""}.`,
     blocking: false,
     manual: true
-  }];
+  };
 }
 async function approvedPlan(ctx, approvedId, forward) {
   let plan = null;
@@ -15779,7 +15824,7 @@ init_secret();
 init_http();
 var MAX_CHUNKS = 40;
 var MAX_BYTES = 8 * 1024 * 1024;
-var attr = (tag, name3) => new RegExp(`\\b${name3}\\s*=\\s*["']([^"']+)["']`, "i").exec(tag)?.[1];
+var attr = (tag2, name3) => new RegExp(`\\b${name3}\\s*=\\s*["']([^"']+)["']`, "i").exec(tag2)?.[1];
 function scriptUrls(html, pageUrl) {
   const origin = new URL(pageUrl).origin;
   const out = [];
@@ -15791,11 +15836,11 @@ function scriptUrls(html, pageUrl) {
     } catch {
     }
   };
-  for (const tag of html.match(/<(script|link)\b[^>]*>/gi) ?? []) {
-    if (/^<script/i.test(tag)) add(attr(tag, "src"));
+  for (const tag2 of html.match(/<(script|link)\b[^>]*>/gi) ?? []) {
+    if (/^<script/i.test(tag2)) add(attr(tag2, "src"));
     else {
-      const rel = (attr(tag, "rel") ?? "").toLowerCase();
-      if (rel.split(/\s+/).includes("modulepreload") || rel === "preload" && (attr(tag, "as") ?? "").toLowerCase() === "script") add(attr(tag, "href"));
+      const rel = (attr(tag2, "rel") ?? "").toLowerCase();
+      if (rel.split(/\s+/).includes("modulepreload") || rel === "preload" && (attr(tag2, "as") ?? "").toLowerCase() === "script") add(attr(tag2, "href"));
     }
   }
   return out;
@@ -17815,8 +17860,8 @@ function renderReport(r) {
   if (open.length) {
     lines.push("## Needs you", "");
     for (const h of open) {
-      const tag = h.done === null ? "**[not verifiable by golive]** " : h.blocking ? "**[blocking]** " : "";
-      lines.push(`- ${tag}${h.action}${h.url ? ` (${h.url})` : ""}`, `  - Why: ${h.why}`);
+      const tag2 = h.done === null ? "**[not verifiable by golive]** " : h.blocking ? "**[blocking]** " : "";
+      lines.push(`- ${tag2}${h.action}${h.url ? ` (${h.url})` : ""}`, `  - Why: ${h.why}`);
     }
     lines.push("");
   }
@@ -17824,6 +17869,528 @@ function renderReport(r) {
   if (done.length) lines.push("## Done by you (verified)", "", ...done.map((h) => `- \u2705 ${h.action}`), "");
   lines.push("---", "Generated by golive. This file contains no secrets.");
   return lines.join("\n") + "\n";
+}
+
+// src/handover/build.ts
+init_types();
+var HANDOVER_MARKER = "Generated by golive";
+var AXIS_CHECKS = {
+  hosting: ["domain-live", "env-parity", "netlify-public-access", "bundle-secrets"],
+  db: ["db-connection", "rls-probe"],
+  auth: ["auth-redirects"],
+  payments: ["webhook-registered", "webhook-unsigned", "stripe-live-ready"],
+  email: ["email-dns", "email-verified"],
+  dns: ["domain-live"],
+  monitoring: []
+};
+var BILLING = {
+  vercel: "the Usage and Billing pages of your Vercel dashboard",
+  netlify: "your Netlify team dashboard \u2192 Usage & billing",
+  supabase: "your Supabase organization settings \u2192 Billing",
+  neon: "the Billing page of the Neon console",
+  stripe: "your Stripe account settings \u2192 Billing, and the published per-transaction fees",
+  resend: "your Resend account \u2192 Billing",
+  cloudflare: "your Cloudflare account \u2192 Billing",
+  godaddy: "your GoDaddy account \u2192 Subscriptions and renewals",
+  porkbun: "your Porkbun account \u2192 domain pricing and renewals"
+};
+var RECORDING_STEP = {
+  webhook: ["payments:webhook:production"],
+  project: ["project:hosting"],
+  database: ["project:db"],
+  domain: ["email:domain"]
+};
+async function buildHandover(ctx, input) {
+  const generatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const inventory2 = await buildInventory(ctx);
+  const projects2 = await currentProjects(ctx);
+  const accounts = await accountRows(ctx, projects2);
+  const urls = await liveUrls(ctx);
+  const resources = resourceRows(ctx, inventory2, projects2, urls);
+  const manual = manualRows(ctx, input.handoffs);
+  return {
+    version: 1,
+    generator: HANDOVER_MARKER,
+    generatedAt,
+    release: { name: ctx.release.name, version: ctx.release.version, bundleDigest: ctx.release.bundleDigest, ref: ctx.release.source.ref },
+    product: { name: repoName(ctx), root: ctx.cwd, framework: ctx.detect.framework, ...ctx.config.domain ? { domain: ctx.config.domain } : {} },
+    urls,
+    limits: limits(ctx, input),
+    accounts,
+    resources,
+    costs: costRows(ctx),
+    manual,
+    manualClosed: input.handoffs.filter((h) => h.done === true).length,
+    runbook: runbookRows(ctx, input.checkIds),
+    evidence: [
+      ".golive/state.json \u2014 resource ids, fingerprints and per-step records (no values)",
+      ".golive/report.json and GOLIVE_REPORT.md \u2014 the last `verify` results, check by check",
+      "GOLIVE_HANDOVER.md and .golive/handover.json \u2014 this document",
+      "golive.yaml \u2014 provider choices and non-secret configuration"
+    ],
+    retirement: retirementRows(ctx, inventory2),
+    provenance: provenanceRows(generatedAt)
+  };
+}
+function limits(ctx, input) {
+  const open = input.handoffs.filter((h) => h.done !== true).length;
+  const stack = axesUsed(ctx).map((a) => `${a.axis}: ${a.provider}`).join(", ");
+  return [
+    "Rows tagged [verified by golive] were read in this run; every other row is a recording, and this document is not drift detection.",
+    open ? `${open} handoff(s) are still the human's. Verification checks cover infrastructure, not the app's own flows.` : "No handoff is open. Verification checks still cover infrastructure, not the app's own flows.",
+    "It contains no secret values \u2014 but secret-free metadata can still identify private resources, so review it before sharing it.",
+    `Scope: the providers in golive.yaml (${stack || "none"}); other frameworks, pairings and app-level flows are outside what golive validated.`
+  ];
+}
+async function currentProjects(ctx) {
+  const out = /* @__PURE__ */ new Map();
+  const seen = /* @__PURE__ */ new Map();
+  for (const axis of ["hosting", "db"]) {
+    const adapter = adapterFor(ctx, axis);
+    const linker = adapter?.capabilities.project;
+    if (!adapter || !linker) continue;
+    let read = seen.get(adapter.id);
+    if (!read) {
+      read = linker.current(ctx).catch(() => null);
+      seen.set(adapter.id, read);
+    }
+    out.set(axis, await read);
+  }
+  return out;
+}
+async function accountRows(ctx, projects2) {
+  const rows = [];
+  for (const axis of AXES) {
+    const id2 = ctx.config.stack[axis];
+    if (!id2) continue;
+    const adapter = adapterById(id2, ctx.adapters);
+    const providerTitle = adapter?.title ?? GUIDED.find((g) => g.id === id2)?.title ?? id2;
+    const account2 = projects2.get(axis)?.scope?.name ?? projects2.get(axis)?.scope?.id;
+    if (!adapter || !adapter.automated) {
+      rows.push({
+        axis,
+        provider: id2,
+        providerTitle,
+        ...account2 ? { account: account2 } : {},
+        login: `guided provider: golive has no adapter for it, so confirm the ${providerTitle} account with the human in its dashboard`,
+        provenance: { kind: "unverifiable" }
+      });
+      continue;
+    }
+    let via;
+    let login;
+    let provenance = { kind: "verified" };
+    try {
+      const status = await adapter.auth(ctx);
+      via = status.via;
+      login = status.ok ? `connected \u2014 if access expires: ${status.howToFix ?? `sign in to ${providerTitle} again, in a separate terminal window`}` : status.howToFix ?? `sign in to ${providerTitle} again, in a separate terminal window`;
+    } catch (e) {
+      login = `golive could not check the ${providerTitle} login (${errMsg(e)}); run \`doctor\` after fixing access`;
+      provenance = { kind: "unknown" };
+    }
+    rows.push({ axis, provider: id2, providerTitle, ...via ? { via } : {}, ...account2 ? { account: account2 } : {}, login, provenance });
+  }
+  return rows;
+}
+async function liveUrls(ctx) {
+  const out = {};
+  for (const target of ctx.config.targets) {
+    const url = await hostUrl(ctx, target);
+    if (url) out[target] = url;
+  }
+  return out;
+}
+function resourceRows(ctx, inventory2, projects2, urls) {
+  const rows = [];
+  for (const r of inventory2.dnsRecords) {
+    rows.push({
+      axis: "dns",
+      provider: r.provider,
+      providerTitle: r.providerTitle,
+      kind: "DNS record",
+      name: `${r.record.type} ${r.record.name}`,
+      id: r.record.content,
+      ownership: "created",
+      proof: `${r.providerTitle} lists it as golive-owned (the provider's marker or a fingerprint golive recorded)`,
+      removable: true,
+      provenance: { kind: "verified" }
+    });
+  }
+  for (const w of inventory2.webhooks) {
+    rows.push({
+      axis: "payments",
+      provider: w.provider,
+      providerTitle: w.providerTitle,
+      kind: "webhook endpoint",
+      name: `${w.providerTitle} ${w.mode}-mode webhook endpoint`,
+      id: w.id,
+      ownership: "created",
+      proof: `recorded in state as the endpoint golive registered (${w.key})`,
+      removable: Boolean(w.removal),
+      provenance: { kind: "recorded", at: recordedAt(ctx, RECORDING_STEP.webhook) }
+    });
+  }
+  for (const k of inventory2.sendingKeys) {
+    rows.push({
+      axis: "email",
+      provider: k.provider,
+      providerTitle: k.providerTitle,
+      kind: "sending key",
+      name: `${k.providerTitle} sending key for ${k.target}`,
+      id: k.id,
+      ownership: "created",
+      proof: `recorded in state as the key golive issued (${k.key}); only its fingerprint is stored`,
+      removable: Boolean(k.revocation),
+      provenance: { kind: "recorded", at: recordedAt(ctx, [`email:key:${k.target}`]) }
+    });
+  }
+  const host = adapterFor(ctx, "hosting");
+  if (host) {
+    const keys3 = projectStateKeys(host.id);
+    const id2 = ctx.state.resource(keys3.id);
+    if (id2) {
+      const current3 = projects2.get("hosting");
+      const created = ctx.state.resource(createdProjectKey(host.id)) === id2;
+      const live = current3?.id === id2;
+      rows.push({
+        axis: "hosting",
+        provider: host.id,
+        providerTitle: host.title,
+        kind: "host project",
+        name: ctx.state.resource(keys3.name) ?? current3?.name ?? id2,
+        id: id2,
+        // A URL is only reported when the host itself confirmed this exact project in this run.
+        ...live && urls.production ? { url: urls.production } : {},
+        ownership: created ? "created" : "adopted",
+        proof: created ? `state's creation marker (${createdProjectKey(host.id)}) names this project, so golive created it` : "state links this project but holds no creation marker for it, so golive adopted it and never claims it",
+        removable: Boolean(created && inventory2.project),
+        provenance: live ? { kind: "verified" } : { kind: "recorded", at: recordedAt(ctx, RECORDING_STEP.project) }
+      });
+    }
+  }
+  for (const r of inventory2.recorded) {
+    const subject = r.kind === "database-project" ? "database project" : "sending domain";
+    rows.push({
+      axis: r.axis,
+      provider: r.provider,
+      providerTitle: r.providerTitle,
+      kind: subject,
+      name: r.name,
+      id: r.id,
+      ownership: r.created ? "created" : "adopted",
+      proof: r.created ? `${r.providerTitle} has no creation marker to read; state records this id as the ${subject} golive created (${r.key})` : `state records this ${subject} (${r.key}) without golive's creation marker, so golive does not claim it`,
+      removable: false,
+      // no provider capability: removal is a manual handoff
+      provenance: { kind: "recorded", at: recordedAt(ctx, r.kind === "database-project" ? RECORDING_STEP.database : RECORDING_STEP.domain) }
+    });
+  }
+  return rows;
+}
+function recordedAt(ctx, stepIds) {
+  const steps = ctx.state.get().steps;
+  for (const id2 of stepIds) {
+    const at = steps[id2]?.at;
+    if (at) return at;
+  }
+  return Object.values(steps).map((r) => r.at).sort().at(-1);
+}
+function costRows(ctx) {
+  const byProvider = /* @__PURE__ */ new Map();
+  for (const { provider, providerTitle } of axesUsed(ctx)) {
+    if (byProvider.has(provider)) continue;
+    byProvider.set(provider, {
+      provider,
+      providerTitle,
+      read: "nothing: golive does not read plans, quotas, usage or invoices, and never calls a billing endpoint",
+      where: billingOf(provider, providerTitle),
+      provenance: { kind: "unknown" }
+    });
+  }
+  return [...byProvider.values()];
+}
+function billingOf(provider, providerTitle) {
+  return BILLING[provider] ?? `the billing/usage page of your ${providerTitle} account`;
+}
+function manualRows(ctx, handoffs) {
+  const open = handoffs.filter((h) => h.done !== true).map((h) => ({
+    kind: "handoff",
+    title: h.id,
+    action: h.action,
+    why: h.why,
+    ...h.url ? { url: h.url } : {},
+    blocking: h.blocking,
+    // done:null cannot be verified by golive at all; done:false means its own check ran and did not pass.
+    provenance: h.done === null ? { kind: "unverifiable" } : { kind: "verified" }
+  }));
+  const used = new Set(axesUsed(ctx).map((a) => a.axis));
+  const recurring = [];
+  if (used.has("email")) {
+    recurring.push({
+      kind: "recurring",
+      title: "email: tighten DMARC once the domain has sending history",
+      action: "Keep the SPF and DKIM records as they are, and tighten the domain's DMARC policy toward quarantine/reject as reputation builds",
+      why: "a fresh sending domain lands in spam without DMARC; golive publishes the provider's records but does not manage DMARC",
+      provenance: { kind: "unverifiable" }
+    });
+  }
+  if (used.has("payments") || used.has("email")) {
+    recurring.push({
+      kind: "recurring",
+      title: "keys: rotate the provider keys the app uses",
+      action: "Rotate the app's provider keys on your own schedule, then re-run `golive plan` so any env write golive manages is refreshed",
+      why: "nothing expires these keys for you; golive stores fingerprints only, so it can never show you the old value",
+      provenance: { kind: "unverifiable" }
+    });
+  }
+  if (used.has("db")) {
+    recurring.push({
+      kind: "recurring",
+      title: "database: back up, and drill a restore",
+      action: "Confirm the database provider's backup retention, and restore into a scratch project at least once",
+      why: "golive does not manage backups or restores; `teardown` deletes resources rather than protecting them",
+      provenance: { kind: "unverifiable" }
+    });
+  }
+  if (ctx.config.domain) {
+    recurring.push({
+      kind: "recurring",
+      title: `domain: renew ${ctx.config.domain} at its registrar`,
+      action: `Renew ${ctx.config.domain} before it expires, and keep the registrar account reachable`,
+      why: "golive never buys, transfers or renews domains",
+      provenance: { kind: "unverifiable" }
+    });
+  }
+  return [...open, ...recurring];
+}
+function runbookRows(ctx, checkIds) {
+  const registered = new Set(checkIds);
+  const rows = [];
+  for (const { axis, providerTitle } of axesUsed(ctx)) {
+    const ids = AXIS_CHECKS[axis].filter((id2) => registered.has(id2));
+    rows.push({
+      subject: `${axis} (${providerTitle})`,
+      commands: ["golive doctor", ...ids.length ? [`golive verify --only ${ids.join(",")}`] : []],
+      note: ids.length ? `re-reads ${ids.join(", ")}; evidence names ids, URLs and counts, never values.` : "golive has no registered check for this axis: confirm it by hand or in the provider dashboard."
+    });
+  }
+  rows.push({
+    subject: "whole app",
+    commands: ["golive doctor", "golive plan", "golive apply --plan <planId> --yes", "golive verify"],
+    note: "re-observe, re-approve, then apply: a changed destination needs a new plan and fresh confirmation."
+  });
+  rows.push({
+    subject: "this document",
+    commands: ["golive handoff --write --force"],
+    note: "regenerates GOLIVE_HANDOVER.md and .golive/handover.json from current state and provider reads."
+  });
+  return rows;
+}
+function retirementRows(ctx, inventory2) {
+  const rows = [];
+  for (const r of inventory2.dnsRecords) {
+    rows.push({
+      resource: `${r.providerTitle} ${r.record.type} ${r.record.name} (golive-created)`,
+      how: "golive teardown \u2192 apply --plan <id> --yes --confirm-destroy --confirm-dns, which re-reads the zone to prove the record is gone",
+      removable: true,
+      provenance: { kind: "verified" }
+    });
+  }
+  for (const w of inventory2.webhooks) {
+    rows.push({
+      resource: `${w.providerTitle} ${w.mode}-mode webhook endpoint ${w.id}`,
+      how: w.removal ? `golive teardown \u2192 apply --plan <id> --yes --confirm-destroy${w.mode === "live" ? " --confirm-live" : ""}` : `by hand in the ${w.providerTitle} dashboard: golive cannot remove it right now`,
+      removable: Boolean(w.removal),
+      provenance: { kind: "recorded", at: recordedAt(ctx, RECORDING_STEP.webhook) }
+    });
+  }
+  for (const k of inventory2.sendingKeys) {
+    rows.push({
+      resource: `${k.providerTitle} sending key ${k.id} (${k.target})`,
+      how: k.revocation ? "golive teardown \u2192 apply --plan <id> --yes --confirm-destroy" : `by hand in the ${k.providerTitle} dashboard: golive cannot revoke it right now`,
+      removable: Boolean(k.revocation),
+      provenance: { kind: "recorded", at: recordedAt(ctx, [`email:key:${k.target}`]) }
+    });
+  }
+  if (inventory2.project) {
+    rows.push({
+      resource: `${inventory2.project.providerTitle} project ${inventory2.project.name ?? inventory2.project.id} (${inventory2.project.id})`,
+      how: inventory2.project.created ? "golive teardown \u2192 apply --plan <id> --yes --confirm-destroy" : `by hand in the ${inventory2.project.providerTitle} dashboard: golive adopted this project and will not delete it`,
+      removable: inventory2.project.created,
+      provenance: { kind: "recorded", at: recordedAt(ctx, RECORDING_STEP.project) }
+    });
+  } else {
+    const host = adapterFor(ctx, "hosting");
+    const linked = host ? ctx.state.resource(projectStateKeys(host.id).id) : void 0;
+    if (host && linked) {
+      rows.push({
+        resource: `${host.title} project ${ctx.state.resource(projectStateKeys(host.id).name) ?? linked} (${linked})`,
+        how: `by hand in the ${host.title} dashboard, or run \`golive teardown\` once its login and removal capability are available`,
+        removable: false,
+        provenance: { kind: "recorded", at: recordedAt(ctx, RECORDING_STEP.project) }
+      });
+    }
+  }
+  for (const r of inventory2.recorded.filter((x) => x.created)) {
+    rows.push({
+      resource: `${r.providerTitle} ${r.kind === "database-project" ? `project ${r.id}` : `sending domain ${r.name}`}`,
+      how: `by hand in ${r.where}: this provider exposes no delete capability to golive`,
+      removable: false,
+      provenance: { kind: "recorded", at: recordedAt(ctx, r.kind === "database-project" ? RECORDING_STEP.database : RECORDING_STEP.domain) }
+    });
+  }
+  return rows;
+}
+function provenanceRows(at) {
+  return [
+    { section: "Accounts and login route", source: "live `auth()` reads made for this document", at, tags: ["verified", "unverifiable", "unknown"] },
+    { section: "Resources created", source: "the DNS provider's owned-record read (this run) plus recorded state", at, tags: ["verified", "recorded"] },
+    { section: "Costs and recurrence", source: "golive.yaml only: no billing, quota or usage read", at, tags: ["unknown"] },
+    { section: "What is manual", source: "the current plan's handoffs and their check results", at, tags: ["verified", "unverifiable"] },
+    { section: "If it breaks", source: "the registered checks of this release", at, tags: [] },
+    { section: "Retirement", source: "the read-only inventory of what golive provably created", at, tags: ["verified", "recorded", "unverifiable"] }
+  ];
+}
+function axesUsed(ctx) {
+  const out = [];
+  for (const axis of AXES) {
+    const provider = ctx.config.stack[axis];
+    if (!provider) continue;
+    const adapter = adapterById(provider, ctx.adapters);
+    out.push({ axis, provider, providerTitle: adapter?.title ?? GUIDED.find((g) => g.id === provider)?.title ?? provider });
+  }
+  return out;
+}
+
+// src/report/handover.ts
+import { lstatSync as lstatSync8, readFileSync as readFileSync12 } from "node:fs";
+import { join as join17 } from "node:path";
+init_secret();
+function handoverPaths(cwd) {
+  return { json: join17(cwd, ".golive/handover.json"), markdown: join17(cwd, "GOLIVE_HANDOVER.md") };
+}
+function assertOverwritable(path, force) {
+  if (force) return;
+  let stat2;
+  try {
+    stat2 = lstatSync8(path);
+  } catch {
+    return;
+  }
+  if (!stat2.isFile()) throw new Error(`${path} exists and is not a regular file, so golive will not overwrite it; move it aside or pass --force.`);
+  if (!readFileSync12(path, "utf8").includes(HANDOVER_MARKER)) {
+    throw new Error(`${path} exists and carries no "${HANDOVER_MARKER}" marker, so golive will not overwrite it; move it aside or pass --force.`);
+  }
+}
+function handoverJson(doc) {
+  return redact(JSON.stringify(doc, null, 2)) + "\n";
+}
+function tag(p) {
+  switch (p.kind) {
+    case "verified":
+      return "[verified by golive]";
+    case "recorded":
+      return p.at ? `[recorded ${p.at.slice(0, 10)}, not re-checked]` : "[recorded, not re-checked]";
+    case "unverifiable":
+      return "[not verifiable by golive]";
+    case "unknown":
+      return "[unknown]";
+  }
+}
+var tagKind = (kind) => tag(kind === "recorded" ? { kind: "recorded" } : { kind });
+var cell = (text) => (text ?? "\u2014").replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
+function renderHandover(doc) {
+  const lines = [];
+  lines.push("# Ownership and handover", "");
+  lines.push(`_Generated ${doc.generatedAt} by golive \`${doc.release.name}@${doc.release.version}\` (bundle \`${doc.release.bundleDigest}\`${doc.release.ref ? `, ref \`${doc.release.ref}\`` : ""})._`, "");
+  lines.push(`**Product:** ${doc.product.name} \xB7 framework: ${doc.product.framework} \xB7 root: \`${doc.product.root}\`${doc.product.domain ? ` \xB7 custom domain: ${doc.product.domain}` : ""}`, "");
+  const urls = Object.entries(doc.urls);
+  lines.push(
+    urls.length ? `**Live URLs (as the hosting provider reported them in this run):** ${urls.map(([t, u]) => `${t} \`${u}\``).join(" \xB7 ")}` : "**Live URLs:** none golive could read in this run \u2014 check the host dashboard and `GOLIVE_REPORT.md`.",
+    ""
+  );
+  lines.push("**Keep in mind**", "");
+  for (const l of doc.limits) lines.push(`- ${l}`);
+  lines.push("");
+  lines.push("## Accounts and login route", "");
+  if (doc.accounts.length) {
+    lines.push("| Axis | Provider | How golive reaches it | Account / team | If the login expires |", "| --- | --- | --- | --- | --- |");
+    for (const a of doc.accounts) lines.push(accountLine2(a));
+  } else lines.push("_No providers are configured yet._");
+  lines.push("");
+  lines.push("## Resources created", "");
+  if (doc.resources.length) {
+    lines.push("| Axis | Provider | Name | Id | Public URL | Ownership | Proof |", "| --- | --- | --- | --- | --- | --- | --- |");
+    for (const r of doc.resources) lines.push(resourceLine(r));
+  } else lines.push("_golive found no resource it created or adopted._");
+  lines.push("");
+  lines.push("## Costs and recurrence", "");
+  lines.push('golive holds no payment method, buys nothing and never calls a billing endpoint. Every resource above bills to the account named in "Accounts and login route".', "");
+  if (doc.costs.length) {
+    lines.push("| Provider | What golive read | Where the real numbers are |", "| --- | --- | --- |");
+    for (const c of doc.costs) lines.push(`| ${cell(c.providerTitle)} | ${cell(c.read)} ${tag(c.provenance)} | ${cell(c.where)} |`);
+  }
+  lines.push("");
+  for (const l of recurrence(doc)) lines.push(`- ${l}`);
+  lines.push("");
+  lines.push("## What is manual", "");
+  lines.push(
+    doc.manualClosed ? `The list below is what is still the human's. ${doc.manualClosed} handoff(s) were already closed by a passing check in this run.` : "The list below is what is still the human's.",
+    ""
+  );
+  for (const m of doc.manual) lines.push(...manualLines(m));
+  if (!doc.manual.length) lines.push("_Nothing is outstanding._");
+  lines.push("");
+  lines.push("## If it breaks", "");
+  for (const r of doc.runbook) {
+    lines.push(`**${r.subject}**`, "");
+    for (const c of r.commands) lines.push(`- \`${c}\``);
+    lines.push("", r.note, "");
+  }
+  lines.push("Evidence lives in:", "");
+  for (const e of doc.evidence) lines.push(`- ${e}`);
+  lines.push("");
+  lines.push("## Retirement", "");
+  lines.push("`golive teardown` lists exactly these resources and deletes only what golive provably created, under its own approval:", "");
+  lines.push("_golive lists only what the inventory could read: a provider it cannot reach right now contributes no rows, and never a deletion it cannot do._", "");
+  if (doc.retirement.length) {
+    lines.push("| Resource | How it goes away | Removal |", "| --- | --- | --- |");
+    for (const r of doc.retirement) lines.push(retirementLine(r));
+  } else lines.push("_Nothing golive created was found to remove._");
+  lines.push("");
+  lines.push("---", "");
+  lines.push("## Provenance", "");
+  lines.push("| Section | Source | This run | Row tags |", "| --- | --- | --- | --- |");
+  for (const p of doc.provenance) lines.push(`| ${cell(p.section)} | ${cell(p.source)} | ${p.at} | ${p.tags.length ? p.tags.map(tagKind).join(" \xB7 ") : "\u2014"} |`);
+  lines.push("");
+  lines.push(`${HANDOVER_MARKER}. This file contains no secrets: it is built from recorded metadata, ids, URLs and fingerprints only. Secret-free metadata can still identify private resources, so review it before sharing it.`, "");
+  return redact(lines.join("\n") + "\n");
+}
+function accountLine2(a) {
+  const via = a.via ?? (a.provenance.kind === "verified" ? "connected (the provider named no route)" : "not read");
+  return `| ${cell(a.axis)} | ${cell(a.providerTitle)} | ${cell(via)} ${tag(a.provenance)} | ${cell(a.account)} | ${cell(a.login)} |`;
+}
+function resourceLine(r) {
+  return `| ${cell(r.axis)} | ${cell(r.providerTitle)} | ${cell(r.name)} | ${cell(r.id)} | ${cell(r.url)} | ${r.ownership === "created" ? "created by golive" : "adopted (not golive's)"} | ${cell(r.proof)} ${tag(r.provenance)} |`;
+}
+function retirementLine(r) {
+  return `| ${cell(r.resource)} | ${cell(`${r.how} ${tag(r.provenance)}`)} | ${r.removable ? "golive teardown" : "by hand"} |`;
+}
+function manualLines(m) {
+  const out = [];
+  const label2 = m.kind === "recurring" ? "recurring" : m.blocking ? "blocking" : "open";
+  out.push(`- **[${label2}]** ${m.action}${m.url ? ` (${m.url})` : ""} ${tag(m.provenance)}`);
+  out.push(`  - Why: ${m.why ?? m.title}`);
+  if (m.kind === "handoff") out.push(`  - Handoff id: \`${m.title}\``);
+  else out.push(`  - Job: \`${m.title}\``);
+  return out;
+}
+function recurrence(doc) {
+  const out = [
+    "Nothing golive created has its own payment method: renewals, overage and plan changes happen in the account you signed in with.",
+    "golive read no plan, quota or usage data for this document, so it states no figure \u2014 not even a free-tier limit."
+  ];
+  if (doc.product.domain) out.push(`The domain ${doc.product.domain} renews at its registrar, separately from the DNS zone golive may write.`);
+  return out;
 }
 
 // src/cli.ts
@@ -17864,6 +18431,8 @@ Commands (add --json for machine output; --cwd <dir> to target another repo):
         [--confirm-live] [--confirm-dns] [--confirm-destroy] [--only id,id] [--force]
   verify [--only id,id]      Run live checks; writes .golive/report.json and GOLIVE_REPORT.md.
   handoff                    What only the human can do (logins, KYC, payments), and whether it's done.
+       [--write] [--force]   --write also writes .golive/handover.json and GOLIVE_HANDOVER.md (the
+                             ownership/renewal document); --force replaces files golive did not write.
 `;
 async function main(argv) {
   const { cmd, flags } = parseArgs(argv);
@@ -17990,8 +18559,8 @@ async function main(argv) {
       };
       const plan = await buildPlan(ctx, linkList(), { unmappedEnv: env.unmapped, warnings: [] }).catch(() => null);
       const report = await makeReport(ctx, results, await handoffStatus(ctx, plan?.handoffs ?? [], results, false), verification);
-      const reportPaths = { json: join17(cwd, ".golive/report.json"), markdown: join17(cwd, "GOLIVE_REPORT.md") };
-      mkdirSync6(join17(cwd, ".golive"), { recursive: true });
+      const reportPaths = { json: join18(cwd, ".golive/report.json"), markdown: join18(cwd, "GOLIVE_REPORT.md") };
+      mkdirSync6(join18(cwd, ".golive"), { recursive: true });
       writeFileSync6(reportPaths.json, JSON.stringify(report, null, 2) + "\n");
       writeFileSync6(reportPaths.markdown, renderReport(report));
       emit({ ok: report.summary.fail === 0, report, reportPaths }, { json: json2 });
@@ -18001,7 +18570,26 @@ async function main(argv) {
       const plan = await buildPlan(ctx, linkList(), { unmappedEnv: env.unmapped, warnings: [] });
       const items = await handoffStatus(ctx, plan.handoffs);
       const unverified = items.filter((i) => i.done === null);
-      emit({ ok: items.every((i) => i.done !== false || !i.blocking), handoffs: items, unverified: unverified.map((i) => i.id), note: unverified.length ? "items with done:null cannot be verified by golive \u2014 confirm them with the human and name them as unverified in your summary" : void 0 }, { json: json2 });
+      const note = unverified.length ? "items with done:null cannot be verified by golive \u2014 confirm them with the human and name them as unverified in your summary" : void 0;
+      if (flags.write !== true) {
+        emit({ ok: items.every((i) => i.done !== false || !i.blocking), handoffs: items, unverified: unverified.map((i) => i.id), note }, { json: json2 });
+        return 0;
+      }
+      const doc = await buildHandover(ctx, { handoffs: items, checkIds: CHECKS.map((c) => c.id) });
+      const paths = handoverPaths(cwd);
+      assertOverwritable(paths.json, flags.force === true);
+      assertOverwritable(paths.markdown, flags.force === true);
+      mkdirSync6(join18(cwd, ".golive"), { recursive: true });
+      writeFileSync6(paths.json, handoverJson(doc));
+      writeFileSync6(paths.markdown, renderHandover(doc));
+      emit({
+        ok: items.every((i) => i.done !== false || !i.blocking),
+        handoffs: items,
+        unverified: unverified.map((i) => i.id),
+        note,
+        handoverPaths: paths,
+        handover: { generatedAt: doc.generatedAt, resources: doc.resources.length, manual: doc.manual.length, retirement: doc.retirement.length }
+      }, { json: json2 });
       return 0;
     }
     default:

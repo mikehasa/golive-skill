@@ -134,7 +134,8 @@ interrupted run from an older release can resume automatically.
 ## Fresh installations and local data
 
 This source and skill use `golive`: `skills/golive/`, `bin/golive.mjs`, `golive.yaml`,
-`.golive/state.json`, `.golive/report.json`, `GOLIVE_REPORT.md` and `~/.config/golive/credentials`.
+`.golive/state.json`, `.golive/report.json`, `GOLIVE_REPORT.md`, and — after `handoff --write` —
+`.golive/handover.json` and `GOLIVE_HANDOVER.md`. Credentials live in `~/.config/golive/credentials`.
 `GOLIVE_CREDENTIALS` selects an explicit credentials file; `XDG_CONFIG_HOME` is supported.
 Provider-defined variable names do not change.
 

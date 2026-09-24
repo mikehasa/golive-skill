@@ -230,8 +230,10 @@ live-tested milestones**, not a finished category or a completed checklist for y
   Scoped Free-plan guards exist today; ongoing cost management is planned.
 - [ ] 🗺️ **Launch essentials:** metadata, share previews, indexing, accessibility, support links
   and owner-reviewed policy pages.
-- [ ] 🗺️ **Ownership and handover:** accounts, resources, access, renewal responsibilities and
-  maintenance instructions, building on today's plans and reports.
+- [ ] 🚧 **Ownership and handover:** accounts, resources, access, renewal responsibilities and
+  maintenance instructions. `golive handoff --write` records the login route, ownership proofs,
+  recurring jobs and removal gates in `GOLIVE_HANDOVER.md`, tagging every row as verified, recorded,
+  not verifiable or unknown. Drift detection and a `status` command are not built yet.
 
 Some steps will always need a person: accepting terms, identity verification, purchases, billing
 choices and reviews that a provider requires. “Guided” should still mean a clear next action,
@@ -272,6 +274,15 @@ Your app gets `golive.yaml`, `.golive/state.json`, `.golive/report.json` and `GO
 State preserves resource IDs and step evidence for recovery; it is not a credential store.
 `golive teardown` removes what golive created after its own approval and `--confirm-destroy`;
 there is no cross-provider rollback, restore or general reconciliation command.
+
+`golive handoff --write` adds the ownership document: `GOLIVE_HANDOVER.md` at the repo root and its
+JSON source in `.golive/handover.json`. It names the accounts and login route, every resource golive
+created and the proof it is golive's, what is still manual, what recurs, how removal works, and which
+commands re-check each subject. Each row says whether it was verified in that run, recorded earlier,
+not verifiable by golive or unknown; golive read no billing data, so no cost figure is stated. The
+files contain no secret values, but secret-free metadata can still identify private resources —
+review them before sharing. `--write` never overwrites a file golive did not generate unless
+`--force` is passed.
 
 ## Credentials and control
 

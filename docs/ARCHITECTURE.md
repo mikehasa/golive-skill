@@ -15,7 +15,9 @@ detect → choose missing providers → connect accounts → plan → approve �
 access. `plan` observes destinations and returns steps and handoffs; `teardown` returns the inverse
 plan of resources golive provably created. `apply` requires the approved plan identity and applicable
 risk confirmations. `verify` produces check evidence; `handoff` lists what remains outside
-automation. Guided or skipped work is not treated as verified success.
+automation, and `handoff --write` adds the ownership document (`GOLIVE_HANDOVER.md` and
+`.golive/handover.json`) from recorded state, cheap provider reads and the same inventory teardown
+uses. Guided or skipped work is not treated as verified success.
 
 ## Adapters, capabilities and links
 
@@ -31,6 +33,7 @@ hosting URL → auth redirects. A new adapter does not need a separate recipe fo
 | `src/links/` | Destination selection and approved cross-provider changes |
 | `src/checks/` | Verification with explicit pass/fail/warn/skip outcomes |
 | `src/detect/` | Local framework, provider and environment-name detection |
+| `src/handover/` | The ownership document's data: accounts, created resources and their proofs, what is manual |
 | `src/report/` | Human-readable results |
 | `skills/golive/` | Installable instructions, references and generated runtime |
 
@@ -50,7 +53,9 @@ historical writes stop for reviewed recovery (destruction steps are exempt: a de
 ownership and is idempotent; DNS records and webhooks re-read the proof from the provider, while a
 host project relies on its recorded creation marker). `teardown` removes only proven golive-created
 resources under its own approval and confirmation gate; there is no automatic cross-provider rollback,
-restore or general reconciliation command. Do not clear state to force a retry.
+restore or general reconciliation command. Its read-only inventory (`src/core/inventory.ts`) is shared
+with the handover document, so what a teardown would remove and what the owner is told are one list.
+Do not clear state to force a retry.
 
 Provider-specific adapters handle uncertain creation results; non-idempotent writes must not be
 blindly repeated after a timeout. A successful API response is followed by the relevant observation
@@ -83,8 +88,11 @@ checks against the configured domain; that does not authorize active app probes 
 
 `golive.yaml` holds provider choices and non-secret configuration. `.golive/state.json` holds
 resource IDs, fingerprints and step evidence. `.golive/report.json` and `GOLIVE_REPORT.md` hold
-verification results and outstanding work. Review these files before sharing them: secret-free
-metadata can still identify private resources. They are not credentials or a cloud rollback plan.
+verification results and outstanding work. `.golive/handover.json` and `GOLIVE_HANDOVER.md` hold the
+ownership document: what golive provably created, the accounts and login route, what is manual, what
+recurs and how removal works, each row tagged by how it was checked. Review these files before
+sharing them: secret-free metadata can still identify private resources. They are not credentials or
+a cloud rollback plan.
 
 A build creates `skills/golive/release.json` covering the instructions, references, runtime,
 installer helpers and licenses. Runtime integrity is checked before account access. Plans bind

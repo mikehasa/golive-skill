@@ -273,7 +273,20 @@ Check scope:
 | `email-verified` | the email provider marks the domain verified |
 
 Finish with a short summary: the live URL, what passed, what is still open (`handoff --json`), and
-every `done: null` / skipped item named as not verified by golive.
+every `done: null` / skipped item named as not verified by golive. Say who owns each remaining item —
+the human's login, purchase or dashboard step, a recurring job, or golive's own next run.
+
+For the durable ownership record, run `handoff --write --json` (add `--force` only when the human
+agrees to replace a file golive did not generate). It writes `GOLIVE_HANDOVER.md` and
+`.golive/handover.json`: the accounts and login route, every resource golive provably created with the
+proof it is golive's, what is still manual, what recurs (DMARC tightening, key rotation, backups,
+domain renewal), how removal works, and the commands that re-check each subject. Every row is tagged
+`[verified by golive]`, `[recorded <date>, not re-checked]`, `[not verifiable by golive]` or
+`[unknown]` — treat the last three as unverified, and never present the document as drift detection,
+because nothing was re-checked unless its row says so. It contains no secret values, but it names
+accounts and resources: tell the human to review it before sharing it. The CLI's report is
+`GOLIVE_REPORT.md`; `HANDOFF.local.md` is unrelated private local notes that golive never reads or
+writes.
 
 ## More detail (load only what you need)
 

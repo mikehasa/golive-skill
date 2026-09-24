@@ -28,6 +28,8 @@ import { ADAPTERS, CHECKS, adapterById, adapterFor, checkMap, linkList } from '.
 import { GUIDED } from './adapters/index.js';
 import { detect } from './detect/index.js';
 import { renderReport } from './report/render.js';
+import { buildHandover } from './handover/build.js';
+import { assertOverwritable, handoverJson, handoverPaths, renderHandover } from './report/handover.js';
 
 const VERSION = PRODUCT_VERSION;
 
@@ -73,6 +75,8 @@ Commands (add --json for machine output; --cwd <dir> to target another repo):
         [--confirm-live] [--confirm-dns] [--confirm-destroy] [--only id,id] [--force]
   verify [--only id,id]      Run live checks; writes .golive/report.json and GOLIVE_REPORT.md.
   handoff                    What only the human can do (logins, KYC, payments), and whether it's done.
+       [--write] [--force]   --write also writes .golive/handover.json and GOLIVE_HANDOVER.md (the
+                             ownership/renewal document); --force replaces files golive did not write.
 `;
 
 async function main(argv: string[]): Promise<number> {
@@ -224,7 +228,27 @@ async function main(argv: string[]): Promise<number> {
       const plan = await buildPlan(ctx, linkList(), { unmappedEnv: env.unmapped, warnings: [] });
       const items = await handoffStatus(ctx, plan.handoffs);
       const unverified = items.filter((i) => i.done === null);
-      emit({ ok: items.every((i) => i.done !== false || !i.blocking), handoffs: items, unverified: unverified.map((i) => i.id), note: unverified.length ? 'items with done:null cannot be verified by golive — confirm them with the human and name them as unverified in your summary' : undefined }, { json });
+      const note = unverified.length ? 'items with done:null cannot be verified by golive — confirm them with the human and name them as unverified in your summary' : undefined;
+      if (flags.write !== true) {
+        emit({ ok: items.every((i) => i.done !== false || !i.blocking), handoffs: items, unverified: unverified.map((i) => i.id), note }, { json });
+        return 0;
+      }
+      // The ownership document: written only on request, and never over a file golive did not write.
+      const doc = await buildHandover(ctx, { handoffs: items, checkIds: CHECKS.map((c) => c.id) });
+      const paths = handoverPaths(cwd);
+      assertOverwritable(paths.json, flags.force === true);
+      assertOverwritable(paths.markdown, flags.force === true);
+      mkdirSync(join(cwd, '.golive'), { recursive: true });
+      writeFileSync(paths.json, handoverJson(doc));
+      writeFileSync(paths.markdown, renderHandover(doc));
+      emit({
+        ok: items.every((i) => i.done !== false || !i.blocking),
+        handoffs: items,
+        unverified: unverified.map((i) => i.id),
+        note,
+        handoverPaths: paths,
+        handover: { generatedAt: doc.generatedAt, resources: doc.resources.length, manual: doc.manual.length, retirement: doc.retirement.length },
+      }, { json });
       return 0;
     }
     default:
