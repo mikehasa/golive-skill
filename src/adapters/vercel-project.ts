@@ -100,6 +100,16 @@ async function resolveProject(ctx: Ctx, idOrName: string): Promise<ProjectRef> {
 export const vercelProject: ProjectLinker = {
   creationTarget,
   resolve: resolveProject,
+  /** Read-only existence probe for a deletion golive performed (the provider's own not-found). */
+  async exists(ctx, id) {
+    try {
+      await projectInfo(ctx, id);
+      return true;
+    } catch (e) {
+      if (isNotFound(e)) return false;
+      throw e;
+    }
+  },
   async current(ctx) {
     const stateId = ctx.state.resource('vercel.projectId');
     const stateName = ctx.state.resource('vercel.projectName');

@@ -39,9 +39,11 @@ detected events against the handler the same way you check the path.
 ## 2. Plan
 
 `plan --json` → `planId`, `steps[]` (`id`, `title`, `kind`, `writes`, `needs`, `preview`,
-`dependsOn`), `handoffs[]`, `unmappedEnv`, `warnings`, `findings`. Previews are deterministic: the
-same state gives the same `planId`. `teardown --json` returns the same shape; its steps carry
-`kind: 'destroy'` and `needs` includes `--confirm-destroy`.
+`dependsOn`), `handoffs[]`, `unmappedEnv`, `warnings`, `findings`. `targets[]` lists only the steps
+that carry a structured `destination` (the project steps), so a teardown plan's `targets` is empty:
+read the destinations from `steps[].preview` (and the step's `needs` confirm flags) instead. Previews
+are deterministic: the same state gives the same `planId`. `teardown --json` returns the same shape;
+its steps carry `kind: 'destroy'` and `needs` includes `--confirm-destroy`.
 
 **Step intent.** A step may also carry a secret-free `intent`: what it writes beyond its preview text
 (source project ids, key fingerprints, endpoint ids, the hosting project, a previous attempt's time).
@@ -53,11 +55,15 @@ really lands. The deploy step's intent includes the env writes it picks up.
 **Teardown.** `teardown` enumerates only golive-created resources with their ownership proofs
 (provider markers, state fingerprints, the host project's creation marker): DNS records golive owns,
 recorded webhook endpoints, issued sending keys and the created host project. A removal re-checks
-ownership before deleting; each deleted DNS record is confirmed by re-reading the zone, while the
-webhook, key and host-project removals rely on the provider's successful delete response and treat
-"already gone" as done. Resources it cannot remove — adopted projects, Supabase/Neon projects, the
-Resend sending domain — appear as non-blocking `manual` handoffs; records or endpoints a human
-created are never deleted.
+ownership before deleting. Each deleted DNS record is confirmed by re-reading the zone and the
+deleted host project by re-reading the project: a project that is still resolvable fails the step,
+while a read the provider cannot answer (auth, network) warns instead of passing. The webhook and key
+removals rely on the provider's successful delete response, and every removal treats "already gone"
+as done. Removing the host project also forgets its recorded deploy facts (the `deployed:…` marker
+and the completed deploy step), so a project created again in the same repo is deployed again rather
+than inheriting "production was deployed". Resources it cannot remove — adopted projects,
+Supabase/Neon projects, the Resend sending domain — appear as non-blocking `manual` handoffs;
+records or endpoints a human created are never deleted.
 
 **Which project.** Every plan has a step `project:hosting` / `project:db` naming the provider,
 project name (id), team/org if known, where the choice came from, and the logged-in account.

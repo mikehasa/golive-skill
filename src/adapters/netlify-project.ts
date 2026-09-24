@@ -45,8 +45,10 @@ function guardAccount(ctx: Ctx, p: NetlifySite): void {
   const saved = ctx.state.resource('netlify.siteId') === p.id ? ctx.state.resource('netlify.accountId') : undefined;
   if (wanted && wanted !== p.accountId || saved && saved !== p.accountId) throw new NetlifyError('Netlify project owner differs from the selected or previously approved team; re-plan before any write.');
 }
-async function getSite(ctx: Ctx, id: string): Promise<NetlifySite> {
-  const p = siteInfo(await netlifyRead(ctx, 'getSite', `/sites/${encodeURIComponent(identifier(id))}`, { site_id: id }));
+async function getSite(ctx: Ctx, id: string, transport: 'cli' | 'https' = 'cli'): Promise<NetlifySite> {
+  const path = `/sites/${encodeURIComponent(identifier(id))}`;
+  const raw = transport === 'https' ? await netlifyHttp(ctx, 'GET', path) : await netlifyRead(ctx, 'getSite', path, { site_id: id });
+  const p = siteInfo(raw);
   if (p.id !== id) throw new NetlifyError('Netlify returned a different site identity; re-plan.');
   guardAccount(ctx, p);
   return p;
@@ -121,6 +123,20 @@ export const netlifyProject: ProjectLinker = {
     return (await listSites(ctx, basename(ctx.cwd), owner ? await accountInfo(ctx, owner) : undefined)).map(ref);
   },
   async resolve(ctx, idOrName) { return ref(await resolveSite(ctx, idOrName)); },
+  /**
+   * Read-only existence probe for a deletion golive performed. Reads over HTTPS on purpose: the CLI
+   * transport reports a missing site as a plain exit code, with no HTTP status to recognize, so only
+   * an HTTPS 404 may count as removed.
+   */
+  async exists(ctx, id) {
+    try {
+      await getSite(ctx, id, 'https');
+      return true;
+    } catch (e) {
+      if (e instanceof NetlifyError && e.status === 404) return false;
+      throw e;
+    }
+  },
   async select(ctx, idOrName) { return remember(ctx, await resolveSite(ctx, idOrName)); },
   async create(ctx, name, approvedTarget) {
     if (!/^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/.test(name)) throw new NetlifyError('Use a Netlify site name with 2–63 lowercase letters, digits and internal hyphens.');

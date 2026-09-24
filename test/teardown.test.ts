@@ -4,10 +4,12 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { _resetSecretRegistry, Secret } from '../src/core/secret.js';
+import { buildPlan } from '../src/core/plan.js';
 import { applyPlan } from '../src/core/runner.js';
 import { approvedPlan, buildTeardownPlan } from '../src/core/teardown.js';
 import { emptyState } from '../src/core/state.js';
-import type { Adapter, DnsRecord, Plan, ShipConfig, ShipState, Step } from '../src/core/types.js';
+import { ALL_LINKS } from '../src/links/all.js';
+import type { Adapter, Ctx, DnsRecord, Plan, ShipConfig, ShipState, Step } from '../src/core/types.js';
 import { TEST_RELEASE, testCtx } from './helpers.js';
 import { RAW, fakeWorld, type FakeWorld } from './fakes.js';
 
@@ -464,6 +466,121 @@ describe('teardown: webhooks, keys and the host project', () => {
     const plan = await build();
     expect(plan.steps).toEqual([]);
     expect(plan.handoffs).toEqual([]);
+  });
+});
+
+// ── Deploy facts and the post-delete re-read ────────────────────────────────────────────────────
+
+const DEPLOY_AT = '2026-09-24T04:46:23.199Z';
+
+/**
+ * The created project plus the deploy facts a successful production deploy records in state, with a
+ * recorded sending key, an unrelated step record and a secret fingerprint that must all survive.
+ */
+const OTHER_FACTS = {
+  resources: { 'fakemail.keyId@preview': 'key_7' },
+  steps: { 'env:production': { status: 'done' as const, hash: 'h3', at: DEPLOY_AT, planId: 'plan_1' } },
+  secrets: { 'DATABASE_URL@production': { fp: 'abcd1234', at: DEPLOY_AT } },
+};
+const stateWithDeploys = (): ShipState => ({
+  ...emptyState(),
+  resources: { ...CREATED_PROJECT, 'deployed:production': DEPLOY_AT, ...OTHER_FACTS.resources },
+  steps: {
+    'deploy:production': { status: 'done', hash: 'h1', at: DEPLOY_AT, planId: 'plan_1' },
+    'deploy:production:final': { status: 'done', hash: 'h2', at: DEPLOY_AT, planId: 'plan_1' },
+    ...OTHER_FACTS.steps,
+  },
+  secrets: { ...OTHER_FACTS.secrets },
+});
+
+/** A stack whose only automation is the host, so the forward plan is the project step plus the deploy. */
+const HOST_ONLY: Partial<ShipConfig> = { stack: { hosting: 'fakehost' }, domain: undefined };
+const forward = (ctx: Ctx) => buildPlan(ctx, ALL_LINKS, { unmappedEnv: [], warnings: [] });
+
+describe('teardown: deploy facts of a removed project', () => {
+  it('forgets them, so a project created again in this repo is planned a deploy', async () => {
+    const { ctx, build } = setup({ config: HOST_ONLY, state: stateWithDeploys() });
+    // The removed project's facts still stand: golive plans no deploy at all (the observed live bug).
+    expect(ids(await forward(ctx))).toEqual(['project:hosting']);
+
+    const out = await apply(ctx, await build());
+    expect(out.map((o) => [o.id, o.status])).toEqual([['teardown:project:hosting', 'done']]);
+    expect(ctx.state.resource('deployed:production')).toBeUndefined();
+    expect(ctx.state.get().steps['deploy:production']).toBeUndefined();
+    expect(ctx.state.get().steps['deploy:production:final']).toBeUndefined();
+    expect(ctx.state.get().steps['teardown:project:hosting']?.status).toBe('done'); // the teardown evidence stays
+
+    // Nothing else in state is touched: other resources, step evidence and fingerprints stay.
+    expect(ctx.state.get().resources).toEqual(OTHER_FACTS.resources);
+    expect(ctx.state.get().steps['env:production']).toEqual(OTHER_FACTS.steps['env:production']);
+    expect(ctx.state.get().secrets).toEqual(OTHER_FACTS.secrets);
+
+    expect(ids(await forward(ctx))).toEqual(['project:hosting', 'deploy:production']);
+    expect(ids(await build())).toEqual([]); // nothing golive created is left: a second teardown is a no-op
+  });
+
+  it('leaves them alone when the project was not removed', async () => {
+    const cases: Array<{ what: string; status: 'done' | 'failed'; before?: (w: FakeWorld) => void; after?: (w: FakeWorld, ctx: Ctx) => void }> = [
+      { what: 'the delete failed', status: 'failed', before: (w) => void (w.host.removeError = 'the project still has deployments') },
+      {
+        what: 'golive may no longer delete it',
+        status: 'done',
+        after: (w, ctx) => {
+          w.host.removeResult = { removed: false, reason: 'the project was adopted or selected, not created by golive' };
+          ctx.state.save((s) => void delete s.resources['fakehost.createdProjectId']);
+        },
+      },
+    ];
+    for (const c of cases) {
+      const { w, ctx, build } = setup({ config: HOST_ONLY, state: stateWithDeploys(), arrange: c.before });
+      const plan = await build();
+      c.after?.(w, ctx);
+
+      const out = await apply(ctx, plan);
+      expect(out.map((o) => [o.id, o.status]), c.what).toEqual([['teardown:project:hosting', c.status]]);
+      expect(ctx.state.resource('deployed:production'), c.what).toBe(DEPLOY_AT);
+      expect(ctx.state.get().steps['deploy:production']?.status, c.what).toBe('done');
+      expect(ctx.state.get().steps['deploy:production:final']?.status, c.what).toBe('done');
+    }
+  });
+});
+
+describe('teardown: confirming the host project is gone', () => {
+  it('re-reads the project and reports the absence as evidence', async () => {
+    const { w, ctx, build } = setup({ state: stateWith(CREATED_PROJECT) });
+    const out = await apply(ctx, await build());
+
+    expect(out.map((o) => [o.id, o.status])).toEqual([['teardown:project:hosting', 'done']]);
+    expect(calls(w, 'project.exists').map((c) => c.args[0])).toEqual(['prj_1']);
+    expect(out[0]!.checks.map((c) => [c.id, c.status, c.severity])).toEqual([['teardown:project:hosting:removed', 'pass', 'info']]);
+    expect(out[0]!.checks[0]!.evidence).toEqual(['FakeHost no longer resolves the project shop (prj_1)']);
+  });
+
+  it('fails the step when the host still resolves the project after the delete', async () => {
+    const { w, ctx, build } = setup({ arrange: (w) => void (w.host.removeKeepsProject = true), state: stateWith(CREATED_PROJECT) });
+    const out = await apply(ctx, await build());
+
+    expect(out.map((o) => [o.id, o.status])).toEqual([['teardown:project:hosting', 'failed']]);
+    expect(out[0]!.checks[0]).toMatchObject({ id: 'teardown:project:hosting:removed', status: 'fail', severity: 'high' });
+    expect(out[0]!.checks[0]!.evidence).toEqual(['FakeHost still resolves the project shop (prj_1) after the delete']);
+    expect(out[0]!.next).toMatch(/dashboard/);
+    expect(ctx.state.get().steps['teardown:project:hosting']?.status).toBe('failed');
+    expect(w.host.removed).toEqual(['prj_1']); // the delete was attempted; it is the confirmation that failed
+  });
+
+  it('warns instead of failing when the host cannot re-read the project', async () => {
+    const arrangements: Array<(w: FakeWorld) => void> = [
+      (w) => void (w.host.withExists = false),
+      (w) => void (w.host.existsError = 'Netlify HTTPS request failed; no provider response body was logged.'),
+    ];
+    for (const arrange of arrangements) {
+      const { ctx, build } = setup({ arrange, state: stateWith(CREATED_PROJECT) });
+      const out = await apply(ctx, await build());
+
+      expect(out.map((o) => [o.id, o.status])).toEqual([['teardown:project:hosting', 'done']]);
+      expect(out[0]!.checks[0]).toMatchObject({ id: 'teardown:project:hosting:removed', status: 'warn', severity: 'medium' });
+      expect(ctx.state.get().steps['teardown:project:hosting']?.status).toBe('done');
+    }
   });
 });
 

@@ -337,6 +337,22 @@ describe('Netlify project removal', () => {
     expect(await project.remove!(ctx)).toEqual({ removed: true });
     expect(ctx.state.resource('netlify.siteId')).toBeUndefined();
   });
+
+  it('exists() reads the site over HTTPS and reports only a 404 as gone', async () => {
+    const h = http([['GET', `${NETLIFY_API}/sites/${SITE}`, () => ({ json: SITE_RAW })]]);
+    const ctx = testCtx({ exec: cli().run, http: h.http, tokens, state: linkedState() });
+    expect(await project.exists!(ctx, SITE)).toBe(true);
+    expect(h.calls.map(c => [c.method, c.url])).toEqual([['GET', `${NETLIFY_API}/user`], ['GET', `${NETLIFY_API}/sites/${SITE}`]]);
+
+    const gone = http([['GET', `${NETLIFY_API}/sites/${SITE}`, () => ({ status: 404, text: '{"code":404,"message":"Not Found"}' })]]);
+    expect(await project.exists!(testCtx({ exec: cli().run, http: gone.http, tokens, state: linkedState() }), SITE)).toBe(false);
+  });
+
+  it('exists() throws when the site read fails for any other reason', async () => {
+    const h = http([['GET', `${NETLIFY_API}/sites/${SITE}`, () => ({ status: 500, text: '{"code":500,"message":"Internal error"}' })]]);
+    const ctx = testCtx({ exec: cli().run, http: h.http, tokens, state: linkedState() });
+    await expect(project.exists!(ctx, SITE)).rejects.toThrow(/HTTP 500/);
+  });
 });
 
 describe('Netlify environment writes', () => {

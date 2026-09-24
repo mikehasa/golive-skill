@@ -194,6 +194,12 @@ export interface ProjectLinker {
   candidates(ctx: Ctx): Promise<ProjectRef[]>;
   /** Read-only resolution of an exact existing project and its owning scope. */
   resolve?(ctx: Ctx, idOrName: string): Promise<ProjectRef>;
+  /**
+   * Read-only: is this exact project still at the provider? Used to confirm a deletion golive
+   * performed. `false` only when the provider itself answers "not found"; a read that cannot be
+   * answered (auth, network, rate limit) throws, so a failed read never counts as a project gone.
+   */
+  exists?(ctx: Ctx, id: string): Promise<boolean>;
   /** Resolve the exact free destination before asking the human to approve creation. */
   creationTarget?(ctx: Ctx): Promise<ProjectCreateTarget>;
   /** Adopt an existing project by id or name (writes local link/state only). */

@@ -21,7 +21,7 @@ import { orderSteps, planId } from './plan.js';
 import { redact } from './secret.js';
 import { assertCompatibleState } from './state.js';
 import { formatRecord } from '../links/email.js';
-import { errMsg, intentOf, step } from '../links/util.js';
+import { errMsg, forgetDeployFacts, intentOf, step } from '../links/util.js';
 
 /**
  * Build the teardown plan: webhooks, DNS records, sending keys, then the host project. Smallest blast
@@ -228,9 +228,13 @@ function projectTeardown(project: InventoryProject | null): { steps: Step[]; han
 }
 
 function projectStep(p: InventoryProject): Step {
+  const id = 'teardown:project:hosting';
   const label = p.name ? `${p.name} (${p.id})` : p.id;
+  // Whether this run deleted the project. A refusal ("left as is") leaves it in place on purpose, so
+  // the absence re-read below only applies to an actual deletion.
+  let deleted = false;
   return step({
-    id: 'teardown:project:hosting',
+    id,
     title: `Delete the ${p.providerTitle} project golive created`,
     kind: 'destroy',
     risk: { writes: true, destroy: true },
@@ -238,13 +242,60 @@ function projectStep(p: InventoryProject): Step {
     intent: intentOf({ provider: p.provider, project: p.id }),
     async run(sctx) {
       const r = await p.remove(sctx);
-      if (r.removed) return { changes: [`deleted project ${p.id}`] };
+      deleted = r.removed;
+      if (r.removed) {
+        // The deploy facts described the project that just went away. Left behind, a project created
+        // again in this repo would inherit "production was deployed" and plan no deploy at all.
+        forgetDeployFacts(sctx);
+        return { changes: [`deleted project ${p.id}`] };
+      }
       // A refusal is not a failure: state no longer links this exact project, or the creation marker
       // no longer proves golive created it, so golive must not delete it and did not. Any other
       // non-deletion means the project is still there, so the step fails instead of reporting success.
       const reason = r.reason ?? 'the provider kept the project';
       if (sctx.state.resource(p.keys.id) !== p.id || sctx.state.resource(createdProjectKey(p.provider)) !== p.id) return { changes: [`left as is: ${reason}`] };
       throw new Error(`could not delete the ${p.providerTitle} project ${p.id}: ${redact(reason)}`);
+    },
+    // A delete is only reported as done once the host itself no longer resolves the project (the DNS
+    // steps confirm a removal the same way). A host golive cannot re-read warns instead of failing.
+    async verifyInline(vctx) {
+      if (!deleted) return [];
+      const checkId = `${id}:removed`;
+      const title = `${p.providerTitle} no longer reports the project golive created: ${label}`;
+      if (!p.exists) {
+        return [{
+          id: checkId,
+          title,
+          status: 'warn',
+          severity: 'medium',
+          evidence: [`${p.providerTitle} has no read that could re-check the project after the delete`],
+          fix: `Confirm ${label} is gone in the ${p.providerTitle} dashboard.`,
+        }];
+      }
+      let still: boolean;
+      try {
+        still = await p.exists(vctx);
+      } catch (e) {
+        return [{
+          id: checkId,
+          title,
+          status: 'warn',
+          severity: 'medium',
+          evidence: [`could not re-read the ${p.providerTitle} project ${label} after the delete: ${errMsg(e)}`],
+          fix: `Check ${p.providerTitle} access, then confirm ${label} is gone.`,
+        }];
+      }
+      if (still) {
+        return [{
+          id: checkId,
+          title,
+          status: 'fail',
+          severity: 'high',
+          evidence: [`${p.providerTitle} still resolves the project ${label} after the delete`],
+          fix: `Delete it in the ${p.providerTitle} dashboard; golive does not report a delete it cannot confirm.`,
+        }];
+      }
+      return [{ id: checkId, title, status: 'pass', severity: 'info', evidence: [`${p.providerTitle} no longer resolves the project ${label}`] }];
     },
   });
 }

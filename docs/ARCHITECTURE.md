@@ -78,11 +78,11 @@ Compatible completed steps can be skipped when their identity and evidence still
 IDs, fingerprints and operation records survive interruptions. Unknown schema versions or ambiguous
 historical writes stop for reviewed recovery (destruction steps are exempt: a deletion re-checks
 ownership and is idempotent; DNS records and webhooks re-read the proof from the provider, while a
-host project relies on its recorded creation marker). `teardown` removes only proven golive-created
-resources under its own approval and confirmation gate; there is no automatic cross-provider rollback,
-restore or general reconciliation command. Its read-only inventory (`src/core/inventory.ts`) is shared
-with the handover document, so what a teardown would remove and what the owner is told are one list.
-Do not clear state to force a retry.
+host project relies on its recorded creation marker and re-reads the project after deleting it).
+`teardown` removes only proven golive-created resources under its own approval and confirmation gate;
+there is no automatic cross-provider rollback, restore or general reconciliation command. Its
+read-only inventory (`src/core/inventory.ts`) is shared with the handover document, so what a teardown
+would remove and what the owner is told are one list. Do not clear state to force a retry.
 
 Provider-specific adapters handle uncertain creation results; non-idempotent writes must not be
 blindly repeated after a timeout. A successful API response is followed by the relevant observation
