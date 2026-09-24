@@ -91,6 +91,8 @@ Stays with the human (and why):
 | "SPF … already has `~include:…`" | Change that term to plain `include:…` in the dashboard, then re-run. |
 | Several SPF records at one name | Merge them into one in the dashboard, then re-run. |
 | Error 81058 "An identical record already exists" | Already there; golive adopts it. Harmless. |
+| Warning "recovering a stale zone id for …" | The zone id in `.golive/state.json` was rejected (zone deleted/re-created, or the token re-scoped); golive re-found the zone and continued, naming both zones. If the domain doesn't go live, confirm the zone golive used is the one that serves the domain, then re-run `plan`. |
+| Error "The cached Cloudflare zone … was rejected … no active zone … anymore" | The zone was deleted or re-created, the nameservers changed, or the token was re-scoped/revoked. Check the Cloudflare dashboard (zone exists and is active, token still scoped to it), then re-run `plan`. |
 | 429 | Rate limit (1,200 requests / 5 minutes); wait and re-run. |
 | Vercel says misconfigured; lookups show Cloudflare IPs (104.16.x, 172.64.x) | Record is proxied. Turn the orange cloud off. |
 | Email domain won't verify (Cloudflare "Code 1004") | Proxied email CNAME. Set it to DNS only. |
