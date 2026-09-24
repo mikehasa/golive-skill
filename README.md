@@ -214,8 +214,10 @@ the inbox. A later approved run on a disposable fixture (a deployed Vercel site 
 answers 401 without a session, plus one RLS-protected table) exercised both app-side legs: an
 anonymous GET of `auth.protectedPath` answered 401 and the signed-in probe read that table as the
 authenticated user, so the probe's bearer fix is no longer mock-covered. What that evidence cannot
-show: the table line is a count rather than table names, and any 401 counts as protected — a WAF or
-maintenance page would read the same (both tracked in issue #30). Password recovery is **implemented
+show: that run's table line is a count rather than table names, and any 401 counted as protected — a
+WAF or maintenance page would read the same; both were fixed afterwards (issue #30: the probe names
+the tables it read, and a refused protected path is corroborated against the public root, with mocked
+coverage and no live re-run yet). Password recovery is **implemented
 on the same provider and not live-validated yet**: `auth.recovery: true` adds one approved step
 (`auth:recovery`, needs `--confirm-live`) that rotates that recorded test account's password through
 the provider's own recovery calls — request the email, mint the link with the admin API, exchange it
