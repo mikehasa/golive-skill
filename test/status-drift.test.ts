@@ -15,8 +15,8 @@ import { applyPlan } from '../src/core/runner.js';
 import { emptyState } from '../src/core/state.js';
 import { _resetSecretRegistry } from '../src/core/secret.js';
 import { ALL_LINKS } from '../src/links/all.js';
-import type { Adapter, Ctx, DnsRecord, ShipConfig, ShipState, StepContext } from '../src/core/types.js';
-import { mockHttp, testCtx } from './helpers.js';
+import type { Adapter, Ctx, DnsRecord, Plan, ReleaseIdentity, ShipConfig, ShipState, Step, StepContext, StepRecord } from '../src/core/types.js';
+import { TEST_RELEASE, mockHttp, testCtx } from './helpers.js';
 import { dohRoute } from './check-fakes.js';
 import { fakeWorld, type FakeWorld } from './fakes.js';
 
@@ -42,6 +42,19 @@ const dnsState = (...records: DnsBaseline[]): Record<string, string> =>
 const stateWith = (resources: Record<string, string>, over: Partial<ShipState> = {}): ShipState => ({ ...emptyState(), resources, ...over });
 
 const done = (at = now()) => ({ status: 'done' as const, at, planId: 'plan_1' });
+
+/** A second release identity: a version and bundle golive did not record the failed step under. */
+const OLDER_RELEASE: ReleaseIdentity = { ...TEST_RELEASE, version: '0.1.0-alpha.9', bundleDigest: 'b'.repeat(64) };
+
+/** State holding one failed `auth:test-user` record, from this release unless a test says otherwise. */
+const failedStep = (over: Partial<StepRecord> = {}): ShipState =>
+  stateWith({}, { steps: { 'auth:test-user': { status: 'failed', at: ago(DAY), planId: 'plan_1', release: TEST_RELEASE, error: 'verification failed: auth-session', ...over } } });
+
+/** A plan step as far as drift reads it: what the step declares about its own write. */
+const stepStub = (id: string, risk: Step['risk']): Step =>
+  ({ id, title: id, kind: 'provision', risk, dependsOn: [], preview: [], verifyWith: [], run: async () => ({ changes: [] }) });
+
+const planWith = (...steps: Step[]): Plan => ({ id: 'plan_1', release: TEST_RELEASE, steps, handoffs: [], unmappedEnv: [], warnings: [] });
 
 function setup(over: { config?: Partial<ShipConfig>; state?: ShipState; arrange?: (w: FakeWorld) => void; noDoH?: boolean } = {}) {
   const w = fakeWorld();
@@ -594,11 +607,50 @@ describe('drift: release state golive never finished', () => {
   });
 
   it('reports a failed step that was never resumed', async () => {
-    const state = stateWith({}, { steps: { 'deploy:production': { status: 'failed', at: ago(DAY), planId: 'plan_1', error: 'build failed' } } });
+    const state = stateWith({}, { steps: { 'deploy:production': { status: 'failed', at: ago(DAY), planId: 'plan_1', release: TEST_RELEASE, error: 'build failed' } } });
     const { ctx } = setup({ state });
     const it_ = item(await detectDrift(ctx), 'release:step:deploy:production')!;
     expect(it_).toMatchObject({ severity: 'medium', action: 'verify' });
     expect(it_.observed).toContain('build failed');
+    expect(it_.suggestedAction).toContain('golive apply --plan <planId>');
+  });
+
+  it('keeps the re-run advice for a historical step that declares its write replayable', async () => {
+    const { ctx } = setup({ state: failedStep({ release: OLDER_RELEASE }) });
+    const it_ = item(await detectDrift(ctx, planWith(stepStub('auth:test-user', { writes: true, live: true, replayable: true }))), 'release:step:auth:test-user')!;
+    expect(it_).toMatchObject({ severity: 'medium', action: 'verify' });
+    expect(it_.suggestedAction).toContain('golive apply --plan <planId>');
+    expect(it_.evidence.join(' ')).toContain('`risk.replayable`');
+  });
+
+  it('keeps the re-run advice for a historical destruction step (a deletion re-checks ownership)', async () => {
+    const { ctx } = setup({ state: failedStep({ release: OLDER_RELEASE }) });
+    const it_ = item(await detectDrift(ctx, planWith(stepStub('auth:test-user', { writes: true, destroy: true }))), 'release:step:auth:test-user')!;
+    expect(it_).toMatchObject({ severity: 'medium', action: 'verify' });
+    expect(it_.evidence.join(' ')).toContain('a deletion re-checks ownership and is idempotent');
+  });
+
+  it('sends a historical write the guard refuses to the reviewed reconciliation path instead of an impossible apply', async () => {
+    const { ctx } = setup({ state: failedStep({ release: OLDER_RELEASE }) });
+    const it_ = item(await detectDrift(ctx, planWith(stepStub('auth:test-user', { writes: true, live: true }))), 'release:step:auth:test-user')!;
+    expect(it_).toMatchObject({ severity: 'medium', action: 'human' });
+    // The record and the runtime are both named, and nothing suggests the command that would refuse.
+    expect(it_.evidence.join(' ')).toContain(`written by release 0.1.0-alpha.9 (bundle ${'b'.repeat(8)}), while this runtime is release ${TEST_RELEASE.version} (bundle ${'a'.repeat(8)})`);
+    expect(it_.evidence.join(' ')).toContain('declares neither `risk.replayable` nor `destroy`');
+    expect(it_.suggestedAction).toContain('cannot replay this step automatically');
+    expect(it_.suggestedAction).toContain('references/updates.md');
+    expect(it_.suggestedAction).not.toContain('golive apply --plan');
+  });
+
+  it('blocks a historical step the current plan no longer carries, and one whose plan could not be read', async () => {
+    const { ctx } = setup({ state: failedStep({ release: OLDER_RELEASE }) });
+    const dropped = item(await detectDrift(ctx, planWith(stepStub('deploy:production', { writes: true }))), 'release:step:auth:test-user')!;
+    expect(dropped).toMatchObject({ action: 'human' });
+    expect(dropped.evidence.join(' ')).toContain('the current plan does not carry auth:test-user');
+
+    const unobserved = item(await detectDrift(ctx, null), 'release:step:auth:test-user')!;
+    expect(unobserved).toMatchObject({ action: 'human' });
+    expect(unobserved.evidence.join(' ')).toContain('could not observe the current plan');
   });
 });
 
@@ -632,11 +684,30 @@ describe('golive status', () => {
     return result;
   }
 
-  function writeState(w: FakeWorld, resources: Record<string, string>, secrets: ShipState['secrets'] = {}): void {
+  function writeState(w: FakeWorld, resources: Record<string, string>, secrets: ShipState['secrets'] = {}, over: Partial<ShipState> = {}): void {
     mocks.adapters.push(...w.adapters);
     mkdirSync(join(root, '.golive'), { recursive: true });
-    writeFileSync(join(root, '.golive/state.json'), JSON.stringify(stateWith(resources, { secrets })));
+    writeFileSync(join(root, '.golive/state.json'), JSON.stringify(stateWith(resources, { secrets, ...over })));
   }
+
+  it('reports a historical write as human work, leaves state alone and names the reconciliation path', async () => {
+    const w = fakeWorld();
+    const steps = { 'deploy:production': { status: 'failed' as const, at: ago(DAY), planId: 'plan_1', release: OLDER_RELEASE, error: 'build failed' } };
+    writeState(w, {}, {}, { steps });
+    const before = readFileSync(join(root, '.golive/state.json'), 'utf8');
+
+    const { output, code } = await runCli(['status']);
+    const json = JSON.parse(output) as { items: Array<{ id: string; action: string; evidence: string[]; suggestedAction?: string }> };
+    const it_ = json.items.find((i) => i.id === 'release:step:deploy:production')!;
+    expect(code).toBe(2);
+    expect(it_.action).toBe('human');
+    expect(it_.evidence.join(' ')).toContain('not replayed automatically');
+    expect(it_.evidence.join(' ')).toContain('deploy:production is a write that declares neither `risk.replayable` nor `destroy`');
+    expect(it_.suggestedAction).toContain('cannot replay this step automatically');
+    expect(it_.suggestedAction).toContain('references/updates.md');
+    expect(it_.suggestedAction).not.toContain('golive apply --plan');
+    expect(readFileSync(join(root, '.golive/state.json'), 'utf8')).toBe(before);
+  });
 
   it('prints the report and exits 2 when something needs acting on', async () => {
     const w = fakeWorld();

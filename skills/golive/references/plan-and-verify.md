@@ -122,10 +122,13 @@ can prove login again. `auth:confirm-email` (non-blocking, verified by `auth-sig
 click in the inbox. Both checks are opt-in:
 
 - `auth-signup` signs up a fresh probe address (`auth.testEmail` plus a random `+gl-…` tag) and
-  requires a confirmation email, requires an immediate login refusal (`email_not_confirmed`), requires
-  the seeded account to read back as `email_confirmed_at` after the click, and requires that account
-  to sign in. golive cannot read an inbox: delivery and the click stay human-confirmed, and the
-  evidence says so.
+  requires a confirmation email, requires an immediate login refusal (`email_not_confirmed`) and
+  requires the seeded account to read back as `email_confirmed_at` after the click. Those three
+  provider reads are the whole pass rule, so a `handoff` — or a `verify` outside the seeding apply —
+  can report a complete handoff as done. The confirmed account's own sign-in is added as extra
+  evidence when this run holds that account's password (the apply that seeded or rotated it); when it
+  does not, an evidence line says so and names where the login is exercised instead of skipping.
+  golive cannot read an inbox: delivery and the click stay human-confirmed, and the evidence says so.
 - `auth-session` requires a session for the seeded account, requires `GET /auth/v1/user` to return
   the same user, requires an anonymous request to be 401, and — with `auth.protectedPath` — requires
   an anonymous GET of the host-confirmed production URL plus that path to redirect or answer
@@ -133,8 +136,9 @@ click in the inbox. Both checks are opt-in:
   `rls-probe`'s job.
 
 Both checks write when they run (one throwaway account per run) and skip, never fail, without the
-opt-in, without `auth.testEmail`, without a usable provider credential, when a captcha blocks the
-scripted signup, or when this run holds no password for the seeded account.
+opt-in, without `auth.testEmail`, without a usable provider credential, or when a captcha blocks the
+scripted signup. `auth-session` also skips when this run holds no password for the seeded account:
+without one there is no session to inspect.
 
 **Email.** `email:verify` is re-sent on each plan while the domain is pending; its preview shows
 `previous request: <time>`.
@@ -224,7 +228,7 @@ does resolve and GET `config.domain`.
 | `db-connection` | the selected Neon compute accepts a fixed read-only query and returns the expected database and role; no schema/Auth/app-isolation claim | no connection-probe capability; `blocked by: login:<db>` / `project:db` |
 | `auth-redirects` | site URL and allowlist point at production, no localhost | guided auth; `blocked by: deploy:production` |
 | `auth-policy` | the reported signup/confirmation/password policy matches golive.yaml `auth` (below 12 characters or a built-in mailer only warns); evidence lists the effective values | guided auth; `blocked by: login:<id>` / `project:<axis>`; the provider reports no policy fields |
-| `auth-signup` | a fresh probe address got a confirmation email, could not sign in before confirming, the seeded account reads back confirmed and then signs in (delivery stays human-confirmed) | `auth.e2e` off; no `auth.testEmail`; guided auth; `blocked by: login:<id>` / `auth:test-user`; a captcha blocks signup; **warns** on a 429 or while the account is still unconfirmed |
+| `auth-signup` | a fresh probe address got a confirmation email, could not sign in before confirming, and the seeded account reads back confirmed (`email_confirmed_at`) — the confirmed account's own sign-in is extra evidence when this run holds its password (delivery stays human-confirmed) | `auth.e2e` off; no `auth.testEmail`; guided auth; `blocked by: login:<id>` / `auth:test-user`; a captcha blocks signup; **warns** on a 429 or while the account is still unconfirmed |
 | `auth-session` | the seeded account's session is accepted for the same user, an anonymous request is 401, and a declared `auth.protectedPath` is not publicly readable | `auth.e2e` off; guided auth; `blocked by: login:<id>` / `auth:test-user` / `no password for the test account in this run`; **warns** on a 429, an unconfirmed account, every exposed table denying the signed-in user, or an inconclusive protected-path answer |
 | `webhook-unsigned` | an unsigned POST gets 4xx from the handler (a non-HTML 401/403 only warns — ambiguous between a rejection and an auth wall) | production URL not confirmed |
 | `webhook-registered` | an enabled endpoint for the production URL covers the configured events | guided payments; no production URL |
@@ -270,6 +274,13 @@ branch/database/role selectors, the sending domain, issued sending keys (no prov
 they are reported as unverifiable rather than checked off), the payment account and mode behind the
 app's keys (a 403 is unverifiable, never drift), the host project identity and its creation marker, and
 unfinished release state (a production env write no deploy picked up, a failed step).
+
+A failed step is compared with the plan this release would run now, because that decides what an
+operator can do: when the recorded step belongs to another (or an unknown) release and declares
+neither `destroy` nor `risk.replayable`, `apply` refuses to replay the write, so the item is `human`
+and points at the reviewed reconciliation path in [updates](updates.md) instead of an impossible
+`apply --plan <planId>`. A step this release recorded, or one that declares the exemption, keeps the
+plain re-run advice.
 
 A provider that cannot be read yields `unverifiable: true` with `action: 'none'` and appears in
 `notChecked`: never drift, and never "clean". `verified` lists the subjects read and found unchanged —

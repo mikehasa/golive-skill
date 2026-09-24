@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mockHttp, testCtx } from './helpers.js';
 import { dohRoute, fakeAdapter, fakeFetch, jwt } from './check-fakes.js';
 import { createHttp } from '../src/core/http.js';
-import { _resetSecretRegistry, fingerprint } from '../src/core/secret.js';
+import { _resetSecretRegistry, fingerprint, Secret } from '../src/core/secret.js';
 import type { Adapter, AuthSettings, Check, Ctx, DnsRecord, TableInfo } from '../src/core/types.js';
 import { ALL_CHECKS } from '../src/checks/all.js';
 import { accountsCheck } from '../src/checks/accounts.js';
@@ -14,6 +14,7 @@ import { webhookRegisteredCheck, webhookUnsignedCheck } from '../src/checks/webh
 import { stripeLiveReadyCheck } from '../src/checks/stripe-live.js';
 import { authRedirectsCheck } from '../src/checks/auth-redirects.js';
 import { authPolicyCheck } from '../src/checks/auth.js';
+import { authSignupCheck } from '../src/checks/auth-signup.js';
 import { emailDnsCheck, emailVerifiedCheck } from '../src/checks/email.js';
 import { domainLiveCheck } from '../src/checks/domain.js';
 import { addressDomain, confirmedProductionUrl, globMatch, hostVariants } from '../src/checks/util.js';
@@ -756,6 +757,65 @@ describe('auth-policy', () => {
 
   it('does not apply without an auth provider', () => {
     expect(authPolicyCheck.applies(testCtx({ config: { stack: { hosting: 'vercel' } } }))).toBe(false);
+  });
+});
+
+// ── auth-signup ─────────────────────────────────────────────────────────────────────────────────
+// The pass rule is "the signup journey is proven by provider reads", not "this run holds the seeded
+// password": a `verify` or `handoff` outside the seeding apply must be able to close the handoff.
+// The full status matrix (captcha, 429, no confirmation sent, refused not by `email_not_confirmed`,
+// provider errors, the confirmed login that does or does not work) lives in test/auth-e2e.test.ts.
+
+describe('auth-signup', () => {
+  const EMAIL = 'owner+go-live@example.com';
+  const SEEDED = 'supabase.testUserId';
+
+  /** The provider surface the check reads: a probe signup, its refusal, one seeded admin record. */
+  function authCtx(over: { confirmed?: boolean; gone?: boolean } = {}): Ctx {
+    const auth = fakeAdapter({
+      id: 'supabase',
+      axes: ['auth'],
+      capabilities: {
+        authUsers: {
+          destination: async () => ({ ref: 'abcdefghijklmnopqrst', url: 'https://abcdefghijklmnopqrst.supabase.co' }),
+          signup: async () => ({ status: 200, userId: 'usr_probe', confirmationSent: true, existing: false, rateLimited: false, captchaRequired: false }),
+          // Anything but the seeded address is a probe with a fresh `+gl-…` tag: still unconfirmed.
+          login: async (_c, email) => (email === EMAIL
+            ? { status: 200, rateLimited: false, session: { accessToken: new Secret('SUPABASE_AUTH_TOKEN', 'issued'), userId: 'usr_1', emailConfirmed: true } }
+            : { status: 400, code: 'email_not_confirmed', rateLimited: false }),
+          user: async () => ({ status: 401 }),
+          adminUser: async () => (over.gone === true ? null : { status: 200, id: 'usr_1', email: EMAIL, emailConfirmed: over.confirmed ?? true }),
+          setPassword: async () => {},
+        },
+      },
+    });
+    return testCtx({
+      config: { stack: { auth: 'supabase' }, auth: { e2e: true, testEmail: EMAIL } },
+      state: { version: 1, resources: { [SEEDED]: 'usr_1' }, secrets: {}, steps: {} },
+      adapters: [auth],
+    });
+  }
+
+  it('passes with no password in this run, and says where the confirmed login is exercised', async () => {
+    const r = await run(authSignupCheck, authCtx());
+    expect(r.status).toBe('pass');
+    const text = r.evidence.join('\n');
+    expect(text).toMatch(/confirmation email sent/);
+    expect(text).toMatch(/cannot sign in before confirming \(email_not_confirmed\)/);
+    expect(text).toMatch(/is confirmed \(email_confirmed_at set\)/);
+    expect(text).toMatch(/this run holds no password for the test account: the confirmed login is exercised by the run that seeds or rotates it \(the auth:test-user step\), and `auth-session` proves the session on its own/);
+  });
+
+  it('warns, and keeps the handoff open, while the account is not confirmed', async () => {
+    const r = await run(authSignupCheck, authCtx({ confirmed: false }));
+    expect(r).toMatchObject({ status: 'warn', severity: 'medium' });
+    expect(r.evidence.join('\n')).toMatch(/is not confirmed yet/);
+  });
+
+  it('still fails when the recorded test account is gone from the provider', async () => {
+    const r = await run(authSignupCheck, authCtx({ gone: true }));
+    expect(r).toMatchObject({ status: 'fail', severity: 'high' });
+    expect(r.evidence[0]).toMatch(/is gone from Supabase/);
   });
 });
 

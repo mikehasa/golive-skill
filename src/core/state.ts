@@ -59,3 +59,12 @@ export function memoryStateStore(initial: ShipState = emptyState()): StateStore 
     },
   };
 }
+
+/**
+ * A view that reads state and drops every write. Read-only commands use it: adapters cache ids they
+ * resolve (a zone id, a project ref) through `save`, and a `status` run must leave
+ * `.golive/state.json` exactly as it was. A dropped save is only a cache the next read re-derives.
+ */
+export function readOnlyStateStore(store: StateStore): StateStore {
+  return { get: () => store.get(), resource: (k) => store.resource(k), save: () => {} };
+}

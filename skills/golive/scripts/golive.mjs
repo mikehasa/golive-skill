@@ -10082,6 +10082,10 @@ function fileStateStore(cwd) {
     }
   };
 }
+function readOnlyStateStore(store) {
+  return { get: () => store.get(), resource: (k) => store.resource(k), save: () => {
+  } };
+}
 
 // src/core/context.ts
 init_secret();
@@ -11518,7 +11522,7 @@ function manualAttach(title, domain) {
 }
 
 // src/core/drift.ts
-async function detectDrift(ctx) {
+async function detectDrift(ctx, plan) {
   const at = (/* @__PURE__ */ new Date()).toISOString();
   const read = readOnlyContext(ctx);
   const c = { items: [], verified: [], notChecked: [], limits: [STANDING_LIMIT] };
@@ -11531,7 +11535,7 @@ async function detectDrift(ctx) {
   keyItems(read, c);
   await paymentItems(read, at, c);
   await hostItems(read, at, c);
-  releaseItems(read, at, c);
+  releaseItems(read, at, c, plan);
   const items = c.items.sort((a, b) => RANK2[a.severity] - RANK2[b.severity] || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const count = (s) => items.filter((i) => i.severity === s).length;
   return {
@@ -11558,10 +11562,7 @@ var STANDING_LIMIT = "status compares only what golive recorded (state, provider
 var ENV_VALUE_LIMIT = "env values are not compared: golive stores a fingerprint, and a host that hides sensitive values answers a read with the name alone. A value rotated or replaced outside golive is invisible here.";
 var KEY_READ_LIMIT = "no read exposes whether a sending key golive issued was revoked outside golive: issuing and revoking are the only capabilities a provider gives golive (see `golive teardown`).";
 function readOnlyContext(ctx) {
-  const state = ctx.state;
-  const unchanging = { get: () => state.get(), resource: (k) => state.resource(k), save: () => {
-  } };
-  return { ...ctx, state: unchanging };
+  return { ...ctx, state: readOnlyStateStore(ctx.state) };
 }
 function once(ctx, key, read) {
   const k = `drift:${key}`;
@@ -12532,7 +12533,7 @@ async function hostItems(ctx, at, c) {
     });
   }
 }
-function releaseItems(ctx, at, c) {
+function releaseItems(ctx, at, c, plan) {
   const pending = pendingRedeploy(ctx);
   if (pending) {
     c.items.push({
@@ -12550,19 +12551,48 @@ function releaseItems(ctx, at, c) {
   }
   for (const [id2, rec] of Object.entries(ctx.state.get().steps).sort(([a], [b]) => a < b ? -1 : 1)) {
     if (rec.status !== "failed") continue;
-    c.items.push({
-      id: `release:step:${id2}`,
-      class: "release-state",
-      subject: `step ${id2}`,
-      expected: label(`${id2} completed`, { source: "step-evidence", at: rec.at, ref: id2 }),
-      observed: seen(`the last run failed${rec.error ? `: ${rec.error}` : ""}`, at),
-      baseline: { source: "step-evidence", at: rec.at, ref: id2 },
-      severity: "medium",
-      action: "verify",
-      evidence: [`state records a failed ${id2} from ${rec.at}${rec.planId ? ` (plan ${rec.planId})` : ""}`, "a failed step stops the run: everything after it never ran"],
-      suggestedAction: "Fix the cause, then re-run `golive apply --plan <planId>` (completed steps are skipped) or `golive plan` if the intent changed."
-    });
+    c.items.push(failedStepItem(ctx, at, id2, rec, plan));
   }
+}
+var releaseName = (release) => release ? `${release.version}${release.source.ref ? ` ${release.source.ref}` : ""} (bundle ${release.bundleDigest.slice(0, 8)})` : "an unknown release (state written before golive recorded release identities)";
+var resumableNote = (step2) => {
+  if (!step2) return null;
+  if (step2.risk.destroy) return "this is a destruction step: a deletion re-checks ownership and is idempotent, so a newer release resumes it";
+  if (step2.risk.replayable) return "the step declares its write safe to replay under a newer release (`risk.replayable`)";
+  if (!step2.risk.writes) return "the step writes nothing, so there is no historical write to replay";
+  return null;
+};
+function failedStepItem(ctx, at, id2, rec, plan) {
+  const item = {
+    id: `release:step:${id2}`,
+    class: "release-state",
+    subject: `step ${id2}`,
+    expected: label(`${id2} completed`, { source: "step-evidence", at: rec.at, ref: id2 }),
+    observed: seen(`the last run failed${rec.error ? `: ${rec.error}` : ""}`, at),
+    baseline: { source: "step-evidence", at: rec.at, ref: id2 },
+    severity: "medium"
+  };
+  const evidence = [
+    `state records a failed ${id2} from ${rec.at}${rec.planId ? ` (plan ${rec.planId})` : ""}`,
+    "a failed step stops the run: everything after it never ran"
+  ];
+  const resumeAdvice = "Fix the cause, then re-run `golive apply --plan <planId>` (completed steps are skipped) or `golive plan` if the intent changed.";
+  if (sameRelease(rec.release, ctx.release)) return { ...item, action: "verify", evidence, suggestedAction: resumeAdvice };
+  const observed = plan !== void 0 && plan !== null;
+  const step2 = observed ? plan.steps.find((s) => s.id === id2) : void 0;
+  const resumable = resumableNote(step2);
+  if (resumable) return { ...item, action: "verify", evidence: [...evidence, resumable], suggestedAction: resumeAdvice };
+  evidence.push(`the failed record was written by release ${releaseName(rec.release)}, while this runtime is release ${releaseName(ctx.release)}: such a write is not replayed automatically`);
+  if (!observed) evidence.push("golive could not observe the current plan in this run, so whether the step declares itself replayable is unknown");
+  else if (step2) evidence.push(`${id2} is a write that declares neither \`risk.replayable\` nor \`destroy\`, so the cross-release guard refuses it`);
+  else evidence.push(`the current plan does not carry ${id2}, so there is nothing to re-run automatically`);
+  evidence.push("a historical write needs the reviewed reconciliation path: inspect what it did at the provider, then prepare a recovery with the human");
+  return {
+    ...item,
+    action: "human",
+    evidence,
+    suggestedAction: "Re-running `apply` cannot replay this step automatically. Inspect the provider for what it actually did, then prepare a separately reviewed recovery \u2014 the release and updates guidance (`references/updates.md`) describes that path; do not delete state or force a replay."
+  };
 }
 
 // src/core/runner.ts
@@ -18362,10 +18392,9 @@ var authSignupCheck = {
     evidence.push(`the test account ${seededEmail} is confirmed (email_confirmed_at set)`);
     const seededPass = vaultGet(testUserPassKey(seeded));
     if (!seededPass) {
-      return result("skip", "info", [
-        "blocked by: no password for the test account in this run (only the run that seeds or rotates it keeps one, in memory)",
-        ...evidence
-      ]);
+      evidence.push(`this run holds no password for the test account: the confirmed login is exercised by the run that seeds or rotates it (the auth:test-user step), and \`auth-session\` proves the session on its own`);
+      evidence.push("delivery itself stays human-confirmed: golive never sees the inbox, only the provider's own confirmation state");
+      return pass(evidence);
     }
     let login2;
     try {
@@ -20711,7 +20740,9 @@ async function main(argv) {
       return report.summary.fail === 0 ? 0 : 2;
     }
     case "status": {
-      const drift = await detectDrift(ctx);
+      const failed = Object.values(ctx.state.get().steps).some((r) => r.status === "failed");
+      const plan = failed ? await buildPlan({ ...ctx, state: readOnlyStateStore(ctx.state) }, linkList(), { unmappedEnv: env.unmapped, warnings: [] }).catch(() => null) : null;
+      const drift = await detectDrift(ctx, plan);
       const actionable = drift.items.filter((i) => i.action !== "none");
       const note = drift.notChecked.length ? `${drift.notChecked.length} subject(s) could not be compared this run (see notChecked): golive did not read them, so this is not a clean bill of health` : void 0;
       emit({ ok: actionable.length === 0, ...drift, ...note ? { note } : {} }, { json: json2 });
