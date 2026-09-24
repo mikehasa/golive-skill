@@ -142,10 +142,10 @@ async function auth(ctx: Ctx): Promise<AuthStatus> {
       if (restricted) {
         return {
           ok: false,
-          howToFix: `The ${m}-mode restricted key in ${source} cannot read its account. Account: Read is required to bind payment writes to the account the human approves; webhook access alone is insufficient. In Dashboard → Developers → API keys, grant it ${RESTRICTED_KEY_PERMS}, or use the standard secret key instead. ${tokenHowTo(source)}`,
+          howToFix: `The ${m}-mode restricted key in ${source} cannot read its account. Account: Read is required to bind payment writes to the account the human approves; webhook access alone is insufficient. On the Stripe Dashboard's API keys page, grant it ${RESTRICTED_KEY_PERMS}, or use the standard secret key instead. ${tokenHowTo(source)}`,
         };
       }
-      return { ok: false, howToFix: `Stripe refused the ${m}-mode key in ${source} (HTTP 403 reading the account). Check in Dashboard → Developers → API keys that it is a current key for an active account. ${tokenHowTo(source)}` };
+      return { ok: false, howToFix: `Stripe refused the ${m}-mode key in ${source} (HTTP 403 reading the account). Check on the Stripe Dashboard's API keys page that it is a current key for an active account. ${tokenHowTo(source)}` };
     }
     if (res.status !== 200) {
       return { ok: false, howToFix: `Could not reach Stripe with the ${m}-mode key in ${source} (HTTP ${res.status}). Check your network and https://status.stripe.com, then re-run.` };
@@ -287,7 +287,7 @@ function limitError(mode: Mode, all: Endpoint[]): Error {
   const ours = all.filter(isGolive).length;
   return new Error(
     `Stripe allows at most ${MAX_ENDPOINTS_PER_MODE} webhook endpoints per mode and the ${mode}-mode account already has ${all.length}` +
-      ` (${ours} created by golive). Delete unused ones in Stripe Dashboard → Developers → Webhooks${ours ? ' (stale golive ones are tagged managed_by=golive)' : ''}, then re-run.`,
+      ` (${ours} created by golive). Delete unused ones in the Webhooks tab in Workbench${ours ? ' (stale golive ones are tagged managed_by=golive)' : ''}, then re-run.`,
   );
 }
 
@@ -318,7 +318,7 @@ async function createEndpoint(ctx: Ctx, mode: Mode, url: string, events: string[
     const res = await stripeCall<RawEndpoint>(ctx, mode, { method: 'POST', path: '/v1/webhook_endpoints', form, idempotencyKey, what });
     const id = res.json?.id;
     const raw = res.json?.secret;
-    if (!id) throw new Error(`${what}: Stripe returned no endpoint id; check Dashboard → Developers → Webhooks before re-running`);
+    if (!id) throw new Error(`${what}: Stripe returned no endpoint id; check the Webhooks tab in Workbench before re-running`);
     if (typeof raw !== 'string' || !raw) {
       throw new Error(`${what}: endpoint ${id} was created but Stripe returned no signing secret; re-run so golive replaces it`);
     }
@@ -407,12 +407,12 @@ async function replace(ctx: Ctx, id: string, mode: Mode, opts: { deleteOld?: boo
       oldDeleted = true;
     } catch (e) {
       oldLeft = `delete failed: ${e instanceof Error ? e.message : String(e)}`;
-      ctx.log.warn(`could not delete old Stripe webhook endpoint ${old.id} (${e instanceof Error ? e.message : String(e)}); delete it in Dashboard → Developers → Webhooks.`);
+      ctx.log.warn(`could not delete old Stripe webhook endpoint ${old.id} (${e instanceof Error ? e.message : String(e)}); delete it in the Webhooks tab in Workbench.`);
     }
   } else {
     oldLeft = 'not created by golive';
     ctx.log.warn(
-      `left Stripe ${mode}-mode webhook endpoint ${old.id} in place because golive did not create it; once the new endpoint ${created.id} works, delete ${old.id} in Dashboard → Developers → Webhooks (until then Stripe delivers events to both).`,
+      `left Stripe ${mode}-mode webhook endpoint ${old.id} in place because golive did not create it; once the new endpoint ${created.id} works, delete ${old.id} in the Webhooks tab in Workbench (until then Stripe delivers events to both).`,
     );
   }
   return { id: created.id, created: true, secret: created.secret, oldDeleted, ...(oldLeft ? { oldLeft } : {}) };

@@ -445,13 +445,34 @@ describe('webhook-unsigned', () => {
     return { r, calls };
   };
 
-  it('passes on 400/401/403 and sends only {} with no signature', async () => {
-    for (const s of [400, 401, 403]) {
-      const { r, calls } = await withStatus(s, '{"error":"bad sig"}');
-      expect(r.status).toBe('pass');
-      expect(calls[0]!.body).toEqual({});
-      expect(calls[0]!.headers['stripe-signature']).toBeUndefined();
+  it('passes on a non-HTML 400 and sends only {} with no signature', async () => {
+    const { r, calls } = await withStatus(400, '{"error":"bad sig"}');
+    expect(r.status).toBe('pass');
+    expect(calls[0]!.body).toEqual({});
+    expect(calls[0]!.headers['stripe-signature']).toBeUndefined();
+  });
+
+  it('warns (high) on a JSON 401/403: an auth wall and a signature rejection are indistinguishable', async () => {
+    for (const s of [401, 403]) {
+      const { r } = await withStatus(s, '{"error":"unauthorized"}');
+      expect(r.status).toBe('warn');
+      expect(r.severity).toBe('high');
+      const ev = r.evidence.join('\n');
+      expect(ev).toMatch(/may be your handler/);
+      expect(ev).toMatch(/auth wall/);
+      // (a) prove Stripe can reach the route and the handler answers 400 — Stripe counts 401/403 as
+      // failed deliveries, which is why this can't pass; (b) the warning is benign if 403 is deliberate.
+      expect(r.fix).toMatch(/verify_jwt = false/);
+      expect(r.fix).toMatch(/returns 400/);
+      expect(r.fix).toMatch(/failed deliveries/);
+      expect(r.fix).toMatch(/intentionally returns 403.*expected/);
     }
+  });
+
+  it('warns (medium) when the probe is rate-limited', async () => {
+    const { r } = await withStatus(429);
+    expect(r.status).toBe('warn');
+    expect(r.severity).toBe('medium');
   });
 
   it.each([
@@ -472,8 +493,13 @@ describe('webhook-unsigned', () => {
     expect((await withStatus(502)).r.fix).toMatch(/Verify the Stripe signature first/);
   });
 
-  it('warns when a 401 is an HTML auth wall, not the handler', async () => {
-    expect((await withStatus(401, '<!doctype html><html>Authentication Required</html>')).r.status).toBe('warn');
+  it('warns (medium) when a 401/403 is an HTML auth wall, not the handler', async () => {
+    for (const s of [401, 403]) {
+      const { r } = await withStatus(s, '<!doctype html><html>Authentication Required</html>');
+      expect(r.status).toBe('warn');
+      expect(r.severity).toBe('medium');
+      expect(r.evidence.join('\n')).toMatch(/HTML page/);
+    }
   });
 
   it('POSTs to the host-confirmed custom domain, and skips without a URL', async () => {

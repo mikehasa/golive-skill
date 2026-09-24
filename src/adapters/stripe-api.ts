@@ -80,7 +80,7 @@ export function lookupAppKey(ctx: Ctx, mode: Mode): KeyLookup & { restrictedOper
 /** Where to get the app's own (standard) key to golive, for a handoff. Never asks for it in chat. */
 export function appKeyHowToFix(mode: Mode): string {
   const name = APP_KEY_ENV[mode];
-  return `Copy the ${mode}-mode standard secret key (sk_${mode}_…) from Stripe Dashboard → Developers → API keys. ${tokenHowTo(name)} golive then puts it into the app's STRIPE_SECRET_KEY for you; or add the app's key to the host yourself straight from the Stripe dashboard.`;
+  return `Copy the ${mode}-mode standard secret key (sk_${mode}_…) from the Stripe Dashboard's API keys page (dashboard.stripe.com/apikeys). ${tokenHowTo(name)} golive then puts it into the app's STRIPE_SECRET_KEY for you; or add the app's key to the host yourself straight from the Stripe dashboard.`;
 }
 
 /** The OPERATOR secret key for `mode`, or undefined if the human hasn't provided one. */
@@ -97,7 +97,7 @@ export function keyHowToFix(modes: Mode[]): string {
   const appVars = modes.map((m) => APP_KEY_ENV[m]).join(' / ');
   return [
     `Stripe needs a secret key for ${modes.join(' and ')} mode (Stripe has no API that can hand golive a key).`,
-    `In the Stripe Dashboard → Developers → API keys, copy the ${modes.join('/')} standard secret key (sk_…), or create a restricted key (rk_…) with ${RESTRICTED_KEY_PERMS}.`,
+    `In the Stripe Dashboard's API keys page (dashboard.stripe.com/apikeys), copy the ${modes.join('/')} standard secret key (sk_…), or create a restricted key (rk_…) with ${RESTRICTED_KEY_PERMS}.`,
     `A standard key is also what golive puts into your app's STRIPE_SECRET_KEY; a restricted key is used only by golive itself and is never copied into the app (then also add a standard key as ${appVars}, or set the app's key on the host yourself).`,
     tokenHowTo(first) + (vars.length > 1 ? ` Add ${vars.slice(1).join(', ')} the same way.` : ''),
   ].join(' ');
@@ -164,9 +164,9 @@ export function stripeError(res: HttpResponse<unknown>, what: string, mode: Mode
   const detail = e.message ? `: ${e.message}` : '';
   let msg: string;
   if (res.status === 401) {
-    msg = `${what} failed: Stripe rejected the ${mode}-mode key in ${keySource} (invalid, expired or revoked). Copy a current key from Dashboard → Developers → API keys. ${tokenHowTo(keySource)}`;
+    msg = `${what} failed: Stripe rejected the ${mode}-mode key in ${keySource} (invalid, expired or revoked). Copy a current key from the Stripe Dashboard's API keys page. ${tokenHowTo(keySource)}`;
   } else if (res.status === 403) {
-    msg = `${what} failed: the ${mode}-mode key in ${keySource} lacks permission${detail}. If it is a restricted key, grant it ${RESTRICTED_KEY_PERMS} in Dashboard → Developers → API keys (or use the standard secret key).`;
+    msg = `${what} failed: the ${mode}-mode key in ${keySource} lacks permission${detail}. If it is a restricted key, grant it ${RESTRICTED_KEY_PERMS} on the key in the Stripe Dashboard's API keys page (or use the standard secret key).`;
   } else if (res.status === 404) {
     msg = `${what} failed: not found in ${mode} mode${detail}.`;
   } else if (res.status === 429) {

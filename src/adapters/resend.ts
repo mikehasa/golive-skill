@@ -11,6 +11,9 @@ import { normalizeRecords, type ResendRecord } from './resend-records.js';
  *   - the official `resend` CLI when the human is logged in (`resend login`, browser OAuth; nothing pasted)
  *   - REST with a full-access RESEND_API_KEY (environment or the golive credentials file)
  * Every REST call sends a User-Agent (Resend answers 403/1010 without one).
+ * Both transports create a sending domain with open/click tracking off: REST in the create body, the CLI
+ * with a follow-up `domains update <id> --no-open-tracking --no-click-tracking` (`domains create` has no
+ * tracking flags).
  */
 
 const API = 'https://api.resend.com';
@@ -185,7 +188,15 @@ function cliTransport(ctx: Ctx, profile: string | undefined): Transport {
   return {
     via: `resend CLI (logged in${profile ? `, profile ${profile}` : ''})`,
     listDomains: async () => listOf<DomainSummary>(await cli(ctx, ['domains', 'list'])),
-    createDomain: async (name, region) => cli<DomainSummary>(ctx, ['domains', 'create', '--name', name, '--region', region]),
+    createDomain: async (name, region) => {
+      const created = await cli<DomainSummary>(ctx, ['domains', 'create', '--name', name, '--region', region]);
+      // `domains create` has no tracking flags, so a CLI-created domain can come back with open/click
+      // tracking ON — links get rewritten (fatal for magic links) and a Tracking CNAME joins the record
+      // set. One follow-up update turns both off, matching what the REST transport sends on create.
+      // Without an id the update would target nothing: leave it to ensure()'s own "no domain id" error.
+      if (created?.id) await cli(ctx, ['domains', 'update', created.id, '--no-open-tracking', '--no-click-tracking']);
+      return created;
+    },
     getDomain: async (id) => cli<DomainFull>(ctx, ['domains', 'get', id]),
     verifyDomain: async (id) => {
       await cli(ctx, ['domains', 'verify', id]);

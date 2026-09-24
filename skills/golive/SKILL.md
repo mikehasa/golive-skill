@@ -256,7 +256,7 @@ Check scope:
 | `rls-probe` | tables not readable with the public key |
 | `db-connection` | selected Neon database and role accept a fixed read-only query; does not verify migrations, deployed app access or user isolation |
 | `auth-redirects` | auth site URL / redirect allowlist point at production |
-| `webhook-unsigned` | the production webhook rejects unsigned POSTs |
+| `webhook-unsigned` | the production webhook rejects unsigned POSTs (a non-HTML 401/403 only warns: it may be an auth wall) |
 | `webhook-registered` | the endpoint exists, enabled, for the right URL and events |
 | `stripe-live-ready` | the Stripe account can take live payments |
 | `email-dns` | the sending domain's SPF/DKIM/DMARC records are published |

@@ -1221,7 +1221,7 @@ describe('guided host + automated payments (#14)', () => {
     const plan = await build(ctx);
     const h = plan.handoffs.find((x) => x.id === 'fakepay:webhook-guided')!;
     expect(h).toMatchObject({ blocking: true, verifiedBy: 'webhook-registered' });
-    expect(h.action).toMatch(/Developers → Webhooks, live mode\), the human adds an endpoint at https:\/\/example\.com\/api\/webhooks\/stripe for these events: checkout\.session\.completed/);
+    expect(h.action).toMatch(/Webhooks tab in Workbench, live mode\), the human adds an endpoint at https:\/\/example\.com\/api\/webhooks\/stripe for these events: checkout\.session\.completed/);
     expect(h.action).toMatch(/into FakeGuided's Production env as STRIPE_WEBHOOK_SECRET, never through this chat/);
     expect(ids(plan).filter((i) => i.startsWith('payments:'))).toEqual([]);
 

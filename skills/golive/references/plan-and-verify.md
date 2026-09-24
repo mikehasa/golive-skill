@@ -157,7 +157,7 @@ does resolve and GET `config.domain`.
 | `rls-probe` | tables in exposed schemas aren't readable with the publishable key; advisors clean | `blocked by: project:db`; no publishable/anon key |
 | `db-connection` | the selected Neon compute accepts a fixed read-only query and returns the expected database and role; no schema/Auth/app-isolation claim | no connection-probe capability; `blocked by: login:<db>` / `project:db` |
 | `auth-redirects` | site URL and allowlist point at production, no localhost | guided auth; `blocked by: deploy:production` |
-| `webhook-unsigned` | an unsigned POST gets 4xx from the handler | production URL not confirmed |
+| `webhook-unsigned` | an unsigned POST gets 4xx from the handler (a non-HTML 401/403 only warns — ambiguous between a rejection and an auth wall) | production URL not confirmed |
 | `webhook-registered` | an enabled endpoint for the production URL covers the configured events | guided payments; no production URL |
 | `stripe-live-ready` | the account has `charges_enabled` | production isn't live mode |
 | `email-dns` | the provider's listed records (or common locations) and DMARC are in public DNS | no sending domain |
