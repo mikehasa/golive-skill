@@ -282,6 +282,30 @@ Finish with a short summary: the live URL, what passed, what is still open (`han
 every `done: null` / skipped item named as not verified by golive. Say who owns each remaining item —
 the human's login, purchase or dashboard step, a recurring job, or golive's own next run.
 
+### 7. Status: has anything changed behind golive's back? `status --json`
+
+Run this once the app is live: **before a release**, and **after a run that changed providers or
+settings**. It compares what golive recorded (the DNS records it wrote, the env names it delivered,
+the webhook endpoint, the domain attachment, the db project and its connection selectors, the sending
+domain, the payment account, the host project, unfinished release state) with reads taken now. It
+writes nothing — no report, no state, no provider write — and exits `2` when any item has an
+`action` other than `none`.
+
+- Every item is labelled: `expected` is *recorded by golive <time>*, `observed` is *read now*. Report
+  both, in the human's language, with the `subject`.
+- `action: verify` → re-establish it with that item's `checkId` (`verify --only <checkId>`);
+  `reconcile` → `plan`, get approval, `apply` (DNS needs `--confirm-dns`); `human` → only the human can
+  decide (an account switch, a project that cannot be read).
+- `medium` and `info` items often say the change **may be intentional**: ask the human instead of
+  reporting a fault. `info` + `action: none` is nothing to act on (e.g. DNS still inside the
+  propagation window).
+- `unverifiable: true`, and every `notChecked` entry, means golive could **not read** that subject:
+  say so plainly and never present it as clean. `verified` lists what was read and found unchanged —
+  the only thing a "nothing changed" statement may cover.
+- **Never use `status` as a gate.** Do not block `plan`, `apply` or a release on it, and never
+  re-baseline anything by hand: only an approved write moves a baseline. Drift is a review list for
+  the human, not a decision the agent may take for them.
+
 For the durable ownership record, run `handoff --write --json` (add `--force` only when the human
 agrees to replace a file golive did not generate). It writes `GOLIVE_HANDOVER.md` and
 `.golive/handover.json`: the accounts and login route, every resource golive provably created with the
@@ -289,7 +313,8 @@ proof it is golive's, what is still manual, what recurs (DMARC tightening, key r
 domain renewal), how removal works, and the commands that re-check each subject. Every row is tagged
 `[verified by golive]`, `[recorded <date>, not re-checked]`, `[not verifiable by golive]` or
 `[unknown]` — treat the last three as unverified, and never present the document as drift detection,
-because nothing was re-checked unless its row says so. It contains no secret values, but it names
+because nothing was re-checked unless its row says so (use `status` to re-check those subjects). It
+contains no secret values, but it names
 accounts and resources: tell the human to review it before sharing it. The CLI's report is
 `GOLIVE_REPORT.md`; `HANDOFF.local.md` is unrelated private local notes that golive never reads or
 writes.
@@ -297,7 +322,7 @@ writes.
 ## More detail (load only what you need)
 
 - `references/plan-and-verify.md`: detect findings, plan steps and ordering, handoffs, what each
-  check needs and why it skips.
+  check needs and why it skips, and what `status` compares.
 - `references/guided.md`: when the chosen provider isn't automated.
 - `references/troubleshooting.md`: setup failures, CLI/PATH mismatches and resuming after a repair.
 - `references/<provider>.md`: `vercel`, `netlify`, `supabase`, `neon`, `stripe`, `resend`, `cloudflare-dns`, `godaddy`, `porkbun`.

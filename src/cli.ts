@@ -20,6 +20,7 @@ import { createCtx } from './core/context.js';
 import { mapEnv } from './core/envmap.js';
 import { buildPlan, planView } from './core/plan.js';
 import { approvedPlan, buildTeardownPlan } from './core/teardown.js';
+import { detectDrift } from './core/drift.js';
 import { applyPlan, runCheck, PlanMismatchError } from './core/runner.js';
 import { credentialsStatus, setupCredentials } from './core/credentials.js';
 import { promptCredential } from './core/credential-prompt.js';
@@ -74,6 +75,8 @@ Commands (add --json for machine output; --cwd <dir> to target another repo):
   apply --plan <id> --yes    Execute the approved plan. Risky steps also need --confirm-live /
         [--confirm-live] [--confirm-dns] [--confirm-destroy] [--only id,id] [--force]
   verify [--only id,id]      Run live checks; writes .golive/report.json and GOLIVE_REPORT.md.
+  status                     Has anything changed behind golive's back? Recorded baselines vs reads
+                             taken now (read-only, writes no file). Exit 2 = something to act on.
   handoff                    What only the human can do (logins, KYC, payments), and whether it's done.
        [--write] [--force]   --write also writes .golive/handover.json and GOLIVE_HANDOVER.md (the
                              ownership/renewal document); --force replaces files golive did not write.
@@ -223,6 +226,16 @@ async function main(argv: string[]): Promise<number> {
       writeFileSync(reportPaths.markdown, renderReport(report));
       emit({ ok: report.summary.fail === 0, report, reportPaths }, { json });
       return report.summary.fail === 0 ? 0 : 2;
+    }
+    case 'status': {
+      // Read-only: no report or state file, no provider write. Drift is never a gate on plan/apply.
+      const drift = await detectDrift(ctx);
+      const actionable = drift.items.filter((i) => i.action !== 'none');
+      const note = drift.notChecked.length
+        ? `${drift.notChecked.length} subject(s) could not be compared this run (see notChecked): golive did not read them, so this is not a clean bill of health`
+        : undefined;
+      emit({ ok: actionable.length === 0, ...drift, ...(note ? { note } : {}) }, { json });
+      return actionable.length ? 2 : 0;
     }
     case 'handoff': {
       const plan = await buildPlan(ctx, linkList(), { unmappedEnv: env.unmapped, warnings: [] });

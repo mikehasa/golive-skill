@@ -1,7 +1,7 @@
 # Detect, plan, apply, verify: details
 
-Load this when you need to explain a detect finding, a plan step, a handoff, or why a check skipped.
-Provider-specific notes live in the other references.
+Load this when you need to explain a detect finding, a plan step, a handoff, why a check skipped, or
+what a `status` drift item means. Provider-specific notes live in the other references.
 
 ## 1. Detect
 
@@ -211,3 +211,35 @@ Details that trip people up:
   not write DMARC. Without that list it uses each provider's usual layout: a missing SPF fails only
   for Resend's `send.<domain>`; Postmark / SES DKIM selectors can't be found over DNS, so not finding
   one is a low warning (confirm DKIM in the provider dashboard). Details in `guided.md`.
+
+## 5. Status (drift): what changed behind golive's back
+
+`status --json` is the only command that asks whether the world still matches what golive **recorded**
+— which is why no check can answer it: a check's report is release evidence for this invocation, while
+drift needs the recorded side (state resources and step evidence, or a marker the provider assigned).
+Run it once the app is live, before a release and after a run that changed providers or settings. It
+writes nothing: no report, no state change, no provider write, and exit `2` means at least one item has
+an `action` other than `none`.
+
+Each item pairs `expected (recorded by golive <time>)` with `observed (read now)` and says who can act:
+`verify` (re-run the named `checkId`), `reconcile` (an approved `plan` → `apply` restores it; DNS steps
+still need `--confirm-dns`) or `human` (only the human decides, e.g. the credential now reads a
+different account, or a project cannot be read at all). Severity: `high` = the app is broken (a record
+deleted, an endpoint gone, a domain detached, a project unreadable); `medium` = hygiene or teardown
+safety, or a change that may be deliberate; `info` = nothing to act on. Subjects: DNS records golive
+wrote (checked against the zone, and against public DNS only while the zone still matches the baseline
+— a record written inside the propagation window may legitimately differ publicly and is `info`), public
+name-server delegation, golive-managed env **names** (never values: hosts hide sensitive values and
+golive stores fingerprints, so a rotated value is outside the comparison), the recorded webhook endpoint
+(gone, disabled, or missing events; a replacement at the same URL names the now-stale signing secret),
+the domain attachment plus the records the host now requires, the db project and its
+branch/database/role selectors, the sending domain, issued sending keys (no provider read exists, so
+they are reported as unverifiable rather than checked off), the payment account and mode behind the
+app's keys (a 403 is unverifiable, never drift), the host project identity and its creation marker, and
+unfinished release state (a production env write no deploy picked up, a failed step).
+
+A provider that cannot be read yields `unverifiable: true` with `action: 'none'` and appears in
+`notChecked`: never drift, and never "clean". `verified` lists the subjects read and found unchanged —
+the only thing a "nothing changed" statement may cover; `limits` names what this comparison can never
+see. Drift is never a gate: `plan` and `apply` do not consult it, and nothing is re-baselined except by
+an approved write.

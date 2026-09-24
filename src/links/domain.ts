@@ -1,6 +1,7 @@
 import type { Link } from '../core/plan.js';
 import type { Adapter, CheckResult, Ctx, DnsRecord, DnsZone, DomainAttach, HandoffItem, Step } from '../core/types.js';
 import { normalizeTxt } from '../core/doh.js';
+import { rememberDnsWrite } from '../core/dns-baseline.js';
 import { axisStatus, deps, errMsg, intentOf, projectIntent, step, track } from './util.js';
 import { dnsFor, formatRecord } from './email.js';
 
@@ -77,7 +78,7 @@ const sameRecords = (a: DnsRecord[], b: DnsRecord[]): boolean => {
 const spfTerms = (c: string): string[] => c.split(/\s+/).filter((t) => t && t !== 'v=spf1' && !/^[-~?+]?all$/.test(t));
 
 /** Does the zone record `have` satisfy `want`? (DNS providers quote TXT, add dots, merge SPF.) */
-function satisfies(have: DnsRecord, want: DnsRecord): boolean {
+export function satisfies(have: DnsRecord, want: DnsRecord): boolean {
   if (have.type !== want.type || normName(have.name) !== normName(want.name)) return false;
   const h = normContent(have);
   const w = normContent(want);
@@ -112,7 +113,11 @@ function dnsStep(ctx: Ctx, adapter: Adapter, attach: DomainAttach, domain: strin
         );
       }
       const changes: string[] = [];
-      for (const rec of records) changes.push(`${await zone.upsert(sctx, domain, { ...rec, proxied: false })}: ${formatRecord(rec)}`);
+      for (const rec of records) {
+        const outcome = await zone.upsert(sctx, domain, { ...rec, proxied: false });
+        rememberDnsWrite(sctx, domain, dnsAdapter.id, rec, outcome); // what drift compares against later
+        changes.push(`${outcome}: ${formatRecord(rec)}`);
+      }
       wrote = records;
       return { changes };
     },

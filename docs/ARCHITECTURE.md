@@ -17,7 +17,33 @@ plan of resources golive provably created. `apply` requires the approved plan id
 risk confirmations. `verify` produces check evidence; `handoff` lists what remains outside
 automation, and `handoff --write` adds the ownership document (`GOLIVE_HANDOVER.md` and
 `.golive/handover.json`) from recorded state, cheap provider reads and the same inventory teardown
-uses. Guided or skipped work is not treated as verified success.
+uses. Guided or skipped work is not treated as verified success. `status` answers a different
+question — what changed behind golive's back since it recorded what it did — by comparing recorded
+baselines with reads taken now, and writes nothing.
+
+## Drift, checks and the recorded baseline
+
+A check proves that something holds now, and its report is release evidence. Drift asks whether the
+world still matches what golive recorded, which needs the recorded side: `.golive/state.json` (the DNS
+record baselines golive wrote, env names and fingerprints, resource ids and markers, step evidence) or
+a marker the provider itself assigned. `golive status` runs those comparisons read-only: no report
+file, no provider write, no state change, no billing endpoint.
+
+Every item pairs `expected (recorded by golive <time>)` with `observed (read now)`. Severity says what
+a difference means: high = the app is broken (a record deleted, an endpoint gone, a domain detached, a
+project unreadable); medium = hygiene or teardown safety, or a change that may be deliberate and is
+worded that way; info = nothing to act on (still propagating). `action` says who can act: `none`,
+`verify` (an existing check re-establishes the fact), `reconcile` (an approved `plan` then `apply`
+restores it, possibly needing `--confirm-dns`), or `human`. A provider that cannot be read yields
+`unverifiable: true` with `action: 'none'` and is listed in `notChecked` — never drift, and never
+reported as clean. Nothing is re-baselined silently: only a new approved write moves a baseline.
+
+Drift is deliberately not a gate. `plan`, `apply` and `verify` never consult it, because a comparison
+that needs an unapproved decision would deadlock a legitimate intent. A freshly written DNS record may
+legitimately differ from public DNS for minutes, so the checks' existing propagation window governs it:
+a public difference inside that window is `info`, and public DNS is only compared when the zone itself
+still matches the baseline. `handoff --write` records what golive created; `status` re-checks it, and
+neither claims the other's coverage.
 
 ## Adapters, capabilities and links
 
@@ -29,6 +55,7 @@ hosting URL → auth redirects. A new adapter does not need a separate recipe fo
 | Source | Responsibility |
 | --- | --- |
 | `src/core/types.ts` | Adapter, capability, step, plan, state and report contracts |
+| `src/core/drift.ts` | Recorded baselines vs reads taken now: the `status` model and its comparisons (read-only) |
 | `src/adapters/` | Provider transport, observation and operations |
 | `src/links/` | Destination selection and approved cross-provider changes |
 | `src/checks/` | Verification with explicit pass/fail/warn/skip outcomes |
@@ -87,8 +114,10 @@ checks against the configured domain; that does not authorize active app probes 
 ## Local files and releases
 
 `golive.yaml` holds provider choices and non-secret configuration. `.golive/state.json` holds
-resource IDs, fingerprints and step evidence. `.golive/report.json` and `GOLIVE_REPORT.md` hold
-verification results and outstanding work. `.golive/handover.json` and `GOLIVE_HANDOVER.md` hold the
+resource IDs, fingerprints and step evidence, including one machine-readable baseline per DNS record
+golive wrote under the documented key `dns:<zone>|<type>|<name>` (record values are public DNS data,
+never credentials). `.golive/report.json` and `GOLIVE_REPORT.md` hold verification results and
+outstanding work. `.golive/handover.json` and `GOLIVE_HANDOVER.md` hold the
 ownership document: what golive provably created, the accounts and login route, what is manual, what
 recurs and how removal works, each row tagged by how it was checked. Review these files before
 sharing them: secret-free metadata can still identify private resources. They are not credentials or
