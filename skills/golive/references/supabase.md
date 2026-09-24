@@ -52,8 +52,8 @@ the [current Supabase UI labels](https://supabase.com/docs/guides/platform/perso
 |---|---|
 | Project details + health | Project Settings: Read |
 | Reveal API keys | API Keys + API Key Secrets: Read |
-| Inspect auth | Auth Config: Read |
-| Set site URL / redirects | Auth Config + Project Settings: Read-write |
+| Inspect auth (site URL, redirects, policy) | Auth Config: Read |
+| Set site URL / redirects / policy | Auth Config + Project Settings: Read-write |
 | Read Data API schemas | Data API Config: Read |
 | RLS SQL check | Database: Read |
 | Security advisors | Advisors: Read |
@@ -123,8 +123,16 @@ golive automates (after plan approval):
   update (not `supabase config push`). Preview-deployment wildcards are added only with
   `auth.previewRedirects: true` in `golive.yaml` (flagged as a risk: it widens the production
   allowlist). Otherwise `plan` warns that sign-in on preview URLs won't work.
+- Sets the auth **policy** from `auth` in `golive.yaml` — `signup`, `requireEmailConfirm`,
+  `passwordMinLength` — in the separate `auth:settings` step (so a policy change doesn't re-run the
+  redirect work). It writes only the values that differ, then re-reads them: the step's changes show
+  `before → after`, the `auth:settings:applied` result confirms them, and anything the API does not
+  report back appears as `not confirmed:` instead of a silent success. Only the settings this API is
+  known to return are ever read or written; `smtp_pass` is write-only (the API answers a hash), so an
+  SMTP write can never be confirmed from the read-back.
 - Verifies: `rls-probe` (tables not readable with the public key, plus security advisors, read-only),
-  `auth-redirects` (production URLs, no `localhost`), `env-parity` (names on the host).
+  `auth-redirects` (production URLs, no `localhost`), `auth-policy` (signup/confirmation/password
+  policy and the mailer, with the effective values as evidence), `env-parity` (names on the host).
 
 Stays with the human (and why):
 - **The database password of an existing project.** Supabase only reveals it at creation, so a
@@ -136,6 +144,9 @@ Stays with the human (and why):
   golive never write-probes production data.
 - **Custom SMTP for auth emails.** Not automated yet. The human sets it in the Supabase dashboard
   (Authentication → SMTP), pasting a sending key straight from the email provider (see `resend.md`).
+  Until then `auth-policy` warns that auth emails still use the built-in mailer (rate-limited, meant
+  for testing); setting `auth.smtp: provider` in `golive.yaml` is how a human accepts that
+  deliberately. Never ask for the SMTP password in chat: the human enters it in the dashboard.
 - Restoring a paused project, plan upgrades, billing, creating OAuth apps (e.g. Google sign-in).
 
 ## 3. Explain these in plain words
@@ -186,9 +197,16 @@ Stays with the human (and why):
 | Stripe webhook to an Edge Function returns 401 | `verify_jwt` is still on for that function. |
 | Sign-in redirects to localhost or "redirect not allowed" | Auth Site URL / allowlist not updated. Re-run `plan` + `apply`, then `verify --only auth-redirects`. |
 | Sign-in fails on preview URLs | Expected unless `auth.previewRedirects: true` (a risk) or a separate preview auth project. |
+| `auth-policy` says signup is closed / confirmation off / password too short | Write the intended policy under `auth` in `golive.yaml` (`signup`, `requireEmailConfirm`, `passwordMinLength`), then `plan` + `apply` (the `auth:settings` step) and re-run verify. |
+| `auth:settings` step fails with "is X after the write, not Y" | Supabase accepted the PATCH but reports another value: check Auth Config write permission for this token and the setting in the dashboard, then re-run `apply`. |
+| `auth:settings` changes say `not confirmed: …` | Supabase does not return that setting through the API, so golive cannot confirm it. Confirm it in the dashboard; the rest of the write is unaffected. |
+| `auth-policy` warns about the built-in mailer | Supabase's default SMTP is rate-limited; set custom SMTP (§2, a manual dashboard step) or accept it with `auth.smtp: provider`. Turn off link tracking at the email provider. |
 | Magic-link emails broken or slow | Supabase's default SMTP is rate-limited; custom SMTP is a manual dashboard step (§2). Turn off link tracking at the email provider. |
 
 ## Unverified
 
 - Whether publishable keys are blocked from `/rest/v1/` exactly like anon keys (assumed yes).
 - The exact enforcement date for removing legacy keys ("late 2026", not final).
+- The auth policy write path (`auth:settings`, read-back confirmation and the `auth-policy` check) is
+  mock-covered only: it has never been run against a real project, and which policy fields the
+  Management API actually echoes back is unconfirmed.

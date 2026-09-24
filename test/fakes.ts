@@ -165,7 +165,17 @@ export function fakeWorld() {
     provides: ['supabase.url', 'supabase.publishableKey', 'supabase.secretKey', 'db.url'] as OutputKey[],
     /** When false, the fake has no provides() and links fall back to outputs() keys. */
     declaresProvides: true,
-    auth: { siteUrl: 'http://localhost:3000', redirectUrls: ['http://localhost:3000/**'] } as AuthSettings,
+    auth: {
+      siteUrl: 'http://localhost:3000',
+      redirectUrls: ['http://localhost:3000/**'],
+      signupEnabled: true,
+      emailConfirmRequired: true,
+      minPasswordLength: 6,
+      smtp: { configured: false },
+      emailRateLimitPerHour: 30,
+    } as AuthSettings,
+    /** Policy fields the fake provider accepts but never reports back (its API does not echo them). */
+    authIgnores: [] as string[],
     outputsCalls: 0,
   };
   const dbOutputs = (): Outputs => {
@@ -208,7 +218,22 @@ export function fakeWorld() {
         get: async () => structuredClone(db.auth),
         set: async (_c, patch) => {
           rec('fakedb', 'authConfig.set', patch);
-          db.auth = { ...db.auth, ...patch };
+          const { smtpPassword, ...settings } = patch;
+          const after = structuredClone(db.auth) as unknown as Record<string, unknown>;
+          const applied: string[] = [];
+          const skipped: string[] = [];
+          if (smtpPassword) skipped.push('smtpPassword (write-only: the provider never returns the value, so golive cannot confirm it)');
+          for (const [key, value] of Object.entries(settings)) {
+            if (db.authIgnores.includes(key)) {
+              skipped.push(`${key} (the provider does not report this setting back)`);
+              delete after[key];
+              continue;
+            }
+            after[key] = value;
+            applied.push(key);
+          }
+          db.auth = after as unknown as AuthSettings;
+          return { after: structuredClone(db.auth), applied, skipped };
         },
       },
       dbAdmin: { tables: async () => [] },

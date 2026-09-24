@@ -157,9 +157,13 @@ supervision. Cross-pairings have mocked coverage, not equivalent live proof. Sup
 reuse separately passed read-only verification; the complete deployment test used an explicit
 token. A new user's first-account setup and every application framework have not been validated.
 
-Experimental adapters also exist for Supabase Auth configuration and Cloudflare DNS. Their complete
-auth and domain journeys are **not validated alpha paths yet**; the DNS, email and test-mode
-payment paths listed above are the tested ones. See [provider scope](docs/PROVIDERS.md) and
+Experimental adapters also exist for Supabase Auth configuration and Cloudflare DNS. Supabase Auth
+settings — signup, email confirmation, minimum password length, the mailer it uses, plus the site
+URL and redirect allowlist — are automated through an approved plan and re-read for evidence, but
+**that whole path has not been exercised against a live project yet**: it is implemented, not
+live-validated. The complete auth journey (a real signup and a delivered confirmation email) and the
+domain journey are **not validated alpha paths yet**; the DNS, email and test-mode payment paths
+listed above are the tested ones. See [provider scope](docs/PROVIDERS.md) and
 [observed validation](docs/VALIDATION.md).
 
 ## The full go-live checklist and roadmap
@@ -190,7 +194,11 @@ live-tested milestones**, not a finished category or a completed checklist for y
 ### Make it a complete product
 
 - [ ] 🚧 **Authentication:** signup, login, sessions, password recovery and account isolation.
-  Supabase configuration and some access checks exist; the complete journey still needs validation.
+  Supabase auth policy (signup, email confirmation, minimum password length, mailer) and the site
+  URL/redirect allowlist are now written through an approved plan, re-read for evidence and verified
+  by the `auth-policy`/`auth-redirects` checks — implemented, not yet exercised against a live
+  project. The complete journey (a real signup, confirmation email, session and recovery flow) still
+  needs validation.
 - [ ] 🗺️ **OAuth / social login / SSO:** client registration, consent screens, scopes, callback
   URLs and provider reviews. Current auth-provider setup is guided.
 - [x] ✅ **Payments and subscriptions:** ~~Prove test-mode checkout and webhook acceptance with Stripe.~~

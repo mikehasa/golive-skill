@@ -1,6 +1,6 @@
 ---
 name: golive
-description: Take an agent-written app from repo to live production on the user's OWN accounts, with providers they choose (hosting, database, auth, payments, email, domain/DNS). The human connects accounts and approves changes; supported wiring operations run through a local CLI and produce verification evidence with explicit limits. Use when the user wants to ship, deploy, go live, launch, publish, or put their app online, or asks to wire up env vars, webhooks, auth redirects, email DNS or a custom domain.
+description: Take an agent-written app from repo to live production on the user's OWN accounts, with providers they choose (hosting, database, auth, payments, email, domain/DNS). The human connects accounts and approves changes; supported wiring operations run through a local CLI and produce verification evidence with explicit limits. Use when the user wants to ship, deploy, go live, launch, publish, or put their app online, or asks to wire up env vars, webhooks, auth settings (signup, email confirmation, password policy), auth redirects, email DNS or a custom domain.
 ---
 
 # golive: ship this app to production, on the user's own accounts
@@ -210,6 +210,11 @@ Explain the steps by provider, in plain language, and call out:
   (`init --project <axis>=<name>`, then `plan` again). Creating a project can cost money.
 - `handoffs`: what only the human can do. For a missing Stripe publishable key, ask for the `pk_` key
   and run `init --stripe-publishable <mode>=pk_<mode>_…`, then `plan` again.
+- `auth:settings` / `auth:redirects` (Supabase Auth): the auth policy comes from `auth` in
+  `golive.yaml` (`signup`, `requireEmailConfirm`, `passwordMinLength`; set or change those keys and
+  re-run `plan`) and the redirects from the production URL. They are separate steps, each writing
+  only what differs; show the `before → after` lines as the change being approved. Never ask for the
+  SMTP password — custom SMTP stays a manual dashboard step.
 - `warnings` and `findings`, and `unmappedEnv`: env names golive can't fill (e.g. `OPENAI_API_KEY`).
   The human types those into the host's dashboard. Never ask for the value.
 
@@ -266,6 +271,7 @@ Check scope:
 | `rls-probe` | tables not readable with the public key |
 | `db-connection` | selected Neon database and role accept a fixed read-only query; does not verify migrations, deployed app access or user isolation |
 | `auth-redirects` | auth site URL / redirect allowlist point at production |
+| `auth-policy` | auth signup/confirmation/password policy matches the app and golive.yaml (site URL and redirects are `auth-redirects`); a setting the provider does not report is named, never assumed |
 | `webhook-unsigned` | the production webhook rejects unsigned POSTs (a non-HTML 401/403 only warns: it may be an auth wall) |
 | `webhook-registered` | the endpoint exists, enabled, for the right URL and events |
 | `stripe-live-ready` | the Stripe account can take live payments |

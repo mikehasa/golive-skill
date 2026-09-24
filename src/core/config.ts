@@ -7,6 +7,19 @@ export const CONFIG_FILE = 'golive.yaml';
 
 export class ConfigError extends Error {}
 
+/**
+ * The non-secret `auth` settings and how each may look. Every entry returns why the value is wrong,
+ * or null. Credentials never belong here: `auth.smtp` only picks a mailer.
+ */
+const AUTH_SETTINGS: Record<string, (v: unknown) => string | null> = {
+  redirectPaths: (v) => (Array.isArray(v) && v.every((p) => typeof p === 'string' && p.startsWith('/')) ? null : 'must be a list of paths starting with "/"'),
+  previewRedirects: (v) => (typeof v === 'boolean' ? null : 'must be true or false'),
+  signup: (v) => (typeof v === 'boolean' ? null : 'must be true or false'),
+  requireEmailConfirm: (v) => (typeof v === 'boolean' ? null : 'must be true or false'),
+  passwordMinLength: (v) => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? null : 'must be a positive whole number (e.g. 12), never a password'),
+  smtp: (v) => (v === 'provider' || v === 'resend' ? null : 'must be "provider" (the auth provider\'s own mailer) or "resend" (the app\'s email provider)'),
+};
+
 export function defaultConfig(): ShipConfig {
   return { version: 1, stack: {}, targets: ['preview', 'production'] };
 }
@@ -83,7 +96,6 @@ export function parseConfig(text: string): ShipConfig {
     }
     cfg.supabase = supabase;
   }
-  const auth = raw.auth as ShipConfig['auth'] | undefined;
   if (raw.neon !== undefined) {
     if (!raw.neon || typeof raw.neon !== 'object' || Array.isArray(raw.neon)) {
       throw new ConfigError(`${CONFIG_FILE}: neon must be a mapping of non-secret selectors`);
@@ -103,7 +115,16 @@ export function parseConfig(text: string): ShipConfig {
     }
     cfg.neon = raw.neon as ShipConfig['neon'];
   }
-  if (auth) cfg.auth = auth;
+  const auth = raw.auth as Record<string, unknown> | undefined;
+  if (auth !== undefined) {
+    if (!auth || typeof auth !== 'object' || Array.isArray(auth)) throw new ConfigError(`${CONFIG_FILE}: auth must be a mapping of non-secret settings`);
+    for (const [key, value] of Object.entries(auth)) {
+      if (!Object.hasOwn(AUTH_SETTINGS, key)) throw new ConfigError(`${CONFIG_FILE}: unknown auth setting; expected ${Object.keys(AUTH_SETTINGS).join(', ')} (no credentials)`);
+      const problem = AUTH_SETTINGS[key]!(value);
+      if (problem) throw new ConfigError(`${CONFIG_FILE}: auth.${key} ${problem}`);
+    }
+    cfg.auth = auth as ShipConfig['auth'];
+  }
   const projects = raw.projects as Record<string, unknown> | undefined;
   if (projects) {
     for (const [k, v] of Object.entries(projects)) {

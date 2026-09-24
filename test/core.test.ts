@@ -125,6 +125,29 @@ email: { from: "Acme <hello@example.com>" }
     expect(() => parseConfig(text)).toThrow(ConfigError);
     expect(() => parseConfig(text)).toThrow(re);
   });
+
+  it('parses the auth block, keeping the existing keys working', () => {
+    const c = parseConfig(`version: 1
+stack: { auth: supabase }
+auth: { redirectPaths: [/auth/callback], previewRedirects: true, signup: false, requireEmailConfirm: true, passwordMinLength: 12, smtp: resend }
+`);
+    expect(c.auth).toEqual({ redirectPaths: ['/auth/callback'], previewRedirects: true, signup: false, requireEmailConfirm: true, passwordMinLength: 12, smtp: 'resend' });
+  });
+
+  it.each([
+    ['version: 1\nauth: maybe\n', /auth must be a mapping/],
+    ['version: 1\nauth: { signup: maybe }\n', /auth\.signup must be true or false/],
+    ['version: 1\nauth: { requireEmailConfirm: 1 }\n', /auth\.requireEmailConfirm must be true or false/],
+    ['version: 1\nauth: { passwordMinLength: 0 }\n', /auth\.passwordMinLength must be a positive whole number/],
+    ['version: 1\nauth: { passwordMinLength: "12" }\n', /auth\.passwordMinLength must be a positive whole number/],
+    ['version: 1\nauth: { smtp: gmail }\n', /auth\.smtp must be "provider"/],
+    ['version: 1\nauth: { redirectPaths: [/ok, ok] }\n', /auth\.redirectPaths must be a list of paths/],
+    ['version: 1\nauth: { previewRedirects: yes }\n', /auth\.previewRedirects must be true or false/],
+    ['version: 1\nauth: { smtpPassword: hunter2 }\n', /unknown auth setting/],
+  ])('rejects bad auth config %#', (text, re) => {
+    expect(() => parseConfig(text)).toThrow(ConfigError);
+    expect(() => parseConfig(text)).toThrow(re);
+  });
 });
 
 describe('envmap', () => {

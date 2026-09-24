@@ -306,13 +306,67 @@ export interface DbAdmin {
   advisors?(ctx: Ctx): Promise<Finding[]>;
 }
 
+/**
+ * Non-secret auth settings and policy as the provider reports them. Everything except the two URL
+ * fields is optional: providers report different subsets, and a field the provider does not report
+ * must never be assumed. NO SECRET may appear here — an SMTP password is readable only by the
+ * provider (Supabase answers `smtp_pass` with a hash, never the value), so it stays a write-only part
+ * of AuthWrite. A provider reports some fields in the negative (`disable_signup`,
+ * `mailer_autoconfirm`); the adapter flips them to the positive wording used here.
+ */
 export interface AuthSettings {
   siteUrl: string | null;
   redirectUrls: string[];
+  /** New users may sign up. */
+  signupEnabled?: boolean;
+  /** A new account must confirm its email before it can sign in. */
+  emailConfirmRequired?: boolean;
+  minPasswordLength?: number;
+  /** The provider's own SMTP mailer for auth emails; `configured: false` = its built-in mailer. */
+  smtp?: AuthSmtp;
+  /** Access-token lifetime in seconds. */
+  jwtExpirySeconds?: number;
+  /** Lifetime of an emailed one-time code or link (signup, magic link, recovery), in seconds. */
+  otpExpirySeconds?: number;
+  otpLength?: number;
+  /** Auth emails the provider itself will send per hour (its built-in mailer rate limit). */
+  emailRateLimitPerHour?: number;
 }
+
+/** Custom SMTP as the provider reports it. Never the password: the provider does not return it. */
+export interface AuthSmtp {
+  configured: boolean;
+  host?: string;
+  senderEmail?: string;
+  senderName?: string;
+}
+
+/**
+ * What `set` may write: the policy fields above plus the one write-only secret. `smtpPassword` goes
+ * into the request body and is never read back, so an SMTP write is confirmed through its non-secret
+ * companions (host, sender) — never by comparing the password. It must never reach state, reports,
+ * previews or errors, the same as every other credential.
+ */
+export type AuthWrite = Partial<AuthSettings> & { smtpPassword?: Secret };
+
+/**
+ * What a `set` achieved, from re-reading the provider's own settings afterwards. Entries are golive's
+ * field names and reasons, never values: a setting the provider does not report back shows up in
+ * `skipped` instead of being reported as applied.
+ */
+export interface AuthWriteOutcome {
+  /** The provider's settings, re-read after the write. Absent when nothing was requested. */
+  after?: AuthSettings;
+  /** Requested fields the provider reported back with the requested value. */
+  applied: string[];
+  /** Requested fields golive could not confirm, each with the reason. */
+  skipped: string[];
+}
+
 export interface AuthConfig {
   get(ctx: Ctx): Promise<AuthSettings>;
-  set(ctx: Ctx, patch: Partial<AuthSettings>): Promise<void>;
+  /** Write the patch, then re-read the provider's settings before reporting what applied. */
+  set(ctx: Ctx, patch: AuthWrite): Promise<AuthWriteOutcome>;
 }
 
 export interface WebhookEnsureResult {
@@ -555,6 +609,13 @@ export interface ShipConfig {
     redirectPaths?: string[];
     /** Also allow preview-deployment URL patterns on the (production) auth project. Default false. */
     previewRedirects?: boolean;
+    /** Desired auth policy: the `auth:settings` link writes these, `auth-policy` verifies them. */
+    signup?: boolean;
+    requireEmailConfirm?: boolean;
+    /** Minimum password length to require at the provider (the `auth-policy` check warns below 12). */
+    passwordMinLength?: number;
+    /** Which mailer auth emails should use: the auth provider's own, or the app's email provider. */
+    smtp?: 'provider' | 'resend';
   };
   /** Project chosen per axis (id or name), e.g. { hosting: "my-app", db: "abcd1234efgh" }. */
   projects?: Partial<Record<Axis, string>>;

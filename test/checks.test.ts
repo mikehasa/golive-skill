@@ -3,7 +3,7 @@ import { mockHttp, testCtx } from './helpers.js';
 import { dohRoute, fakeAdapter, fakeFetch, jwt } from './check-fakes.js';
 import { createHttp } from '../src/core/http.js';
 import { _resetSecretRegistry, fingerprint } from '../src/core/secret.js';
-import type { Adapter, Check, Ctx, DnsRecord, TableInfo } from '../src/core/types.js';
+import type { Adapter, AuthSettings, Check, Ctx, DnsRecord, TableInfo } from '../src/core/types.js';
 import { ALL_CHECKS } from '../src/checks/all.js';
 import { accountsCheck } from '../src/checks/accounts.js';
 import { envParityCheck } from '../src/checks/env-parity.js';
@@ -13,6 +13,7 @@ import { rlsCheck, MAX_TABLES } from '../src/checks/rls.js';
 import { webhookRegisteredCheck, webhookUnsignedCheck } from '../src/checks/webhook.js';
 import { stripeLiveReadyCheck } from '../src/checks/stripe-live.js';
 import { authRedirectsCheck } from '../src/checks/auth-redirects.js';
+import { authPolicyCheck } from '../src/checks/auth.js';
 import { emailDnsCheck, emailVerifiedCheck } from '../src/checks/email.js';
 import { domainLiveCheck } from '../src/checks/domain.js';
 import { addressDomain, confirmedProductionUrl, globMatch, hostVariants } from '../src/checks/util.js';
@@ -45,7 +46,7 @@ describe('ALL_CHECKS', () => {
     const ids = ALL_CHECKS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.sort()).toEqual(
-      ['accounts', 'auth-redirects', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'rls-probe', 'stripe-live-ready', 'webhook-registered', 'webhook-unsigned'].sort(),
+      ['accounts', 'auth-policy', 'auth-redirects', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'rls-probe', 'stripe-live-ready', 'webhook-registered', 'webhook-unsigned'].sort(),
     );
   });
 });
@@ -618,6 +619,146 @@ describe('auth-redirects', () => {
   });
 });
 
+// ── auth-policy ─────────────────────────────────────────────────────────────────────────────────
+
+describe('auth-policy', () => {
+  const POLICY = {
+    siteUrl: PROD,
+    redirectUrls: [`${PROD}/**`],
+    signupEnabled: true,
+    emailConfirmRequired: true,
+    minPasswordLength: 12,
+    smtp: { configured: true, host: 'smtp.resend.com' },
+    emailRateLimitPerHour: 30,
+  };
+  const policyCtx = (settings: Record<string, unknown>, over: Partial<Parameters<typeof testCtx>[0]> = {}) =>
+    testCtx({
+      config: { stack: { hosting: 'vercel', auth: 'supabase' } },
+      adapters: [hosting(), fakeAdapter({ id: 'supabase', axes: ['auth'], capabilities: { authConfig: { get: async () => settings as unknown as AuthSettings, set: async () => ({ applied: [], skipped: [] }) } } })],
+      ...over,
+    });
+
+  it('passes and lists the effective policy values', async () => {
+    const r = await run(authPolicyCheck, policyCtx(POLICY));
+    expect(r.status).toBe('pass');
+    const text = r.evidence.join('\n');
+    expect(text).toMatch(/signup: open/);
+    expect(text).toMatch(/email confirmation: required/);
+    expect(text).toMatch(/password minimum length: 12/);
+    expect(text).toMatch(/auth email: custom SMTP \(smtp\.resend\.com\)/);
+    expect(text).toMatch(/rate limit: 30 auth emails\/hour/);
+  });
+
+  it('fails when the settings cannot be read', async () => {
+    const ctx = testCtx({
+      config: { stack: { auth: 'supabase' } },
+      adapters: [fakeAdapter({ id: 'supabase', axes: ['auth'], capabilities: { authConfig: { get: async () => { throw new Error('403 not allowed'); }, set: async () => ({ applied: [], skipped: [] }) } } })],
+    });
+    const r = await run(authPolicyCheck, ctx);
+    expect(r.status).toBe('fail');
+    expect(r.severity).toBe('high');
+    expect(r.evidence[0]).toContain('403 not allowed');
+  });
+
+  it('fails when signup is closed although golive.yaml asks for it', async () => {
+    const over = { config: { stack: { hosting: 'vercel', auth: 'supabase' }, auth: { signup: true } } } as const;
+    const r = await run(authPolicyCheck, policyCtx({ ...POLICY, signupEnabled: false }, over));
+    expect(r.status).toBe('fail');
+    expect(r.severity).toBe('high');
+    expect(r.evidence[0]).toMatch(/signup is closed although golive\.yaml asks for `auth\.signup: true`/);
+    expect(r.evidence.join('\n')).toMatch(/signup: closed/);
+    expect(r.fix).toMatch(/set `auth\.signup: false`/);
+  });
+
+  it('does not fail for closed signup when the app never signs users up', async () => {
+    const r = await run(authPolicyCheck, policyCtx({ ...POLICY, signupEnabled: false }));
+    expect(r.status).toBe('pass');
+  });
+
+  it('passes when signup is closed exactly as golive.yaml configures it', async () => {
+    const over = { config: { stack: { hosting: 'vercel', auth: 'supabase' }, auth: { signup: false } } } as const;
+    // The app's code uses this provider, which must not matter: the human asked for closed signup.
+    const r = await run(authPolicyCheck, policyCtx({ ...POLICY, signupEnabled: false }, { ...over, detect: { providers: { auth: ['supabase'] } } }));
+    expect(r.status).toBe('pass');
+    expect(r.evidence.join('\n')).toMatch(/signup is closed as configured \(auth\.signup: false\)/);
+  });
+
+  it('warns (medium) when signup is closed, the app uses auth and golive.yaml does not say what it needs', async () => {
+    const r = await run(authPolicyCheck, policyCtx({ ...POLICY, signupEnabled: false }, { detect: { providers: { auth: ['supabase'] } } }));
+    expect(r.status).toBe('warn');
+    expect(r.severity).toBe('medium');
+    const text = r.evidence.join('\n');
+    expect(text).toMatch(/signup is closed while this app's code uses supabase auth and golive\.yaml does not say whether it takes new users/);
+    expect(text).not.toMatch(/the app's code signs users up/);
+    expect(r.fix).toMatch(/`auth\.signup: true`/);
+    expect(r.fix).toMatch(/`auth\.signup: false`/);
+  });
+
+  it('warns when signup is open although golive.yaml says `auth.signup: false`', async () => {
+    const over = { config: { stack: { hosting: 'vercel', auth: 'supabase' }, auth: { signup: false } } } as const;
+    const r = await run(authPolicyCheck, policyCtx(POLICY, over));
+    expect(r.status).toBe('warn');
+    expect(r.severity).toBe('medium');
+    expect(r.evidence[0]).toMatch(/signup is open although golive\.yaml says `auth\.signup: false`/);
+    expect(r.evidence.join('\n')).toMatch(/signup: open/);
+    expect(r.fix).toMatch(/set `auth\.signup: true`/);
+  });
+
+  it('fails when email confirmation is off against auth.requireEmailConfirm', async () => {
+    const over = { config: { stack: { hosting: 'vercel', auth: 'supabase' }, auth: { requireEmailConfirm: true } } } as const;
+    const r = await run(authPolicyCheck, policyCtx({ ...POLICY, emailConfirmRequired: false }, over));
+    expect(r.status).toBe('fail');
+    expect(r.evidence[0]).toMatch(/auth.requireEmailConfirm: true/);
+  });
+
+  it('fails when the password minimum is below the configured floor', async () => {
+    const over = { config: { stack: { hosting: 'vercel', auth: 'supabase' }, auth: { passwordMinLength: 10 } } } as const;
+    const r = await run(authPolicyCheck, policyCtx({ ...POLICY, minPasswordLength: 8 }, over));
+    expect(r.status).toBe('fail');
+    expect(r.evidence[0]).toMatch(/below the floor golive.yaml asks for \(auth.passwordMinLength: 10\)/);
+    expect(r.fix).toMatch(/lower `auth\.passwordMinLength`/);
+  });
+
+  it('warns on a short password minimum, a built-in mailer and confirmation off in production', async () => {
+    const r = await run(authPolicyCheck, policyCtx({ ...POLICY, minPasswordLength: 6, emailConfirmRequired: false, smtp: { configured: false } }));
+    expect(r.status).toBe('warn');
+    expect(r.severity).toBe('medium');
+    const text = r.evidence.join('\n');
+    expect(text).toMatch(/password minimum length is 6; 12 or more is the safe baseline/);
+    expect(text).toMatch(/built-in mailer/);
+    expect(text).toMatch(/email confirmation is off in production/);
+    expect(r.fix).toMatch(/auth\.smtp: provider/);
+  });
+
+  it('accepts the built-in mailer only when golive.yaml asks for it', async () => {
+    const over = { config: { stack: { hosting: 'vercel', auth: 'supabase' }, auth: { smtp: 'provider' } } } as const;
+    const r = await run(authPolicyCheck, policyCtx({ ...POLICY, smtp: { configured: false } }, over));
+    expect(r.status).toBe('pass');
+    expect(r.evidence.join('\n')).toMatch(/provider built-in mailer/);
+  });
+
+  it('names the settings the provider does not report, and skips when it reports none', async () => {
+    const partial = await run(authPolicyCheck, policyCtx({ siteUrl: PROD, redirectUrls: [], signupEnabled: true }));
+    expect(partial.status).toBe('pass');
+    expect(partial.evidence.join('\n')).toMatch(/not reported by supabase: email confirmation, password minimum length, auth email \(SMTP\), rate limit/);
+    expect((await run(authPolicyCheck, policyCtx({ siteUrl: PROD, redirectUrls: [] }))).status).toBe('skip');
+  });
+
+  it('skips for a guided provider and when the provider is logged out', async () => {
+    const guided = testCtx({ config: { stack: { auth: 'fakeguided' } }, adapters: [fakeAdapter({ id: 'fakeguided', axes: ['auth'], automated: false })] });
+    expect(await run(authPolicyCheck, guided)).toMatchObject({ status: 'skip', evidence: ['auth provider fakeguided has no auth-config capability (guided)'] });
+    const loggedOut = testCtx({
+      config: { stack: { auth: 'supabase' } },
+      adapters: [fakeAdapter({ id: 'supabase', axes: ['auth'], auth: { ok: false }, capabilities: { authConfig: { get: async () => POLICY as unknown as AuthSettings, set: async () => ({ applied: [], skipped: [] }) } } })],
+    });
+    expect(await run(authPolicyCheck, loggedOut)).toMatchObject({ status: 'skip', evidence: ['blocked by: login:supabase'] });
+  });
+
+  it('does not apply without an auth provider', () => {
+    expect(authPolicyCheck.applies(testCtx({ config: { stack: { hosting: 'vercel' } } }))).toBe(false);
+  });
+});
+
 // ── email ───────────────────────────────────────────────────────────────────────────────────────
 
 describe('email-dns', () => {
@@ -907,7 +1048,7 @@ describe('skip semantics: only accounts fails for auth problems', () => {
   });
 
   it('auth-redirects, rls-probe, email-verified skip when their provider is logged out', async () => {
-    const supaOut = fakeAdapter({ id: 'supabase', axes: ['db', 'auth'], auth: { ok: false }, capabilities: { authConfig: { get: async () => { throw new Error('401'); }, set: async () => {} }, dbAdmin: { tables: async () => { throw new Error('401'); } } } });
+    const supaOut = fakeAdapter({ id: 'supabase', axes: ['db', 'auth'], auth: { ok: false }, capabilities: { authConfig: { get: async () => { throw new Error('401'); }, set: async () => ({ applied: [], skipped: [] }) }, dbAdmin: { tables: async () => { throw new Error('401'); } } } });
     const ctx = testCtx({ config: { stack: { hosting: 'vercel', db: 'supabase', auth: 'supabase' } }, state: { version: 1, resources: { 'supabase.ref': 'abcd' }, secrets: {}, steps: {} }, adapters: [hosting(), supaOut] });
     expect(await run(authRedirectsCheck, ctx)).toMatchObject({ status: 'skip', evidence: ['blocked by: login:supabase'] });
     expect(await run(rlsCheck, ctx)).toMatchObject({ status: 'skip', evidence: ['blocked by: login:supabase'] });
@@ -918,7 +1059,7 @@ describe('skip semantics: only accounts fails for auth problems', () => {
   });
 
   it('auth-redirects skips as blocked by deploy:production without a production URL', async () => {
-    const supa = fakeAdapter({ id: 'supabase', axes: ['auth'], capabilities: { authConfig: { get: async () => ({ siteUrl: null, redirectUrls: [] }), set: async () => {} } } });
+    const supa = fakeAdapter({ id: 'supabase', axes: ['auth'], capabilities: { authConfig: { get: async () => ({ siteUrl: null, redirectUrls: [] }), set: async () => ({ applied: [], skipped: [] }) } } });
     const r = await run(authRedirectsCheck, testCtx({ config: { stack: { hosting: 'vercel', auth: 'supabase' } }, adapters: [hosting({}, null), supa] }));
     expect(r.status).toBe('skip');
     expect(r.evidence[0]).toMatch(/^blocked by: deploy:production/);

@@ -10,7 +10,7 @@ Built-in adapters use CLI/API transports; users do not need to install provider 
 | --- | --- | --- |
 | Vercel | Project selection/creation, env wiring, deployment and supported domain attachment | Vercel + Supabase passed disposable E2E; domain attachment passed separately in the disposable Vercel + Porkbun and Vercel + GoDaddy custom-domain runs. Vercel CLI is required even with token fallback. |
 | Netlify | Free-team project selection/creation, env wiring, CLI build/deploy and public-access checks | Netlify + Neon passed disposable E2E. Custom-domain attachment remains guided; project visibility may require an approved UI change. |
-| Supabase | Project selection/creation, database output, Auth redirects and read-only access/security checks | Vercel pairing passed with an explicit token. Existing macOS CLI login reuse separately passed read-only checks; fresh-login UX and writes through that credential remain unverified. |
+| Supabase | Project selection/creation, database output, Auth policy and redirect settings, read-only access/security checks | Vercel pairing passed with an explicit token. Existing macOS CLI login reuse separately passed read-only checks; fresh-login UX and writes through that credential remain unverified. The Auth policy settings (signup, email confirmation, minimum password length, mailer) are implemented and verified by re-reading them, but that path has not been exercised against a live project. |
 | Neon | Free-organization project selection/creation, Postgres URLs and a read-only connection probe | Netlify pairing passed. No Neon Auth, app migrations, new branches on existing projects or per-target branch creation. |
 
 The two live runs used existing accounts and approved disposable resources. Schema and app-flow
@@ -50,7 +50,7 @@ identities match. Neon delegates supported stored-login access to its CLI.
 
 | Area | Adapter | Scope |
 | --- | --- | --- |
-| Auth | Supabase Auth | Production Site URL and redirect configuration; not complete signup or email-delivery acceptance |
+| Auth | Supabase Auth | Production Site URL and redirect configuration, plus the auth policy from golive.yaml; custom SMTP stays a manual dashboard step. Implemented and verified by re-reading; not yet exercised live. |
 | Payments | Stripe | Test-mode env wiring, webhook registration and signed-event acceptance passed a disposable run; live-mode payments, refunds, entitlements and subscriptions remain open |
 | Email | Resend | Sending-domain setup, DNS wiring, scoped-key issuance and a real send through the app's environment key passed a disposable run (delivered; spam folder on a fresh subdomain); Auth SMTP and bounce handling remain open |
 | DNS | Cloudflare | Records in an existing authoritative zone; no domain purchase, renewal, transfer or nameserver changes. Live validation pending. |
@@ -64,6 +64,14 @@ real production zone as an unreviewed test.
 Stripe payment steps require readable account identity, bind it and credential fingerprints to
 approval, and check it again before writes. A separate app key must belong to that account.
 Account-read denial does not fall back to anonymous webhook-only approval.
+
+Supabase auth settings are written from `auth` in golive.yaml: the `auth:settings` step opens or
+closes signup, requires email confirmation and sets the minimum password length, and `auth:redirects`
+does the site URL and allowlist. Only settings the endpoint is known to return are read or written,
+every write is followed by re-reading them, and a field the provider does not report back is named
+as unconfirmed instead of assumed. The `auth-policy` and `auth-redirects` checks carry that evidence.
+Neither proves a real signup, a delivered confirmation email or an app session — that journey is
+still open, and this path has not been exercised against a live project yet.
 
 ## Guided providers
 

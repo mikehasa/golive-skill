@@ -98,6 +98,15 @@ permissions, rate limit, network), `plan` warns and plans no DNS step.
 with `auth.previewRedirects: true` in `golive.yaml`, and each such line is flagged as a risk.
 Otherwise `plan` warns that sign-in on preview URLs won't work.
 
+**Auth policy.** `auth:settings` writes only the values from `golive.yaml` `auth` that differ from
+what the provider reports (`signup`, `requireEmailConfirm`, `passwordMinLength`), then re-reads them;
+the step's own `auth:settings:applied` result and the `auth-policy` check carry that evidence. A
+setting the provider does not report back shows as `not confirmed:` in the step's changes and does
+not fail it; a value the provider keeps reporting differently fails the step. Changing a value in
+`golive.yaml`, or changing it back in the provider dashboard, changes the step's intent, so it runs
+again. Auth emails still going through the provider's built-in mailer warn unless
+`auth.smtp: provider` accepts that deliberately; custom SMTP itself stays a manual dashboard step.
+
 **Email.** `email:verify` is re-sent on each plan while the domain is pending; its preview shows
 `previous request: <time>`.
 
@@ -183,6 +192,7 @@ does resolve and GET `config.domain`.
 | `rls-probe` | tables in exposed schemas aren't readable with the publishable key; advisors clean | `blocked by: project:db`; no publishable/anon key |
 | `db-connection` | the selected Neon compute accepts a fixed read-only query and returns the expected database and role; no schema/Auth/app-isolation claim | no connection-probe capability; `blocked by: login:<db>` / `project:db` |
 | `auth-redirects` | site URL and allowlist point at production, no localhost | guided auth; `blocked by: deploy:production` |
+| `auth-policy` | the reported signup/confirmation/password policy matches golive.yaml `auth` (below 12 characters or a built-in mailer only warns); evidence lists the effective values | guided auth; `blocked by: login:<id>` / `project:<axis>`; the provider reports no policy fields |
 | `webhook-unsigned` | an unsigned POST gets 4xx from the handler (a non-HTML 401/403 only warns — ambiguous between a rejection and an auth wall) | production URL not confirmed |
 | `webhook-registered` | an enabled endpoint for the production URL covers the configured events | guided payments; no production URL |
 | `stripe-live-ready` | the account has `charges_enabled` | production isn't live mode |

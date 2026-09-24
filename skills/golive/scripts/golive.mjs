@@ -1180,13 +1180,13 @@ var require_Collection = __commonJS({
 var require_stringifyComment = __commonJS({
   "node_modules/.pnpm/yaml@2.9.1/node_modules/yaml/dist/stringify/stringifyComment.js"(exports) {
     "use strict";
-    var stringifyComment = (str2) => str2.replace(/^(?!$)(?: $)?/gm, "#");
+    var stringifyComment = (str3) => str3.replace(/^(?!$)(?: $)?/gm, "#");
     function indentComment(comment, indent) {
       if (/^\n+$/.test(comment))
         return comment.substring(1);
       return indent ? comment.replace(/^(?! *$)/gm, indent) : comment;
     }
-    var lineComment = (str2, indent, comment) => str2.endsWith("\n") ? indentComment(comment, indent) : comment.includes("\n") ? "\n" + indentComment(comment, indent) : (str2.endsWith(" ") ? "" : " ") + comment;
+    var lineComment = (str3, indent, comment) => str3.endsWith("\n") ? indentComment(comment, indent) : comment.includes("\n") ? "\n" + indentComment(comment, indent) : (str3.endsWith(" ") ? "" : " ") + comment;
     exports.indentComment = indentComment;
     exports.lineComment = lineComment;
     exports.stringifyComment = stringifyComment;
@@ -1340,16 +1340,16 @@ var require_stringifyString = __commonJS({
       lineWidth: ctx.options.lineWidth,
       minContentWidth: ctx.options.minContentWidth
     });
-    var containsDocumentMarker = (str2) => /^(%|---|\.\.\.)/m.test(str2);
-    function lineLengthOverLimit(str2, lineWidth, indentLength) {
+    var containsDocumentMarker = (str3) => /^(%|---|\.\.\.)/m.test(str3);
+    function lineLengthOverLimit(str3, lineWidth, indentLength) {
       if (!lineWidth || lineWidth < 0)
         return false;
       const limit = lineWidth - indentLength;
-      const strLen = str2.length;
+      const strLen = str3.length;
       if (strLen <= limit)
         return false;
       for (let i = 0, start = 0; i < strLen; ++i) {
-        if (str2[i] === "\n") {
+        if (str3[i] === "\n") {
           if (i - start > limit)
             return true;
           start = i + 1;
@@ -1366,11 +1366,11 @@ var require_stringifyString = __commonJS({
       const { implicitKey } = ctx;
       const minMultiLineLength = ctx.options.doubleQuotedMinMultiLineLength;
       const indent = ctx.indent || (containsDocumentMarker(value) ? "  " : "");
-      let str2 = "";
+      let str3 = "";
       let start = 0;
       for (let i = 0, ch = json2[i]; ch; ch = json2[++i]) {
         if (ch === " " && json2[i + 1] === "\\" && json2[i + 2] === "n") {
-          str2 += json2.slice(start, i) + "\\ ";
+          str3 += json2.slice(start, i) + "\\ ";
           i += 1;
           start = i;
           ch = "\\";
@@ -1379,38 +1379,38 @@ var require_stringifyString = __commonJS({
           switch (json2[i + 1]) {
             case "u":
               {
-                str2 += json2.slice(start, i);
+                str3 += json2.slice(start, i);
                 const code = json2.substr(i + 2, 4);
                 switch (code) {
                   case "0000":
-                    str2 += "\\0";
+                    str3 += "\\0";
                     break;
                   case "0007":
-                    str2 += "\\a";
+                    str3 += "\\a";
                     break;
                   case "000b":
-                    str2 += "\\v";
+                    str3 += "\\v";
                     break;
                   case "001b":
-                    str2 += "\\e";
+                    str3 += "\\e";
                     break;
                   case "0085":
-                    str2 += "\\N";
+                    str3 += "\\N";
                     break;
                   case "00a0":
-                    str2 += "\\_";
+                    str3 += "\\_";
                     break;
                   case "2028":
-                    str2 += "\\L";
+                    str3 += "\\L";
                     break;
                   case "2029":
-                    str2 += "\\P";
+                    str3 += "\\P";
                     break;
                   default:
                     if (code.substr(0, 2) === "00")
-                      str2 += "\\x" + code.substr(2);
+                      str3 += "\\x" + code.substr(2);
                     else
-                      str2 += json2.substr(i, 6);
+                      str3 += json2.substr(i, 6);
                 }
                 i += 5;
                 start = i + 1;
@@ -1420,14 +1420,14 @@ var require_stringifyString = __commonJS({
               if (implicitKey || json2[i + 2] === '"' || json2.length < minMultiLineLength) {
                 i += 1;
               } else {
-                str2 += json2.slice(start, i) + "\n\n";
+                str3 += json2.slice(start, i) + "\n\n";
                 while (json2[i + 2] === "\\" && json2[i + 3] === "n" && json2[i + 4] !== '"') {
-                  str2 += "\n";
+                  str3 += "\n";
                   i += 2;
                 }
-                str2 += indent;
+                str3 += indent;
                 if (json2[i + 2] === " ")
-                  str2 += "\\";
+                  str3 += "\\";
                 i += 1;
                 start = i + 1;
               }
@@ -1436,8 +1436,8 @@ var require_stringifyString = __commonJS({
               i += 1;
           }
       }
-      str2 = start ? str2 + json2.slice(start) : json2;
-      return implicitKey ? str2 : foldFlowLines.foldFlowLines(str2, indent, foldFlowLines.FOLD_QUOTED, getFoldOptions(ctx, false));
+      str3 = start ? str3 + json2.slice(start) : json2;
+      return implicitKey ? str3 : foldFlowLines.foldFlowLines(str3, indent, foldFlowLines.FOLD_QUOTED, getFoldOptions(ctx, false));
     }
     function singleQuotedString(value, ctx) {
       if (ctx.options.singleQuote === false || ctx.implicitKey && value.includes("\n") || /[ \t]\n|\n[ \t]/.test(value))
@@ -1565,15 +1565,15 @@ ${indent}${start}${value}${end}`;
           return quotedString(value, ctx);
         }
       }
-      const str2 = value.replace(/\n+/g, `$&
+      const str3 = value.replace(/\n+/g, `$&
 ${indent}`);
       if (actualString) {
-        const test = (tag2) => tag2.default && tag2.tag !== "tag:yaml.org,2002:str" && tag2.test?.test(str2);
+        const test = (tag2) => tag2.default && tag2.tag !== "tag:yaml.org,2002:str" && tag2.test?.test(str3);
         const { compat, tags } = ctx.doc.schema;
         if (tags.some(test) || compat?.some(test))
           return quotedString(value, ctx);
       }
-      return implicitKey ? str2 : foldFlowLines.foldFlowLines(str2, indent, foldFlowLines.FOLD_FLOW, getFoldOptions(ctx, false));
+      return implicitKey ? str3 : foldFlowLines.foldFlowLines(str3, indent, foldFlowLines.FOLD_FLOW, getFoldOptions(ctx, false));
     }
     function stringifyString(item, ctx, onComment, onChompKeep) {
       const { implicitKey, inFlow } = ctx;
@@ -1725,11 +1725,11 @@ var require_stringify = __commonJS({
       const props = stringifyProps(node, tagObj, ctx);
       if (props.length > 0)
         ctx.indentAtStart = (ctx.indentAtStart ?? 0) + props.length + 1;
-      const str2 = typeof tagObj.stringify === "function" ? tagObj.stringify(node, ctx, onComment, onChompKeep) : identity.isScalar(node) ? stringifyString.stringifyString(node, ctx, onComment, onChompKeep) : node.toString(ctx, onComment, onChompKeep);
+      const str3 = typeof tagObj.stringify === "function" ? tagObj.stringify(node, ctx, onComment, onChompKeep) : identity.isScalar(node) ? stringifyString.stringifyString(node, ctx, onComment, onChompKeep) : node.toString(ctx, onComment, onChompKeep);
       if (!props)
-        return str2;
-      return identity.isScalar(node) || str2[0] === "{" || str2[0] === "[" ? `${props} ${str2}` : `${props}
-${ctx.indent}${str2}`;
+        return str3;
+      return identity.isScalar(node) || str3[0] === "{" || str3[0] === "[" ? `${props} ${str3}` : `${props}
+${ctx.indent}${str3}`;
     }
     exports.createStringifyContext = createStringifyContext;
     exports.stringify = stringify;
@@ -1764,8 +1764,8 @@ var require_stringifyPair = __commonJS({
       });
       let keyCommentDone = false;
       let chompKeep = false;
-      let str2 = stringify.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
-      if (!explicitKey && !ctx.inFlow && str2.length > 1024) {
+      let str3 = stringify.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
+      if (!explicitKey && !ctx.inFlow && str3.length > 1024) {
         if (simpleKeys)
           throw new Error("With simple keys, single line scalar must not span more than 1024 characters");
         explicitKey = true;
@@ -1774,27 +1774,27 @@ var require_stringifyPair = __commonJS({
         if (allNullValues || value == null) {
           if (keyCommentDone && onComment)
             onComment();
-          return str2 === "" ? "?" : explicitKey ? `? ${str2}` : str2;
+          return str3 === "" ? "?" : explicitKey ? `? ${str3}` : str3;
         }
       } else if (allNullValues && !simpleKeys || value == null && explicitKey) {
-        str2 = `? ${str2}`;
+        str3 = `? ${str3}`;
         if (keyComment && !keyCommentDone) {
-          str2 += stringifyComment.lineComment(str2, ctx.indent, commentString(keyComment));
+          str3 += stringifyComment.lineComment(str3, ctx.indent, commentString(keyComment));
         } else if (chompKeep && onChompKeep)
           onChompKeep();
-        return str2;
+        return str3;
       }
       if (keyCommentDone)
         keyComment = null;
       if (explicitKey) {
         if (keyComment)
-          str2 += stringifyComment.lineComment(str2, ctx.indent, commentString(keyComment));
-        str2 = `? ${str2}
+          str3 += stringifyComment.lineComment(str3, ctx.indent, commentString(keyComment));
+        str3 = `? ${str3}
 ${indent}:`;
       } else {
-        str2 = `${str2}:`;
+        str3 = `${str3}:`;
         if (keyComment)
-          str2 += stringifyComment.lineComment(str2, ctx.indent, commentString(keyComment));
+          str3 += stringifyComment.lineComment(str3, ctx.indent, commentString(keyComment));
       }
       let vsb, vcb, valueComment;
       if (identity.isNode(value)) {
@@ -1810,7 +1810,7 @@ ${indent}:`;
       }
       ctx.implicitKey = false;
       if (!explicitKey && !keyComment && identity.isScalar(value))
-        ctx.indentAtStart = str2.length + 1;
+        ctx.indentAtStart = str3.length + 1;
       chompKeep = false;
       if (!indentSeq && indentStep.length >= 2 && !ctx.inFlow && !explicitKey && identity.isSeq(value) && !value.flow && !value.tag && !value.anchor) {
         ctx.indent = ctx.indent.substring(2);
@@ -1854,16 +1854,16 @@ ${ctx.indent}`;
       } else if (valueStr === "" || valueStr[0] === "\n") {
         ws = "";
       }
-      str2 += ws + valueStr;
+      str3 += ws + valueStr;
       if (ctx.inFlow) {
         if (valueCommentDone && onComment)
           onComment();
       } else if (valueComment && !valueCommentDone) {
-        str2 += stringifyComment.lineComment(str2, ctx.indent, commentString(valueComment));
+        str3 += stringifyComment.lineComment(str3, ctx.indent, commentString(valueComment));
       } else if (chompKeep && onChompKeep) {
         onChompKeep();
       }
-      return str2;
+      return str3;
     }
     exports.stringifyPair = stringifyPair;
   }
@@ -2090,31 +2090,31 @@ var require_stringifyCollection = __commonJS({
           }
         }
         chompKeep = false;
-        let str3 = stringify.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
+        let str4 = stringify.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
         if (comment2)
-          str3 += stringifyComment.lineComment(str3, itemIndent, commentString(comment2));
+          str4 += stringifyComment.lineComment(str4, itemIndent, commentString(comment2));
         if (chompKeep && comment2)
           chompKeep = false;
-        lines.push(blockItemPrefix + str3);
+        lines.push(blockItemPrefix + str4);
       }
-      let str2;
+      let str3;
       if (lines.length === 0) {
-        str2 = flowChars.start + flowChars.end;
+        str3 = flowChars.start + flowChars.end;
       } else {
-        str2 = lines[0];
+        str3 = lines[0];
         for (let i = 1; i < lines.length; ++i) {
           const line = lines[i];
-          str2 += line ? `
+          str3 += line ? `
 ${indent}${line}` : "\n";
         }
       }
       if (comment) {
-        str2 += "\n" + stringifyComment.indentComment(commentString(comment), indent);
+        str3 += "\n" + stringifyComment.indentComment(commentString(comment), indent);
         if (onComment)
           onComment();
       } else if (chompKeep && onChompKeep)
         onChompKeep();
-      return str2;
+      return str3;
     }
     function stringifyFlowCollection({ items }, ctx, { flowChars, itemIndent }) {
       const { indent, indentStep, flowCollectionPadding: fcPadding, options: { commentString } } = ctx;
@@ -2157,21 +2157,21 @@ ${indent}${line}` : "\n";
         }
         if (comment)
           reqNewline = true;
-        let str2 = stringify.stringify(item, itemCtx, () => comment = null);
-        reqNewline || (reqNewline = lines.length > linesAtValue || str2.includes("\n"));
+        let str3 = stringify.stringify(item, itemCtx, () => comment = null);
+        reqNewline || (reqNewline = lines.length > linesAtValue || str3.includes("\n"));
         if (i < items.length - 1) {
-          str2 += ",";
+          str3 += ",";
         } else if (ctx.options.trailingComma) {
           if (ctx.options.lineWidth > 0) {
-            reqNewline || (reqNewline = lines.reduce((sum, line) => sum + line.length + 2, 2) + (str2.length + 2) > ctx.options.lineWidth);
+            reqNewline || (reqNewline = lines.reduce((sum, line) => sum + line.length + 2, 2) + (str3.length + 2) > ctx.options.lineWidth);
           }
           if (reqNewline) {
-            str2 += ",";
+            str3 += ",";
           }
         }
         if (comment)
-          str2 += stringifyComment.lineComment(str2, itemIndent, commentString(comment));
-        lines.push(str2);
+          str3 += stringifyComment.lineComment(str3, itemIndent, commentString(comment));
+        lines.push(str3);
         linesAtValue = lines.length;
       }
       const { start, end } = flowChars;
@@ -2183,11 +2183,11 @@ ${indent}${line}` : "\n";
           reqNewline = ctx.options.lineWidth > 0 && len > ctx.options.lineWidth;
         }
         if (reqNewline) {
-          let str2 = start;
+          let str3 = start;
           for (const line of lines)
-            str2 += line ? `
+            str3 += line ? `
 ${indentStep}${indent}${line}` : "\n";
-          return `${str2}
+          return `${str3}
 ${indent}${end}`;
         } else {
           return `${start}${fcPadding}${lines.join(" ")}${fcPadding}${end}`;
@@ -2519,7 +2519,7 @@ var require_string = __commonJS({
       identify: (value) => typeof value === "string",
       default: true,
       tag: "tag:yaml.org,2002:str",
-      resolve: (str2) => str2,
+      resolve: (str3) => str3,
       stringify(item, ctx, onComment, onChompKeep) {
         ctx = Object.assign({ actualString: true }, ctx);
         return stringifyString.stringifyString(item, ctx, onComment, onChompKeep);
@@ -2557,7 +2557,7 @@ var require_bool = __commonJS({
       default: true,
       tag: "tag:yaml.org,2002:bool",
       test: /^(?:[Tt]rue|TRUE|[Ff]alse|FALSE)$/,
-      resolve: (str2) => new Scalar.Scalar(str2[0] === "t" || str2[0] === "T"),
+      resolve: (str3) => new Scalar.Scalar(str3[0] === "t" || str3[0] === "T"),
       stringify({ source, value }, ctx) {
         if (source && boolTag.test.test(source)) {
           const sv = source[0] === "t" || source[0] === "T";
@@ -2609,7 +2609,7 @@ var require_float = __commonJS({
       default: true,
       tag: "tag:yaml.org,2002:float",
       test: /^(?:[-+]?\.(?:inf|Inf|INF)|\.nan|\.NaN|\.NAN)$/,
-      resolve: (str2) => str2.slice(-3).toLowerCase() === "nan" ? NaN : str2[0] === "-" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY,
+      resolve: (str3) => str3.slice(-3).toLowerCase() === "nan" ? NaN : str3[0] === "-" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY,
       stringify: stringifyNumber.stringifyNumber
     };
     var floatExp = {
@@ -2618,7 +2618,7 @@ var require_float = __commonJS({
       tag: "tag:yaml.org,2002:float",
       format: "EXP",
       test: /^[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)[eE][-+]?[0-9]+$/,
-      resolve: (str2) => parseFloat(str2),
+      resolve: (str3) => parseFloat(str3),
       stringify(node) {
         const num2 = Number(node.value);
         return isFinite(num2) ? num2.toExponential() : stringifyNumber.stringifyNumber(node);
@@ -2629,11 +2629,11 @@ var require_float = __commonJS({
       default: true,
       tag: "tag:yaml.org,2002:float",
       test: /^[-+]?(?:\.[0-9]+|[0-9]+\.[0-9]*)$/,
-      resolve(str2) {
-        const node = new Scalar.Scalar(parseFloat(str2));
-        const dot = str2.indexOf(".");
-        if (dot !== -1 && str2[str2.length - 1] === "0")
-          node.minFractionDigits = str2.length - dot - 1;
+      resolve(str3) {
+        const node = new Scalar.Scalar(parseFloat(str3));
+        const dot = str3.indexOf(".");
+        if (dot !== -1 && str3[str3.length - 1] === "0")
+          node.minFractionDigits = str3.length - dot - 1;
         return node;
       },
       stringify: stringifyNumber.stringifyNumber
@@ -2650,7 +2650,7 @@ var require_int = __commonJS({
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
-    var intResolve = (str2, offset, radix, { intAsBigInt }) => intAsBigInt ? BigInt(str2) : parseInt(str2.substring(offset), radix);
+    var intResolve = (str3, offset, radix, { intAsBigInt }) => intAsBigInt ? BigInt(str3) : parseInt(str3.substring(offset), radix);
     function intStringify(node, radix, prefix) {
       const { value } = node;
       if (intIdentify(value) && value >= 0)
@@ -2663,15 +2663,15 @@ var require_int = __commonJS({
       tag: "tag:yaml.org,2002:int",
       format: "OCT",
       test: /^0o[0-7]+$/,
-      resolve: (str2, _onError, opt) => intResolve(str2, 2, 8, opt),
+      resolve: (str3, _onError, opt) => intResolve(str3, 2, 8, opt),
       stringify: (node) => intStringify(node, 8, "0o")
     };
-    var int = {
+    var int2 = {
       identify: intIdentify,
       default: true,
       tag: "tag:yaml.org,2002:int",
       test: /^[-+]?[0-9]+$/,
-      resolve: (str2, _onError, opt) => intResolve(str2, 0, 10, opt),
+      resolve: (str3, _onError, opt) => intResolve(str3, 0, 10, opt),
       stringify: stringifyNumber.stringifyNumber
     };
     var intHex = {
@@ -2680,10 +2680,10 @@ var require_int = __commonJS({
       tag: "tag:yaml.org,2002:int",
       format: "HEX",
       test: /^0x[0-9a-fA-F]+$/,
-      resolve: (str2, _onError, opt) => intResolve(str2, 2, 16, opt),
+      resolve: (str3, _onError, opt) => intResolve(str3, 2, 16, opt),
       stringify: (node) => intStringify(node, 16, "0x")
     };
-    exports.int = int;
+    exports.int = int2;
     exports.intHex = intHex;
     exports.intOct = intOct;
   }
@@ -2697,18 +2697,18 @@ var require_schema = __commonJS({
     var _null = require_null();
     var seq = require_seq();
     var string = require_string();
-    var bool = require_bool();
+    var bool2 = require_bool();
     var float = require_float();
-    var int = require_int();
+    var int2 = require_int();
     var schema = [
       map.map,
       seq.seq,
       string.string,
       _null.nullTag,
-      bool.boolTag,
-      int.intOct,
-      int.int,
-      int.intHex,
+      bool2.boolTag,
+      int2.intOct,
+      int2.int,
+      int2.intHex,
       float.floatNaN,
       float.floatExp,
       float.float
@@ -2733,7 +2733,7 @@ var require_schema2 = __commonJS({
         identify: (value) => typeof value === "string",
         default: true,
         tag: "tag:yaml.org,2002:str",
-        resolve: (str2) => str2,
+        resolve: (str3) => str3,
         stringify: stringifyJSON
       },
       {
@@ -2750,7 +2750,7 @@ var require_schema2 = __commonJS({
         default: true,
         tag: "tag:yaml.org,2002:bool",
         test: /^true$|^false$/,
-        resolve: (str2) => str2 === "true",
+        resolve: (str3) => str3 === "true",
         stringify: stringifyJSON
       },
       {
@@ -2758,7 +2758,7 @@ var require_schema2 = __commonJS({
         default: true,
         tag: "tag:yaml.org,2002:int",
         test: /^-?(?:0|[1-9][0-9]*)$/,
-        resolve: (str2, _onError, { intAsBigInt }) => intAsBigInt ? BigInt(str2) : parseInt(str2, 10),
+        resolve: (str3, _onError, { intAsBigInt }) => intAsBigInt ? BigInt(str3) : parseInt(str3, 10),
         stringify: ({ value }) => intIdentify(value) ? value.toString() : JSON.stringify(value)
       },
       {
@@ -2766,7 +2766,7 @@ var require_schema2 = __commonJS({
         default: true,
         tag: "tag:yaml.org,2002:float",
         test: /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]*)?(?:[eE][-+]?[0-9]+)?$/,
-        resolve: (str2) => parseFloat(str2),
+        resolve: (str3) => parseFloat(str3),
         stringify: stringifyJSON
       }
     ];
@@ -2774,9 +2774,9 @@ var require_schema2 = __commonJS({
       default: true,
       tag: "",
       test: /^/,
-      resolve(str2, onError) {
-        onError(`Unresolved plain scalar ${JSON.stringify(str2)}`);
-        return str2;
+      resolve(str3, onError) {
+        onError(`Unresolved plain scalar ${JSON.stringify(str3)}`);
+        return str3;
       }
     };
     var schema = [map.map, seq.seq].concat(jsonScalars, jsonError);
@@ -2808,10 +2808,10 @@ var require_binary = __commonJS({
         if (typeof node_buffer.Buffer === "function") {
           return node_buffer.Buffer.from(src, "base64");
         } else if (typeof atob === "function") {
-          const str2 = atob(src.replace(/[\n\r]/g, ""));
-          const buffer = new Uint8Array(str2.length);
-          for (let i = 0; i < str2.length; ++i)
-            buffer[i] = str2.charCodeAt(i);
+          const str3 = atob(src.replace(/[\n\r]/g, ""));
+          const buffer = new Uint8Array(str3.length);
+          for (let i = 0; i < str3.length; ++i)
+            buffer[i] = str3.charCodeAt(i);
           return buffer;
         } else {
           onError("This environment does not support reading binary tags; either Buffer or atob is required");
@@ -2822,28 +2822,28 @@ var require_binary = __commonJS({
         if (!value)
           return "";
         const buf = value;
-        let str2;
+        let str3;
         if (typeof node_buffer.Buffer === "function") {
-          str2 = buf instanceof node_buffer.Buffer ? buf.toString("base64") : node_buffer.Buffer.from(buf.buffer).toString("base64");
+          str3 = buf instanceof node_buffer.Buffer ? buf.toString("base64") : node_buffer.Buffer.from(buf.buffer).toString("base64");
         } else if (typeof btoa === "function") {
           let s = "";
           for (let i = 0; i < buf.length; ++i)
             s += String.fromCharCode(buf[i]);
-          str2 = btoa(s);
+          str3 = btoa(s);
         } else {
           throw new Error("This environment does not support writing binary tags; either Buffer or btoa is required");
         }
         type ?? (type = Scalar.Scalar.BLOCK_LITERAL);
         if (type !== Scalar.Scalar.QUOTE_DOUBLE) {
           const lineWidth = Math.max(ctx.options.lineWidth - ctx.indent.length, ctx.options.minContentWidth);
-          const n = Math.ceil(str2.length / lineWidth);
+          const n = Math.ceil(str3.length / lineWidth);
           const lines = new Array(n);
           for (let i = 0, o = 0; i < n; ++i, o += lineWidth) {
-            lines[i] = str2.substr(o, lineWidth);
+            lines[i] = str3.substr(o, lineWidth);
           }
-          str2 = lines.join(type === Scalar.Scalar.BLOCK_LITERAL ? "\n" : " ");
+          str3 = lines.join(type === Scalar.Scalar.BLOCK_LITERAL ? "\n" : " ");
         }
-        return stringifyString.stringifyString({ comment, type, value: str2 }, ctx, onComment, onChompKeep);
+        return stringifyString.stringifyString({ comment, type, value: str3 }, ctx, onComment, onChompKeep);
       }
     };
     exports.binary = binary;
@@ -3049,7 +3049,7 @@ var require_float2 = __commonJS({
       default: true,
       tag: "tag:yaml.org,2002:float",
       test: /^(?:[-+]?\.(?:inf|Inf|INF)|\.nan|\.NaN|\.NAN)$/,
-      resolve: (str2) => str2.slice(-3).toLowerCase() === "nan" ? NaN : str2[0] === "-" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY,
+      resolve: (str3) => str3.slice(-3).toLowerCase() === "nan" ? NaN : str3[0] === "-" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY,
       stringify: stringifyNumber.stringifyNumber
     };
     var floatExp = {
@@ -3058,7 +3058,7 @@ var require_float2 = __commonJS({
       tag: "tag:yaml.org,2002:float",
       format: "EXP",
       test: /^[-+]?(?:[0-9][0-9_]*)?(?:\.[0-9_]*)?[eE][-+]?[0-9]+$/,
-      resolve: (str2) => parseFloat(str2.replace(/_/g, "")),
+      resolve: (str3) => parseFloat(str3.replace(/_/g, "")),
       stringify(node) {
         const num2 = Number(node.value);
         return isFinite(num2) ? num2.toExponential() : stringifyNumber.stringifyNumber(node);
@@ -3069,11 +3069,11 @@ var require_float2 = __commonJS({
       default: true,
       tag: "tag:yaml.org,2002:float",
       test: /^[-+]?(?:[0-9][0-9_]*)?\.[0-9_]*$/,
-      resolve(str2) {
-        const node = new Scalar.Scalar(parseFloat(str2.replace(/_/g, "")));
-        const dot = str2.indexOf(".");
+      resolve(str3) {
+        const node = new Scalar.Scalar(parseFloat(str3.replace(/_/g, "")));
+        const dot = str3.indexOf(".");
         if (dot !== -1) {
-          const f = str2.substring(dot + 1).replace(/_/g, "");
+          const f = str3.substring(dot + 1).replace(/_/g, "");
           if (f[f.length - 1] === "0")
             node.minFractionDigits = f.length;
         }
@@ -3093,34 +3093,34 @@ var require_int2 = __commonJS({
     "use strict";
     var stringifyNumber = require_stringifyNumber();
     var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
-    function intResolve(str2, offset, radix, { intAsBigInt }) {
-      const sign = str2[0];
+    function intResolve(str3, offset, radix, { intAsBigInt }) {
+      const sign = str3[0];
       if (sign === "-" || sign === "+")
         offset += 1;
-      str2 = str2.substring(offset).replace(/_/g, "");
+      str3 = str3.substring(offset).replace(/_/g, "");
       if (intAsBigInt) {
         switch (radix) {
           case 2:
-            str2 = `0b${str2}`;
+            str3 = `0b${str3}`;
             break;
           case 8:
-            str2 = `0o${str2}`;
+            str3 = `0o${str3}`;
             break;
           case 16:
-            str2 = `0x${str2}`;
+            str3 = `0x${str3}`;
             break;
         }
-        const n2 = BigInt(str2);
+        const n2 = BigInt(str3);
         return sign === "-" ? BigInt(-1) * n2 : n2;
       }
-      const n = parseInt(str2, radix);
+      const n = parseInt(str3, radix);
       return sign === "-" ? -1 * n : n;
     }
     function intStringify(node, radix, prefix) {
       const { value } = node;
       if (intIdentify(value)) {
-        const str2 = value.toString(radix);
-        return value < 0 ? "-" + prefix + str2.substr(1) : prefix + str2;
+        const str3 = value.toString(radix);
+        return value < 0 ? "-" + prefix + str3.substr(1) : prefix + str3;
       }
       return stringifyNumber.stringifyNumber(node);
     }
@@ -3130,7 +3130,7 @@ var require_int2 = __commonJS({
       tag: "tag:yaml.org,2002:int",
       format: "BIN",
       test: /^[-+]?0b[0-1_]+$/,
-      resolve: (str2, _onError, opt) => intResolve(str2, 2, 2, opt),
+      resolve: (str3, _onError, opt) => intResolve(str3, 2, 2, opt),
       stringify: (node) => intStringify(node, 2, "0b")
     };
     var intOct = {
@@ -3139,15 +3139,15 @@ var require_int2 = __commonJS({
       tag: "tag:yaml.org,2002:int",
       format: "OCT",
       test: /^[-+]?0[0-7_]+$/,
-      resolve: (str2, _onError, opt) => intResolve(str2, 1, 8, opt),
+      resolve: (str3, _onError, opt) => intResolve(str3, 1, 8, opt),
       stringify: (node) => intStringify(node, 8, "0")
     };
-    var int = {
+    var int2 = {
       identify: intIdentify,
       default: true,
       tag: "tag:yaml.org,2002:int",
       test: /^[-+]?[0-9][0-9_]*$/,
-      resolve: (str2, _onError, opt) => intResolve(str2, 0, 10, opt),
+      resolve: (str3, _onError, opt) => intResolve(str3, 0, 10, opt),
       stringify: stringifyNumber.stringifyNumber
     };
     var intHex = {
@@ -3156,10 +3156,10 @@ var require_int2 = __commonJS({
       tag: "tag:yaml.org,2002:int",
       format: "HEX",
       test: /^[-+]?0x[0-9a-fA-F_]+$/,
-      resolve: (str2, _onError, opt) => intResolve(str2, 2, 16, opt),
+      resolve: (str3, _onError, opt) => intResolve(str3, 2, 16, opt),
       stringify: (node) => intStringify(node, 16, "0x")
     };
-    exports.int = int;
+    exports.int = int2;
     exports.intBin = intBin;
     exports.intHex = intHex;
     exports.intOct = intOct;
@@ -3260,9 +3260,9 @@ var require_timestamp = __commonJS({
   "node_modules/.pnpm/yaml@2.9.1/node_modules/yaml/dist/schema/yaml-1.1/timestamp.js"(exports) {
     "use strict";
     var stringifyNumber = require_stringifyNumber();
-    function parseSexagesimal(str2, asBigInt) {
-      const sign = str2[0];
-      const parts = sign === "-" || sign === "+" ? str2.substring(1) : str2;
+    function parseSexagesimal(str3, asBigInt) {
+      const sign = str3[0];
+      const parts = sign === "-" || sign === "+" ? str3.substring(1) : str3;
       const num2 = (n) => asBigInt ? BigInt(n) : Number(n);
       const res = parts.replace(/_/g, "").split(":").reduce((res2, p) => res2 * num2(60) + num2(p), num2(0));
       return sign === "-" ? num2(-1) * res : res;
@@ -3299,7 +3299,7 @@ var require_timestamp = __commonJS({
       tag: "tag:yaml.org,2002:int",
       format: "TIME",
       test: /^[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+$/,
-      resolve: (str2, _onError, { intAsBigInt }) => parseSexagesimal(str2, intAsBigInt),
+      resolve: (str3, _onError, { intAsBigInt }) => parseSexagesimal(str3, intAsBigInt),
       stringify: stringifySexagesimal
     };
     var floatTime = {
@@ -3308,7 +3308,7 @@ var require_timestamp = __commonJS({
       tag: "tag:yaml.org,2002:float",
       format: "TIME",
       test: /^[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*$/,
-      resolve: (str2) => parseSexagesimal(str2, false),
+      resolve: (str3) => parseSexagesimal(str3, false),
       stringify: stringifySexagesimal
     };
     var timestamp = {
@@ -3319,8 +3319,8 @@ var require_timestamp = __commonJS({
       // may be omitted altogether, resulting in a date format. In such a case, the time part is
       // assumed to be 00:00:00Z (start of day, UTC).
       test: RegExp("^([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})(?:(?:t|T|[ \\t]+)([0-9]{1,2}):([0-9]{1,2}):([0-9]{1,2}(\\.[0-9]+)?)(?:[ \\t]*(Z|[-+][012]?[0-9](?::[0-9]{2})?))?)?$"),
-      resolve(str2) {
-        const match = str2.match(timestamp.test);
+      resolve(str3) {
+        const match = str3.match(timestamp.test);
         if (!match)
           throw new Error("!!timestamp expects a date, starting with yyyy-mm-dd");
         const [, year, month, day, hour, minute, second] = match.map(Number);
@@ -3352,9 +3352,9 @@ var require_schema3 = __commonJS({
     var seq = require_seq();
     var string = require_string();
     var binary = require_binary();
-    var bool = require_bool2();
+    var bool2 = require_bool2();
     var float = require_float2();
-    var int = require_int2();
+    var int2 = require_int2();
     var merge = require_merge();
     var omap = require_omap();
     var pairs = require_pairs();
@@ -3365,12 +3365,12 @@ var require_schema3 = __commonJS({
       seq.seq,
       string.string,
       _null.nullTag,
-      bool.trueTag,
-      bool.falseTag,
-      int.intBin,
-      int.intOct,
-      int.int,
-      int.intHex,
+      bool2.trueTag,
+      bool2.falseTag,
+      int2.intBin,
+      int2.intOct,
+      int2.int,
+      int2.intHex,
       float.floatNaN,
       float.floatExp,
       float.float,
@@ -3395,9 +3395,9 @@ var require_tags = __commonJS({
     var _null = require_null();
     var seq = require_seq();
     var string = require_string();
-    var bool = require_bool();
+    var bool2 = require_bool();
     var float = require_float();
-    var int = require_int();
+    var int2 = require_int();
     var schema = require_schema();
     var schema$1 = require_schema2();
     var binary = require_binary();
@@ -3416,14 +3416,14 @@ var require_tags = __commonJS({
     ]);
     var tagsByName = {
       binary: binary.binary,
-      bool: bool.boolTag,
+      bool: bool2.boolTag,
       float: float.float,
       floatExp: float.floatExp,
       floatNaN: float.floatNaN,
       floatTime: timestamp.floatTime,
-      int: int.int,
-      intHex: int.intHex,
-      intOct: int.intOct,
+      int: int2.int,
+      intHex: int2.intHex,
+      intOct: int2.intOct,
       intTime: timestamp.intTime,
       map: map.map,
       merge: merge.merge,
@@ -7643,7 +7643,6 @@ function parseConfig(text) {
     }
     cfg2.supabase = supabase;
   }
-  const auth8 = raw2.auth;
   if (raw2.neon !== void 0) {
     if (!raw2.neon || typeof raw2.neon !== "object" || Array.isArray(raw2.neon)) {
       throw new ConfigError(`${CONFIG_FILE}: neon must be a mapping of non-secret selectors`);
@@ -7663,7 +7662,16 @@ function parseConfig(text) {
     }
     cfg2.neon = raw2.neon;
   }
-  if (auth8) cfg2.auth = auth8;
+  const auth8 = raw2.auth;
+  if (auth8 !== void 0) {
+    if (!auth8 || typeof auth8 !== "object" || Array.isArray(auth8)) throw new ConfigError(`${CONFIG_FILE}: auth must be a mapping of non-secret settings`);
+    for (const [key, value] of Object.entries(auth8)) {
+      if (!Object.hasOwn(AUTH_SETTINGS, key)) throw new ConfigError(`${CONFIG_FILE}: unknown auth setting; expected ${Object.keys(AUTH_SETTINGS).join(", ")} (no credentials)`);
+      const problem = AUTH_SETTINGS[key](value);
+      if (problem) throw new ConfigError(`${CONFIG_FILE}: auth.${key} ${problem}`);
+    }
+    cfg2.auth = auth8;
+  }
   const projects2 = raw2.projects;
   if (projects2) {
     for (const [k, v] of Object.entries(projects2)) {
@@ -7684,7 +7692,7 @@ function isDomain(s) {
 function modeFor(cfg2, target) {
   return cfg2.payments?.modes?.[target] ?? (target === "production" ? "live" : "test");
 }
-var import_yaml, CONFIG_FILE, ConfigError;
+var import_yaml, CONFIG_FILE, ConfigError, AUTH_SETTINGS;
 var init_config = __esm({
   "src/core/config.ts"() {
     "use strict";
@@ -7692,6 +7700,14 @@ var init_config = __esm({
     init_types();
     CONFIG_FILE = "golive.yaml";
     ConfigError = class extends Error {
+    };
+    AUTH_SETTINGS = {
+      redirectPaths: (v) => Array.isArray(v) && v.every((p) => typeof p === "string" && p.startsWith("/")) ? null : 'must be a list of paths starting with "/"',
+      previewRedirects: (v) => typeof v === "boolean" ? null : "must be true or false",
+      signup: (v) => typeof v === "boolean" ? null : "must be true or false",
+      requireEmailConfirm: (v) => typeof v === "boolean" ? null : "must be true or false",
+      passwordMinLength: (v) => typeof v === "number" && Number.isInteger(v) && v > 0 ? null : "must be a positive whole number (e.g. 12), never a password",
+      smtp: (v) => v === "provider" || v === "resend" ? null : `must be "provider" (the auth provider's own mailer) or "resend" (the app's email provider)`
     };
   }
 });
@@ -8624,35 +8640,94 @@ async function advisors(ctx) {
     };
   });
 }
+function joinList(value, what) {
+  const items = (Array.isArray(value) ? value : []).map((v) => typeof v === "string" ? v.trim() : "").filter(Boolean);
+  const bad = items.find((v) => v.includes(","));
+  if (bad) throw new SupabaseError(`Supabase ${what} cannot contain commas: ${JSON.stringify(bad)}.`);
+  return [...new Set(items)].join(",");
+}
+function boolOf(key, v) {
+  const b = bool(v);
+  if (b === void 0) throw new SupabaseError(`Supabase ${key} must be true or false (got ${JSON.stringify(v)}).`);
+  return b;
+}
+function intOf(key, v) {
+  const n = int(v);
+  if (n === void 0) throw new SupabaseError(`Supabase ${key} must be a positive whole number (got ${JSON.stringify(v)}).`);
+  return n;
+}
+function smtpPasswordOf(v) {
+  if (!(v instanceof Secret)) throw new SupabaseError(`The Supabase SMTP password must be a Secret (got ${typeof v}).`);
+  return v;
+}
+function smtpOf(reported) {
+  const host = str(reported.host);
+  const senderEmail = str(reported.senderEmail);
+  const senderName = str(reported.senderName);
+  return { configured: Boolean(host), ...host ? { host } : {}, ...senderEmail ? { senderEmail } : {}, ...senderName ? { senderName } : {} };
+}
+function fieldValue(obj2, name3) {
+  const [head, tail] = name3.split(".");
+  if (!obj2 || typeof obj2 !== "object") return void 0;
+  const value = obj2[head];
+  if (!tail) return value;
+  return value && typeof value === "object" ? value[tail] : void 0;
+}
+function setField(obj2, name3, value) {
+  const [head, tail] = name3.split(".");
+  const rec = obj2;
+  if (!tail) {
+    rec[head] = value;
+    return;
+  }
+  const nested = rec[head] ??= { configured: false };
+  nested[tail] = value;
+}
 async function getAuth(ctx) {
   const ref3 = await requireRef(ctx);
   const tok = await supabaseCredential(ctx);
   if (!tok) throw needToken("Reading Supabase auth settings");
   const res = await api(ctx, tok, "GET", `/projects/${ref3}/config/auth`, "Reading Supabase auth settings");
-  const site = res?.site_url;
-  const list4 = res?.uri_allow_list;
-  return {
-    siteUrl: typeof site === "string" && site ? site : null,
-    redirectUrls: typeof list4 === "string" ? list4.split(",").map((s) => s.trim()).filter(Boolean) : []
-  };
+  const body2 = res && typeof res === "object" && !Array.isArray(res) ? res : {};
+  const out = { siteUrl: null, redirectUrls: [] };
+  for (const f of AUTH_FIELDS) {
+    const value = f.read(body2[f.key], body2);
+    if (value !== void 0) setField(out, f.name, value);
+  }
+  if (out.smtp) out.smtp = smtpOf(out.smtp);
+  return out;
 }
 async function setAuth(ctx, patch2) {
   const body2 = {};
-  if (typeof patch2.siteUrl === "string") {
-    if (!patch2.siteUrl || patch2.siteUrl.includes(",")) throw new SupabaseError(`Supabase site URL must be a single URL without commas (got ${JSON.stringify(patch2.siteUrl)}).`);
-    body2.site_url = patch2.siteUrl;
+  const requested = [];
+  for (const f of AUTH_FIELDS) {
+    const value = fieldValue(patch2, f.name);
+    if (value === void 0 || !f.write) continue;
+    const encoded = f.write(value);
+    if (encoded === void 0) continue;
+    body2[f.key] = encoded;
+    requested.push(f);
   }
-  if (patch2.redirectUrls) {
-    const urls = patch2.redirectUrls.map((u) => u.trim()).filter(Boolean);
-    const bad = urls.find((u) => u.includes(","));
-    if (bad) throw new SupabaseError(`Supabase redirect URLs cannot contain commas: ${JSON.stringify(bad)}.`);
-    body2.uri_allow_list = [...new Set(urls)].join(",");
-  }
-  if (!Object.keys(body2).length) return;
+  if (!requested.length) return { applied: [], skipped: [] };
   const ref3 = await requireRef(ctx);
   const tok = await supabaseCredential(ctx);
   if (!tok) throw needToken("Changing Supabase auth settings");
   await api(ctx, tok, "PATCH", `/projects/${ref3}/config/auth`, "Updating Supabase auth settings", body2);
+  const after = await getAuth(ctx);
+  const applied = [];
+  const skipped = [];
+  for (const f of requested) {
+    if (f.writeOnly) {
+      skipped.push(`${f.name} (write-only: the provider never returns the value, so golive cannot confirm it)`);
+      continue;
+    }
+    const want = f.read(body2[f.key], body2);
+    const got = fieldValue(after, f.name);
+    if (sameValue(want, got)) applied.push(f.name);
+    else if (got === void 0) skipped.push(`${f.name} (the provider does not report this setting back)`);
+    else skipped.push(`${f.name} (the provider reports ${show(got)} instead of ${show(want)})`);
+  }
+  return { after, applied, skipped };
 }
 async function supabaseRestProbe(ctx, ref3, table, schema, publishableKey2) {
   assertRef(ref3);
@@ -8668,7 +8743,7 @@ async function supabaseRestProbe(ctx, ref3, table, schema, publishableKey2) {
 function detect(d) {
   return !!d.providers.db?.includes("supabase") || !!d.providers.auth?.includes("supabase") || Object.keys(d.configs).some((k) => k.startsWith("supabase/")) || d.envRefs.some((e) => e.name.includes("SUPABASE"));
 }
-var supabaseTiming, dbPassKey, STATE_CREATED, refOf, PAUSED, BROKEN, STARTING, CREATE_TIMEOUT_MS, usableKey, preferDefault, isStepRun, wantsDbUrls, LEVEL, supabaseAdapter;
+var supabaseTiming, dbPassKey, STATE_CREATED, refOf, PAUSED, BROKEN, STARTING, CREATE_TIMEOUT_MS, usableKey, preferDefault, isStepRun, wantsDbUrls, LEVEL, str, bool, int, flip, optionalStr, splitList, AUTH_FIELDS, sameValue, show, supabaseAdapter;
 var init_supabase = __esm({
   "src/adapters/supabase.ts"() {
     "use strict";
@@ -8689,6 +8764,39 @@ var init_supabase = __esm({
     isStepRun = (ctx) => typeof ctx.rememberSecret === "function";
     wantsDbUrls = (keys3) => keys3 === void 0 || keys3.some((k) => k === "db.url" || k === "db.directUrl");
     LEVEL = { ERROR: "high", WARN: "medium", INFO: "info" };
+    str = (v) => typeof v === "string" && v.trim() ? v.trim() : void 0;
+    bool = (v) => typeof v === "boolean" ? v : void 0;
+    int = (v) => typeof v === "number" && Number.isInteger(v) && v > 0 ? v : void 0;
+    flip = (v) => v === void 0 ? void 0 : !v;
+    optionalStr = (key) => (raw2, res) => Object.hasOwn(res, key) ? str(raw2) ?? "" : void 0;
+    splitList = (raw2) => raw2.split(",").map((s) => s.trim()).filter(Boolean);
+    AUTH_FIELDS = [
+      {
+        name: "siteUrl",
+        key: "site_url",
+        read: (raw2) => str(raw2) ?? null,
+        write: (v) => {
+          const url = str(v);
+          if (!url || url.includes(",")) throw new SupabaseError(`Supabase site URL must be a single URL without commas (got ${JSON.stringify(v)}).`);
+          return url;
+        }
+      },
+      { name: "redirectUrls", key: "uri_allow_list", read: (raw2) => typeof raw2 === "string" ? splitList(raw2) : void 0, write: (v) => joinList(v, "redirect URLs") },
+      { name: "signupEnabled", key: "disable_signup", read: (raw2) => flip(bool(raw2)), write: (v) => flip(boolOf("disable_signup", v)) },
+      { name: "emailConfirmRequired", key: "mailer_autoconfirm", read: (raw2) => flip(bool(raw2)), write: (v) => flip(boolOf("mailer_autoconfirm", v)) },
+      { name: "minPasswordLength", key: "password_min_length", read: int, write: (v) => intOf("password_min_length", v) },
+      { name: "jwtExpirySeconds", key: "jwt_exp", read: int, write: (v) => intOf("jwt_exp", v) },
+      { name: "otpExpirySeconds", key: "mailer_otp_exp", read: int, write: (v) => intOf("mailer_otp_exp", v) },
+      { name: "otpLength", key: "mailer_otp_length", read: int, write: (v) => intOf("mailer_otp_length", v) },
+      { name: "emailRateLimitPerHour", key: "rate_limit_email_sent", read: int, write: (v) => intOf("rate_limit_email_sent", v) },
+      { name: "smtp.host", key: "smtp_host", read: optionalStr("smtp_host"), write: (v) => str(v) },
+      { name: "smtp.senderEmail", key: "smtp_admin_email", read: optionalStr("smtp_admin_email"), write: (v) => str(v) },
+      { name: "smtp.senderName", key: "smtp_sender_name", read: optionalStr("smtp_sender_name"), write: (v) => str(v) },
+      // Write-only: GET answers `smtp_pass` with a hash, never the value.
+      { name: "smtpPassword", key: "smtp_pass", read: () => void 0, write: smtpPasswordOf, writeOnly: true }
+    ];
+    sameValue = (a, b) => Array.isArray(a) && Array.isArray(b) ? a.length === b.length && a.every((x, i) => x === b[i]) : a === b;
+    show = (v) => Array.isArray(v) ? v.join(", ") : v === null || v === void 0 ? "(unset)" : String(v);
     supabaseAdapter = {
       id: "supabase",
       title: "Supabase",
@@ -13042,10 +13150,10 @@ function desired(record2, zone) {
   }
   return result2;
 }
-function sameValue(a, b) {
+function sameValue2(a, b) {
   return a.name === b.name && a.type === b.type && content(a.type, a.data) === content(b.type, b.data) && (a.type !== "CAA" || a.flag === b.flag && a.tag === b.tag);
 }
-var same = (a, b) => sameValue(a, b) && (a.type !== "MX" || a.priority === b.priority);
+var same = (a, b) => sameValue2(a, b) && (a.type !== "MX" || a.priority === b.priority);
 var ownedKey = (zone, id2) => `godaddy.recordFingerprint:${zone}:${id2}`;
 var snapshot2 = (r) => fingerprint(JSON.stringify(r));
 var owned = (ctx, zone, r) => ctx.state.resource(ownedKey(zone, r.recordId)) === snapshot2(r);
@@ -13145,7 +13253,7 @@ var godaddyDns = {
     if (singleton && here.filter((r) => r.type === want.type).length > 1) conflict();
     const spfs = want.type === "TXT" && isSpf(want.data) ? here.filter((r) => r.type === "TXT" && isSpf(normalizeTxt(r.data))) : [];
     if (spfs.length > 1) conflict();
-    const matching = here.filter((r) => sameValue(r, want));
+    const matching = here.filter((r) => sameValue2(r, want));
     if (matching.length > 1) conflict();
     if (matching.length === 1) {
       const have = matching[0];
@@ -14053,12 +14161,12 @@ function obj(v) {
   if (!v || typeof v !== "object" || Array.isArray(v)) throw new NeonError("Neon returned an unexpected object; nothing was inferred.");
   return v;
 }
-function str(v) {
+function str2(v) {
   if (typeof v !== "string" || !v) throw new NeonError("Neon returned a missing identifier or name.");
   return v;
 }
 function id(v) {
-  const s = str(v);
+  const s = str2(v);
   if (!ID.test(s)) throw new NeonError("Invalid Neon resource identifier.");
   return s;
 }
@@ -14078,7 +14186,7 @@ var enc = encodeURIComponent;
 function ref2(p) {
   const org = id(p.org_id ?? p.owner_id);
   if (p.org_id !== void 0 && p.owner_id !== void 0 && p.org_id !== p.owner_id) throw new NeonError("Neon project ownership fields disagree; re-plan after checking the account.");
-  return { id: id(p.id), name: str(p.name), scope: { kind: "organization", id: org } };
+  return { id: id(p.id), name: str2(p.name), scope: { kind: "organization", id: org } };
 }
 async function organization(ctx, orgId2) {
   const o = obj(await neonApi(ctx, `/organizations/${id(orgId2)}`));
@@ -14114,7 +14222,7 @@ async function projects(ctx, orgId2) {
       found.push(p);
     }
     if (data.pagination === void 0) return found;
-    cursor = str(obj(data.pagination).cursor);
+    cursor = str2(obj(data.pagination).cursor);
     if (!batch.length) return found;
     if (seen.has(cursor)) throw new NeonError("Neon project pagination did not advance.");
     seen.add(cursor);
@@ -14162,7 +14270,7 @@ async function creationTarget4(ctx) {
   const o = await freeOrg2(ctx);
   const region = cfg(ctx).region ?? "aws-us-east-2";
   if (!/^(?:aws|azure)-[a-z0-9-]+$/.test(region)) throw new NeonError("Invalid Neon region; use an official region ID.");
-  return { scope: { kind: "organization", id: id(o.id), name: str(o.name) }, region };
+  return { scope: { kind: "organization", id: id(o.id), name: str2(o.name) }, region };
 }
 function targetSame(a, b) {
   return a.scope.kind === b.scope.kind && a.scope.id === b.scope.id && a.region === b.region;
@@ -14228,7 +14336,7 @@ async function selection(ctx) {
   const matches3 = endpoints.filter((e) => e.project_id === project.id && e.branch_id === branchId && e.type === "read_write" && e.disabled === false);
   if (matches3.length !== 1) throw new NeonError("Could not confirm one enabled read-write Neon compute for the selected branch. No compute was created.");
   const endpoint = matches3[0];
-  const host = str(endpoint.host);
+  const host = str2(endpoint.host);
   if (!/^ep-[a-z0-9-]+\.[a-z0-9.-]+\.neon\.tech$/.test(host)) throw new NeonError("Neon returned an unexpected compute hostname.");
   return { project, branchId, database, role, endpointId: id(endpoint.id), host };
 }
@@ -15375,6 +15483,110 @@ function guided(title, prod) {
   return { steps: [], handoffs };
 }
 
+// src/links/auth-settings.ts
+var POLICY = [
+  { field: "signupEnabled", label: "signup" },
+  { field: "emailConfirmRequired", label: "email confirmation required" },
+  { field: "minPasswordLength", label: "password minimum length" }
+];
+function targetOf(ctx) {
+  const c = ctx.config.auth;
+  const target = {};
+  if (typeof c?.signup === "boolean") target.signupEnabled = c.signup;
+  if (typeof c?.requireEmailConfirm === "boolean") target.emailConfirmRequired = c.requireEmailConfirm;
+  if (typeof c?.passwordMinLength === "number") target.minPasswordLength = c.passwordMinLength;
+  return target;
+}
+function changesOf(before, target) {
+  const out = [];
+  for (const p of POLICY) {
+    const to = target[p.field];
+    if (to === void 0) continue;
+    const from = before[p.field];
+    if (from === to) continue;
+    out.push({ field: p.field, label: p.label, from, to });
+  }
+  return out;
+}
+var show2 = (v) => v === void 0 ? "(not reported)" : typeof v === "boolean" ? v ? "on" : "off" : String(v);
+var authSettingsLink = {
+  id: "auth-settings",
+  async plan(ctx) {
+    const target = targetOf(ctx);
+    if (!Object.keys(target).length) return null;
+    const au = await axisStatus(ctx, "auth");
+    if (au.kind !== "ready") return null;
+    const authConfig = au.adapter.capabilities.authConfig;
+    if (!authConfig) return null;
+    let before;
+    try {
+      before = await authConfig.get(ctx);
+    } catch (e) {
+      return { steps: [], handoffs: [], warnings: [`reading ${au.adapter.title} auth settings failed (${errMsg(e)}); the auth policy settings are left out of this plan`] };
+    }
+    const changes = changesOf(before, target);
+    if (!changes.length) return null;
+    const axis = projectAxisFor(ctx, au.adapter);
+    const s = step({
+      id: "auth:settings",
+      title: `Set ${au.adapter.title} auth policy`,
+      kind: "wire",
+      risk: { writes: true },
+      dependsOn: deps(ctx, axis ? [`project:${axis}`] : []),
+      preview: changes.map((c) => `${c.label}: ${show2(c.from)} \u2192 ${show2(c.to)}`),
+      // The auth project, the values this run writes, and the previous run's time (the repo's idiom
+      // for a step whose remote state can move outside golive): a policy change in golive.yaml, or a
+      // value someone changed back in the dashboard, is a new intent and runs the step again.
+      intent: intentOf({
+        project: await projectIntent(ctx, au.adapter),
+        write: changes.map((c) => `${c.field}=${String(c.to)}`),
+        previous: ctx.state.get().steps["auth:settings"]?.at
+      }),
+      verifyWith: ["auth-policy"],
+      async run(sctx) {
+        const outcome = await authConfig.set(sctx, target);
+        const lines = changes.map((c) => `${c.label}: ${show2(c.from)} \u2192 ${show2(outcome.after?.[c.field])}`);
+        for (const skip2 of outcome.skipped) lines.push(`not confirmed: ${skip2}`);
+        return { changes: lines };
+      },
+      verifyInline: (vctx) => verifySettings(vctx, au.adapter.title, authConfig, changes)
+    });
+    return { steps: track(ctx, [s]), handoffs: [], warnings: [] };
+  }
+};
+async function verifySettings(ctx, title, authConfig, changes) {
+  const id2 = "auth:settings:applied";
+  const checkTitle = `${title} auth policy holds after the write`;
+  let after;
+  try {
+    after = await authConfig.get(ctx);
+  } catch (e) {
+    return [{ id: id2, title: checkTitle, status: "fail", severity: "high", evidence: [`could not re-read ${title} auth settings: ${errMsg(e)}`], fix: "Check the auth provider login, then re-run apply." }];
+  }
+  const confirmed = [];
+  const unconfirmed = [];
+  const wrong = [];
+  for (const c of changes) {
+    const got = after[c.field];
+    if (got === void 0) unconfirmed.push(`${c.label}: ${title} does not report it back`);
+    else if (got === c.to) confirmed.push(`${c.label}: ${show2(got)}`);
+    else wrong.push({ label: c.label, line: `${c.label} is ${show2(got)} after the write, not ${show2(c.to)}` });
+  }
+  if (wrong.length) {
+    return [
+      {
+        id: id2,
+        title: checkTitle,
+        status: "fail",
+        severity: "high",
+        evidence: [...wrong.map((w) => w.line), ...confirmed, ...unconfirmed],
+        fix: `Change ${wrong.map((w) => w.label).join(", ")} in the ${title} dashboard, or check that this credential may update auth settings, then re-run apply.`
+      }
+    ];
+  }
+  return [{ id: id2, title: checkTitle, status: "pass", severity: "info", evidence: [...confirmed, ...unconfirmed] }];
+}
+
 // src/links/deploy.ts
 var WEBHOOK_STEP = "payments:webhook:production";
 var deployLink = {
@@ -15669,7 +15881,7 @@ var netlifyVisibilityLink = {
 };
 
 // src/links/all.ts
-var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, emailDomainLink, emailKeysLink, deployLink, netlifyVisibilityLink];
+var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, emailDomainLink, emailKeysLink, deployLink, netlifyVisibilityLink];
 
 // src/links/index.ts
 var LINKS = ALL_LINKS;
@@ -16353,6 +16565,116 @@ var authRedirectsCheck = {
   }
 };
 
+// src/checks/auth.ts
+var MIN_PASSWORD = 12;
+function appUsesAuth(ctx, provider) {
+  return Boolean(ctx.detect.providers.auth?.includes(provider));
+}
+var authPolicyCheck = {
+  id: "auth-policy",
+  title: "Auth policy matches the app and the configured baseline",
+  severity: "high",
+  applies: (ctx) => Boolean(ctx.config.stack.auth),
+  async run(ctx) {
+    const provider = ctx.config.stack.auth;
+    const auth8 = cap(ctx, "auth", "authConfig");
+    if (!auth8) return skip(`auth provider ${provider} has no auth-config capability (guided)`);
+    const pre = await prereq(ctx, "auth");
+    if (pre) return pre;
+    let cfg2;
+    try {
+      cfg2 = await auth8.get(ctx);
+    } catch (e) {
+      return result("fail", "high", [`could not read ${provider} auth settings: ${errMsg3(e)}`], "Re-run verify; if it persists, check the auth provider with `golive doctor`.");
+    }
+    const issues = [];
+    const evidence = [];
+    const missing = [];
+    const wantSignup = ctx.config.auth?.signup;
+    if (cfg2.signupEnabled === void 0) missing.push("signup");
+    else {
+      evidence.push(`signup: ${cfg2.signupEnabled ? "open" : "closed"}`);
+      if (!cfg2.signupEnabled && wantSignup === true) {
+        issues.push({
+          severity: "high",
+          line: "signup is closed although golive.yaml asks for `auth.signup: true`: new users cannot register",
+          fix: "Re-run `plan` + `apply` (the `auth:settings` step writes it), or set `auth.signup: false` if this app really takes no new users."
+        });
+      } else if (!cfg2.signupEnabled && wantSignup === void 0 && appUsesAuth(ctx, provider)) {
+        issues.push({
+          severity: "medium",
+          line: `signup is closed while this app's code uses ${provider} auth and golive.yaml does not say whether it takes new users: any sign-up path in the app would fail`,
+          fix: `Say what this app needs in golive.yaml: \`auth.signup: true\` to take new users (then \`plan\` + \`apply\`), or \`auth.signup: false\` to confirm that closing signup is intended.`
+        });
+      } else if (!cfg2.signupEnabled && wantSignup === false) {
+        evidence.push("signup is closed as configured (auth.signup: false)");
+      } else if (cfg2.signupEnabled && wantSignup === false) {
+        issues.push({
+          severity: "medium",
+          line: "signup is open although golive.yaml says `auth.signup: false`: the setting is not in effect, so the provider still takes new users",
+          fix: "Re-run `plan` + `apply` (the `auth:settings` step writes it), or set `auth.signup: true` if this app does take new users."
+        });
+      }
+    }
+    const requireEmailConfirm = ctx.config.auth?.requireEmailConfirm;
+    if (cfg2.emailConfirmRequired === void 0) missing.push("email confirmation");
+    else {
+      evidence.push(`email confirmation: ${cfg2.emailConfirmRequired ? "required" : "off"}`);
+      if (!cfg2.emailConfirmRequired && requireEmailConfirm === true) {
+        issues.push({
+          severity: "high",
+          line: "email confirmation is off although golive.yaml asks for `auth.requireEmailConfirm: true`: signups are not proven to belong to a real inbox",
+          fix: `Re-run \`plan\` + \`apply\` (the \`auth:settings\` step writes it), or remove \`auth.requireEmailConfirm\` if confirmation is not wanted.`
+        });
+      } else if (!cfg2.emailConfirmRequired && ctx.config.targets.includes("production")) {
+        issues.push({
+          severity: "medium",
+          line: "email confirmation is off in production: signups are not proven to belong to a real inbox",
+          fix: `Require confirmation with \`auth.requireEmailConfirm: true\` in golive.yaml, then \`plan\` + \`apply\`; set it to \`false\` explicitly to accept the risk.`
+        });
+      }
+    }
+    const floor = ctx.config.auth?.passwordMinLength;
+    if (cfg2.minPasswordLength === void 0) missing.push("password minimum length");
+    else {
+      evidence.push(`password minimum length: ${cfg2.minPasswordLength}`);
+      if (typeof floor === "number" && cfg2.minPasswordLength < floor) {
+        issues.push({
+          severity: "high",
+          line: `password minimum length is ${cfg2.minPasswordLength}, below the floor golive.yaml asks for (auth.passwordMinLength: ${floor})`,
+          fix: `Re-run \`plan\` + \`apply\` (the \`auth:settings\` step sets it), or lower \`auth.passwordMinLength\` to what the provider allows.`
+        });
+      } else if (cfg2.minPasswordLength < MIN_PASSWORD) {
+        issues.push({
+          severity: "medium",
+          line: `password minimum length is ${cfg2.minPasswordLength}; ${MIN_PASSWORD} or more is the safe baseline`,
+          fix: `Set \`auth.passwordMinLength: ${MIN_PASSWORD}\` (or higher) in golive.yaml, then \`plan\` + \`apply\`, or set it in the ${provider} dashboard.`
+        });
+      }
+    }
+    if (!cfg2.smtp) missing.push("auth email (SMTP)");
+    else {
+      evidence.push(cfg2.smtp.configured ? `auth email: custom SMTP${cfg2.smtp.host ? ` (${cfg2.smtp.host})` : ""}` : "auth email: provider built-in mailer");
+      if (!cfg2.smtp.configured && ctx.config.auth?.smtp !== "provider") {
+        issues.push({
+          severity: "medium",
+          line: `auth emails go through ${provider}'s built-in mailer, which is rate-limited and meant for testing`,
+          fix: `Configure custom SMTP in the ${provider} dashboard, or accept the built-in mailer with \`auth.smtp: provider\` in golive.yaml.`
+        });
+      }
+    }
+    if (cfg2.emailRateLimitPerHour === void 0) missing.push("rate limit");
+    else evidence.push(`rate limit: ${cfg2.emailRateLimitPerHour} auth emails/hour`);
+    if (!evidence.length) return skip(`${provider} does not report auth policy settings through its API (only the site URL and redirects are readable)`);
+    if (missing.length) evidence.push(`not reported by ${provider}: ${missing.join(", ")}`);
+    const sev = worst(issues.map((i) => i.severity));
+    const lines = [...issues.map((i) => i.line), ...evidence];
+    if (isFailing(sev)) return result("fail", sev, lines, issues.filter((i) => isFailing(i.severity)).map((i) => i.fix).join(" "));
+    if (issues.length) return result("warn", sev, lines, issues.map((i) => i.fix).join(" "));
+    return pass(lines);
+  }
+};
+
 // src/checks/email.ts
 var DKIM_SELECTORS = {
   resend: ["resend"],
@@ -16597,6 +16919,7 @@ var ALL_CHECKS = [
   rlsCheck,
   dbConnectionCheck,
   authRedirectsCheck,
+  authPolicyCheck,
   webhookUnsignedCheck,
   webhookRegisteredCheck,
   stripeLiveReadyCheck,
