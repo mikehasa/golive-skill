@@ -147,16 +147,18 @@ you get the specific blocker and next action. See [guided provider scope](docs/P
 | --- | --- |
 | **Vercel + Supabase** | Provisioning, environment wiring, deployment, authenticated CRUD and access isolation |
 | **Netlify + Neon** | Provisioning, environment wiring, deployment, Postgres connectivity, two-session API checks and browser CRUD |
+| **Vercel + Porkbun (custom domain)** | Domain attachment, an approved DNS record write under `--confirm-dns`, ownership verification and HTTPS serving on a disposable subdomain |
 
-These were approved disposable runs on existing accounts; the test projects were deleted afterward.
-Cross-pairings have mocked coverage, not equivalent live proof. Supabase CLI-login reuse separately
-passed read-only verification; the complete deployment test used an explicit token. A new user's
-first-account setup and every application framework have not been validated.
+These were approved disposable runs on existing accounts; completed test resources were deleted
+afterward, and the custom-domain run's disposable project and record are queued for supervised
+cleanup. Cross-pairings have mocked coverage, not equivalent live proof. Supabase CLI-login reuse
+separately passed read-only verification; the complete deployment test used an explicit token.
+A new user's first-account setup and every application framework have not been validated.
 
-Experimental adapters also exist for Supabase Auth configuration, Stripe, Resend and
-Cloudflare/GoDaddy/Porkbun DNS. Their complete auth, payment, email and domain journeys are **not
-validated alpha paths yet**. See [provider scope](docs/PROVIDERS.md) and
-[observed validation](docs/VALIDATION.md).
+Experimental adapters also exist for Supabase Auth configuration, Stripe, Resend and Cloudflare/
+GoDaddy DNS. Their complete auth, payment, email and remaining domain journeys are **not validated
+alpha paths yet**; the Vercel + Porkbun custom domain is the first tested DNS path. See
+[provider scope](docs/PROVIDERS.md) and [observed validation](docs/VALIDATION.md).
 
 ## The full go-live checklist and roadmap
 
@@ -193,8 +195,10 @@ live-tested milestones**, not a finished category or a completed checklist for y
   readiness. Stripe wiring exists; transaction acceptance tests are still pending.
 - [ ] 🚧 **Transactional email:** sending identity, DNS, auth emails, inbox delivery and bounce
   handling. Resend/domain wiring exists; delivery and Auth SMTP are still pending.
-- [ ] 🚧 **Domains / DNS / HTTPS:** owned domains, DNS records, certificates and redirects.
-  Host/domain and Cloudflare, GoDaddy and Porkbun DNS adapters need complete live validation.
+- [x] ✅ **Domains / DNS / HTTPS:** ~~Prove domain attachment, DNS wiring and HTTPS serving on one host+DNS pair.~~
+  Tested: Vercel attachment, Porkbun record writes under `--confirm-dns`, ownership verification and
+  HTTPS 200 on a disposable subdomain. GoDaddy and Cloudflare DNS adapters, redirects and further
+  host pairings still need live validation.
 - [ ] 🗺️ **SMS and push notifications:** sender registration, credentials, permissions and delivery checks.
 - [ ] 🗺️ **Third-party and AI services:** API access, scopes, callbacks, quotas and functional tests.
   Missing environment variables are detected today; service-specific workflows are planned.
@@ -226,8 +230,8 @@ the right page, the right permissions, a check afterward, and a return to the sa
 When the app itself needs code changes, GoLive should give the coding agent a concrete task and
 recheck the result. It should not make you coordinate a dozen disconnected setup conversations.
 
-**Next up:** complete and live-test the common launch journeys—domains, authentication, email and
-Stripe test payments—then expand app architectures and ongoing operations.
+**Next up:** complete and live-test the common launch journeys—authentication, email, Stripe test
+payments and the remaining DNS adapters—then expand app architectures and ongoing operations.
 
 These are directions, not release dates. A capability should graduate from experimental only after
 its account setup, connection, verification and recovery have been exercised. Contributions toward
