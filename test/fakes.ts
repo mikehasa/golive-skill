@@ -770,3 +770,13 @@ export type FakeWorld = ReturnType<typeof fakeWorld>;
 
 /** The full stack wired to the fakes. */
 export const FAKE_STACK = { hosting: 'fakehost', db: 'fakedb', auth: 'fakedb', payments: 'fakepay', email: 'fakemail', dns: 'fakedns' } as const;
+
+/**
+ * The rejection `src/core/exec.ts` produces when a child outlives its timeout. For `/usr/bin/security`
+ * that is the shape of "macOS is waiting for a human click": the only signal the OS asked, and the
+ * one golive must react to instead of treating it as a refusal. Tests throw this exact shape rather
+ * than inventing one, so they fail if the reaction (or its wording) stops working.
+ */
+export function execTimedOut(cmd: string, timeoutMs: number): Error {
+  return new Error(`${cmd} timed out after ${timeoutMs}ms`);
+}

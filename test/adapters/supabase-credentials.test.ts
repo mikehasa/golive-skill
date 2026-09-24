@@ -4,7 +4,8 @@ import { chmodSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mockExec, mockHttp, testCtx } from '../helpers.js';
-import { readSupabaseCliCredential, supabaseCredential } from '../../src/adapters/supabase-credentials.js';
+import { execTimedOut } from '../fakes.js';
+import { readSupabaseCliCredential, SupabaseCredentialUnreadable, supabaseCredential, supabaseCredentialOrUndefined } from '../../src/adapters/supabase-credentials.js';
 import { _resetSecretRegistry, Secret, vaultGet } from '../../src/core/secret.js';
 import { supabaseAdapter, supabaseTiming } from '../../src/adapters/supabase.js';
 import type { Capabilities } from '../../src/core/types.js';
@@ -61,8 +62,72 @@ describe('Supabase CLI credential storage', () => {
   it.each([1, 36, 128])('does not switch accounts/files after Keychain denial, lock or cancellation (%s)', async (code) => {
     const { root } = store(OTHER);
     const ex = mockExec([[...version], ['/usr/bin/security', { code, stdout: TOKEN, stderr: TOKEN }]]);
-    await expect(readSupabaseCliCredential(testCtx({ exec: ex.run, env: { SUPABASE_HOME: root } }), { platform: 'darwin' })).rejects.toThrow(/denied or unavailable/);
+    const err = await readSupabaseCliCredential(testCtx({ exec: ex.run, env: { SUPABASE_HOME: root } }), { platform: 'darwin' }).catch((e: Error) => e);
+    expect(String((err as Error).message)).toMatch(/denied or unavailable/);
+    // A refusal is answered at the dialog or in Keychain Access, never by a second, longer read.
+    expect(String((err as Error).message)).not.toMatch(/went unanswered/);
     expect(ex.calls).toHaveLength(2);
+    expect(JSON.stringify([err, ex.calls])).not.toContain(TOKEN);
+  });
+
+  it('says the macOS dialog is coming, that the read is read-only and that "Always Allow" makes it permanent', async () => {
+    const { root } = store(OTHER);
+    const ex = mockExec([[...version], ['/usr/bin/security', () => { throw execTimedOut('/usr/bin/security', 15_000); }]]);
+    const ctx = testCtx({ exec: ex.run, env: { SUPABASE_HOME: root } });
+    const err = await readSupabaseCliCredential(ctx, { platform: 'darwin' }).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(SupabaseCredentialUnreadable);
+    const message = String((err as Error).message);
+    expect(message).toMatch(/went unanswered/);
+    expect(message).toMatch(/"Always Allow" records the permission permanently/);
+    expect(message).toMatch(/read-only/);
+    expect(message).not.toMatch(/unlock the keychain/i); // the old generic unlock wording is gone
+    const reads = ex.calls.filter((c) => c.cmd === '/usr/bin/security');
+    expect(reads).toHaveLength(2); // the short read, then one longer attended one
+    expect(reads[1]!.opts!.timeoutMs!).toBeGreaterThan(reads[0]!.opts!.timeoutMs!);
+    expect(ctx.logs.join('\n')).toMatch(/Click "Allow" in that dialog/); // told before the wait, not after
+    expect(JSON.stringify([err, ex.calls, ctx.logs])).not.toContain(OTHER);
+  });
+
+  it('continues on the attended retry when the human answers the dialog in time', async () => {
+    const { root } = store(OTHER);
+    let reads = 0;
+    const ex = mockExec([[...version], ['/usr/bin/security', () => {
+      if (++reads === 1) throw execTimedOut('/usr/bin/security', 15_000);
+      return { stdout: `${TOKEN}\n` };
+    }]]);
+    const got = await readSupabaseCliCredential(testCtx({ exec: ex.run, env: { SUPABASE_HOME: root } }), { platform: 'darwin' });
+    expect(got?.reveal()).toBe(TOKEN);
+    expect(ex.calls.filter((c) => c.cmd === '/usr/bin/security')).toHaveLength(2);
+  });
+
+  it.each(['supabase-staging', 'snap'])('never degrades a non-production profile (%s) into the CLI path', async (profile) => {
+    const { root, env } = store();
+    const ex = mockExec([[...version]]);
+    const ctx = testCtx({ exec: ex.run, env: { ...env, SUPABASE_PROFILE: profile } });
+    const err = await supabaseCredentialOrUndefined(ctx).catch((e: Error) => e);
+    expect(err).not.toBeInstanceOf(SupabaseCredentialUnreadable);
+    expect(String((err as Error).message)).toMatch(/not the supported production/);
+    expect(ex.calls).toHaveLength(1);
+  });
+
+  it('never degrades malformed stored output into the CLI path', async () => {
+    const { root } = store(OTHER);
+    const ex = mockExec([[...version], ['/usr/bin/security', { stdout: 'not-a-token' }]]);
+    const err = await supabaseCredentialOrUndefined(testCtx({ exec: ex.run, env: { SUPABASE_HOME: root } })).catch((e: Error) => e);
+    expect(err).not.toBeInstanceOf(SupabaseCredentialUnreadable);
+    expect(String((err as Error).message)).toMatch(/malformed/);
+    expect(ex.calls).toHaveLength(2);
+  });
+
+  it('hands the CLI-covered reads an absent credential and warns once, without ever exposing the store', async () => {
+    const { root } = store(OTHER);
+    const ex = mockExec([[...version], ['/usr/bin/security', { code: 1 }]]);
+    const ctx = testCtx({ exec: ex.run, env: { SUPABASE_HOME: root } });
+    expect(await supabaseCredentialOrUndefined(ctx)).toBeUndefined();
+    expect(await supabaseCredentialOrUndefined(ctx)).toBeUndefined();
+    expect(ctx.logs.filter((l) => /denied or unavailable/.test(l))).toHaveLength(1);
+    expect(ex.calls.filter((c) => c.cmd === '/usr/bin/security')).toHaveLength(1); // a refusal is never retried
+    expect(JSON.stringify([ctx.cache, ctx.logs, ex.calls])).not.toContain(OTHER);
   });
 
   it.each(['not-a-token', '', 'go-keyring-base64:%%%'])('rejects malformed Keychain output without returning it or trying another account', async (raw) => {
@@ -295,5 +360,102 @@ describe('complete Supabase flow from the CLI browser-login store', () => {
     expect(calls).toHaveLength(0);
     expect(ex.calls).toHaveLength(1);
     expect(JSON.stringify(result)).not.toContain(TOKEN);
+  });
+});
+
+/**
+ * Issue #49: on macOS the `security` read is not on the Keychain item's ACL, so the OS raises a
+ * dialog. When nobody answers it, every Supabase command used to degrade even though the CLI reads
+ * its own store without a prompt. The CLI-covered reads must keep working; anything that needs the
+ * Management API must still fail closed with guidance that names the dialog.
+ */
+describe('Supabase CLI fallback when only this machine cannot read the store', () => {
+  const PUB = 'sb_publishable_' + 'publicvalue';
+  const SECRET_KEY = 'sb_secret_' + 'servervalue';
+  const unanswered = ['/usr/bin/security', () => { throw execTimedOut('/usr/bin/security', 15_000); }] as [string, () => never];
+  const orgs = ['supabase orgs list', { stdout: JSON.stringify([{ id: 'acme', slug: 'acme', name: 'Acme' }]) }] as [string, { stdout: string }];
+  const projects = ['supabase projects list', { stdout: JSON.stringify([{ id: REF, name: 'demo', organization_slug: 'acme', status: 'ACTIVE_HEALTHY' }]) }] as [string, { stdout: string }];
+  const apiKeys = ['supabase projects api-keys', { stdout: JSON.stringify([{ name: 'default', type: 'publishable', api_key: PUB }, { name: 'default', type: 'secret', api_key: SECRET_KEY }]) }] as [string, { stdout: string }];
+  const sqlRows = ['supabase db query', { stdout: JSON.stringify([{ schema: 'public', name: 'notes', rls: true, policies: [] }]) }] as [string, { stdout: string }];
+
+  /** The macOS branch is selected from `process.platform`; fake it for one test, then restore it. */
+  const withMacPlatform = async (run: () => Promise<void>): Promise<void> => {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+    try { await run(); } finally { Object.defineProperty(process, 'platform', original); }
+  };
+
+  it('keeps listing projects, reading API keys and the RLS query working through the CLI', async () => {
+    const { root } = store(OTHER);
+    const ex = mockExec([[...version], unanswered, orgs, projects, apiKeys, sqlRows]);
+    const { http, calls } = mockHttp([]);
+    await withMacPlatform(async () => {
+      const ctx = testCtx({ exec: ex.run, http, env: { SUPABASE_HOME: root }, config: { stack: { db: 'supabase' }, projects: { db: REF } } });
+      expect(await caps.project.candidates!(ctx)).toEqual([{ id: REF, name: 'demo' }]);
+      const out = await caps.outputs.outputs(ctx, 'production');
+      expect(out['supabase.publishableKey']).toBe(PUB);
+      expect((out['supabase.secretKey'] as Secret).reveal()).toBe(SECRET_KEY);
+      expect(await caps.dbAdmin.tables(ctx)).toMatchObject([{ name: 'notes', rls: true }]);
+      const ledger = JSON.stringify([ex.calls.map((c) => c.args), ctx.logs, ctx.state.get()]);
+      expect(ledger).not.toContain(OTHER);
+      expect(ledger).not.toContain(SECRET_KEY);
+      // The RLS query travels on stdin, never on argv, and the run says what to click next time.
+      expect(ex.calls.find((c) => c.args[0] === 'db')?.stdin).toContain('pg_catalog.pg_policies');
+      expect(ctx.logs.join('\n')).toMatch(/"Always Allow" records the permission permanently/);
+      expect(await supabaseAdapter.auth(ctx)).toMatchObject({ ok: true });
+    });
+    expect(calls).toHaveLength(0); // nothing was called without a credential to call it with
+  });
+
+  it('offers only the keys the CLI can reveal, never a guessed database URL', async () => {
+    const { root } = store(OTHER);
+    const ex = mockExec([[...version], unanswered, orgs, projects, apiKeys]);
+    const { http, calls } = mockHttp([]);
+    await withMacPlatform(async () => {
+      const ctx = testCtx({ exec: ex.run, http, env: { SUPABASE_HOME: root }, config: { stack: { db: 'supabase', auth: 'supabase' }, projects: { db: REF } } });
+      const out = await caps.outputs.outputs(ctx, 'production');
+      expect(out['db.url']).toBeUndefined();
+      expect(out['db.directUrl']).toBeUndefined();
+      expect(await caps.outputs.provides!(ctx, 'production')).toEqual(['supabase.url', 'supabase.publishableKey', 'supabase.secretKey']);
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('names the dialog and keeps failing closed for what only the Management API can do', async () => {
+    const { root } = store(OTHER);
+    const ex = mockExec([[...version], unanswered, orgs, projects, sqlRows]);
+    const { http, calls } = mockHttp([]);
+    await withMacPlatform(async () => {
+      const ctx = testCtx({ exec: ex.run, http, env: { SUPABASE_HOME: root }, config: { stack: { db: 'supabase', auth: 'supabase' }, projects: { db: REF } } });
+      const result = await supabaseAdapter.auth(ctx);
+      expect(result.ok).toBe(false);
+      expect(result.howToFix).toMatch(/went unanswered/);
+      expect(result.howToFix).toMatch(/"Always Allow" records the permission permanently/);
+      expect(result.howToFix).toMatch(/read-only/);
+      expect(result.howToFix).toMatch(/limited CLI fallback covers listing and selecting projects/);
+      expect(result.howToFix).toMatch(/also needs Supabase auth redirect settings/);
+      expect(JSON.stringify(result)).not.toContain(OTHER);
+      // Auth settings, advisors and the pooled URL need the API: they still fail with that guidance.
+      await expect(caps.authConfig.get(ctx)).rejects.toThrow(/went unanswered/);
+      await expect(caps.dbAdmin.advisors!(ctx)).rejects.toThrow(/"Always Allow"/);
+      // The same run's CLI-covered read answers anyway.
+      expect(await caps.dbAdmin.tables(ctx)).toMatchObject([{ name: 'notes' }]);
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('does not retry, and does not fall back, when the profile guard refuses the login', async () => {
+    const { root } = store(OTHER);
+    const ex = mockExec([[...version], ['/usr/bin/security', { stdout: TOKEN }]]);
+    const { http, calls } = mockHttp([]);
+    await withMacPlatform(async () => {
+      const ctx = testCtx({ exec: ex.run, http, env: { SUPABASE_HOME: root, SUPABASE_PROFILE: 'supabase-staging' }, config: { stack: { db: 'supabase' }, projects: { db: REF } } });
+      const result = await supabaseAdapter.auth(ctx);
+      expect(result.ok).toBe(false);
+      expect(result.howToFix).toMatch(/not the supported production/);
+      await expect(caps.project.candidates!(ctx)).rejects.toThrow(/not the supported production/);
+      expect(ex.calls).toHaveLength(1); // the guard is checked before any credential read
+    });
+    expect(calls).toHaveLength(0);
   });
 });

@@ -3,11 +3,13 @@
  *
  * Management API using an explicit SUPABASE_ACCESS_TOKEN or the official CLI browser-login credential.
  * One supported CLI login covers creation, outputs, auth configuration and read-only verification.
- * The limited CLI fallback remains when no reusable credential is available.
+ * The limited CLI fallback covers the operations the CLI performs itself whenever no reusable
+ * credential is available — including when only this machine's credential store cannot be read
+ * (e.g. an unanswered macOS Keychain dialog), which must never take those reads down with it.
  */
 import { randomBytes } from 'node:crypto';
 import { basename } from 'node:path';
-import { credentialVia, SupabaseCredentialError } from './supabase-credentials.js';
+import { credentialVia, SupabaseCredentialError, SupabaseCredentialUnreadable, supabaseCredentialOrUndefined } from './supabase-credentials.js';
 import { supabaseAuthUsers } from './supabase-auth.js';
 import type {
   Adapter,
@@ -101,9 +103,14 @@ interface Lint {
 
 async function auth(ctx: Ctx): Promise<AuthStatus> {
   let tok: Secret | undefined;
+  let storeUnreadable: SupabaseCredentialUnreadable | undefined;
   try { tok = await token(ctx); } catch (e) {
-    if (e instanceof SupabaseCredentialError) return { ok: false, howToFix: e.message };
-    return { ok: false, howToFix: `Could not safely read the Supabase CLI login. ${LOGIN_HELP}.` };
+    if (!(e instanceof SupabaseCredentialError)) return { ok: false, howToFix: `Could not safely read the Supabase CLI login. ${LOGIN_HELP}.` };
+    // The version, profile and storage guards stay final. A store only THIS machine cannot read (an
+    // unanswered macOS dialog above all) leaves the CLI's own reads working, so ask the CLI what this
+    // app needs before calling the provider unusable — and name exactly what the human must click.
+    if (!(e instanceof SupabaseCredentialUnreadable)) return { ok: false, howToFix: e.message };
+    storeUnreadable = e;
   }
   const via = credentialVia(ctx);
   // When a token is set every operation uses it, so a broken token is a failure even if the CLI works.
@@ -133,14 +140,14 @@ async function auth(ctx: Ctx): Promise<AuthStatus> {
   if (!(await cliLoggedIn(ctx))) {
     return {
       ok: false,
-      howToFix: `Not logged in to Supabase. ${LOGIN_HELP.charAt(0).toUpperCase()}${LOGIN_HELP.slice(1)} (preferred; one login covers the complete flow on supported credential stores). For CI or an unsupported store, ${tokenHelp()} Then re-run.`,
+      howToFix: `${storeUnreadable ? `${storeUnreadable.message} ` : ''}Not logged in to Supabase. ${LOGIN_HELP.charAt(0).toUpperCase()}${LOGIN_HELP.slice(1)} (preferred; one login covers the complete flow on supported credential stores). For CI or an unsupported store, ${tokenHelp()} Then re-run.`,
     };
   }
   const needs = await tokenNeeds(ctx);
   if (needs.length) {
     return {
       ok: false,
-      howToFix: `Your supabase CLI login works, but its stored credential could not be reused on this installation. The limited CLI fallback covers ${CLI_COVERS}. This app also needs ${needs.join(' and ')}, which requires a reusable CLI credential or an explicit token. Update to a supported Supabase v2 CLI and browser login, or use the explicit token fallback. ${tokenHelp()} Then re-run.`,
+      howToFix: `${storeUnreadable ? storeUnreadable.message : 'Your supabase CLI login works, but its stored credential could not be reused on this installation.'} The limited CLI fallback covers ${CLI_COVERS}. This app also needs ${needs.join(' and ')}, which requires a reusable CLI credential or an explicit token. Update to a supported Supabase v2 CLI and browser login, or use the explicit token fallback. ${tokenHelp()} Then re-run.`,
     };
   }
   return { ok: true, via: `supabase CLI (limited fallback; covers ${CLI_COVERS}). ${TOKEN_ONLY.charAt(0).toUpperCase()}${TOKEN_ONLY.slice(1)} need a reusable CLI credential or SUPABASE_ACCESS_TOKEN` };
@@ -257,7 +264,7 @@ const STARTING = new Set(['COMING_UP', 'RESTORING', 'UPGRADING', 'RESIZING']);
 
 async function listProjects(ctx: Ctx): Promise<Listed[]> {
   const what = 'Listing Supabase projects';
-  const tok = await token(ctx);
+  const tok = await supabaseCredentialOrUndefined(ctx);
   const raw = tok ? await api<ApiProject[]>(ctx, tok, 'GET', '/projects', what) : await cli<ApiProject[]>(ctx, ['projects', 'list', '-o', 'json'], what);
   const out: Listed[] = [];
   for (const p of Array.isArray(raw) ? raw : []) {
@@ -302,7 +309,7 @@ async function requireRef(ctx: Ctx): Promise<string> {
 async function current(ctx: Ctx): Promise<ProjectRef | null> {
   const ref = await resolveRef(ctx);
   if (!ref) return null;
-  const tok = await token(ctx);
+  const tok = await supabaseCredentialOrUndefined(ctx);
   if (tok) {
     try {
       const r = await apiStatus(ctx, tok, `/projects/${ref}`);
@@ -323,7 +330,7 @@ async function homeOrg(ctx: Ctx): Promise<string | undefined> {
   const key = 'supabase.homeOrg';
   if (ctx.cache.has(key)) return ctx.cache.get(key) as string | undefined;
   let home: string | undefined;
-  const tok = await token(ctx);
+  const tok = await supabaseCredentialOrUndefined(ctx);
   if (tok) {
     const slugs = await orgSlugs(ctx, tok);
     if (slugs.length === 1) home = slugs[0];
@@ -450,7 +457,7 @@ async function creationTarget(ctx: Ctx): Promise<ProjectCreateTarget> {
 
 /** Current status of a project: Management API with a token, else the CLI project list. */
 async function projectStatus(ctx: Ctx, ref: string): Promise<string> {
-  const tok = await token(ctx);
+  const tok = await supabaseCredentialOrUndefined(ctx);
   if (tok) return (await api<ApiProject>(ctx, tok, 'GET', `/projects/${ref}`, 'Checking the Supabase project'))?.status ?? 'unknown';
   return (await listProjects(ctx)).find((p) => p.id === ref)?.status ?? 'REMOVED';
 }
@@ -563,7 +570,7 @@ async function findCreated(ctx: Ctx, name: string, org: string, before: Set<stri
 
 async function listKeys(ctx: Ctx, ref: string): Promise<ApiKey[]> {
   const what = 'Reading Supabase API keys';
-  const tok = await token(ctx);
+  const tok = await supabaseCredentialOrUndefined(ctx);
   const raw = tok
     ? await api<ApiKey[]>(ctx, tok, 'GET', `/projects/${ref}/api-keys?reveal=true`, what)
     : await cli<ApiKey[]>(ctx, ['projects', 'api-keys', '--project-ref', ref, '--reveal', '-o', 'json'], what);
@@ -680,7 +687,7 @@ function dbUrlWritten(ctx: Ctx, ref: string): boolean {
  * golive may set a new one. Never for an adopted project, never once a DB URL has been written.
  */
 async function passwordResettable(ctx: Ctx, ref: string): Promise<boolean> {
-  return ctx.state.resource(STATE_CREATED) === ref && !vaultGet(dbPassKey(ref)) && !dbUrlWritten(ctx, ref) && (await token(ctx)) !== undefined;
+  return ctx.state.resource(STATE_CREATED) === ref && !vaultGet(dbPassKey(ref)) && !dbUrlWritten(ctx, ref) && (await supabaseCredentialOrUndefined(ctx)) !== undefined;
 }
 
 async function resetDbPassword(ctx: Ctx, tok: Secret, ref: string): Promise<Secret> {
@@ -832,7 +839,7 @@ function rowsOf(raw: unknown): Array<Record<string, unknown>> {
 
 async function tables(ctx: Ctx): Promise<TableInfo[]> {
   const ref = await requireRef(ctx);
-  const tok = await token(ctx);
+  const tok = await supabaseCredentialOrUndefined(ctx);
   const what = 'Reading Supabase tables and RLS policies';
   const schemas = tok ? await exposedSchemas(ctx, tok, ref) : ['public'];
   if (!schemas.length) return [];

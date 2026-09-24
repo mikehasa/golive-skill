@@ -7904,18 +7904,28 @@ async function readSupabaseCliCredential(ctx, options = {}) {
   if (!noKeyring && !wsl) {
     if (platform2 !== "darwin") throw failure("This OS keyring cannot be safely reused by golive. On Linux, run `SUPABASE_NO_KEYRING=1 supabase login --profile supabase` and run golive with SUPABASE_NO_KEYRING=1 to use the CLI private file.");
     for (const account2 of ["supabase", "access-token"]) {
-      let result2;
-      try {
-        result2 = await ctx.exec("/usr/bin/security", ["find-generic-password", "-s", "Supabase CLI", "-a", account2, "-w"], { timeoutMs: 15e3 });
-      } catch {
-        throw failure("Supabase CLI Keychain access failed or timed out. Unlock the keychain and allow the read when macOS asks.");
+      let answer = await keychainRead(ctx, account2, KEYCHAIN_TIMEOUT_MS);
+      if (answer.kind === "timeout") {
+        ctx.log.warn(`macOS is asking whether golive may read the Supabase CLI Keychain item (read-only; golive never changes the Keychain). Click "Allow" in that dialog, or "Always Allow" to record the permission permanently for this item. Waiting ${KEYCHAIN_ATTENDED_TIMEOUT_MS / 1e3}s for the answer.`);
+        answer = await keychainRead(ctx, account2, KEYCHAIN_ATTENDED_TIMEOUT_MS);
       }
-      if (result2.code === 0) return credential(result2.stdout, true);
-      if (result2.code !== 44) throw failure("Supabase CLI Keychain access was denied or unavailable; no fallback account was tried. Unlock the keychain and allow the read when macOS asks.");
+      if (answer.kind === "timeout") throw unreadable(KEYCHAIN_UNANSWERED);
+      if (answer.kind === "refused") throw unreadable(KEYCHAIN_REFUSED);
+      if (answer.kind === "item") return credential(answer.result.stdout, true);
     }
   }
   const file = storedFile(join7(root, "access-token"), true);
   return file === void 0 ? void 0 : credential(file);
+}
+async function keychainRead(ctx, account2, timeoutMs) {
+  let result2;
+  try {
+    result2 = await ctx.exec("/usr/bin/security", ["find-generic-password", "-s", "Supabase CLI", "-a", account2, "-w"], { timeoutMs });
+  } catch (e) {
+    return e instanceof Error && /timed out after \d+ms/.test(e.message) ? { kind: "timeout" } : { kind: "refused" };
+  }
+  if (result2.code === 0) return { kind: "item", result: result2 };
+  return result2.code === 44 ? { kind: "absent" } : { kind: "refused" };
 }
 async function supabaseCredential(ctx) {
   const explicit = ctx.envToken("SUPABASE_ACCESS_TOKEN");
@@ -7924,16 +7934,37 @@ async function supabaseCredential(ctx) {
   if (!ctx.cache.has(key)) ctx.cache.set(key, readSupabaseCliCredential(ctx));
   return ctx.cache.get(key);
 }
-var TOKEN_PATTERN, STORE_HELP, SupabaseCredentialError, failure, credentialVia;
+async function supabaseCredentialOrUndefined(ctx) {
+  try {
+    return await supabaseCredential(ctx);
+  } catch (e) {
+    if (!(e instanceof SupabaseCredentialUnreadable)) throw e;
+    if (!ctx.cache.has(FALLBACK_WARNED)) {
+      ctx.cache.set(FALLBACK_WARNED, true);
+      ctx.log.warn(`${e.message} The operations the supabase CLI performs itself keep working; anything that needs the Management API fails closed with this same guidance.`);
+    }
+    return void 0;
+  }
+}
+var TOKEN_PATTERN, STORE_HELP, KEYCHAIN_HELP, KEYCHAIN_REFUSED, KEYCHAIN_UNANSWERED, KEYCHAIN_TIMEOUT_MS, KEYCHAIN_ATTENDED_TIMEOUT_MS, FALLBACK_WARNED, SupabaseCredentialError, SupabaseCredentialUnreadable, failure, unreadable, credentialVia;
 var init_supabase_credentials = __esm({
   "src/adapters/supabase-credentials.ts"() {
     "use strict";
     init_secret();
     TOKEN_PATTERN = /^sbp_(oauth_|v0_)?[a-f0-9]{40}$/;
     STORE_HELP = "Run `supabase login --profile supabase` in your own terminal, then re-run golive. For CI or unsupported credential stores, use SUPABASE_ACCESS_TOKEN in your private golive credentials file. Never paste or print the credential.";
+    KEYCHAIN_HELP = "golive only reads that item; it never changes the Keychain. Where no dialog can be answered (CI, no desktop session), use SUPABASE_ACCESS_TOKEN in your private golive credentials file instead. Never paste or print the credential.";
+    KEYCHAIN_REFUSED = `Supabase CLI Keychain access was denied or unavailable; no fallback account was tried. Answer the dialog macOS raises ("Allow"; "Always Allow" records it permanently for this item), or unlock the login Keychain first. ${KEYCHAIN_HELP}`;
+    KEYCHAIN_UNANSWERED = `The macOS Keychain dialog for the Supabase CLI login went unanswered: macOS asks before this read because golive's read-only helper is not on the item's allow list, and nobody answered in time. Re-run and answer the dialog it raises again \u2014 "Allow" lets that run continue, and "Always Allow" records the permission permanently for this item, so it stops asking. ${KEYCHAIN_HELP}`;
+    KEYCHAIN_TIMEOUT_MS = 15e3;
+    KEYCHAIN_ATTENDED_TIMEOUT_MS = 12e4;
+    FALLBACK_WARNED = "supabase.cliFallbackWarned";
     SupabaseCredentialError = class extends Error {
     };
+    SupabaseCredentialUnreadable = class extends SupabaseCredentialError {
+    };
     failure = (reason) => new SupabaseCredentialError(`${reason} ${STORE_HELP}`);
+    unreadable = (reason) => new SupabaseCredentialUnreadable(reason);
     credentialVia = (ctx) => ctx.envToken("SUPABASE_ACCESS_TOKEN") ? "SUPABASE_ACCESS_TOKEN" : "supabase CLI browser login (production profile; Management API)";
   }
 });
@@ -8335,11 +8366,13 @@ import { randomBytes as randomBytes2 } from "node:crypto";
 import { basename as basename3 } from "node:path";
 async function auth(ctx) {
   let tok;
+  let storeUnreadable;
   try {
     tok = await supabaseCredential(ctx);
   } catch (e) {
-    if (e instanceof SupabaseCredentialError) return { ok: false, howToFix: e.message };
-    return { ok: false, howToFix: `Could not safely read the Supabase CLI login. ${LOGIN_HELP}.` };
+    if (!(e instanceof SupabaseCredentialError)) return { ok: false, howToFix: `Could not safely read the Supabase CLI login. ${LOGIN_HELP}.` };
+    if (!(e instanceof SupabaseCredentialUnreadable)) return { ok: false, howToFix: e.message };
+    storeUnreadable = e;
   }
   const via = credentialVia(ctx);
   if (tok) {
@@ -8364,14 +8397,14 @@ async function auth(ctx) {
   if (!await cliLoggedIn(ctx)) {
     return {
       ok: false,
-      howToFix: `Not logged in to Supabase. ${LOGIN_HELP.charAt(0).toUpperCase()}${LOGIN_HELP.slice(1)} (preferred; one login covers the complete flow on supported credential stores). For CI or an unsupported store, ${tokenHelp()} Then re-run.`
+      howToFix: `${storeUnreadable ? `${storeUnreadable.message} ` : ""}Not logged in to Supabase. ${LOGIN_HELP.charAt(0).toUpperCase()}${LOGIN_HELP.slice(1)} (preferred; one login covers the complete flow on supported credential stores). For CI or an unsupported store, ${tokenHelp()} Then re-run.`
     };
   }
   const needs = await tokenNeeds(ctx);
   if (needs.length) {
     return {
       ok: false,
-      howToFix: `Your supabase CLI login works, but its stored credential could not be reused on this installation. The limited CLI fallback covers ${CLI_COVERS}. This app also needs ${needs.join(" and ")}, which requires a reusable CLI credential or an explicit token. Update to a supported Supabase v2 CLI and browser login, or use the explicit token fallback. ${tokenHelp()} Then re-run.`
+      howToFix: `${storeUnreadable ? storeUnreadable.message : "Your supabase CLI login works, but its stored credential could not be reused on this installation."} The limited CLI fallback covers ${CLI_COVERS}. This app also needs ${needs.join(" and ")}, which requires a reusable CLI credential or an explicit token. Update to a supported Supabase v2 CLI and browser login, or use the explicit token fallback. ${tokenHelp()} Then re-run.`
     };
   }
   return { ok: true, via: `supabase CLI (limited fallback; covers ${CLI_COVERS}). ${TOKEN_ONLY.charAt(0).toUpperCase()}${TOKEN_ONLY.slice(1)} need a reusable CLI credential or SUPABASE_ACCESS_TOKEN` };
@@ -8456,7 +8489,7 @@ async function cliLoggedIn(ctx) {
 }
 async function listProjects(ctx) {
   const what = "Listing Supabase projects";
-  const tok = await supabaseCredential(ctx);
+  const tok = await supabaseCredentialOrUndefined(ctx);
   const raw2 = tok ? await api(ctx, tok, "GET", "/projects", what) : await cli(ctx, ["projects", "list", "-o", "json"], what);
   const out = [];
   for (const p of Array.isArray(raw2) ? raw2 : []) {
@@ -8495,7 +8528,7 @@ async function requireRef(ctx) {
 async function current(ctx) {
   const ref3 = await resolveRef(ctx);
   if (!ref3) return null;
-  const tok = await supabaseCredential(ctx);
+  const tok = await supabaseCredentialOrUndefined(ctx);
   if (tok) {
     try {
       const r = await apiStatus(ctx, tok, `/projects/${ref3}`);
@@ -8510,7 +8543,7 @@ async function homeOrg(ctx) {
   const key = "supabase.homeOrg";
   if (ctx.cache.has(key)) return ctx.cache.get(key);
   let home;
-  const tok = await supabaseCredential(ctx);
+  const tok = await supabaseCredentialOrUndefined(ctx);
   if (tok) {
     const slugs = await orgSlugs(ctx, tok);
     if (slugs.length === 1) home = slugs[0];
@@ -8614,7 +8647,7 @@ async function creationTarget(ctx) {
   return { scope: { kind: "organization", id: id2, ...typeof label3 === "string" ? { name: label3 } : {} }, region: regionSelection(ctx.config).code };
 }
 async function projectStatus(ctx, ref3) {
-  const tok = await supabaseCredential(ctx);
+  const tok = await supabaseCredentialOrUndefined(ctx);
   if (tok) return (await api(ctx, tok, "GET", `/projects/${ref3}`, "Checking the Supabase project"))?.status ?? "unknown";
   return (await listProjects(ctx)).find((p) => p.id === ref3)?.status ?? "REMOVED";
 }
@@ -8712,7 +8745,7 @@ async function findCreated(ctx, name3, org, before, requireOrg = false) {
 }
 async function listKeys(ctx, ref3) {
   const what = "Reading Supabase API keys";
-  const tok = await supabaseCredential(ctx);
+  const tok = await supabaseCredentialOrUndefined(ctx);
   const raw2 = tok ? await api(ctx, tok, "GET", `/projects/${ref3}/api-keys?reveal=true`, what) : await cli(ctx, ["projects", "api-keys", "--project-ref", ref3, "--reveal", "-o", "json"], what);
   return Array.isArray(raw2) ? raw2 : [];
 }
@@ -8779,7 +8812,7 @@ function dbUrlWritten(ctx, ref3) {
   return false;
 }
 async function passwordResettable(ctx, ref3) {
-  return ctx.state.resource(STATE_CREATED) === ref3 && !vaultGet(dbPassKey(ref3)) && !dbUrlWritten(ctx, ref3) && await supabaseCredential(ctx) !== void 0;
+  return ctx.state.resource(STATE_CREATED) === ref3 && !vaultGet(dbPassKey(ref3)) && !dbUrlWritten(ctx, ref3) && await supabaseCredentialOrUndefined(ctx) !== void 0;
 }
 async function resetDbPassword(ctx, tok, ref3) {
   const pass2 = new Secret("SUPABASE_DB_PASSWORD", randomBytes2(24).toString("base64url"));
@@ -8896,7 +8929,7 @@ function rowsOf(raw2) {
 }
 async function tables(ctx) {
   const ref3 = await requireRef(ctx);
-  const tok = await supabaseCredential(ctx);
+  const tok = await supabaseCredentialOrUndefined(ctx);
   const what = "Reading Supabase tables and RLS policies";
   const schemas = tok ? await exposedSchemas(ctx, tok, ref3) : ["public"];
   if (!schemas.length) return [];
@@ -12034,7 +12067,7 @@ function isUnreadable(e) {
   if (status === 403 || status === 429 || typeof status === "number" && status >= 500) return true;
   return /\b(network|timeout|timed out|aborted|fetch failed|ENOTFOUND|ETIMEDOUT|ECONNRESET|ECONNREFUSED|socket hang up|rate limit|rate-limit)\b/i.test(errMsg(e));
 }
-function unreadable(s, capability) {
+function unreadable2(s, capability) {
   if (s.kind === "unauthed") return `the provider is not logged in (${s.status.howToFix ?? s.adapter.title})`;
   if (s.kind === "guided") return `the provider (${s.title}) is guided, so golive has no ${capability}`;
   return "the provider is not configured";
@@ -12086,7 +12119,7 @@ async function dnsItems(ctx, at, c) {
           subject,
           expected: list4.map(formatRecord).join("; "),
           baseline,
-          reason: unreadable(dns, "DNS zone read"),
+          reason: unreadable2(dns, "DNS zone read"),
           checkId
         });
         continue;
@@ -12264,7 +12297,7 @@ async function envItems(ctx, at, c) {
       subject: `host env names (${recorded.length} recorded)`,
       expected: recorded.map((r) => `${r.name}@${r.target}`).join(", "),
       baseline: { source: "state", at: recorded.map((r) => r.at).filter(Boolean).sort().at(-1) },
-      reason: unreadable(host, "host env read"),
+      reason: unreadable2(host, "host env read"),
       checkId: "env-parity"
     });
   } else {
@@ -12334,7 +12367,7 @@ async function webhookItems(ctx, at, c) {
         subject,
         expected: `the ${r.mode}-mode endpoint ${r.id} still exists`,
         baseline,
-        reason: unreadable(pay, "endpoint list"),
+        reason: unreadable2(pay, "endpoint list"),
         checkId: "webhook-registered"
       });
       continue;
@@ -12447,7 +12480,7 @@ async function domainItems(ctx, at, c) {
       subject,
       expected: `${domain} is attached`,
       baseline,
-      reason: unreadable(host, "domain read"),
+      reason: unreadable2(host, "domain read"),
       checkId: "domain-live"
     });
     return;
@@ -12561,7 +12594,7 @@ async function dbItems(ctx, at, c) {
       subject,
       expected: `project ${recordedId} is readable`,
       baseline,
-      reason: unreadable(s, "project read"),
+      reason: unreadable2(s, "project read"),
       checkId: dbCheckId(adapterFor(ctx, "db"))
     });
     return;
@@ -12719,7 +12752,7 @@ async function emailItems(ctx, at, c) {
       subject,
       expected: `sending domain ${id2} is verified`,
       baseline,
-      reason: unreadable(s, "sending-domain read"),
+      reason: unreadable2(s, "sending-domain read"),
       checkId: "email-verified"
     });
     return;
@@ -12836,7 +12869,7 @@ async function paymentItems(ctx, at, c) {
         subject,
         expected: `the credential reads the ${r.mode}-mode account ${r.accountId}`,
         baseline,
-        reason: unreadable(pay, "account read")
+        reason: unreadable2(pay, "account read")
       });
       continue;
     }
@@ -12923,7 +12956,7 @@ async function hostItems(ctx, at, c) {
       subject,
       expected: `this repo is linked to ${recordedId}`,
       baseline,
-      reason: unreadable(host, "project read")
+      reason: unreadable2(host, "project read")
     });
   } else {
     const current3 = await once(ctx, `project:current:${provider}`, async () => {
