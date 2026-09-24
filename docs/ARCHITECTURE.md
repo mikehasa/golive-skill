@@ -76,9 +76,13 @@ purchases and account creation remain human tasks.
 
 Compatible completed steps can be skipped when their identity and evidence still match. Resource
 IDs, fingerprints and operation records survive interruptions. Unknown schema versions or ambiguous
-historical writes stop for reviewed recovery (destruction steps are exempt: a deletion re-checks
-ownership and is idempotent; DNS records and webhooks re-read the proof from the provider, while a
-host project relies on its recorded creation marker and re-reads the project after deleting it).
+historical writes stop for reviewed recovery; two exemptions are declared by the step itself and
+resume instead. Destruction steps are exempt: a deletion re-checks ownership and is idempotent; DNS
+records and webhooks re-read the proof from the provider, while a host project relies on its recorded
+creation marker and re-reads the project after deleting it. So is a step whose risk declares
+`replayable`: the same bar, asserted by an author for a write that re-observes the provider and
+golive's own recorded resource before acting (the `auth:test-user` password rotation, which re-reads
+the account state names). Nothing else is replayed automatically.
 `teardown` removes only proven golive-created resources under its own approval and confirmation gate;
 there is no automatic cross-provider rollback, restore or general reconciliation command. Its
 read-only inventory (`src/core/inventory.ts`) is shared with the handover document, so what a teardown

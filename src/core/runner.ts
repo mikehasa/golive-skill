@@ -81,13 +81,14 @@ export async function applyPlan(ctx: Ctx, plan: Plan, checks: Map<string, Check>
   // A new release may safely retain completed identical steps. Inspect the entire selected
   // dependency graph before ANY step, including dependencies omitted by --only: an old done
   // record cannot authorize a downstream deploy when the approved prerequisite has changed.
-  // Destroy steps are exempt from the cross-release replay block: a deletion is idempotent and
-  // re-observes ownership before acting, so resuming a failed one under a newer release is safe.
+  // Two declared exemptions resume a historical write under the newer release instead of stopping
+  // for reconciliation: `destroy` (a deletion re-observes ownership and is idempotent) and
+  // `replayable` (the step declared the same properties for its write). Everything else stops here.
   for (const step of plan.steps) {
     if (!visited.has(step.id)) continue;
     const rec = ctx.state.get().steps[step.id];
     const selected = !opts.only || opts.only.includes(step.id);
-    if (step.risk.writes && !step.risk.destroy && rec && !sameRelease(rec.release, ctx.release)
+    if (step.risk.writes && !step.risk.destroy && !step.risk.replayable && rec && !sameRelease(rec.release, ctx.release)
       && (rec.status !== 'done' || rec.hash !== stepHash(step) || (opts.force && selected))) {
       throw new PlanMismatchError(`historical step ${step.id} belongs to another or unknown release. Preserve state and reconcile its remote outcome before a new plan; automatic write replay is blocked.`);
     }

@@ -53,7 +53,11 @@ show the new plan and obtain a fresh approval. No old runtime is fetched to make
 
 Compatible state keeps resource IDs, fingerprints and evidence. Identical completed operations
 remain completed. Changed, failed or ambiguous historical writes may require reconciliation;
-do not delete state or force replays to get past that guard. Incompatible schemas stop safely.
+do not delete state or force replays to get past that guard. Two exemptions resume by themselves,
+because the step declares it: teardown's destruction steps (a deletion re-checks ownership and is
+idempotent) and any step whose risk declares `risk.replayable` (an idempotent write that re-observes
+the provider and golive's own recorded resource before acting, e.g. the auth test account's password
+rotation). Everything else stays blocked. Incompatible schemas stop safely.
 There is no general reconciliation command yet. Explain the blocked operation and prepare a
 separately reviewed recovery after inspecting the provider; do not promise automatic recovery.
 Existing private golive deployments are not automatically migrated to a differently named product.

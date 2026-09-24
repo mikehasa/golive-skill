@@ -22,7 +22,9 @@ export const testUserPassKey = (id: string): string => `supabase.authTestPass:${
  *
  * Its intent carries the previous attempt time, so a fresh plan re-runs the step: that is how a later
  * run gets a known password again (a rotation on the account golive seeded) and can prove login after
- * the human confirmed the address.
+ * the human confirmed the address. `replayable` declares that write safe to resume under a newer
+ * release: it re-reads the account state records before touching it, and its only other write is a
+ * signup the provider de-duplicates by address, so a failed attempt from an older release may run.
  */
 export const authE2eLink: Link = {
   id: 'auth-e2e',
@@ -53,7 +55,7 @@ export const authE2eLink: Link = {
       id: 'auth:test-user',
       title: `Seed one ${au.adapter.title} test account for the signup journey`,
       kind: 'provision',
-      risk: { writes: true, live: true },
+      risk: { writes: true, live: true, replayable: true },
       dependsOn: deps(ctx, [...(axis ? [`project:${axis}`] : []), 'auth:settings']),
       preview: [
         seeded
