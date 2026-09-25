@@ -175,6 +175,7 @@ const RECORDING_STEP = {
   project: ['project:hosting'],
   database: ['project:db'],
   domain: ['email:domain'],
+  dns: ['domain:dns', 'email:dns'],
 } satisfies Record<string, string[]>;
 
 /**
@@ -566,18 +567,17 @@ function retirementRows(ctx: Ctx, inventory: Inventory): HandoverRetirement[] {
       removable: inventory.project.created,
       provenance: { kind: 'recorded', at: recordedAt(ctx, RECORDING_STEP.project) },
     });
-  } else {
-    // The host was not usable for an inventory this run: report what state links instead of dropping it.
-    const host = adapterFor(ctx, 'hosting');
-    const linked = host ? ctx.state.resource(projectStateKeys(host.id).id) : undefined;
-    if (host && linked) {
-      rows.push({
-        resource: `${host.title} project ${ctx.state.resource(projectStateKeys(host.id).name) ?? linked} (${linked})`,
-        how: `by hand in the ${host.title} dashboard, or run \`golive teardown\` once its login and removal capability are available`,
-        removable: false,
-        provenance: { kind: 'recorded', at: recordedAt(ctx, RECORDING_STEP.project) },
-      });
-    }
+  }
+  // What the inventory could not read or remove this run: named with its reason and its fix instead
+  // of vanishing from the document because a provider is unreachable right now. This is also where a
+  // linked host project the host could not handle lands, so the two lists never disagree.
+  for (const g of inventory.gaps) {
+    rows.push({
+      resource: g.subject,
+      how: `${g.why}; ${g.fix}`,
+      removable: false,
+      provenance: g.recorded ? { kind: 'recorded', at: recordedAt(ctx, g.axis === 'dns' ? RECORDING_STEP.dns : RECORDING_STEP.project) } : { kind: 'unverifiable' },
+    });
   }
   for (const r of inventory.recorded.filter((x) => x.created)) {
     rows.push({

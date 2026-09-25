@@ -271,6 +271,32 @@ describe('handover: data', () => {
     expect(doc.retirement.find((r) => r.resource.includes(webhook.id))!.how).toMatch(/golive cannot remove it right now/);
   });
 
+  it('names what the inventory could not read or remove, with the reason and the fix', async () => {
+    const signedOut = fakeWorld().adapters.map((a) =>
+      a.id === 'fakehost' || a.id === 'fakedns' ? { ...a, auth: async () => ({ ok: false, howToFix: `run \`${a.id} login\`` }) } : a);
+    const written = { provider: 'fakedns', zone: 'example.com', type: 'A', name: 'example.com', content: '76.76.21.21', at: '2026-08-04T10:00:00.000Z' };
+
+    const doc = await setup({ adapters: signedOut, state: { ...STATE, resources: { ...STATE.resources, 'dns:example.com|A|example.com': JSON.stringify(written) } } }).build();
+    const project = doc.retirement.find((r) => r.resource.includes('project shop'))!;
+    expect(project).toMatchObject({ removable: false, provenance: { kind: 'recorded' } });
+    expect(project.how).toContain('the FakeHost login is not usable');
+    expect(project.how).toContain('golive teardown'); // the fix, not just the reason
+
+    const dns = doc.retirement.find((r) => r.resource.includes('A example.com = 76.76.21.21'))!;
+    expect(dns).toMatchObject({ removable: false, provenance: { kind: 'recorded' } });
+    expect(dns.resource).toContain('the 1 DNS record(s) golive wrote in example.com');
+    expect(dns.how).toContain('the FakeDNS login is not usable');
+
+    // The project is still listed as a resource (it exists), but never as one golive can remove here.
+    expect(doc.resources.find((r) => r.kind === 'host project')).toMatchObject({ id: 'prj_1', removable: false });
+
+    // Nothing recorded for the zone: the row says so rather than claiming a resource golive saw.
+    const unknown = await setup({ adapters: signedOut }).build();
+    const dnsRow = unknown.retirement.find((r) => r.resource.startsWith('any DNS records golive wrote'))!;
+    expect(dnsRow.resource).toContain('example.com, send.example.com');
+    expect(dnsRow).toMatchObject({ removable: false, provenance: { kind: 'unverifiable' } });
+  });
+
   it('labels every row with the provenance vocabulary and points each section at its source', async () => {
     const markdown = renderHandover(await setup().build());
     expect(markdown).toContain('[verified by golive]');

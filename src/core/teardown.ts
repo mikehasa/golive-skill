@@ -12,12 +12,20 @@
  * webhooks `risk.live`), so the runner refuses to delete anything without the matching explicit
  * confirmations. An inventoried resource golive cannot remove right now (the provider is not signed
  * in, another provider is configured, or it has no removal capability) becomes a manual, non-blocking
- * handoff instead of silently missing from the plan. Supabase, Neon and the Resend sending domain
+ * handoff instead of silently missing from the plan — including the zones and the host project the
+ * inventory could not even read (`inventory.gaps`). Supabase, Neon and the Resend sending domain
  * have no delete capability at all, so they always become manual handoffs — and one state records
  * without a creation marker is handed back as adopted, with wording that never claims golive made it.
+ *
+ * Teardown is itself the approved write, so the baseline of a resource it provably removed goes with
+ * it: the `dns:<zone>|<TYPE>|<name>` baseline, the webhook endpoint id and the sending key id are
+ * forgotten once the provider's own answer (or its own read) says the resource is gone. Left behind,
+ * a later `golive status` would report golive's own teardown as a change to reconcile. Nothing is
+ * forgotten when the removal could not be confirmed or was refused.
  */
 import type { Ctx, DnsRecord, HandoffItem, Plan, Step } from './types.js';
-import { buildInventory, createdProjectKey, type InventoryDnsRecord, type InventoryProject, type InventoryRecorded, type InventorySendingKey, type InventoryWebhook } from './inventory.js';
+import { buildInventory, createdProjectKey, type InventoryDnsRecord, type InventoryGap, type InventoryProject, type InventoryRecorded, type InventorySendingKey, type InventoryWebhook } from './inventory.js';
+import { dnsBaselineKey } from './dns-baseline.js';
 import { orderSteps, planId } from './plan.js';
 import { redact } from './secret.js';
 import { assertCompatibleState } from './state.js';
@@ -45,7 +53,7 @@ export async function buildTeardownPlan(ctx: Ctx): Promise<Plan> {
     if (stepIds.has(s.id)) throw new Error(`teardown: two resources map to step ${s.id}, so golive cannot plan an unambiguous deletion. Resolve the duplicate and re-run.`);
     stepIds.add(s.id);
   }
-  const handoffs: HandoffItem[] = [...dbHandoffs(inventory.recorded), ...emailHandoffs(inventory.recorded), ...webhooks.handoffs, ...keys.handoffs, ...project.handoffs];
+  const handoffs: HandoffItem[] = [...dbHandoffs(inventory.recorded), ...emailHandoffs(inventory.recorded), ...webhooks.handoffs, ...keys.handoffs, ...project.handoffs, ...gapHandoffs(inventory.gaps)];
   const ordered = orderSteps(steps);
   return { id: planId(ordered, handoffs, ctx.release), release: structuredClone(ctx.release), steps: ordered, handoffs, unmappedEnv: [], warnings: [] };
 }
@@ -74,10 +82,14 @@ function webhookTeardown(webhooks: InventoryWebhook[]): { steps: Step[]; handoff
 }
 
 function webhookStep(w: InventoryWebhook, removal: NonNullable<InventoryWebhook['removal']>): Step {
-  const { adapter, remove } = removal;
-  const { mode, id } = w;
+  const { adapter, remove, list } = removal;
+  const { mode, id, key } = w;
+  const stepId = `teardown:webhook:${adapter.id}:${mode}`;
+  // Whether this run left the endpoint registered on purpose (the provider says it is not golive's):
+  // the recorded id then still describes a live endpoint, so neither it nor its state record may go.
+  let left = false;
   return step({
-    id: `teardown:webhook:${adapter.id}:${mode}`,
+    id: stepId,
     title: `Delete the ${adapter.title} ${mode}-mode webhook endpoint golive created`,
     kind: 'destroy',
     risk: { writes: true, destroy: true, live: mode === 'live' },
@@ -90,9 +102,55 @@ function webhookStep(w: InventoryWebhook, removal: NonNullable<InventoryWebhook[
       const r = await remove(sctx, id, mode);
       if (r.deleted) return { changes: [`deleted webhook ${id}`] };
       if (r.reason === 'endpoint not found') return { changes: [`already gone: ${id}`] };
-      if (r.reason === 'not created by golive') return { changes: [`left as is: ${r.reason}`] };
+      if (r.reason === 'not created by golive') {
+        left = true;
+        return { changes: [`left as is: ${r.reason}`] };
+      }
       throw new Error(`could not delete the ${adapter.title} ${mode}-mode webhook endpoint ${id}: ${redact(r.reason ?? 'the provider did not delete it')}`);
     },
+    // A delete is only reported as done once the provider's own list no longer has the endpoint (the
+    // DNS steps confirm a removal the same way). A provider that cannot be re-read warns instead of
+    // failing, and one that still lists the endpoint fails: golive does not report a delete it cannot
+    // confirm. Either way the recorded id is forgotten only once the provider's answer says the
+    // endpoint is gone — teardown is the approved write, so its own record must not outlive it.
+    async verifyInline(vctx) {
+      if (left) return [];
+      const checkId = `${stepId}:removed`;
+      const title = `${adapter.title} no longer lists the ${mode}-mode webhook endpoint golive created (${id})`;
+      let endpoints: Awaited<ReturnType<typeof list>>;
+      try {
+        endpoints = await list(vctx, mode);
+      } catch (e) {
+        forgetWebhookRecord(vctx, key);
+        return [{
+          id: checkId,
+          title,
+          status: 'warn',
+          severity: 'medium',
+          evidence: [`the delete was reported, but the ${adapter.title} ${mode}-mode endpoints could not be re-read: ${errMsg(e)}`],
+          fix: `Check ${adapter.title} access, then confirm the endpoint ${id} is gone.`,
+        }];
+      }
+      if (endpoints.some((e) => e.id === id)) {
+        return [{
+          id: checkId,
+          title,
+          status: 'fail',
+          severity: 'high',
+          evidence: [`${adapter.title} still lists the ${mode}-mode endpoint ${id} after the delete`],
+          fix: `Delete it in the ${adapter.title} dashboard; golive does not report a delete it cannot confirm.`,
+        }];
+      }
+      forgetWebhookRecord(vctx, key);
+      return [{ id: checkId, title, status: 'pass', severity: 'info', evidence: [`${adapter.title} no longer lists the ${mode}-mode endpoint ${id}`] }];
+    },
+  });
+}
+
+/** Forget the endpoint id teardown provably removed: only an approved write moves what state records. */
+function forgetWebhookRecord(ctx: Ctx, key: string): void {
+  ctx.state.save((s) => {
+    delete s.resources[key];
   });
 }
 
@@ -132,6 +190,9 @@ function dnsStep(r: InventoryDnsRecord, id: string): Step {
       return { changes: [outcome === 'removed' ? `deleted: ${formatRecord(record)}` : `already gone: ${formatRecord(record)}`] };
     },
     // A delete is only reported as done once the provider's own owned-record list no longer has it.
+    // The recorded baseline goes with the record in both confirmed-absence cases (a provider that
+    // cannot be re-read included: the delete itself was reported), and stays when the provider still
+    // lists the record — a baseline is never dropped for a record that is still there.
     async verifyInline(vctx) {
       const checkId = `${id}:removed`;
       const title = `${adapter.title} no longer lists the record golive created: ${formatRecord(record)}`;
@@ -139,6 +200,7 @@ function dnsStep(r: InventoryDnsRecord, id: string): Step {
       try {
         owned = await listOwned(vctx, domain);
       } catch (e) {
+        forgetDnsBaseline(vctx, domain, record);
         return [{
           id: checkId,
           title,
@@ -158,8 +220,22 @@ function dnsStep(r: InventoryDnsRecord, id: string): Step {
           fix: `Delete it in the ${adapter.title} dashboard; golive does not report a delete it cannot confirm.`,
         }];
       }
+      forgetDnsBaseline(vctx, domain, record);
       return [{ id: checkId, title, status: 'pass', severity: 'info', evidence: [`${formatRecord(record)} is gone from the records ${adapter.title} reports as golive-owned in ${domain}`] }];
     },
+  });
+}
+
+/**
+ * Forget the baseline of a record teardown just removed. The baseline says "golive wrote this and
+ * expects it in the zone"; once the provider's own list confirms it is gone, keeping it would make a
+ * later `golive status` report golive's own teardown as a record to reconcile. Teardown is the
+ * approved write here, so this is not a silent re-baseline.
+ */
+function forgetDnsBaseline(ctx: Ctx, zone: string, record: DnsRecord): void {
+  const key = dnsBaselineKey(zone, record);
+  ctx.state.save((s) => {
+    delete s.resources[key];
   });
 }
 
@@ -187,9 +263,10 @@ function keyTeardown(keys: InventorySendingKey[]): { steps: Step[]; handoffs: Ha
 
 function emailKeyStep(k: InventorySendingKey, revocation: NonNullable<InventorySendingKey['revocation']>): Step {
   const { adapter, revoke } = revocation;
-  const { target, id } = k;
+  const { target, id, key } = k;
+  const stepId = `teardown:key:${adapter.id}:${target}`;
   return step({
-    id: `teardown:key:${adapter.id}:${target}`,
+    id: stepId,
     title: `Revoke the ${adapter.title} sending key golive issued for ${target}`,
     kind: 'destroy',
     risk: { writes: true, destroy: true },
@@ -204,6 +281,30 @@ function emailKeyStep(k: InventorySendingKey, revocation: NonNullable<InventoryS
       if (r.reason === 'key not found') return { changes: [`already gone: ${id}`] };
       throw new Error(`could not revoke the ${adapter.title} sending key ${id}: ${redact(r.reason ?? 'the provider did not revoke it')}`);
     },
+    // Nothing can re-read a revoked key: the capability is issue-and-revoke only (Resend exposes no
+    // key read), so this is reported as unverified — never as a pass — and the recorded key id goes
+    // with the key the provider's answer says is gone. Keeping it would leave `golive status` calling
+    // a revoked key the app's key, and a later teardown planning a revocation that cannot happen.
+    async verifyInline(vctx) {
+      forgetKeyRecord(vctx, key);
+      return [{
+        id: `${stepId}:revoked`,
+        title: `${adapter.title} cannot confirm the ${target} sending key golive revoked`,
+        status: 'warn',
+        severity: 'medium',
+        evidence: [
+          `the provider reported ${id} revoked, but ${adapter.title} exposes no read for an issued key (issue and revoke only), so golive cannot re-check it`,
+        ],
+        fix: `Confirm the key ${id} is gone in the ${adapter.title} dashboard.`,
+      }];
+    },
+  });
+}
+
+/** Forget the key id teardown revoked: see the DNS baseline note above; same reasoning, same approval. */
+function forgetKeyRecord(ctx: Ctx, key: string): void {
+  ctx.state.save((s) => {
+    delete s.resources[key];
   });
 }
 
@@ -302,6 +403,22 @@ function projectStep(p: InventoryProject): Step {
 }
 
 // ── Handoffs for resources golive created but cannot delete yet ──────────────────────────────────
+
+/**
+ * Every recorded resource this run could not even read or reach, as a handoff: the zone whose DNS
+ * provider is unusable (or cannot tell golive-owned records apart) and the linked host project golive
+ * cannot remove now. The subject names what remains and the action says exactly what to do, so a
+ * teardown can never delete the host project while silently leaving records or a project behind.
+ */
+function gapHandoffs(gaps: InventoryGap[]): HandoffItem[] {
+  return gaps.map((g) => ({
+    id: g.id,
+    why: `${g.subject}: ${g.why}`,
+    action: g.fix,
+    blocking: false,
+    manual: true,
+  }));
+}
 
 function dbHandoffs(recorded: InventoryRecorded[]): HandoffItem[] {
   return recorded.filter((r) => r.axis === 'db').map(manualHandoff);

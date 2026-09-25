@@ -287,6 +287,93 @@ describe('drift: the DNS steps record what they wrote', () => {
   });
 });
 
+// ── After a teardown golive performed ───────────────────────────────────────────────────────────
+
+const TD_CONFIG: Partial<ShipConfig> = {
+  stack: { hosting: 'fakehost', payments: 'fakepay', email: 'fakemail', dns: 'fakedns' },
+  domain: 'example.com',
+  targets: ['production'],
+  payments: { webhook: { path: '/api/hooks', events: ['checkout.session.completed'] } },
+};
+const TD_ADMIN = { yes: true, confirmLive: true, confirmDns: true, confirmDestroy: true };
+const TD_RECORD: DnsRecord = { type: 'A', name: 'example.com', content: '76.76.21.21' };
+const TD_BASELINE = dnsBaselineKey('example.com', TD_RECORD);
+/** Every kind of recorded fact an approved teardown removes. */
+const tdState = (): ShipState => stateWith({
+  'fakehost.projectId': 'prj_1',
+  'fakehost.projectName': 'shop',
+  'fakehost.createdProjectId': 'prj_1',
+  'fakepay.live.webhookEndpointId': 'we_live',
+  'fakemail.keyId@production': 'key_9',
+  [TD_BASELINE]: JSON.stringify({ provider: 'fakedns', zone: 'example.com', ...TD_RECORD, at: ago(2 * DAY) }),
+});
+
+/** A zone that really loses a record when it is deleted: the listing goes with the owned list. */
+const tdZone = (w: FakeWorld): void => {
+  w.dns.owned = [TD_RECORD];
+  w.dns.records = [TD_RECORD];
+  w.pay.endpoints = [{ id: 'we_live', url: 'https://example.com/api/hooks', events: ['checkout.session.completed'], enabled: true, mode: 'live' }];
+  const adapter = w.adapters.find((a) => a.id === 'fakedns')!;
+  const dns = adapter.capabilities.dns!;
+  const remove = dns.remove!.bind(dns);
+  adapter.capabilities = {
+    ...adapter.capabilities,
+    dns: {
+      ...dns,
+      remove: async (c, domain, record) => {
+        const outcome = await remove(c, domain, record);
+        w.dns.records = w.dns.records.filter((r) => !(r.type === record.type && r.name === record.name && r.content === record.content));
+        return outcome;
+      },
+    },
+  };
+};
+
+describe('drift: what teardown just removed is not drift', () => {
+  it('leaves no baseline behind, so a later status reports nothing golive itself deleted', async () => {
+    const { ctx } = setup({ config: TD_CONFIG, state: tdState(), arrange: tdZone });
+    const plan = await buildTeardownPlan(ctx);
+    expect(plan.handoffs).toEqual([]); // everything was reachable: nothing to hand back
+    const out = await applyPlan(ctx, plan, new Map(), { ...TD_ADMIN, approvedPlanId: plan.id });
+    expect(out.map((o) => [o.id, o.status])).toEqual([
+      ['teardown:webhook:fakepay:live', 'done'],
+      ['teardown:dns:fakedns:A:example.com', 'done'],
+      ['teardown:key:fakemail:production', 'done'],
+      ['teardown:project:hosting', 'done'],
+    ]);
+
+    // Teardown is the approved write: the facts it provably removed go with it.
+    expect(readDnsBaselines(ctx.state.get())).toEqual([]);
+    expect(ctx.state.resource('fakepay.live.webhookEndpointId')).toBeUndefined();
+    expect(ctx.state.resource('fakemail.keyId@production')).toBeUndefined();
+    expect(ctx.state.resource('fakehost.projectId')).toBeUndefined();
+
+    const report = await detectDrift(ctx);
+    // Without the state hygiene above this reported the deleted record as high/`reconcile` ("re-apply
+    // to restore it"), the deleted endpoint the same, and kept a sending-key row for a revoked key.
+    expect(report.items).toEqual([]);
+    expect(report.summary.actionable).toBe(0);
+    expect(report.notChecked.map((n) => n.subject).join(' ')).toContain('DNS records'); // honest about having nothing left to compare
+  });
+
+  it('keeps the baseline when the provider did not delete the record', async () => {
+    const { w, ctx } = setup({ config: TD_CONFIG, state: tdState(), arrange: (x) => { tdZone(x); x.dns.removeError = 'refusing to delete a record golive does not own'; } });
+    const plan = await buildTeardownPlan(ctx);
+    const out = await applyPlan(ctx, plan, new Map(), { ...TD_ADMIN, approvedPlanId: plan.id });
+
+    const dnsOut = out.find((o) => o.id === 'teardown:dns:fakedns:A:example.com')!;
+    expect(dnsOut.status).toBe('failed');
+    expect(ctx.state.resource(TD_BASELINE)).toBeDefined(); // still there: nothing was confirmed gone
+    expect(readDnsBaselines(ctx.state.get())).toHaveLength(1);
+    expect(w.dns.records).toEqual([TD_RECORD]); // and the record is still in the zone
+
+    // The baseline is still what status compares, so the record stays tracked after a failed removal.
+    const report = await detectDrift(withDoH(ctx, { 'A example.com': ['76.76.21.21'] }));
+    expect(report.items.filter((i) => i.class === 'dns-record' || i.class === 'dns-public')).toEqual([]);
+    expect(report.verified.join(' ')).toContain('is served by public DNS as golive recorded it');
+  });
+});
+
 // ── Env names ───────────────────────────────────────────────────────────────────────────────────
 
 describe('drift: env names golive delivered', () => {
@@ -707,6 +794,28 @@ describe('golive status', () => {
     expect(it_.suggestedAction).toContain('references/updates.md');
     expect(it_.suggestedAction).not.toContain('golive apply --plan');
     expect(readFileSync(join(root, '.golive/state.json'), 'utf8')).toBe(before);
+  });
+
+  it('exits 0 and reports nothing after an approved teardown removed all of it', async () => {
+    const w = fakeWorld();
+    writeFileSync(join(root, 'golive.yaml'), JSON.stringify({ version: 1, ...TD_CONFIG, targets: ['production'] }));
+    mocks.adapters.push(...w.adapters);
+    // Run the approved teardown on the same recorded state and hand the CLI exactly what it left.
+    const ctx = testCtx({ cwd: root, adapters: w.adapters, config: TD_CONFIG, state: tdState() });
+    tdZone(w);
+    const plan = await buildTeardownPlan(ctx);
+    expect((await applyPlan(ctx, plan, new Map(), { ...TD_ADMIN, approvedPlanId: plan.id })).map((o) => o.status)).toEqual(['done', 'done', 'done', 'done']);
+    mkdirSync(join(root, '.golive'), { recursive: true });
+    writeFileSync(join(root, '.golive/state.json'), JSON.stringify(ctx.state.get()));
+
+    const { output, code } = await runCli(['status']);
+    const json = JSON.parse(output) as { ok: boolean; items: Array<{ id: string; severity: string; action: string }>; summary: { actionable: number }; note?: string };
+    // Nothing high/`reconcile` for the record, endpoint or key golive just deleted: a teardown is not
+    // drift, and `status` must not tell the owner to put it back.
+    expect(code).toBe(0);
+    expect(json.items).toEqual([]);
+    expect(json.summary.actionable).toBe(0);
+    expect(json.ok).toBe(true);
   });
 
   it('prints the report and exits 2 when something needs acting on', async () => {

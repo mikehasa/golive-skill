@@ -99,14 +99,40 @@ describe('inventory', () => {
     expect(inv.sendingKeys[0]!.revocation).toBeUndefined();
   });
 
-  it('inventories nothing for a DNS provider that cannot list golive-owned records', async () => {
+  it('keeps no record for a DNS provider that cannot list golive-owned records, and reports the zone as a gap', async () => {
     const { inventory } = await setup(undefined, (w) => { w.dns.withOwned = false; });
-    expect((await inventory()).dnsRecords).toEqual([]);
+    const inv = await inventory();
+    expect(inv.dnsRecords).toEqual([]);
+    expect(inv.gaps.map((g) => g.id)).toEqual(['teardown:dns:fakedns']);
+    expect(inv.gaps[0]).toMatchObject({ axis: 'dns', provider: 'fakedns', providerTitle: 'FakeDNS', recorded: false });
+    expect(inv.gaps[0]!.why).toContain('no read that reports which records golive owns');
+    expect(inv.gaps[0]!.fix).toContain('Delete those records in the FakeDNS dashboard');
   });
 
-  it('drops a host that cannot delete projects, and a project that was never linked', async () => {
-    expect((await setup(undefined, (w) => void (w.host.canRemoveProject = false)).inventory()).project).toBeNull();
-    expect((await setup(emptyState()).inventory()).project).toBeNull();
+  it('names the records golive recorded writing, for a DNS axis it cannot read at all', async () => {
+    const written = { zone: 'example.com', type: 'A', name: 'example.com', content: '76.76.21.21', at: '2026-09-20T10:00:00.000Z' };
+    const state: ShipState = { ...STATE, resources: { ...STATE.resources, [`dns:${written.zone}|${written.type}|${written.name}`]: JSON.stringify({ provider: 'fakedns', ...written }) } };
+    const { inventory } = await setup(state, (w) => void (w.dns.authed = false));
+    const inv = await inventory();
+
+    expect(inv.dnsRecords).toEqual([]);
+    expect(inv.gaps[0]).toMatchObject({ id: 'teardown:dns:fakedns', recorded: true });
+    expect(inv.gaps[0]!.subject).toBe('the 1 DNS record(s) golive wrote in example.com (A example.com = 76.76.21.21)');
+    expect(inv.gaps[0]!.why).toContain('the FakeDNS login is not usable');
+  });
+
+  it('keeps no project for a host that cannot delete projects, and reports it as a gap', async () => {
+    const inv = await setup(undefined, (w) => void (w.host.canRemoveProject = false)).inventory();
+    expect(inv.project).toBeNull();
+    expect(inv.gaps.map((g) => g.id)).toEqual(['teardown:hosting:fakehost']);
+    expect(inv.gaps[0]).toMatchObject({ axis: 'hosting', provider: 'fakehost', providerTitle: 'FakeHost', recorded: true });
+    expect(inv.gaps[0]!.subject).toBe('the FakeHost project shop (prj_1)');
+    expect(inv.gaps[0]!.fix).toContain('fakehost.createdProjectId');
+
+    // Nothing linked at all is still no gap: there is no project to hand back.
+    const nothing = await setup(emptyState()).inventory();
+    expect(nothing.project).toBeNull();
+    expect(nothing.gaps).toEqual([]);
   });
 
   it('keeps the teardown plan identity for this fixture: same id, steps and handoffs as before the extraction', async () => {

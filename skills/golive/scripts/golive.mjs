@@ -10379,9 +10379,106 @@ function planView(plan) {
   };
 }
 
-// src/links/util.ts
+// src/core/dns-baseline.ts
+var DNS_BASELINE_PREFIX = "dns:";
+var BASELINE_TYPES = /* @__PURE__ */ new Set(["A", "AAAA", "CNAME", "TXT", "MX", "CAA"]);
+var normName = (n) => n.trim().replace(/\.$/, "").toLowerCase();
+function dnsBaselineKey(zone, record2) {
+  return `${DNS_BASELINE_PREFIX}${normName(zone)}|${record2.type}|${normName(record2.name)}`;
+}
+function rememberDnsWrite(sctx, zone, provider, record2, outcome) {
+  const key = dnsBaselineKey(zone, record2);
+  const at = outcome === "unchanged" ? parseBaseline(sctx.state.resource(key))?.at ?? (/* @__PURE__ */ new Date()).toISOString() : (/* @__PURE__ */ new Date()).toISOString();
+  const baseline = {
+    provider,
+    zone: normName(zone),
+    type: record2.type,
+    name: normName(record2.name),
+    content: record2.content,
+    ...record2.priority !== void 0 ? { priority: record2.priority } : {},
+    at
+  };
+  sctx.remember(key, JSON.stringify(baseline));
+}
+function readDnsBaselines(state) {
+  const out = [];
+  for (const [key, value] of Object.entries(state.resources).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
+    if (!key.startsWith(DNS_BASELINE_PREFIX)) continue;
+    const b = parseBaseline(value);
+    if (b) out.push(b);
+  }
+  return out;
+}
+function parseBaseline(value) {
+  if (!value) return null;
+  let raw2;
+  try {
+    raw2 = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  const b = raw2;
+  if (typeof b !== "object" || b === null) return null;
+  if (typeof b.provider !== "string" || typeof b.zone !== "string" || typeof b.type !== "string" || !BASELINE_TYPES.has(b.type)) return null;
+  if (typeof b.name !== "string" || typeof b.content !== "string" || typeof b.at !== "string") return null;
+  return {
+    provider: b.provider,
+    zone: normName(b.zone),
+    type: b.type,
+    name: normName(b.name),
+    content: b.content,
+    ...typeof b.priority === "number" ? { priority: b.priority } : {},
+    at: b.at
+  };
+}
+
+// src/core/doh.ts
+var TYPE_NUM = { 1: "A", 28: "AAAA", 5: "CNAME", 16: "TXT", 15: "MX", 2: "NS", 6: "SOA", 257: "CAA" };
+function normalizeTxt(data) {
+  const parts = data.match(/"((?:[^"\\]|\\.)*)"/g);
+  return parts ? parts.map((p) => p.slice(1, -1).replace(/\\"/g, '"')).join("") : data;
+}
+function norm(type, data) {
+  if (type === "TXT") return normalizeTxt(data);
+  if (type === "CNAME" || type === "NS") return data.replace(/\.$/, "").toLowerCase();
+  if (type === "MX") return data.replace(/\.$/, "").toLowerCase();
+  return data;
+}
+async function resolve4(ctx, name3, type) {
+  const q2 = `name=${encodeURIComponent(name3)}&type=${type}`;
+  const endpoints = [`https://cloudflare-dns.com/dns-query?${q2}`, `https://dns.google/resolve?${q2}`];
+  let lastErr;
+  for (const url of endpoints) {
+    try {
+      const res = await ctx.http({ url, headers: { accept: "application/dns-json" }, timeoutMs: 1e4 });
+      if (res.status !== 200 || !res.json) throw new Error(`DoH ${res.status}`);
+      const map = (rrs = []) => rrs.filter((a) => TYPE_NUM[a.type]).map((a) => ({ name: a.name.replace(/\.$/, "").toLowerCase(), type: TYPE_NUM[a.type], data: norm(TYPE_NUM[a.type], a.data), ttl: a.TTL }));
+      return { status: res.json.Status, answers: map(res.json.Answer), authority: map(res.json.Authority) };
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw new Error(`DNS lookup failed for ${name3} ${type}: ${String(lastErr)}`);
+}
+async function lookup(ctx, name3, type) {
+  const r = await resolve4(ctx, name3, type);
+  return r.answers.filter((a) => a.type === type && a.name === name3.toLowerCase()).map((a) => a.data);
+}
+async function zoneApex(ctx, host) {
+  const r = await resolve4(ctx, host, "SOA");
+  const soa = [...r.answers, ...r.authority].find((a) => a.type === "SOA");
+  return soa ? soa.name : null;
+}
+async function dnsHost(ctx, domain) {
+  const apex = await zoneApex(ctx, domain) ?? domain;
+  const ns = await lookup(ctx, apex, "NS");
+  const provider = ns.some((n) => n.endsWith(".ns.cloudflare.com")) ? "cloudflare" : ns.some((n) => n.endsWith("vercel-dns.com")) ? "vercel" : ns[0] ? ns[0].split(".").slice(-2).join(".") : null;
+  return { provider, nameservers: ns };
+}
+
+// src/checks/util.ts
+init_http();
 init_secret();
-import { basename as basename2 } from "node:path";
 
 // src/core/caps.ts
 function adapterById(id2, list4) {
@@ -10395,7 +10492,436 @@ function cap(ctx, axis, k) {
   return adapterFor(ctx, axis)?.capabilities[k];
 }
 
+// src/checks/util.ts
+function result(status, severity, evidence, fix) {
+  const out = { status, severity, evidence: evidence.map(redact) };
+  if (fix) out.fix = redact(fix);
+  return out;
+}
+var pass = (evidence) => result("pass", "info", evidence);
+var skip = (why) => result("skip", "info", [why]);
+var RANK = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+function worst(sevs) {
+  return sevs.reduce((a, b) => RANK[b] > RANK[a] ? b : a, "info");
+}
+function isFailing(s) {
+  return RANK[s] >= RANK.high;
+}
+function errMsg(e) {
+  return redact(e instanceof Error ? e.message : String(e));
+}
+function trimSlash(url) {
+  return url.replace(/\/+$/, "");
+}
+async function baseUrl(ctx, opts = {}) {
+  const target = opts.target ?? "production";
+  if (target === "production" && ctx.config.domain) return `https://${ctx.config.domain}`;
+  const url = cap(ctx, "hosting", "url");
+  const got = url ? await url.get(ctx, target).catch(() => null) : null;
+  return got ? trimSlash(got) : null;
+}
+var blocked = (by, detail) => skip(`blocked by: ${by}${detail ? ` (${detail})` : ""}`);
+var AUTH_OK = "checks:auth-ok:";
+async function authBlock(ctx, axis) {
+  const a = adapterFor(ctx, axis);
+  if (!a || !a.automated) return null;
+  if (ctx.cache.get(AUTH_OK + a.id) === true) return null;
+  try {
+    if ((await a.auth(ctx)).ok) {
+      ctx.cache.set(AUTH_OK + a.id, true);
+      return null;
+    }
+  } catch {
+  }
+  return `login:${a.id}`;
+}
+function projectAxis(ctx, axis) {
+  if (axis === "hosting" || axis === "db") return axis;
+  if (axis === "auth" && ctx.config.stack.auth && ctx.config.stack.auth === ctx.config.stack.db) return "db";
+  return null;
+}
+async function projectBlock(ctx, axis) {
+  const pa = projectAxis(ctx, axis);
+  if (!pa) return null;
+  const linker = cap(ctx, pa, "project");
+  if (!linker) return null;
+  const cur = await linker.current(ctx).catch(() => null);
+  return cur ? null : `project:${pa}`;
+}
+async function prereq(ctx, axis, opts = {}) {
+  const by = await authBlock(ctx, axis) ?? (opts.project === false ? null : await projectBlock(ctx, axis));
+  return by ? blocked(by) : null;
+}
+function hostVariants(host) {
+  const h = host.toLowerCase();
+  return h.startsWith("www.") ? [h, h.slice(4)] : [h, `www.${h}`];
+}
+async function confirmedProductionUrl(ctx) {
+  const claimed = ctx.config.domain ? `https://${ctx.config.domain}` : "the production URL";
+  const cannot = (why) => ({ ok: false, outcome: skip(`cannot confirm ${claimed} belongs to your project yet (${why})`) });
+  const urlCap = cap(ctx, "hosting", "url");
+  if (!urlCap) return cannot(ctx.config.stack.hosting ? `hosting provider ${ctx.config.stack.hosting} can't report its URL (guided)` : "no hosting provider chosen");
+  const pre = await prereq(ctx, "hosting");
+  if (pre) return { ok: false, outcome: pre };
+  let got;
+  try {
+    got = await urlCap.get(ctx, "production");
+  } catch (e) {
+    return cannot(`the host could not report it: ${errMsg(e)}`);
+  }
+  if (!got) return ctx.config.domain ? cannot("blocked by: deploy:production; the host reports no production URL") : { ok: false, outcome: blocked("deploy:production", "no production deployment yet") };
+  let u;
+  try {
+    u = new URL(got);
+  } catch {
+    return cannot(`the host reported an invalid URL`);
+  }
+  if (u.protocol !== "https:") return cannot(`the host reported a non-https URL ${u.origin}`);
+  for (const h of hostVariants(u.host)) allowHost(h);
+  return { ok: true, url: trimSlash(u.origin + u.pathname) };
+}
+async function probe(ctx, url, opts = {}) {
+  return ctx.http({ url, method: opts.method ?? "GET", body: opts.body, headers: opts.headers, timeoutMs: opts.timeoutMs ?? 2e4 });
+}
+function addressDomain(from) {
+  if (!from) return void 0;
+  const m = /@([^\s>@]+)>?\s*$/.exec(from.trim());
+  return m?.[1]?.toLowerCase();
+}
+function sendingDomainOf(ctx) {
+  return ctx.config.email?.domain ?? addressDomain(ctx.config.email?.from) ?? ctx.config.domain;
+}
+function globMatch(pattern, url) {
+  let re = "";
+  const p = trimSlash(pattern);
+  for (let i = 0; i < p.length; i++) {
+    const c = p[i];
+    if (c === "*" && p[i + 1] === "*") {
+      re += ".*";
+      i++;
+    } else if (c === "*") re += "[^/.]*";
+    else if (c === "?") re += ".";
+    else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${re}$`, "i").test(trimSlash(url));
+}
+function isLocalhost(url) {
+  try {
+    const h = new URL(url).hostname;
+    return h === "localhost" || h.endsWith(".localhost") || h === "127.0.0.1" || h === "0.0.0.0" || h === "[::1]";
+  } catch {
+    return /localhost|127\.0\.0\.1/.test(url);
+  }
+}
+
+// src/checks/domain.ts
+init_http();
+var PROPAGATION_MS = 48 * 60 * 60 * 1e3;
+var HOSTING_DNS_STEP = "domain:dns";
+function recentlyChanged(ctx) {
+  const rec = ctx.state.get().steps[HOSTING_DNS_STEP];
+  return Boolean(rec && rec.status === "done" && Date.now() - Date.parse(rec.at) < PROPAGATION_MS);
+}
+var domainLiveCheck = {
+  id: "domain-live",
+  title: "Custom domain resolves and serves HTTPS",
+  severity: "high",
+  applies: (ctx) => Boolean(ctx.config.domain),
+  async run(ctx) {
+    const d = ctx.config.domain;
+    const evidence = [];
+    const found = [];
+    const errors = [];
+    for (const type of ["A", "AAAA", "CNAME"]) {
+      try {
+        const vals = await lookup(ctx, d, type);
+        if (vals.length) found.push(`${type} ${vals.slice(0, 3).join(", ")}`);
+      } catch (e) {
+        errors.push(`${type}: ${errMsg(e)}`);
+      }
+    }
+    if (!found.length) {
+      const ev = [`${d} has no A/AAAA/CNAME records in public DNS`, ...errors];
+      if (recentlyChanged(ctx)) return result("warn", "medium", [...ev, "DNS was changed recently: not propagated yet"], "Wait for DNS to propagate (usually minutes, up to 48h), then re-run verify.");
+      return result("fail", "high", ev, `Point ${d} at your host: run \`golive plan\` (automated DNS) or add the records your host lists for ${d} at your DNS provider.`);
+    }
+    evidence.push(`DNS: ${found.join("; ")}`);
+    const attach = cap(ctx, "hosting", "domain");
+    if (attach) {
+      const pre = await prereq(ctx, "hosting");
+      if (pre) return pre;
+      let st;
+      try {
+        st = await attach.status(ctx, d);
+      } catch (e) {
+        return result("skip", "info", [`cannot confirm ${d} is attached to your ${ctx.config.stack.hosting ?? "hosting"} project: the host domain status is unavailable (${errMsg(e)})`, ...evidence]);
+      }
+      evidence.push(`host reports domain ${st}`);
+      if (st === "misconfigured") return result("fail", "high", evidence, `${d} is not attached to your hosting project or its DNS does not point at the host. Run \`golive plan\` (it attaches the domain and shows the records the host requires) and fix them at your DNS provider.`);
+      if (st === "pending") {
+        return result("warn", "medium", evidence, `The host has not confirmed ${d} yet: DNS may still be propagating, or domain ownership is not verified (e.g. a TXT challenge because the domain was used by another account). Add any records \`golive plan\` lists, apply, then re-run verify.`);
+      }
+    } else {
+      evidence.push(
+        ctx.config.stack.hosting ? `host attachment not confirmed: ${ctx.config.stack.hosting} can't report domain status (guided), so this checks DNS + HTTPS only` : "host attachment not confirmed: no hosting provider chosen, so this checks DNS + HTTPS only"
+      );
+    }
+    const url = `https://${d}/`;
+    for (const h of hostVariants(d)) allowHost(h);
+    let res;
+    try {
+      res = await probe(ctx, url);
+    } catch (e) {
+      return result("fail", "high", [...evidence, `GET ${url} failed (TLS or connection error): ${errMsg(e)}`], "The certificate may still be issuing (a few minutes after DNS resolves); if it persists, check the domain status in your host dashboard.");
+    }
+    evidence.push(`GET ${url} \u2192 HTTP ${res.status}${res.headers.location ? ` (\u2192 ${res.headers.location})` : ""}`);
+    if (res.status >= 200 && res.status < 400) return pass(evidence);
+    return result("fail", "high", evidence, `${d} resolves and serves TLS but returns HTTP ${res.status}. Check that the domain is attached to the right project and the production deployment is healthy.`);
+  }
+};
+
+// src/checks/email.ts
+var DKIM_SELECTORS = {
+  resend: ["resend"],
+  postmark: ["pm"],
+  sendgrid: ["s1", "s2"],
+  ses: []
+};
+var GENERIC_SELECTORS = ["default", "google", "selector1", "selector2", "k1", "s1", "mail", "dkim"];
+async function q(ctx, name3, type, errors) {
+  try {
+    return await lookup(ctx, name3, type);
+  } catch (e) {
+    errors.push(`${type} ${name3}: ${errMsg(e)}`);
+    return [];
+  }
+}
+async function findDkim(ctx, d, provider, errors) {
+  const selectors = [.../* @__PURE__ */ new Set([...DKIM_SELECTORS[provider] ?? [], ...GENERIC_SELECTORS])];
+  for (const sel of selectors) {
+    const name3 = `${sel}._domainkey.${d}`;
+    if ((await q(ctx, name3, "TXT", errors)).some((t) => /(^|;)\s*(v=DKIM1|p=)/i.test(t))) return `TXT ${name3}`;
+    if ((await q(ctx, name3, "CNAME", errors)).length) return `CNAME ${name3}`;
+  }
+  return null;
+}
+var short = (v) => v.length > 48 ? `${v.slice(0, 45)}\u2026` : v;
+var bareHost = (v) => v.trim().replace(/\.$/, "").toLowerCase();
+function satisfies(rec, published) {
+  if (rec.type === "TXT") {
+    const want = rec.content.trim();
+    if (/^v=spf1\b/i.test(want)) {
+      const mech2 = want.split(/\s+/).filter((t) => /^(include:|a\b|mx\b|ip4:|ip6:)/i.test(t)).map((t) => t.toLowerCase());
+      return published.some((p) => /^v=spf1\b/i.test(p) && mech2.every((m) => p.toLowerCase().split(/\s+/).includes(m)));
+    }
+    return published.some((p) => p.trim() === want);
+  }
+  if (rec.type === "MX") return published.some((p) => bareHost(p.replace(/^\d+\s+/, "")) === bareHost(rec.content));
+  if (rec.type === "CNAME") return published.some((p) => bareHost(p) === bareHost(rec.content));
+  return published.some((p) => p.trim() === rec.content.trim());
+}
+var RESOLVABLE_TYPES = /* @__PURE__ */ new Set(["A", "AAAA", "CNAME", "TXT", "MX", "CAA"]);
+function resolvableRecords(records3) {
+  return records3.filter((r) => RESOLVABLE_TYPES.has(r.type));
+}
+async function observeProviderRecords(ctx, records3, errors = []) {
+  const out = [];
+  for (const record2 of records3) {
+    const label3 = `${record2.type} ${record2.name}`;
+    let published;
+    try {
+      published = await lookup(ctx, record2.name, record2.type);
+    } catch (e) {
+      errors.push(`${label3}: ${errMsg(e)}`);
+      out.push({ record: record2, label: label3, state: "unread", published: [] });
+      continue;
+    }
+    const state = satisfies(record2, published) ? "present" : published.length ? "mismatch" : "missing";
+    out.push({ record: record2, label: label3, state, published });
+  }
+  return out;
+}
+async function checkProviderRecords(ctx, records3, issues, ok, errors) {
+  for (const o of await observeProviderRecords(ctx, records3, errors)) {
+    if (o.state === "present") ok.push(`${o.label}: matches ${short(o.record.content)}`);
+    else if (o.state === "mismatch") issues.push({ severity: "high", line: `${o.label} is ${short(o.published[0])} but the provider expects ${short(o.record.content)}` });
+    else issues.push({ severity: "high", line: `${o.label} is missing (the provider expects ${short(o.record.content)})` });
+  }
+}
+var isSpf = (t) => /^v=spf1\b/i.test(t);
+var DKIM_UNDISCOVERABLE = {
+  postmark: `Postmark's DKIM selector is per-domain (<timestamp>pm._domainkey.{d}) and can't be discovered over DNS; confirm DKIM shows verified in Postmark`,
+  ses: `SES Easy DKIM uses three <token>._domainkey.{d} CNAMEs that can't be discovered over DNS; confirm DKIM shows verified in the SES console`
+};
+async function checkCommonRecords(ctx, d, provider, issues, ok, notes, errors) {
+  const spfApex = (await q(ctx, d, "TXT", errors)).find(isSpf);
+  if (provider === "resend") {
+    const spfSend = (await q(ctx, `send.${d}`, "TXT", errors)).find(isSpf);
+    const sendCname = await q(ctx, `send.${d}`, "CNAME", errors);
+    if (spfSend || spfApex) {
+      ok.push(`SPF at ${spfSend ? `send.${d}` : d}: ${spfSend ?? spfApex}`);
+      if (spfSend && !/include:amazonses\.com/i.test(spfSend)) {
+        issues.push({ severity: "medium", line: `SPF at send.${d} does not include amazonses.com (Resend sends through SES)` });
+      }
+    } else if (sendCname.length) {
+      ok.push(`SPF via CNAME send.${d} \u2192 ${sendCname[0]}`);
+    } else {
+      issues.push({ severity: "high", line: `no SPF record at send.${d} or ${d}` });
+    }
+    const mx = await q(ctx, `send.${d}`, "MX", errors);
+    if (mx.length) ok.push(`MX at send.${d}: ${mx[0]}`);
+    else if (sendCname.length) ok.push(`return path via CNAME send.${d}`);
+    else issues.push({ severity: "high", line: `no MX or CNAME at send.${d} (bounce handling / return path)` });
+  } else if (provider === "postmark") {
+    if (spfApex) ok.push(`SPF at ${d}: ${spfApex}`);
+    const rp = await q(ctx, `pm-bounces.${d}`, "CNAME", errors);
+    if (rp.length) ok.push(`return path via CNAME pm-bounces.${d} \u2192 ${rp[0]}`);
+    else notes.push(`no custom return path (CNAME pm-bounces.${d} \u2192 pm.mtasv.net): optional, Postmark's default return path already passes SPF; a custom one adds SPF alignment for DMARC`);
+  } else if (provider === "ses") {
+    if (spfApex) ok.push(`SPF at ${d}: ${spfApex}`);
+    else notes.push(`SPF not required: SES's default MAIL FROM (amazonses.com) passes SPF; a custom MAIL FROM subdomain can't be discovered over DNS, so it isn't checked`);
+  } else if (provider === "sendgrid") {
+    const auto = (await q(ctx, `s1._domainkey.${d}`, "CNAME", errors)).find((v) => /(^|\.)sendgrid\.net\.?$/i.test(v.trim()));
+    if (spfApex) ok.push(`SPF at ${d}: ${spfApex}`);
+    else if (auto) ok.push(`SPF via SendGrid automated security (s1._domainkey.${d} \u2192 ${auto}); its em####.${d} return-path CNAME can't be discovered over DNS`);
+    else issues.push({ severity: "low", line: `no SPF record at ${d} and no SendGrid automated-security CNAMEs found; fine if the em####.${d} return-path CNAME exists (it can't be discovered over DNS), otherwise add include:sendgrid.net to the SPF record` });
+  } else {
+    const spfSend = (await q(ctx, `send.${d}`, "TXT", errors)).find(isSpf);
+    if (spfSend || spfApex) ok.push(`SPF at ${spfSend ? `send.${d}` : d}: ${spfSend ?? spfApex}`);
+    else issues.push({ severity: "medium", line: `no SPF record found at ${d} or send.${d}; ${provider} may use a return-path subdomain golive can't discover, so compare with the records ${provider} lists` });
+  }
+  const dkim = await findDkim(ctx, d, provider, errors);
+  if (dkim) ok.push(`DKIM at ${dkim}`);
+  else if (DKIM_UNDISCOVERABLE[provider]) issues.push({ severity: "low", line: `DKIM not confirmed: ${DKIM_UNDISCOVERABLE[provider].replace("{d}", d)}` });
+  else if (provider === "resend") issues.push({ severity: "medium", line: `no DKIM record found at common selectors (resend._domainkey.${d}, \u2026); newer domains use provider-specific token names, see the \`email-verified\` check` });
+  else issues.push({ severity: "medium", line: `no DKIM record found at common selectors (${(DKIM_SELECTORS[provider] ?? GENERIC_SELECTORS).slice(0, 2).map((s) => `${s}._domainkey.${d}`).join(", ")}, \u2026); the selector is provider-specific, so confirm DKIM in the ${provider} dashboard` });
+}
+var emailDnsCheck = {
+  id: "email-dns",
+  title: "Email sending domain has SPF, DKIM and DMARC",
+  severity: "high",
+  applies: (ctx) => Boolean(ctx.config.stack.email && sendingDomainOf(ctx)),
+  async run(ctx) {
+    const d = sendingDomainOf(ctx);
+    const provider = ctx.config.stack.email;
+    const issues = [];
+    const ok = [];
+    const errors = [];
+    const notes = [];
+    let records3 = null;
+    const sd = cap(ctx, "email", "sendingDomain");
+    const id2 = ctx.state.resource(`${provider}.domainId`);
+    if (sd && !id2) return skip(`blocked by: email:domain (the ${provider} sending domain for ${d} hasn't been created yet)`);
+    if (sd?.records && id2) {
+      const by = await authBlock(ctx, "email");
+      if (by) notes.push(`provider record list unavailable (blocked by: ${by}); checked common record locations instead`);
+      else {
+        try {
+          const got = (await sd.records(ctx, id2)).filter((r) => ["TXT", "MX", "CNAME"].includes(r.type));
+          if (got.length) records3 = got;
+          else notes.push(`${provider} listed no DNS records for ${d}; checked common record locations instead`);
+        } catch (e) {
+          notes.push(`could not read ${provider}'s record list (${errMsg(e)}); checked common record locations instead`);
+        }
+      }
+    }
+    if (records3) await checkProviderRecords(ctx, records3, issues, ok, errors);
+    else await checkCommonRecords(ctx, d, provider, issues, ok, notes, errors);
+    const dmarc = (await q(ctx, `_dmarc.${d}`, "TXT", errors)).find((t) => /^v=DMARC1\b/i.test(t));
+    if (dmarc) ok.push(`DMARC at _dmarc.${d}: ${dmarc}`);
+    else issues.push({ severity: "medium", line: `no DMARC record at _dmarc.${d}; suggested: TXT _dmarc.${d} "v=DMARC1; p=none;"` });
+    if (errors.length) issues.push({ severity: "low", line: `some DNS lookups failed: ${errors.slice(0, 3).join("; ")}` });
+    const sev = worst(issues.map((i) => i.severity));
+    const lines = [...issues.map((i) => i.line), ...ok, ...notes];
+    const fix = `Add the DNS records your email provider lists for ${d} (run \`golive plan\` to upsert them when your DNS provider is automated); add DMARC as TXT _dmarc.${d} "v=DMARC1; p=none;" and tighten to p=quarantine once mail flows.`;
+    if (isFailing(sev)) return result("fail", sev, lines, fix);
+    if (issues.length) return result("warn", sev === "info" ? "low" : sev, lines, fix);
+    return pass(lines);
+  }
+};
+function writeWindow(ctx) {
+  const baselines = readDnsBaselines(ctx.state.get());
+  const step2 = ctx.state.get().steps["email:dns"];
+  const stepAt2 = step2?.status === "done" ? step2.at : void 0;
+  return (rec) => {
+    const at = baselines.filter((b) => b.type === rec.type && b.name === bareHost(rec.name)).map((b) => b.at).sort().at(-1) ?? stepAt2;
+    return at && Date.now() - Date.parse(at) < PROPAGATION_MS ? at : void 0;
+  };
+}
+var gone = (o) => o.state === "missing" || o.state === "mismatch";
+var emailVerifiedCheck = {
+  id: "email-verified",
+  title: "Email sending domain is verified",
+  severity: "high",
+  applies: (ctx) => Boolean(ctx.config.stack.email),
+  async run(ctx) {
+    const provider = ctx.config.stack.email;
+    const sd = cap(ctx, "email", "sendingDomain");
+    if (!sd) return skip(`email provider ${provider} has no sending-domain capability (guided)`);
+    const pre = await prereq(ctx, "email", { project: false });
+    if (pre) return pre;
+    const id2 = ctx.state.resource(`${provider}.domainId`);
+    const d = sendingDomainOf(ctx) ?? "(domain)";
+    if (!id2) return blocked("email:domain", `no ${provider} sending domain recorded for ${d} yet; run \`golive plan\` and apply it`);
+    let st;
+    try {
+      st = await sd.status(ctx, id2);
+    } catch (e) {
+      return result("fail", "high", [`could not read ${provider} domain ${id2}: ${errMsg(e)}`], "Re-run verify; if it persists, check the email provider with `golive doctor`.");
+    }
+    const ev = [`${provider} domain ${d} (${id2}): ${st}`];
+    if (st === "pending") return result("warn", "medium", ev, "DNS checks are still running at the provider (can take minutes to hours after records are added). Re-run verify later.");
+    if (st === "not_started") return result("warn", "medium", ev, "Verification has not been requested yet: re-run apply (the email-domain step triggers it) once the DNS records exist.");
+    if (st !== "verified") return result("fail", "high", ev, `The provider could not find the DNS records. Compare the records for ${d} in the provider dashboard with your DNS (see the \`email-dns\` check), fix them, then re-run apply.`);
+    if (!sd.records) {
+      return result("skip", "info", [...ev, `${provider} exposes no read of the records a domain needs, so the flag is not corroborated against DNS (\`email-dns\` checks the records it can locate)`]);
+    }
+    let listed;
+    try {
+      listed = resolvableRecords(await sd.records(ctx, id2));
+    } catch (e) {
+      return result("skip", "info", [...ev, `the records ${provider} lists for it could not be read (${errMsg(e)}), so the flag is not corroborated against DNS`]);
+    }
+    if (!listed.length) {
+      return result("skip", "info", [...ev, `${provider} lists no resolvable DNS records for it, so the flag is not corroborated against DNS`]);
+    }
+    const errors = [];
+    const observed = await observeProviderRecords(ctx, listed, errors);
+    const lines = [
+      ...observed.filter((o) => o.state === "present").map((o) => `${o.label} resolves as ${provider} expects (${short(o.record.content)})`),
+      ...observed.filter(gone).map((o) => o.published.length ? `${o.label} resolves to ${short(o.published[0])} but ${provider} expects ${short(o.record.content)}` : `${o.label} does not resolve (${provider} expects ${short(o.record.content)})`)
+    ];
+    if (errors.length) lines.push(`some DNS lookups failed: ${errors.slice(0, 3).join("; ")}`);
+    const unresolved = observed.filter(gone);
+    if (!unresolved.length && !errors.length) return pass([...ev, ...lines]);
+    if (unresolved.length) {
+      const fresh = writeWindow(ctx);
+      const written = unresolved.map((o) => fresh(o.record));
+      if (written.every((at) => at !== void 0)) {
+        return result(
+          "warn",
+          "medium",
+          [...ev, ...lines, `golive wrote these records at ${[...new Set(written)].join(", ")}: DNS may still be propagating (a cached answer or a zone wildcard can answer first), so this is not a failure yet`],
+          "Wait for DNS to propagate (usually minutes, up to 48h), then re-run `verify --only email-verified`."
+        );
+      }
+    }
+    if (!unresolved.length) {
+      return result("warn", "medium", [...ev, ...lines], `Re-run verify in a moment: a DNS lookup failed, so ${d}'s records could not all be confirmed. If it persists, check DNS resolution for ${d}.`);
+    }
+    const missing = unresolved.map((o) => o.label).join(", ");
+    return result(
+      "fail",
+      "high",
+      [...ev, ...lines],
+      `Restore the DNS records ${provider} lists for ${d} (${missing} \u2014 absent, or not the value ${provider} expects): run \`golive plan\`, then \`apply --confirm-dns\` to write them when your DNS host is automated, or add them by hand where ${d}'s DNS lives. The provider still reports the domain verified, but without them mail from ${d} cannot authenticate (no SPF/DKIM) and will be rejected or land in spam. Then re-run \`verify --only email-verified\`.`
+    );
+  }
+};
+
 // src/links/util.ts
+init_secret();
+import { basename as basename2 } from "node:path";
 async function axisStatus(ctx, axis) {
   const id2 = ctx.config.stack[axis];
   if (!id2) return { kind: "none" };
@@ -10426,7 +10952,7 @@ function authOf(ctx, adapter) {
   const m = memo(ctx);
   let p = m.auth.get(adapter.id);
   if (!p) {
-    p = adapter.auth(ctx).catch((e) => ({ ok: false, howToFix: `checking ${adapter.title} access failed: ${errMsg(e)}` }));
+    p = adapter.auth(ctx).catch((e) => ({ ok: false, howToFix: `checking ${adapter.title} access failed: ${errMsg2(e)}` }));
     m.auth.set(adapter.id, p);
   }
   return p;
@@ -10455,7 +10981,7 @@ function intentOf(parts) {
     return `${k}=${Array.isArray(v) ? [...v].sort().join(",") : v ?? ""}`;
   }).join(";");
 }
-function errMsg(e) {
+function errMsg2(e) {
   return redact(e instanceof Error ? e.message : String(e));
 }
 function repoName(ctx) {
@@ -10638,7 +11164,7 @@ async function verifyEnvWritten(ctx, env, target, names, stepId, hostTitle) {
   try {
     present = new Set(await env.listNames(ctx, target));
   } catch (e) {
-    return [{ id: id2, title, status: "fail", severity: "high", evidence: [`could not list ${target} env names: ${errMsg(e)}`], fix: "Check the hosting login, then re-run apply." }];
+    return [{ id: id2, title, status: "fail", severity: "high", evidence: [`could not list ${target} env names: ${errMsg2(e)}`], fix: "Check the hosting login, then re-run apply." }];
   }
   const missing = names.filter((n) => !present.has(n));
   if (missing.length) {
@@ -10708,664 +11234,6 @@ async function projectIdentity(ctx, adapter, opts) {
 async function projectIntent(ctx, adapter) {
   return `${adapter.id}:${await projectIdentity(ctx, adapter, { planning: true }) ?? "?"}`;
 }
-
-// src/core/inventory.ts
-var MODES = ["test", "live"];
-var ENV_TARGETS = ["development", "preview", "production"];
-var PROJECT_STATE = {
-  vercel: { id: "vercel.projectId", name: "vercel.projectName" },
-  netlify: { id: "netlify.siteId", name: "netlify.siteName" }
-};
-function createdProjectKey(provider) {
-  return `${provider}.createdProjectId`;
-}
-function projectStateKeys(provider) {
-  return PROJECT_STATE[provider] ?? { id: `${provider}.projectId`, name: `${provider}.projectName` };
-}
-var RECORDED = [
-  { axis: "db", provider: "supabase", providerTitle: "Supabase", kind: "database-project", idKey: "supabase.ref", createdBy: ["supabase.createdByGolive"], needs: "the Supabase dashboard", where: "the dashboard" },
-  { axis: "db", provider: "neon", providerTitle: "Neon", kind: "database-project", idKey: "neon.projectId", nameKey: "neon.createdProjectName", createdBy: ["neon.createdProjectId"], needs: "the Neon console", where: "the Neon console", extra: "; Neon may keep a recovery window" },
-  { axis: "email", provider: "resend", providerTitle: "Resend", kind: "sending-domain", idKey: "resend.domainId", createdBy: ["resend.createdDomainId"], needs: "the Resend dashboard", where: "the Resend dashboard", extra: "; any keys golive issued are revoked in the steps of this plan when applicable" }
-];
-async function buildInventory(ctx) {
-  const webhooks2 = await webhookInventory(ctx);
-  const dnsRecords = await dnsInventory(ctx);
-  const sendingKeys = await keyInventory(ctx);
-  const project = await projectInventory(ctx);
-  return { webhooks: webhooks2, dnsRecords, sendingKeys, project, recorded: recordedInventory(ctx) };
-}
-function titleOf(ctx, provider) {
-  return ctx.adapters.find((a) => a.id === provider)?.title ?? provider;
-}
-var WEBHOOK_KEY = /^([a-z0-9-]+)\.(test|live)\.webhookEndpointId$/;
-async function webhookInventory(ctx) {
-  const s = await axisStatus(ctx, "payments");
-  const ready2 = s.kind === "ready" ? s : null;
-  const out = [];
-  const stateKeys = Object.keys(ctx.state.get().resources).sort();
-  for (const mode of MODES) {
-    for (const stateKey of stateKeys) {
-      const m = WEBHOOK_KEY.exec(stateKey);
-      if (!m || m[2] !== mode) continue;
-      const provider = m[1];
-      const id2 = ctx.state.resource(stateKey);
-      if (!id2) continue;
-      const remove2 = ready2 && ready2.adapter.id === provider ? ready2.adapter.capabilities.webhooks?.remove : void 0;
-      out.push({ provider, providerTitle: titleOf(ctx, provider), key: stateKey, mode, id: id2, ...ready2 && remove2 ? { removal: { adapter: ready2.adapter, remove: remove2 } } : {} });
-    }
-  }
-  return out;
-}
-async function dnsInventory(ctx) {
-  const domains = inventoryDomains(ctx);
-  if (!domains.length) return [];
-  const s = await axisStatus(ctx, "dns");
-  if (s.kind !== "ready") return [];
-  const zone = s.adapter.capabilities.dns;
-  const listOwned = zone?.listOwned;
-  const remove2 = zone?.remove;
-  if (!zone || !listOwned || !remove2) return [];
-  const candidates3 = [];
-  for (const domain of domains) {
-    for (const record2 of await listOwned(ctx, domain)) candidates3.push({ domain, record: record2 });
-  }
-  candidates3.sort((a, b) => {
-    const ka = recordKey(a.record);
-    const kb = recordKey(b.record);
-    if (ka !== kb) return ka < kb ? -1 : 1;
-    return a.domain === b.domain ? 0 : a.domain < b.domain ? -1 : 1;
-  });
-  const out = [];
-  const seen2 = /* @__PURE__ */ new Set();
-  for (const c of candidates3) {
-    const unique = `${c.domain}|${recordKey(c.record)}`;
-    if (seen2.has(unique)) continue;
-    seen2.add(unique);
-    out.push({ provider: s.adapter.id, providerTitle: s.adapter.title, domain: c.domain, record: c.record, adapter: s.adapter, listOwned, remove: remove2 });
-  }
-  return out;
-}
-function inventoryDomains(ctx) {
-  const byZone = /* @__PURE__ */ new Map();
-  for (const d of [ctx.config.domain, ctx.config.email?.domain]) {
-    if (d && !byZone.has(d.toLowerCase())) byZone.set(d.toLowerCase(), d);
-  }
-  return [...byZone.values()];
-}
-var recordKey = (r) => `${r.type} ${r.name} ${r.content}`;
-var KEY_STATE = /^([a-z0-9-]+)\.keyId@([a-z-]+)$/;
-async function keyInventory(ctx) {
-  const s = await axisStatus(ctx, "email");
-  const ready2 = s.kind === "ready" ? s : null;
-  const out = [];
-  for (const stateKey of Object.keys(ctx.state.get().resources).sort()) {
-    const m = KEY_STATE.exec(stateKey);
-    if (!m) continue;
-    const provider = m[1];
-    const target = m[2];
-    const id2 = ctx.state.resource(stateKey);
-    if (!id2 || !isKeySlot(target)) continue;
-    const revoke = ready2 && ready2.adapter.id === provider ? ready2.adapter.capabilities.keys?.revoke : void 0;
-    out.push({ provider, providerTitle: titleOf(ctx, provider), key: stateKey, target, id: id2, ...ready2 && revoke ? { revocation: { adapter: ready2.adapter, revoke } } : {} });
-  }
-  return out;
-}
-var isEnvTarget = (v) => ENV_TARGETS.includes(v);
-var isKeySlot = (v) => isEnvTarget(v) || v === "smtp";
-async function projectInventory(ctx) {
-  const s = await axisStatus(ctx, "hosting");
-  if (s.kind !== "ready") return null;
-  const adapter = s.adapter;
-  const remove2 = adapter.capabilities.project?.remove;
-  if (!remove2) return null;
-  const read = adapter.capabilities.project?.exists;
-  const keys3 = projectStateKeys(adapter.id);
-  const current3 = ctx.state.resource(keys3.id);
-  if (!current3) return null;
-  const name3 = ctx.state.resource(keys3.name);
-  const created = ctx.state.resource(createdProjectKey(adapter.id)) === current3;
-  return { provider: adapter.id, providerTitle: adapter.title, keys: keys3, id: current3, ...name3 ? { name: name3 } : {}, created, remove: remove2, ...read ? { exists: (x) => read(x, current3) } : {} };
-}
-function recordedInventory(ctx) {
-  const out = [];
-  for (const spec of RECORDED) {
-    const id2 = ctx.state.resource(spec.idKey);
-    if (!id2) continue;
-    const created = spec.createdBy.length > 0 && spec.createdBy.every((k) => ctx.state.resource(k) === id2);
-    const name3 = spec.kind === "sending-domain" ? ctx.config.email?.domain ?? id2 : (spec.nameKey ? ctx.state.resource(spec.nameKey) : void 0) ?? id2;
-    out.push({ axis: spec.axis, provider: spec.provider, providerTitle: spec.providerTitle, kind: spec.kind, key: spec.idKey, id: id2, name: name3, created, markers: [...spec.createdBy], needs: spec.needs, where: spec.where, ...spec.extra ? { extra: spec.extra } : {} });
-  }
-  return out;
-}
-
-// src/core/teardown.ts
-init_secret();
-
-// src/core/dns-baseline.ts
-var DNS_BASELINE_PREFIX = "dns:";
-var BASELINE_TYPES = /* @__PURE__ */ new Set(["A", "AAAA", "CNAME", "TXT", "MX", "CAA"]);
-var normName = (n) => n.trim().replace(/\.$/, "").toLowerCase();
-function dnsBaselineKey(zone, record2) {
-  return `${DNS_BASELINE_PREFIX}${normName(zone)}|${record2.type}|${normName(record2.name)}`;
-}
-function rememberDnsWrite(sctx, zone, provider, record2, outcome) {
-  const key = dnsBaselineKey(zone, record2);
-  const at = outcome === "unchanged" ? parseBaseline(sctx.state.resource(key))?.at ?? (/* @__PURE__ */ new Date()).toISOString() : (/* @__PURE__ */ new Date()).toISOString();
-  const baseline = {
-    provider,
-    zone: normName(zone),
-    type: record2.type,
-    name: normName(record2.name),
-    content: record2.content,
-    ...record2.priority !== void 0 ? { priority: record2.priority } : {},
-    at
-  };
-  sctx.remember(key, JSON.stringify(baseline));
-}
-function readDnsBaselines(state) {
-  const out = [];
-  for (const [key, value] of Object.entries(state.resources).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
-    if (!key.startsWith(DNS_BASELINE_PREFIX)) continue;
-    const b = parseBaseline(value);
-    if (b) out.push(b);
-  }
-  return out;
-}
-function parseBaseline(value) {
-  if (!value) return null;
-  let raw2;
-  try {
-    raw2 = JSON.parse(value);
-  } catch {
-    return null;
-  }
-  const b = raw2;
-  if (typeof b !== "object" || b === null) return null;
-  if (typeof b.provider !== "string" || typeof b.zone !== "string" || typeof b.type !== "string" || !BASELINE_TYPES.has(b.type)) return null;
-  if (typeof b.name !== "string" || typeof b.content !== "string" || typeof b.at !== "string") return null;
-  return {
-    provider: b.provider,
-    zone: normName(b.zone),
-    type: b.type,
-    name: normName(b.name),
-    content: b.content,
-    ...typeof b.priority === "number" ? { priority: b.priority } : {},
-    at: b.at
-  };
-}
-
-// src/core/doh.ts
-var TYPE_NUM = { 1: "A", 28: "AAAA", 5: "CNAME", 16: "TXT", 15: "MX", 2: "NS", 6: "SOA", 257: "CAA" };
-function normalizeTxt(data) {
-  const parts = data.match(/"((?:[^"\\]|\\.)*)"/g);
-  return parts ? parts.map((p) => p.slice(1, -1).replace(/\\"/g, '"')).join("") : data;
-}
-function norm(type, data) {
-  if (type === "TXT") return normalizeTxt(data);
-  if (type === "CNAME" || type === "NS") return data.replace(/\.$/, "").toLowerCase();
-  if (type === "MX") return data.replace(/\.$/, "").toLowerCase();
-  return data;
-}
-async function resolve4(ctx, name3, type) {
-  const q2 = `name=${encodeURIComponent(name3)}&type=${type}`;
-  const endpoints = [`https://cloudflare-dns.com/dns-query?${q2}`, `https://dns.google/resolve?${q2}`];
-  let lastErr;
-  for (const url of endpoints) {
-    try {
-      const res = await ctx.http({ url, headers: { accept: "application/dns-json" }, timeoutMs: 1e4 });
-      if (res.status !== 200 || !res.json) throw new Error(`DoH ${res.status}`);
-      const map = (rrs = []) => rrs.filter((a) => TYPE_NUM[a.type]).map((a) => ({ name: a.name.replace(/\.$/, "").toLowerCase(), type: TYPE_NUM[a.type], data: norm(TYPE_NUM[a.type], a.data), ttl: a.TTL }));
-      return { status: res.json.Status, answers: map(res.json.Answer), authority: map(res.json.Authority) };
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-  throw new Error(`DNS lookup failed for ${name3} ${type}: ${String(lastErr)}`);
-}
-async function lookup(ctx, name3, type) {
-  const r = await resolve4(ctx, name3, type);
-  return r.answers.filter((a) => a.type === type && a.name === name3.toLowerCase()).map((a) => a.data);
-}
-async function zoneApex(ctx, host) {
-  const r = await resolve4(ctx, host, "SOA");
-  const soa = [...r.answers, ...r.authority].find((a) => a.type === "SOA");
-  return soa ? soa.name : null;
-}
-async function dnsHost(ctx, domain) {
-  const apex = await zoneApex(ctx, domain) ?? domain;
-  const ns = await lookup(ctx, apex, "NS");
-  const provider = ns.some((n) => n.endsWith(".ns.cloudflare.com")) ? "cloudflare" : ns.some((n) => n.endsWith("vercel-dns.com")) ? "vercel" : ns[0] ? ns[0].split(".").slice(-2).join(".") : null;
-  return { provider, nameservers: ns };
-}
-
-// src/checks/util.ts
-init_http();
-init_secret();
-function result(status, severity, evidence, fix) {
-  const out = { status, severity, evidence: evidence.map(redact) };
-  if (fix) out.fix = redact(fix);
-  return out;
-}
-var pass = (evidence) => result("pass", "info", evidence);
-var skip = (why) => result("skip", "info", [why]);
-var RANK = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
-function worst(sevs) {
-  return sevs.reduce((a, b) => RANK[b] > RANK[a] ? b : a, "info");
-}
-function isFailing(s) {
-  return RANK[s] >= RANK.high;
-}
-function errMsg2(e) {
-  return redact(e instanceof Error ? e.message : String(e));
-}
-function trimSlash(url) {
-  return url.replace(/\/+$/, "");
-}
-async function baseUrl(ctx, opts = {}) {
-  const target = opts.target ?? "production";
-  if (target === "production" && ctx.config.domain) return `https://${ctx.config.domain}`;
-  const url = cap(ctx, "hosting", "url");
-  const got = url ? await url.get(ctx, target).catch(() => null) : null;
-  return got ? trimSlash(got) : null;
-}
-var blocked = (by, detail) => skip(`blocked by: ${by}${detail ? ` (${detail})` : ""}`);
-var AUTH_OK = "checks:auth-ok:";
-async function authBlock(ctx, axis) {
-  const a = adapterFor(ctx, axis);
-  if (!a || !a.automated) return null;
-  if (ctx.cache.get(AUTH_OK + a.id) === true) return null;
-  try {
-    if ((await a.auth(ctx)).ok) {
-      ctx.cache.set(AUTH_OK + a.id, true);
-      return null;
-    }
-  } catch {
-  }
-  return `login:${a.id}`;
-}
-function projectAxis(ctx, axis) {
-  if (axis === "hosting" || axis === "db") return axis;
-  if (axis === "auth" && ctx.config.stack.auth && ctx.config.stack.auth === ctx.config.stack.db) return "db";
-  return null;
-}
-async function projectBlock(ctx, axis) {
-  const pa = projectAxis(ctx, axis);
-  if (!pa) return null;
-  const linker = cap(ctx, pa, "project");
-  if (!linker) return null;
-  const cur = await linker.current(ctx).catch(() => null);
-  return cur ? null : `project:${pa}`;
-}
-async function prereq(ctx, axis, opts = {}) {
-  const by = await authBlock(ctx, axis) ?? (opts.project === false ? null : await projectBlock(ctx, axis));
-  return by ? blocked(by) : null;
-}
-function hostVariants(host) {
-  const h = host.toLowerCase();
-  return h.startsWith("www.") ? [h, h.slice(4)] : [h, `www.${h}`];
-}
-async function confirmedProductionUrl(ctx) {
-  const claimed = ctx.config.domain ? `https://${ctx.config.domain}` : "the production URL";
-  const cannot = (why) => ({ ok: false, outcome: skip(`cannot confirm ${claimed} belongs to your project yet (${why})`) });
-  const urlCap = cap(ctx, "hosting", "url");
-  if (!urlCap) return cannot(ctx.config.stack.hosting ? `hosting provider ${ctx.config.stack.hosting} can't report its URL (guided)` : "no hosting provider chosen");
-  const pre = await prereq(ctx, "hosting");
-  if (pre) return { ok: false, outcome: pre };
-  let got;
-  try {
-    got = await urlCap.get(ctx, "production");
-  } catch (e) {
-    return cannot(`the host could not report it: ${errMsg2(e)}`);
-  }
-  if (!got) return ctx.config.domain ? cannot("blocked by: deploy:production; the host reports no production URL") : { ok: false, outcome: blocked("deploy:production", "no production deployment yet") };
-  let u;
-  try {
-    u = new URL(got);
-  } catch {
-    return cannot(`the host reported an invalid URL`);
-  }
-  if (u.protocol !== "https:") return cannot(`the host reported a non-https URL ${u.origin}`);
-  for (const h of hostVariants(u.host)) allowHost(h);
-  return { ok: true, url: trimSlash(u.origin + u.pathname) };
-}
-async function probe(ctx, url, opts = {}) {
-  return ctx.http({ url, method: opts.method ?? "GET", body: opts.body, headers: opts.headers, timeoutMs: opts.timeoutMs ?? 2e4 });
-}
-function addressDomain(from) {
-  if (!from) return void 0;
-  const m = /@([^\s>@]+)>?\s*$/.exec(from.trim());
-  return m?.[1]?.toLowerCase();
-}
-function sendingDomainOf(ctx) {
-  return ctx.config.email?.domain ?? addressDomain(ctx.config.email?.from) ?? ctx.config.domain;
-}
-function globMatch(pattern, url) {
-  let re = "";
-  const p = trimSlash(pattern);
-  for (let i = 0; i < p.length; i++) {
-    const c = p[i];
-    if (c === "*" && p[i + 1] === "*") {
-      re += ".*";
-      i++;
-    } else if (c === "*") re += "[^/.]*";
-    else if (c === "?") re += ".";
-    else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  }
-  return new RegExp(`^${re}$`, "i").test(trimSlash(url));
-}
-function isLocalhost(url) {
-  try {
-    const h = new URL(url).hostname;
-    return h === "localhost" || h.endsWith(".localhost") || h === "127.0.0.1" || h === "0.0.0.0" || h === "[::1]";
-  } catch {
-    return /localhost|127\.0\.0\.1/.test(url);
-  }
-}
-
-// src/checks/domain.ts
-init_http();
-var PROPAGATION_MS = 48 * 60 * 60 * 1e3;
-var HOSTING_DNS_STEP = "domain:dns";
-function recentlyChanged(ctx) {
-  const rec = ctx.state.get().steps[HOSTING_DNS_STEP];
-  return Boolean(rec && rec.status === "done" && Date.now() - Date.parse(rec.at) < PROPAGATION_MS);
-}
-var domainLiveCheck = {
-  id: "domain-live",
-  title: "Custom domain resolves and serves HTTPS",
-  severity: "high",
-  applies: (ctx) => Boolean(ctx.config.domain),
-  async run(ctx) {
-    const d = ctx.config.domain;
-    const evidence = [];
-    const found = [];
-    const errors = [];
-    for (const type of ["A", "AAAA", "CNAME"]) {
-      try {
-        const vals = await lookup(ctx, d, type);
-        if (vals.length) found.push(`${type} ${vals.slice(0, 3).join(", ")}`);
-      } catch (e) {
-        errors.push(`${type}: ${errMsg2(e)}`);
-      }
-    }
-    if (!found.length) {
-      const ev = [`${d} has no A/AAAA/CNAME records in public DNS`, ...errors];
-      if (recentlyChanged(ctx)) return result("warn", "medium", [...ev, "DNS was changed recently: not propagated yet"], "Wait for DNS to propagate (usually minutes, up to 48h), then re-run verify.");
-      return result("fail", "high", ev, `Point ${d} at your host: run \`golive plan\` (automated DNS) or add the records your host lists for ${d} at your DNS provider.`);
-    }
-    evidence.push(`DNS: ${found.join("; ")}`);
-    const attach = cap(ctx, "hosting", "domain");
-    if (attach) {
-      const pre = await prereq(ctx, "hosting");
-      if (pre) return pre;
-      let st;
-      try {
-        st = await attach.status(ctx, d);
-      } catch (e) {
-        return result("skip", "info", [`cannot confirm ${d} is attached to your ${ctx.config.stack.hosting ?? "hosting"} project: the host domain status is unavailable (${errMsg2(e)})`, ...evidence]);
-      }
-      evidence.push(`host reports domain ${st}`);
-      if (st === "misconfigured") return result("fail", "high", evidence, `${d} is not attached to your hosting project or its DNS does not point at the host. Run \`golive plan\` (it attaches the domain and shows the records the host requires) and fix them at your DNS provider.`);
-      if (st === "pending") {
-        return result("warn", "medium", evidence, `The host has not confirmed ${d} yet: DNS may still be propagating, or domain ownership is not verified (e.g. a TXT challenge because the domain was used by another account). Add any records \`golive plan\` lists, apply, then re-run verify.`);
-      }
-    } else {
-      evidence.push(
-        ctx.config.stack.hosting ? `host attachment not confirmed: ${ctx.config.stack.hosting} can't report domain status (guided), so this checks DNS + HTTPS only` : "host attachment not confirmed: no hosting provider chosen, so this checks DNS + HTTPS only"
-      );
-    }
-    const url = `https://${d}/`;
-    for (const h of hostVariants(d)) allowHost(h);
-    let res;
-    try {
-      res = await probe(ctx, url);
-    } catch (e) {
-      return result("fail", "high", [...evidence, `GET ${url} failed (TLS or connection error): ${errMsg2(e)}`], "The certificate may still be issuing (a few minutes after DNS resolves); if it persists, check the domain status in your host dashboard.");
-    }
-    evidence.push(`GET ${url} \u2192 HTTP ${res.status}${res.headers.location ? ` (\u2192 ${res.headers.location})` : ""}`);
-    if (res.status >= 200 && res.status < 400) return pass(evidence);
-    return result("fail", "high", evidence, `${d} resolves and serves TLS but returns HTTP ${res.status}. Check that the domain is attached to the right project and the production deployment is healthy.`);
-  }
-};
-
-// src/checks/email.ts
-var DKIM_SELECTORS = {
-  resend: ["resend"],
-  postmark: ["pm"],
-  sendgrid: ["s1", "s2"],
-  ses: []
-};
-var GENERIC_SELECTORS = ["default", "google", "selector1", "selector2", "k1", "s1", "mail", "dkim"];
-async function q(ctx, name3, type, errors) {
-  try {
-    return await lookup(ctx, name3, type);
-  } catch (e) {
-    errors.push(`${type} ${name3}: ${errMsg2(e)}`);
-    return [];
-  }
-}
-async function findDkim(ctx, d, provider, errors) {
-  const selectors = [.../* @__PURE__ */ new Set([...DKIM_SELECTORS[provider] ?? [], ...GENERIC_SELECTORS])];
-  for (const sel of selectors) {
-    const name3 = `${sel}._domainkey.${d}`;
-    if ((await q(ctx, name3, "TXT", errors)).some((t) => /(^|;)\s*(v=DKIM1|p=)/i.test(t))) return `TXT ${name3}`;
-    if ((await q(ctx, name3, "CNAME", errors)).length) return `CNAME ${name3}`;
-  }
-  return null;
-}
-var short = (v) => v.length > 48 ? `${v.slice(0, 45)}\u2026` : v;
-var bareHost = (v) => v.trim().replace(/\.$/, "").toLowerCase();
-function satisfies(rec, published) {
-  if (rec.type === "TXT") {
-    const want = rec.content.trim();
-    if (/^v=spf1\b/i.test(want)) {
-      const mech2 = want.split(/\s+/).filter((t) => /^(include:|a\b|mx\b|ip4:|ip6:)/i.test(t)).map((t) => t.toLowerCase());
-      return published.some((p) => /^v=spf1\b/i.test(p) && mech2.every((m) => p.toLowerCase().split(/\s+/).includes(m)));
-    }
-    return published.some((p) => p.trim() === want);
-  }
-  if (rec.type === "MX") return published.some((p) => bareHost(p.replace(/^\d+\s+/, "")) === bareHost(rec.content));
-  if (rec.type === "CNAME") return published.some((p) => bareHost(p) === bareHost(rec.content));
-  return published.some((p) => p.trim() === rec.content.trim());
-}
-var RESOLVABLE_TYPES = /* @__PURE__ */ new Set(["A", "AAAA", "CNAME", "TXT", "MX", "CAA"]);
-function resolvableRecords(records3) {
-  return records3.filter((r) => RESOLVABLE_TYPES.has(r.type));
-}
-async function observeProviderRecords(ctx, records3, errors = []) {
-  const out = [];
-  for (const record2 of records3) {
-    const label3 = `${record2.type} ${record2.name}`;
-    let published;
-    try {
-      published = await lookup(ctx, record2.name, record2.type);
-    } catch (e) {
-      errors.push(`${label3}: ${errMsg2(e)}`);
-      out.push({ record: record2, label: label3, state: "unread", published: [] });
-      continue;
-    }
-    const state = satisfies(record2, published) ? "present" : published.length ? "mismatch" : "missing";
-    out.push({ record: record2, label: label3, state, published });
-  }
-  return out;
-}
-async function checkProviderRecords(ctx, records3, issues, ok, errors) {
-  for (const o of await observeProviderRecords(ctx, records3, errors)) {
-    if (o.state === "present") ok.push(`${o.label}: matches ${short(o.record.content)}`);
-    else if (o.state === "mismatch") issues.push({ severity: "high", line: `${o.label} is ${short(o.published[0])} but the provider expects ${short(o.record.content)}` });
-    else issues.push({ severity: "high", line: `${o.label} is missing (the provider expects ${short(o.record.content)})` });
-  }
-}
-var isSpf = (t) => /^v=spf1\b/i.test(t);
-var DKIM_UNDISCOVERABLE = {
-  postmark: `Postmark's DKIM selector is per-domain (<timestamp>pm._domainkey.{d}) and can't be discovered over DNS; confirm DKIM shows verified in Postmark`,
-  ses: `SES Easy DKIM uses three <token>._domainkey.{d} CNAMEs that can't be discovered over DNS; confirm DKIM shows verified in the SES console`
-};
-async function checkCommonRecords(ctx, d, provider, issues, ok, notes, errors) {
-  const spfApex = (await q(ctx, d, "TXT", errors)).find(isSpf);
-  if (provider === "resend") {
-    const spfSend = (await q(ctx, `send.${d}`, "TXT", errors)).find(isSpf);
-    const sendCname = await q(ctx, `send.${d}`, "CNAME", errors);
-    if (spfSend || spfApex) {
-      ok.push(`SPF at ${spfSend ? `send.${d}` : d}: ${spfSend ?? spfApex}`);
-      if (spfSend && !/include:amazonses\.com/i.test(spfSend)) {
-        issues.push({ severity: "medium", line: `SPF at send.${d} does not include amazonses.com (Resend sends through SES)` });
-      }
-    } else if (sendCname.length) {
-      ok.push(`SPF via CNAME send.${d} \u2192 ${sendCname[0]}`);
-    } else {
-      issues.push({ severity: "high", line: `no SPF record at send.${d} or ${d}` });
-    }
-    const mx = await q(ctx, `send.${d}`, "MX", errors);
-    if (mx.length) ok.push(`MX at send.${d}: ${mx[0]}`);
-    else if (sendCname.length) ok.push(`return path via CNAME send.${d}`);
-    else issues.push({ severity: "high", line: `no MX or CNAME at send.${d} (bounce handling / return path)` });
-  } else if (provider === "postmark") {
-    if (spfApex) ok.push(`SPF at ${d}: ${spfApex}`);
-    const rp = await q(ctx, `pm-bounces.${d}`, "CNAME", errors);
-    if (rp.length) ok.push(`return path via CNAME pm-bounces.${d} \u2192 ${rp[0]}`);
-    else notes.push(`no custom return path (CNAME pm-bounces.${d} \u2192 pm.mtasv.net): optional, Postmark's default return path already passes SPF; a custom one adds SPF alignment for DMARC`);
-  } else if (provider === "ses") {
-    if (spfApex) ok.push(`SPF at ${d}: ${spfApex}`);
-    else notes.push(`SPF not required: SES's default MAIL FROM (amazonses.com) passes SPF; a custom MAIL FROM subdomain can't be discovered over DNS, so it isn't checked`);
-  } else if (provider === "sendgrid") {
-    const auto = (await q(ctx, `s1._domainkey.${d}`, "CNAME", errors)).find((v) => /(^|\.)sendgrid\.net\.?$/i.test(v.trim()));
-    if (spfApex) ok.push(`SPF at ${d}: ${spfApex}`);
-    else if (auto) ok.push(`SPF via SendGrid automated security (s1._domainkey.${d} \u2192 ${auto}); its em####.${d} return-path CNAME can't be discovered over DNS`);
-    else issues.push({ severity: "low", line: `no SPF record at ${d} and no SendGrid automated-security CNAMEs found; fine if the em####.${d} return-path CNAME exists (it can't be discovered over DNS), otherwise add include:sendgrid.net to the SPF record` });
-  } else {
-    const spfSend = (await q(ctx, `send.${d}`, "TXT", errors)).find(isSpf);
-    if (spfSend || spfApex) ok.push(`SPF at ${spfSend ? `send.${d}` : d}: ${spfSend ?? spfApex}`);
-    else issues.push({ severity: "medium", line: `no SPF record found at ${d} or send.${d}; ${provider} may use a return-path subdomain golive can't discover, so compare with the records ${provider} lists` });
-  }
-  const dkim = await findDkim(ctx, d, provider, errors);
-  if (dkim) ok.push(`DKIM at ${dkim}`);
-  else if (DKIM_UNDISCOVERABLE[provider]) issues.push({ severity: "low", line: `DKIM not confirmed: ${DKIM_UNDISCOVERABLE[provider].replace("{d}", d)}` });
-  else if (provider === "resend") issues.push({ severity: "medium", line: `no DKIM record found at common selectors (resend._domainkey.${d}, \u2026); newer domains use provider-specific token names, see the \`email-verified\` check` });
-  else issues.push({ severity: "medium", line: `no DKIM record found at common selectors (${(DKIM_SELECTORS[provider] ?? GENERIC_SELECTORS).slice(0, 2).map((s) => `${s}._domainkey.${d}`).join(", ")}, \u2026); the selector is provider-specific, so confirm DKIM in the ${provider} dashboard` });
-}
-var emailDnsCheck = {
-  id: "email-dns",
-  title: "Email sending domain has SPF, DKIM and DMARC",
-  severity: "high",
-  applies: (ctx) => Boolean(ctx.config.stack.email && sendingDomainOf(ctx)),
-  async run(ctx) {
-    const d = sendingDomainOf(ctx);
-    const provider = ctx.config.stack.email;
-    const issues = [];
-    const ok = [];
-    const errors = [];
-    const notes = [];
-    let records3 = null;
-    const sd = cap(ctx, "email", "sendingDomain");
-    const id2 = ctx.state.resource(`${provider}.domainId`);
-    if (sd && !id2) return skip(`blocked by: email:domain (the ${provider} sending domain for ${d} hasn't been created yet)`);
-    if (sd?.records && id2) {
-      const by = await authBlock(ctx, "email");
-      if (by) notes.push(`provider record list unavailable (blocked by: ${by}); checked common record locations instead`);
-      else {
-        try {
-          const got = (await sd.records(ctx, id2)).filter((r) => ["TXT", "MX", "CNAME"].includes(r.type));
-          if (got.length) records3 = got;
-          else notes.push(`${provider} listed no DNS records for ${d}; checked common record locations instead`);
-        } catch (e) {
-          notes.push(`could not read ${provider}'s record list (${errMsg2(e)}); checked common record locations instead`);
-        }
-      }
-    }
-    if (records3) await checkProviderRecords(ctx, records3, issues, ok, errors);
-    else await checkCommonRecords(ctx, d, provider, issues, ok, notes, errors);
-    const dmarc = (await q(ctx, `_dmarc.${d}`, "TXT", errors)).find((t) => /^v=DMARC1\b/i.test(t));
-    if (dmarc) ok.push(`DMARC at _dmarc.${d}: ${dmarc}`);
-    else issues.push({ severity: "medium", line: `no DMARC record at _dmarc.${d}; suggested: TXT _dmarc.${d} "v=DMARC1; p=none;"` });
-    if (errors.length) issues.push({ severity: "low", line: `some DNS lookups failed: ${errors.slice(0, 3).join("; ")}` });
-    const sev = worst(issues.map((i) => i.severity));
-    const lines = [...issues.map((i) => i.line), ...ok, ...notes];
-    const fix = `Add the DNS records your email provider lists for ${d} (run \`golive plan\` to upsert them when your DNS provider is automated); add DMARC as TXT _dmarc.${d} "v=DMARC1; p=none;" and tighten to p=quarantine once mail flows.`;
-    if (isFailing(sev)) return result("fail", sev, lines, fix);
-    if (issues.length) return result("warn", sev === "info" ? "low" : sev, lines, fix);
-    return pass(lines);
-  }
-};
-function writeWindow(ctx) {
-  const baselines = readDnsBaselines(ctx.state.get());
-  const step2 = ctx.state.get().steps["email:dns"];
-  const stepAt2 = step2?.status === "done" ? step2.at : void 0;
-  return (rec) => {
-    const at = baselines.filter((b) => b.type === rec.type && b.name === bareHost(rec.name)).map((b) => b.at).sort().at(-1) ?? stepAt2;
-    return at && Date.now() - Date.parse(at) < PROPAGATION_MS ? at : void 0;
-  };
-}
-var gone = (o) => o.state === "missing" || o.state === "mismatch";
-var emailVerifiedCheck = {
-  id: "email-verified",
-  title: "Email sending domain is verified",
-  severity: "high",
-  applies: (ctx) => Boolean(ctx.config.stack.email),
-  async run(ctx) {
-    const provider = ctx.config.stack.email;
-    const sd = cap(ctx, "email", "sendingDomain");
-    if (!sd) return skip(`email provider ${provider} has no sending-domain capability (guided)`);
-    const pre = await prereq(ctx, "email", { project: false });
-    if (pre) return pre;
-    const id2 = ctx.state.resource(`${provider}.domainId`);
-    const d = sendingDomainOf(ctx) ?? "(domain)";
-    if (!id2) return blocked("email:domain", `no ${provider} sending domain recorded for ${d} yet; run \`golive plan\` and apply it`);
-    let st;
-    try {
-      st = await sd.status(ctx, id2);
-    } catch (e) {
-      return result("fail", "high", [`could not read ${provider} domain ${id2}: ${errMsg2(e)}`], "Re-run verify; if it persists, check the email provider with `golive doctor`.");
-    }
-    const ev = [`${provider} domain ${d} (${id2}): ${st}`];
-    if (st === "pending") return result("warn", "medium", ev, "DNS checks are still running at the provider (can take minutes to hours after records are added). Re-run verify later.");
-    if (st === "not_started") return result("warn", "medium", ev, "Verification has not been requested yet: re-run apply (the email-domain step triggers it) once the DNS records exist.");
-    if (st !== "verified") return result("fail", "high", ev, `The provider could not find the DNS records. Compare the records for ${d} in the provider dashboard with your DNS (see the \`email-dns\` check), fix them, then re-run apply.`);
-    if (!sd.records) {
-      return result("skip", "info", [...ev, `${provider} exposes no read of the records a domain needs, so the flag is not corroborated against DNS (\`email-dns\` checks the records it can locate)`]);
-    }
-    let listed;
-    try {
-      listed = resolvableRecords(await sd.records(ctx, id2));
-    } catch (e) {
-      return result("skip", "info", [...ev, `the records ${provider} lists for it could not be read (${errMsg2(e)}), so the flag is not corroborated against DNS`]);
-    }
-    if (!listed.length) {
-      return result("skip", "info", [...ev, `${provider} lists no resolvable DNS records for it, so the flag is not corroborated against DNS`]);
-    }
-    const errors = [];
-    const observed = await observeProviderRecords(ctx, listed, errors);
-    const lines = [
-      ...observed.filter((o) => o.state === "present").map((o) => `${o.label} resolves as ${provider} expects (${short(o.record.content)})`),
-      ...observed.filter(gone).map((o) => o.published.length ? `${o.label} resolves to ${short(o.published[0])} but ${provider} expects ${short(o.record.content)}` : `${o.label} does not resolve (${provider} expects ${short(o.record.content)})`)
-    ];
-    if (errors.length) lines.push(`some DNS lookups failed: ${errors.slice(0, 3).join("; ")}`);
-    const unresolved = observed.filter(gone);
-    if (!unresolved.length && !errors.length) return pass([...ev, ...lines]);
-    if (unresolved.length) {
-      const fresh = writeWindow(ctx);
-      const written = unresolved.map((o) => fresh(o.record));
-      if (written.every((at) => at !== void 0)) {
-        return result(
-          "warn",
-          "medium",
-          [...ev, ...lines, `golive wrote these records at ${[...new Set(written)].join(", ")}: DNS may still be propagating (a cached answer or a zone wildcard can answer first), so this is not a failure yet`],
-          "Wait for DNS to propagate (usually minutes, up to 48h), then re-run `verify --only email-verified`."
-        );
-      }
-    }
-    if (!unresolved.length) {
-      return result("warn", "medium", [...ev, ...lines], `Re-run verify in a moment: a DNS lookup failed, so ${d}'s records could not all be confirmed. If it persists, check DNS resolution for ${d}.`);
-    }
-    const missing = unresolved.map((o) => o.label).join(", ");
-    return result(
-      "fail",
-      "high",
-      [...ev, ...lines],
-      `Restore the DNS records ${provider} lists for ${d} (${missing} \u2014 absent, or not the value ${provider} expects): run \`golive plan\`, then \`apply --confirm-dns\` to write them when your DNS host is automated, or add them by hand where ${d}'s DNS lives. The provider still reports the domain verified, but without them mail from ${d} cannot authenticate (no SPF/DKIM) and will be rejected or land in spam. Then re-run \`verify --only email-verified\`.`
-    );
-  }
-};
 
 // src/links/email.ts
 function emailDomain(ctx) {
@@ -11479,7 +11347,7 @@ function verifyStep(ctx, adapter, sd, domain, idKey, idIntent) {
       try {
         await sd.verify(sctx, id2);
       } catch (e) {
-        changes.push(`verification request not accepted yet: ${errMsg(e)}`);
+        changes.push(`verification request not accepted yet: ${errMsg2(e)}`);
       }
       const status = await sd.status(sctx, id2).catch(() => "pending");
       changes.push(`${domain}: ${status}${status === "verified" ? "" : " (DNS may still be propagating; run `verify --only email-verified` later)"}`);
@@ -11500,7 +11368,7 @@ async function dnsFor(ctx, domain) {
   } catch (e) {
     return {
       kind: "error",
-      message: `checking whether ${s.adapter.title} hosts ${domain} failed (${errMsg(e)}), so the DNS records are left out of this plan. Fix the ${s.adapter.title} access (token permissions, rate limit or network) and run \`plan\` again.`
+      message: `checking whether ${s.adapter.title} hosts ${domain} failed (${errMsg2(e)}), so the DNS records are left out of this plan. Fix the ${s.adapter.title} access (token permissions, rate limit or network) and run \`plan\` again.`
     };
   }
   return hosts ? { kind: "ready", adapter: s.adapter, zone } : { kind: "handoff", where: `the DNS host for ${domain} (${s.adapter.title} doesn't host this zone in this account)` };
@@ -11564,7 +11432,249 @@ async function keyStep(ctx, adapter, keys3, hostAdapter, env, domain, target, na
   });
 }
 
+// src/core/inventory.ts
+var MODES = ["test", "live"];
+var ENV_TARGETS = ["development", "preview", "production"];
+var PROJECT_STATE = {
+  vercel: { id: "vercel.projectId", name: "vercel.projectName" },
+  netlify: { id: "netlify.siteId", name: "netlify.siteName" }
+};
+function createdProjectKey(provider) {
+  return `${provider}.createdProjectId`;
+}
+function projectStateKeys(provider) {
+  return PROJECT_STATE[provider] ?? { id: `${provider}.projectId`, name: `${provider}.projectName` };
+}
+var RECORDED = [
+  { axis: "db", provider: "supabase", providerTitle: "Supabase", kind: "database-project", idKey: "supabase.ref", createdBy: ["supabase.createdByGolive"], needs: "the Supabase dashboard", where: "the dashboard" },
+  { axis: "db", provider: "neon", providerTitle: "Neon", kind: "database-project", idKey: "neon.projectId", nameKey: "neon.createdProjectName", createdBy: ["neon.createdProjectId"], needs: "the Neon console", where: "the Neon console", extra: "; Neon may keep a recovery window" },
+  { axis: "email", provider: "resend", providerTitle: "Resend", kind: "sending-domain", idKey: "resend.domainId", createdBy: ["resend.createdDomainId"], needs: "the Resend dashboard", where: "the Resend dashboard", extra: "; any keys golive issued are revoked in the steps of this plan when applicable" }
+];
+async function buildInventory(ctx) {
+  const webhooks2 = await webhookInventory(ctx);
+  const dns = await dnsInventory(ctx);
+  const sendingKeys = await keyInventory(ctx);
+  const host = await projectInventory(ctx);
+  return { webhooks: webhooks2, dnsRecords: dns.records, sendingKeys, project: host.project, recorded: recordedInventory(ctx), gaps: [...dns.gaps, ...host.gaps] };
+}
+function titleOf(ctx, provider) {
+  return ctx.adapters.find((a) => a.id === provider)?.title ?? provider;
+}
+var WEBHOOK_KEY = /^([a-z0-9-]+)\.(test|live)\.webhookEndpointId$/;
+async function webhookInventory(ctx) {
+  const s = await axisStatus(ctx, "payments");
+  const ready2 = s.kind === "ready" ? s : null;
+  const out = [];
+  const stateKeys = Object.keys(ctx.state.get().resources).sort();
+  for (const mode of MODES) {
+    for (const stateKey of stateKeys) {
+      const m = WEBHOOK_KEY.exec(stateKey);
+      if (!m || m[2] !== mode) continue;
+      const provider = m[1];
+      const id2 = ctx.state.resource(stateKey);
+      if (!id2) continue;
+      const caps = ready2 && ready2.adapter.id === provider ? ready2.adapter.capabilities.webhooks : void 0;
+      const remove2 = caps?.remove;
+      out.push({ provider, providerTitle: titleOf(ctx, provider), key: stateKey, mode, id: id2, ...ready2 && remove2 && caps ? { removal: { adapter: ready2.adapter, remove: remove2, list: caps.list } } : {} });
+    }
+  }
+  return out;
+}
+async function dnsInventory(ctx) {
+  const baselines = readDnsBaselines(ctx.state.get());
+  const { read, foreign } = dnsZones(ctx, baselines);
+  const known = [...read, ...foreign.map((f) => f.zone)];
+  if (!known.length) return { records: [], gaps: [] };
+  const s = await axisStatus(ctx, "dns");
+  const zone = s.kind === "ready" ? s.adapter.capabilities.dns : void 0;
+  const listOwned = zone?.listOwned;
+  const remove2 = zone?.remove;
+  if (s.kind !== "ready" || !zone || !listOwned || !remove2) return { records: [], gaps: [dnsGap(known, baselines, s)] };
+  const gaps = foreign.length ? foreignDnsGaps(ctx, foreign, baselines) : [];
+  const candidates3 = [];
+  for (const domain of read) {
+    for (const record2 of await listOwned(ctx, domain)) candidates3.push({ domain, record: record2 });
+  }
+  candidates3.sort((a, b) => {
+    const ka = recordKey(a.record);
+    const kb = recordKey(b.record);
+    if (ka !== kb) return ka < kb ? -1 : 1;
+    return a.domain === b.domain ? 0 : a.domain < b.domain ? -1 : 1;
+  });
+  const out = [];
+  const seen2 = /* @__PURE__ */ new Set();
+  for (const c of candidates3) {
+    const unique = `${c.domain}|${recordKey(c.record)}`;
+    if (seen2.has(unique)) continue;
+    seen2.add(unique);
+    out.push({ provider: s.adapter.id, providerTitle: s.adapter.title, domain: c.domain, record: c.record, adapter: s.adapter, listOwned, remove: remove2 });
+  }
+  return { records: out, gaps };
+}
+function dnsZones(ctx, baselines) {
+  const configured = ctx.config.stack.dns;
+  const read = /* @__PURE__ */ new Map();
+  for (const d of [ctx.config.domain, ctx.config.email?.domain]) {
+    if (d && !read.has(d.toLowerCase())) read.set(d.toLowerCase(), d);
+  }
+  const foreign = /* @__PURE__ */ new Map();
+  for (const b of baselines) {
+    if (b.provider === configured || read.has(b.zone)) continue;
+    if (!foreign.has(b.zone)) foreign.set(b.zone, b.provider);
+  }
+  for (const b of baselines) if (b.provider === configured && !read.has(b.zone)) read.set(b.zone, b.zone);
+  return { read: [...read.values()], foreign: [...foreign.entries()].map(([zone, provider]) => ({ zone, provider })) };
+}
+function foreignDnsGaps(ctx, foreign, baselines) {
+  const byProvider = /* @__PURE__ */ new Map();
+  for (const f of foreign) byProvider.set(f.provider, [...byProvider.get(f.provider) ?? [], f.zone]);
+  return [...byProvider.entries()].sort(([a], [b]) => a < b ? -1 : 1).map(([provider, zones]) => {
+    const written = baselines.filter((b) => zones.includes(b.zone));
+    const providerTitle = titleOf(ctx, provider);
+    return {
+      id: `teardown:dns:${provider}`,
+      axis: "dns",
+      provider,
+      providerTitle,
+      subject: written.length ? `the ${written.length} DNS record(s) golive wrote in ${zones.join(", ")} (${written.map((b) => formatRecord(asRecord(b))).join("; ")})` : `any DNS records golive wrote in ${zones.join(", ")}`,
+      why: `state recorded those writes through ${providerTitle}, which golive.yaml does not name as the DNS provider now, so golive cannot read or remove them here`,
+      fix: `Set ${providerTitle} as the DNS provider again and run \`golive teardown\`, or delete those records in the ${providerTitle} dashboard yourself.`,
+      recorded: written.length > 0
+    };
+  });
+}
+function dnsGap(zones, baselines, s) {
+  const provider = s.kind === "guided" ? s.provider : s.kind === "none" ? "" : s.adapter.id;
+  const providerTitle = s.kind === "ready" || s.kind === "unauthed" ? s.adapter.title : s.kind === "guided" ? s.title : "the DNS provider";
+  const written = baselines.filter((b) => zones.some((z) => normName2(z) === b.zone));
+  const listed = [...new Set(written.map((b) => b.zone))];
+  const subject = written.length ? `the ${written.length} DNS record(s) golive wrote in ${listed.join(", ")} (${written.map((b) => formatRecord(asRecord(b))).join("; ")})` : `any DNS records golive wrote in ${zones.join(", ")}`;
+  let why;
+  let fix;
+  if (s.kind === "none") {
+    why = "golive.yaml names no DNS provider for this app, so nothing here could read the zone or remove a record";
+    fix = `Name the provider that serves ${zones.join(", ")} in golive.yaml and sign in to it, then run \`golive teardown\`; or delete those records in the provider's own dashboard.`;
+  } else if (s.kind === "guided") {
+    why = `the DNS provider (${providerTitle}) is guided, so golive has no DNS read or removal for it`;
+    fix = `Delete those records in the ${providerTitle} dashboard by hand; golive has no adapter for this provider, so no release can remove them.`;
+  } else if (s.kind === "unauthed") {
+    why = `the ${providerTitle} login is not usable, so golive could not read the zone or remove anything`;
+    fix = `Reconnect ${providerTitle} (${s.status.howToFix ?? "sign in again in your own terminal window"}), then run \`golive teardown\`: it re-reads the zone and removes the records golive owns.`;
+  } else {
+    const missing = [
+      !s.adapter.capabilities.dns && "no DNS capability",
+      s.adapter.capabilities.dns && !s.adapter.capabilities.dns.listOwned && "no read that reports which records golive owns",
+      s.adapter.capabilities.dns && !s.adapter.capabilities.dns.remove && "no way to delete a record"
+    ].filter(Boolean);
+    why = `the ${providerTitle} adapter has ${missing.join(" and ")}, so golive cannot name or remove the records it wrote`;
+    fix = `Delete those records in the ${providerTitle} dashboard by hand; no golive release can remove records at this provider.`;
+  }
+  return { id: `teardown:dns${provider ? `:${provider}` : ""}`, axis: "dns", provider, providerTitle, subject, why, fix, recorded: written.length > 0 };
+}
+var recordKey = (r) => `${r.type} ${r.name} ${r.content}`;
+var normName2 = (n) => n.trim().replace(/\.$/, "").toLowerCase();
+var asRecord = (b) => ({ type: b.type, name: b.name, content: b.content, ...b.priority !== void 0 ? { priority: b.priority } : {} });
+var KEY_STATE = /^([a-z0-9-]+)\.keyId@([a-z-]+)$/;
+async function keyInventory(ctx) {
+  const s = await axisStatus(ctx, "email");
+  const ready2 = s.kind === "ready" ? s : null;
+  const out = [];
+  for (const stateKey of Object.keys(ctx.state.get().resources).sort()) {
+    const m = KEY_STATE.exec(stateKey);
+    if (!m) continue;
+    const provider = m[1];
+    const target = m[2];
+    const id2 = ctx.state.resource(stateKey);
+    if (!id2 || !isKeySlot(target)) continue;
+    const revoke = ready2 && ready2.adapter.id === provider ? ready2.adapter.capabilities.keys?.revoke : void 0;
+    out.push({ provider, providerTitle: titleOf(ctx, provider), key: stateKey, target, id: id2, ...ready2 && revoke ? { revocation: { adapter: ready2.adapter, revoke } } : {} });
+  }
+  return out;
+}
+var isEnvTarget = (v) => ENV_TARGETS.includes(v);
+var isKeySlot = (v) => isEnvTarget(v) || v === "smtp";
+async function projectInventory(ctx) {
+  const s = await axisStatus(ctx, "hosting");
+  const linked = linkedHostProjects(ctx);
+  const ready2 = s.kind === "ready" ? s : null;
+  const remove2 = ready2?.adapter.capabilities.project?.remove;
+  const mine = ready2 && remove2 ? linked.find((l) => l.provider === ready2.adapter.id) : void 0;
+  if (ready2 && remove2 && mine) {
+    const read = ready2.adapter.capabilities.project?.exists;
+    return {
+      project: {
+        provider: ready2.adapter.id,
+        providerTitle: ready2.adapter.title,
+        keys: mine.keys,
+        id: mine.id,
+        ...mine.name ? { name: mine.name } : {},
+        created: mine.created,
+        remove: remove2,
+        ...read ? { exists: (x) => read(x, mine.id) } : {}
+      },
+      gaps: linked.filter((l) => l !== mine).map((l) => hostGap(s, l))
+    };
+  }
+  return { project: null, gaps: linked.map((l) => hostGap(s, l)) };
+}
+function linkedHostProjects(ctx) {
+  const out = [];
+  const seen2 = /* @__PURE__ */ new Set();
+  for (const provider of [ctx.config.stack.hosting, ...ctx.adapters.filter((a) => a.axes.includes("hosting")).map((a) => a.id)]) {
+    if (!provider || seen2.has(provider)) continue;
+    seen2.add(provider);
+    const keys3 = projectStateKeys(provider);
+    const id2 = ctx.state.resource(keys3.id);
+    if (!id2) continue;
+    const name3 = ctx.state.resource(keys3.name);
+    out.push({ provider, providerTitle: titleOf(ctx, provider), keys: keys3, id: id2, ...name3 ? { name: name3 } : {}, created: ctx.state.resource(createdProjectKey(provider)) === id2 });
+  }
+  return out;
+}
+function hostGap(s, p) {
+  const configuredId = s.kind === "guided" ? s.provider : s.kind === "none" ? "" : s.adapter.id;
+  const configuredTitle = s.kind === "guided" ? s.title : s.kind === "none" ? "" : s.adapter.title;
+  let why;
+  let how;
+  if (configuredId && configuredId !== p.provider) {
+    why = `golive.yaml names ${configuredTitle} for hosting now, while state still links this project through ${p.providerTitle}`;
+    how = `Set ${p.providerTitle} as the hosting provider again and run \`golive teardown\`, or delete the project in the ${p.providerTitle} dashboard yourself`;
+  } else if (s.kind === "none" || s.kind === "guided") {
+    why = s.kind === "none" ? "golive.yaml names no hosting provider now, so golive has nothing it could delete it with" : `the hosting provider (${configuredTitle}) is guided, so golive has no project deletion for it`;
+    how = `Delete the project in the ${p.providerTitle} dashboard yourself if it should go away`;
+  } else if (s.kind === "unauthed") {
+    why = `the ${p.providerTitle} login is not usable, so golive could not delete it in this run`;
+    how = `Reconnect ${p.providerTitle} (${s.status.howToFix ?? "sign in again in your own terminal window"}), then run \`golive teardown\``;
+  } else {
+    why = `the ${p.providerTitle} adapter exposes no project deletion, so no golive release can remove it`;
+    how = `Delete the project in the ${p.providerTitle} dashboard yourself if it should go away`;
+  }
+  const ownership = p.created ? `golive's creation marker (${createdProjectKey(p.provider)}) names this project, so an approved teardown removes it once that works` : "state holds no creation marker naming it, so golive treats it as adopted and would not delete it even when reachable";
+  return {
+    id: `teardown:hosting:${p.provider}`,
+    axis: "hosting",
+    provider: p.provider,
+    providerTitle: p.providerTitle,
+    subject: `the ${p.providerTitle} project ${p.name ? `${p.name} (${p.id})` : p.id}`,
+    why,
+    fix: `${how} \u2014 ${ownership}.`,
+    recorded: true
+  };
+}
+function recordedInventory(ctx) {
+  const out = [];
+  for (const spec of RECORDED) {
+    const id2 = ctx.state.resource(spec.idKey);
+    if (!id2) continue;
+    const created = spec.createdBy.length > 0 && spec.createdBy.every((k) => ctx.state.resource(k) === id2);
+    const name3 = spec.kind === "sending-domain" ? ctx.config.email?.domain ?? id2 : (spec.nameKey ? ctx.state.resource(spec.nameKey) : void 0) ?? id2;
+    out.push({ axis: spec.axis, provider: spec.provider, providerTitle: spec.providerTitle, kind: spec.kind, key: spec.idKey, id: id2, name: name3, created, markers: [...spec.createdBy], needs: spec.needs, where: spec.where, ...spec.extra ? { extra: spec.extra } : {} });
+  }
+  return out;
+}
+
 // src/core/teardown.ts
+init_secret();
 async function buildTeardownPlan(ctx) {
   assertCompatibleState(ctx.state.get(), ctx.release);
   if (ctx.config.version !== ctx.release.schemas.config) {
@@ -11580,7 +11690,7 @@ async function buildTeardownPlan(ctx) {
     if (stepIds.has(s.id)) throw new Error(`teardown: two resources map to step ${s.id}, so golive cannot plan an unambiguous deletion. Resolve the duplicate and re-run.`);
     stepIds.add(s.id);
   }
-  const handoffs = [...dbHandoffs(inventory2.recorded), ...emailHandoffs(inventory2.recorded), ...webhooks2.handoffs, ...keys3.handoffs, ...project.handoffs];
+  const handoffs = [...dbHandoffs(inventory2.recorded), ...emailHandoffs(inventory2.recorded), ...webhooks2.handoffs, ...keys3.handoffs, ...project.handoffs, ...gapHandoffs(inventory2.gaps)];
   const ordered = orderSteps(steps);
   return { id: planId(ordered, handoffs, ctx.release), release: structuredClone(ctx.release), steps: ordered, handoffs, unmappedEnv: [], warnings: [] };
 }
@@ -11603,10 +11713,12 @@ function webhookTeardown(webhooks2) {
   return { steps, handoffs };
 }
 function webhookStep(w, removal) {
-  const { adapter, remove: remove2 } = removal;
-  const { mode, id: id2 } = w;
+  const { adapter, remove: remove2, list: list4 } = removal;
+  const { mode, id: id2, key } = w;
+  const stepId = `teardown:webhook:${adapter.id}:${mode}`;
+  let left = false;
   return step({
-    id: `teardown:webhook:${adapter.id}:${mode}`,
+    id: stepId,
     title: `Delete the ${adapter.title} ${mode}-mode webhook endpoint golive created`,
     kind: "destroy",
     risk: { writes: true, destroy: true, live: mode === "live" },
@@ -11616,9 +11728,53 @@ function webhookStep(w, removal) {
       const r = await remove2(sctx, id2, mode);
       if (r.deleted) return { changes: [`deleted webhook ${id2}`] };
       if (r.reason === "endpoint not found") return { changes: [`already gone: ${id2}`] };
-      if (r.reason === "not created by golive") return { changes: [`left as is: ${r.reason}`] };
+      if (r.reason === "not created by golive") {
+        left = true;
+        return { changes: [`left as is: ${r.reason}`] };
+      }
       throw new Error(`could not delete the ${adapter.title} ${mode}-mode webhook endpoint ${id2}: ${redact(r.reason ?? "the provider did not delete it")}`);
+    },
+    // A delete is only reported as done once the provider's own list no longer has the endpoint (the
+    // DNS steps confirm a removal the same way). A provider that cannot be re-read warns instead of
+    // failing, and one that still lists the endpoint fails: golive does not report a delete it cannot
+    // confirm. Either way the recorded id is forgotten only once the provider's answer says the
+    // endpoint is gone — teardown is the approved write, so its own record must not outlive it.
+    async verifyInline(vctx) {
+      if (left) return [];
+      const checkId = `${stepId}:removed`;
+      const title = `${adapter.title} no longer lists the ${mode}-mode webhook endpoint golive created (${id2})`;
+      let endpoints;
+      try {
+        endpoints = await list4(vctx, mode);
+      } catch (e) {
+        forgetWebhookRecord(vctx, key);
+        return [{
+          id: checkId,
+          title,
+          status: "warn",
+          severity: "medium",
+          evidence: [`the delete was reported, but the ${adapter.title} ${mode}-mode endpoints could not be re-read: ${errMsg2(e)}`],
+          fix: `Check ${adapter.title} access, then confirm the endpoint ${id2} is gone.`
+        }];
+      }
+      if (endpoints.some((e) => e.id === id2)) {
+        return [{
+          id: checkId,
+          title,
+          status: "fail",
+          severity: "high",
+          evidence: [`${adapter.title} still lists the ${mode}-mode endpoint ${id2} after the delete`],
+          fix: `Delete it in the ${adapter.title} dashboard; golive does not report a delete it cannot confirm.`
+        }];
+      }
+      forgetWebhookRecord(vctx, key);
+      return [{ id: checkId, title, status: "pass", severity: "info", evidence: [`${adapter.title} no longer lists the ${mode}-mode endpoint ${id2}`] }];
     }
+  });
+}
+function forgetWebhookRecord(ctx, key) {
+  ctx.state.save((s) => {
+    delete s.resources[key];
   });
 }
 function dnsSteps(records3) {
@@ -11652,6 +11808,9 @@ function dnsStep2(r, id2) {
       return { changes: [outcome === "removed" ? `deleted: ${formatRecord(record2)}` : `already gone: ${formatRecord(record2)}`] };
     },
     // A delete is only reported as done once the provider's own owned-record list no longer has it.
+    // The recorded baseline goes with the record in both confirmed-absence cases (a provider that
+    // cannot be re-read included: the delete itself was reported), and stays when the provider still
+    // lists the record — a baseline is never dropped for a record that is still there.
     async verifyInline(vctx) {
       const checkId = `${id2}:removed`;
       const title = `${adapter.title} no longer lists the record golive created: ${formatRecord(record2)}`;
@@ -11659,12 +11818,13 @@ function dnsStep2(r, id2) {
       try {
         owned3 = await listOwned(vctx, domain);
       } catch (e) {
+        forgetDnsBaseline(vctx, domain, record2);
         return [{
           id: checkId,
           title,
           status: "warn",
           severity: "medium",
-          evidence: [`could not re-read the records ${adapter.title} reports as golive-owned in ${domain}: ${errMsg(e)}`],
+          evidence: [`could not re-read the records ${adapter.title} reports as golive-owned in ${domain}: ${errMsg2(e)}`],
           fix: `Check ${adapter.title} access, then confirm ${formatRecord(record2)} is gone.`
         }];
       }
@@ -11678,8 +11838,15 @@ function dnsStep2(r, id2) {
           fix: `Delete it in the ${adapter.title} dashboard; golive does not report a delete it cannot confirm.`
         }];
       }
+      forgetDnsBaseline(vctx, domain, record2);
       return [{ id: checkId, title, status: "pass", severity: "info", evidence: [`${formatRecord(record2)} is gone from the records ${adapter.title} reports as golive-owned in ${domain}`] }];
     }
+  });
+}
+function forgetDnsBaseline(ctx, zone, record2) {
+  const key = dnsBaselineKey(zone, record2);
+  ctx.state.save((s) => {
+    delete s.resources[key];
   });
 }
 function keyTeardown(keys3) {
@@ -11702,9 +11869,10 @@ function keyTeardown(keys3) {
 }
 function emailKeyStep(k, revocation) {
   const { adapter, revoke } = revocation;
-  const { target, id: id2 } = k;
+  const { target, id: id2, key } = k;
+  const stepId = `teardown:key:${adapter.id}:${target}`;
   return step({
-    id: `teardown:key:${adapter.id}:${target}`,
+    id: stepId,
     title: `Revoke the ${adapter.title} sending key golive issued for ${target}`,
     kind: "destroy",
     risk: { writes: true, destroy: true },
@@ -11715,7 +11883,29 @@ function emailKeyStep(k, revocation) {
       if (r.revoked) return { changes: [`revoked ${id2}`] };
       if (r.reason === "key not found") return { changes: [`already gone: ${id2}`] };
       throw new Error(`could not revoke the ${adapter.title} sending key ${id2}: ${redact(r.reason ?? "the provider did not revoke it")}`);
+    },
+    // Nothing can re-read a revoked key: the capability is issue-and-revoke only (Resend exposes no
+    // key read), so this is reported as unverified — never as a pass — and the recorded key id goes
+    // with the key the provider's answer says is gone. Keeping it would leave `golive status` calling
+    // a revoked key the app's key, and a later teardown planning a revocation that cannot happen.
+    async verifyInline(vctx) {
+      forgetKeyRecord(vctx, key);
+      return [{
+        id: `${stepId}:revoked`,
+        title: `${adapter.title} cannot confirm the ${target} sending key golive revoked`,
+        status: "warn",
+        severity: "medium",
+        evidence: [
+          `the provider reported ${id2} revoked, but ${adapter.title} exposes no read for an issued key (issue and revoke only), so golive cannot re-check it`
+        ],
+        fix: `Confirm the key ${id2} is gone in the ${adapter.title} dashboard.`
+      }];
     }
+  });
+}
+function forgetKeyRecord(ctx, key) {
+  ctx.state.save((s) => {
+    delete s.resources[key];
   });
 }
 function projectTeardown(project) {
@@ -11781,7 +11971,7 @@ function projectStep(p) {
           title,
           status: "warn",
           severity: "medium",
-          evidence: [`could not re-read the ${p.providerTitle} project ${label3} after the delete: ${errMsg(e)}`],
+          evidence: [`could not re-read the ${p.providerTitle} project ${label3} after the delete: ${errMsg2(e)}`],
           fix: `Check ${p.providerTitle} access, then confirm ${label3} is gone.`
         }];
       }
@@ -11798,6 +11988,15 @@ function projectStep(p) {
       return [{ id: checkId, title, status: "pass", severity: "info", evidence: [`${p.providerTitle} no longer resolves the project ${label3}`] }];
     }
   });
+}
+function gapHandoffs(gaps) {
+  return gaps.map((g) => ({
+    id: g.id,
+    why: `${g.subject}: ${g.why}`,
+    action: g.fix,
+    blocking: false,
+    manual: true
+  }));
 }
 function dbHandoffs(recorded) {
   return recorded.filter((r) => r.axis === "db").map(manualHandoff);
@@ -11902,13 +12101,13 @@ function attachStep(ctx, adapter, attach, domain, project) {
     }
   });
 }
-var normName2 = (n) => n.trim().replace(/\.$/, "").toLowerCase();
+var normName3 = (n) => n.trim().replace(/\.$/, "").toLowerCase();
 function normContent(r) {
   if (r.type === "TXT") return normalizeTxt(r.content).trim();
   if (r.type === "CNAME" || r.type === "MX") return r.content.trim().replace(/\.$/, "").toLowerCase();
   return r.content.trim().replace(/\s+/g, " ").toLowerCase();
 }
-var recordKey2 = (r) => `${r.type} ${normName2(r.name)} ${normContent(r)}${r.priority !== void 0 ? ` ${r.priority}` : ""}`;
+var recordKey2 = (r) => `${r.type} ${normName3(r.name)} ${normContent(r)}${r.priority !== void 0 ? ` ${r.priority}` : ""}`;
 var sameRecords = (a, b) => {
   const ka = [...new Set(a.map(recordKey2))].sort();
   const kb = [...new Set(b.map(recordKey2))].sort();
@@ -11916,7 +12115,7 @@ var sameRecords = (a, b) => {
 };
 var spfTerms = (c) => c.split(/\s+/).filter((t) => t && t !== "v=spf1" && !/^[-~?+]?all$/.test(t));
 function satisfies2(have, want) {
-  if (have.type !== want.type || normName2(have.name) !== normName2(want.name)) return false;
+  if (have.type !== want.type || normName3(have.name) !== normName3(want.name)) return false;
   const h = normContent(have);
   const w = normContent(want);
   if (h === w) return true;
@@ -11958,7 +12157,7 @@ function dnsStep3(ctx, adapter, attach, domain, dnsAdapter, zone, planned, proje
       try {
         have = await zone.list(vctx, domain);
       } catch (e) {
-        return [{ id: id2, title, status: "warn", severity: "medium", evidence: [`could not list the ${domain} zone to confirm: ${errMsg(e)}`] }];
+        return [{ id: id2, title, status: "warn", severity: "medium", evidence: [`could not list the ${domain} zone to confirm: ${errMsg2(e)}`] }];
       }
       const missing = wrote.filter((r) => !have.some((h) => satisfies2(h, r)));
       if (missing.length) {
@@ -11986,7 +12185,7 @@ function verifyStep2(ctx, adapter, verify2, attach, domain, project) {
       try {
         changes.push(`${domain}: ownership ${await verify2(sctx, domain)}`);
       } catch (e) {
-        changes.push(`verification request not accepted yet: ${errMsg(e)}`);
+        changes.push(`verification request not accepted yet: ${errMsg2(e)}`);
       }
       const status = await attach.status(sctx, domain).catch(() => "pending");
       changes.push(`${domain}: ${status}${status === "ok" ? "" : " (DNS/TLS may still be propagating; run `plan` again later, and `verify --only domain-live`)"}`);
@@ -12069,14 +12268,14 @@ function once(ctx, key, read) {
 }
 var label = (value, b) => `${value} \u2014 recorded by golive ${b.at ?? "at an unknown time"}${b.ref ? ` (${b.ref})` : ""}`;
 var seen = (value, at) => `${value} \u2014 read now ${at}`;
-var normName3 = (n) => n.trim().replace(/\.$/, "").toLowerCase();
-var asRecord = (b) => ({ type: b.type, name: b.name, content: b.content, ...b.priority !== void 0 ? { priority: b.priority } : {} });
+var normName4 = (n) => n.trim().replace(/\.$/, "").toLowerCase();
+var asRecord2 = (b) => ({ type: b.type, name: b.name, content: b.content, ...b.priority !== void 0 ? { priority: b.priority } : {} });
 var publicRecord = (type, name3, value) => ({ type, name: name3, content: type === "MX" ? value.replace(/^\d+\s+/, "") : value });
 var withinPropagation = (at) => Boolean(at && Date.now() - Date.parse(at) < PROPAGATION_MS);
 function isUnreadable(e) {
   const status = e?.status;
   if (status === 403 || status === 429 || typeof status === "number" && status >= 500) return true;
-  return /\b(network|timeout|timed out|aborted|fetch failed|ENOTFOUND|ETIMEDOUT|ECONNRESET|ECONNREFUSED|socket hang up|rate limit|rate-limit)\b/i.test(errMsg(e));
+  return /\b(network|timeout|timed out|aborted|fetch failed|ENOTFOUND|ETIMEDOUT|ECONNRESET|ECONNREFUSED|socket hang up|rate limit|rate-limit)\b/i.test(errMsg2(e));
 }
 function unreadable2(s, capability) {
   if (s.kind === "unauthed") return `the provider is not logged in (${s.status.howToFix ?? s.adapter.title})`;
@@ -12089,7 +12288,7 @@ function stepAt(ctx, ...ids) {
   return Object.values(steps).map((r) => r.at).sort().at(-1);
 }
 function unread(c, o) {
-  const reason = errMsg(o.reason);
+  const reason = errMsg2(o.reason);
   c.items.push({
     id: o.id,
     class: o.class,
@@ -12112,7 +12311,7 @@ async function dnsItems(ctx, at, c) {
   for (const b of baselines) byZone.set(b.zone, [...byZone.get(b.zone) ?? [], b]);
   const email = emailDomain(ctx);
   if (!baselines.length) {
-    const zones = [...new Set([ctx.config.domain, email].filter((z) => Boolean(z)).map(normName3))];
+    const zones = [...new Set([ctx.config.domain, email].filter((z) => Boolean(z)).map(normName4))];
     if (zones.length) c.notChecked.push({ subject: `${zones.join(", ")} DNS records`, reason: "golive recorded no per-record DNS baseline for this app (no DNS step ran here, or state predates the baselines), so there is nothing to compare record by record" });
   }
   if (byZone.size) {
@@ -12122,7 +12321,7 @@ async function dnsItems(ctx, at, c) {
     for (const [name3, list4] of byZone) {
       const subject = `${name3} zone: ${list4.length} record(s) golive wrote`;
       const baseline = { source: "state", at: list4.map((b) => b.at).sort().at(-1), ref: dnsBaselineKey(name3, list4[0]) };
-      const checkId = ctx.config.domain && normName3(ctx.config.domain) === name3 ? "domain-live" : email && normName3(email) === name3 ? "email-dns" : void 0;
+      const checkId = ctx.config.domain && normName4(ctx.config.domain) === name3 ? "domain-live" : email && normName4(email) === name3 ? "email-dns" : void 0;
       if (!zone) {
         unread(c, {
           id: `dns:${name3}:provider`,
@@ -12139,7 +12338,7 @@ async function dnsItems(ctx, at, c) {
       try {
         have = await once(ctx, `dns:list:${name3}`, () => zone.list(ctx, name3));
       } catch (e) {
-        unread(c, { id: `dns:${name3}:zone`, class: "dns-record", subject, expected: list4.map(formatRecord).join("; "), baseline, reason: `listing the ${name3} zone failed: ${errMsg(e)}`, checkId });
+        unread(c, { id: `dns:${name3}:zone`, class: "dns-record", subject, expected: list4.map(formatRecord).join("; "), baseline, reason: `listing the ${name3} zone failed: ${errMsg2(e)}`, checkId });
         continue;
       }
       for (const b of list4) await compareRecord(ctx, at, c, name3, b, have, zoneTitle, checkId);
@@ -12150,8 +12349,8 @@ async function dnsItems(ctx, at, c) {
 async function compareRecord(ctx, at, c, zone, b, have, zoneTitle, checkId) {
   const baseline = { source: "state", at: b.at, ref: dnsBaselineKey(zone, b) };
   const subject = `${zone}: ${b.type} ${b.name}`;
-  const want = asRecord(b);
-  const match = have.filter((h) => h.type === b.type && normName3(h.name) === b.name);
+  const want = asRecord2(b);
+  const match = have.filter((h) => h.type === b.type && normName4(h.name) === b.name);
   if (!match.length) {
     c.items.push({
       id: `dns:${zone}:${b.type}:${b.name}:missing`,
@@ -12188,7 +12387,7 @@ async function compareRecord(ctx, at, c, zone, b, have, zoneTitle, checkId) {
   try {
     published = await once(ctx, `doh:${b.type}:${b.name}`, () => lookup(ctx, b.name, b.type));
   } catch (e) {
-    c.notChecked.push({ subject, reason: `public DNS lookup failed: ${errMsg(e)}` });
+    c.notChecked.push({ subject, reason: `public DNS lookup failed: ${errMsg2(e)}` });
     return;
   }
   if (published.some((v) => satisfies2(publicRecord(b.type, b.name, v), want))) {
@@ -12238,7 +12437,7 @@ async function delegationItems(ctx, at, c, byZone) {
   for (const [stepId, domain] of [["domain:dns", ctx.config.domain], ["email:dns", emailDomain(ctx)]]) {
     const step2 = ctx.state.get().steps[stepId];
     if (!domain || step2?.status !== "done" || !ctx.config.stack.dns) continue;
-    const zone = normName3(domain);
+    const zone = normName4(domain);
     if (zones.has(zone)) continue;
     zones.set(zone, { provider: ctx.config.stack.dns, at: step2.at, ref: stepId, source: "step-evidence" });
   }
@@ -12249,7 +12448,7 @@ async function delegationItems(ctx, at, c, byZone) {
     try {
       host = await once(ctx, `ns:${zone}`, () => dnsHost(ctx, zone));
     } catch (e) {
-      c.notChecked.push({ subject, reason: `public name-server lookup failed: ${errMsg(e)}` });
+      c.notChecked.push({ subject, reason: `public name-server lookup failed: ${errMsg2(e)}` });
       continue;
     }
     if (!host.nameservers.length) {
@@ -12319,7 +12518,7 @@ async function envItems(ctx, at, c) {
       try {
         present = new Set(await once(ctx, `env:names:${target}`, () => env.listNames(ctx, target)));
       } catch (e) {
-        unread(c, { id: `env:${target}`, class: "env-name", subject, expected: names.map((n) => n.name).join(", "), baseline: { source: "state" }, reason: `listing ${target} env names failed: ${errMsg(e)}`, checkId: "env-parity" });
+        unread(c, { id: `env:${target}`, class: "env-name", subject, expected: names.map((n) => n.name).join(", "), baseline: { source: "state" }, reason: `listing ${target} env names failed: ${errMsg2(e)}`, checkId: "env-parity" });
         continue;
       }
       const missing = names.filter((n) => !present.has(n.name));
@@ -12387,7 +12586,7 @@ async function webhookItems(ctx, at, c) {
     try {
       endpoints = await once(ctx, `webhooks:list:${r.mode}`, () => registry2.list(ctx, r.mode));
     } catch (e) {
-      unread(c, { id: `webhook:${r.mode}`, class: "webhook-endpoint", subject, expected: `the ${r.mode}-mode endpoint ${r.id} still exists`, baseline, reason: `listing ${r.mode}-mode endpoints failed: ${errMsg(e)}`, checkId: "webhook-registered" });
+      unread(c, { id: `webhook:${r.mode}`, class: "webhook-endpoint", subject, expected: `the ${r.mode}-mode endpoint ${r.id} still exists`, baseline, reason: `listing ${r.mode}-mode endpoints failed: ${errMsg2(e)}`, checkId: "webhook-registered" });
       continue;
     }
     const want = ctx.config.payments?.webhook?.events ?? [];
@@ -12500,7 +12699,7 @@ async function domainItems(ctx, at, c) {
   try {
     status = await once(ctx, `domain:status:${domain}`, () => attach.status(ctx, domain));
   } catch (e) {
-    unread(c, { id: "domain:attach", class: "domain-attach", subject, expected: `${domain} is attached`, baseline, reason: `reading the host's domain status failed: ${errMsg(e)}`, checkId: "domain-live" });
+    unread(c, { id: "domain:attach", class: "domain-attach", subject, expected: `${domain} is attached`, baseline, reason: `reading the host's domain status failed: ${errMsg2(e)}`, checkId: "domain-live" });
     return;
   }
   if (status === "misconfigured") {
@@ -12539,23 +12738,23 @@ async function domainItems(ctx, at, c) {
 }
 async function requiredRecordItems(ctx, at, c, domain, attach) {
   if (!attach.requiredRecords) return;
-  const zone = normName3(domain);
+  const zone = normName4(domain);
   const baselines = readDnsBaselines(ctx.state.get()).filter((b) => b.zone === zone || b.name === zone || b.name.endsWith(`.${zone}`));
   if (!baselines.length) return;
   let required;
   try {
     required = await once(ctx, `domain:required:${domain}`, () => attach.requiredRecords(ctx, domain));
   } catch (e) {
-    c.notChecked.push({ subject: `${domain} records the host requires`, reason: `reading the host's required records failed: ${errMsg(e)}` });
+    c.notChecked.push({ subject: `${domain} records the host requires`, reason: `reading the host's required records failed: ${errMsg2(e)}` });
     return;
   }
   for (const rec of required) {
-    const b = baselines.find((x) => x.type === rec.type && x.name === normName3(rec.name));
+    const b = baselines.find((x) => x.type === rec.type && x.name === normName4(rec.name));
     if (!b) {
       c.items.push({
-        id: `dns:${zone}:required:${rec.type}:${normName3(rec.name)}`,
+        id: `dns:${zone}:required:${rec.type}:${normName4(rec.name)}`,
         class: "dns-record",
-        subject: `${zone}: ${rec.type} ${normName3(rec.name)} (host requirement)`,
+        subject: `${zone}: ${rec.type} ${normName4(rec.name)} (host requirement)`,
         expected: "no such record was recorded when golive wrote the DNS",
         observed: seen(`the host now requires ${formatRecord(rec)}`, at),
         baseline: { source: "provider-marker", ref: "domain:attach" },
@@ -12567,17 +12766,17 @@ async function requiredRecordItems(ctx, at, c, domain, attach) {
       });
       continue;
     }
-    if (satisfies2(asRecord(b), rec)) continue;
+    if (satisfies2(asRecord2(b), rec)) continue;
     c.items.push({
-      id: `dns:${zone}:required:${rec.type}:${normName3(rec.name)}`,
+      id: `dns:${zone}:required:${rec.type}:${normName4(rec.name)}`,
       class: "dns-record",
-      subject: `${zone}: ${rec.type} ${normName3(rec.name)} (host requirement)`,
+      subject: `${zone}: ${rec.type} ${normName4(rec.name)} (host requirement)`,
       expected: label(formatRecord(rec), { source: "state", at: b.at, ref: dnsBaselineKey(zone, b) }),
       observed: seen(`the host now requires ${formatRecord(rec)}`, at),
       baseline: { source: "state", at: b.at, ref: dnsBaselineKey(zone, b) },
       severity: "medium",
       action: "reconcile",
-      evidence: [`the host changed the ${rec.type} record it wants at ${normName3(rec.name)}: it asked for ${b.content} when golive wrote it`],
+      evidence: [`the host changed the ${rec.type} record it wants at ${normName4(rec.name)}: it asked for ${b.content} when golive wrote it`],
       suggestedAction: `Run \`golive plan\` and re-approve with --confirm-dns: golive refuses to write records that changed since approval, and the domain stays unverified until they match.`,
       checkId: "domain-live"
     });
@@ -12624,14 +12823,14 @@ async function dbItems(ctx, at, c) {
   }) : null;
   if (found && !found.ok) {
     if (isUnreadable(found.error)) {
-      unread(c, { id: "db:project", class: "db-selectors", subject, expected: `project ${recordedId} is readable`, baseline, reason: `reading the recorded project failed: ${errMsg(found.error)}`, checkId: dbCheckId(s.adapter) });
+      unread(c, { id: "db:project", class: "db-selectors", subject, expected: `project ${recordedId} is readable`, baseline, reason: `reading the recorded project failed: ${errMsg2(found.error)}`, checkId: dbCheckId(s.adapter) });
     } else {
       c.items.push({
         id: "db:project",
         class: "db-selectors",
         subject,
         expected: label(`the ${provider} project ${recordedId} exists and is visible to this account`, baseline),
-        observed: seen(`golive could not read it: ${errMsg(found.error)}`, at),
+        observed: seen(`golive could not read it: ${errMsg2(found.error)}`, at),
         baseline,
         severity: "high",
         action: "human",
@@ -12717,7 +12916,7 @@ async function dbItems(ctx, at, c) {
     }
   });
   if (!now.ok) {
-    unread(c, { id: "db:selectors", class: "db-selectors", subject: `${subject} connection selectors`, expected: selectors.map((x) => `${x.field}=${x.value}`).join(", "), baseline: { ...baseline, ref: selectors[0].key }, reason: `reading the connection selectors failed: ${errMsg(now.error)}`, checkId: dbCheckId(s.adapter) });
+    unread(c, { id: "db:selectors", class: "db-selectors", subject: `${subject} connection selectors`, expected: selectors.map((x) => `${x.field}=${x.value}`).join(", "), baseline: { ...baseline, ref: selectors[0].key }, reason: `reading the connection selectors failed: ${errMsg2(now.error)}`, checkId: dbCheckId(s.adapter) });
     return;
   }
   const changed2 = selectors.filter((x) => now.fields[x.field] !== void 0 && now.fields[x.field] !== x.value);
@@ -12772,7 +12971,7 @@ async function emailItems(ctx, at, c) {
   try {
     status = await once(ctx, `email:status:${provider}`, () => sd.status(ctx, id2));
   } catch (e) {
-    unread(c, { id: "email:domain", class: "email-domain", subject, expected: `sending domain ${id2} is verified`, baseline, reason: `reading the sending domain failed: ${errMsg(e)}`, checkId: "email-verified" });
+    unread(c, { id: "email:domain", class: "email-domain", subject, expected: `sending domain ${id2} is verified`, baseline, reason: `reading the sending domain failed: ${errMsg2(e)}`, checkId: "email-verified" });
     return;
   }
   if (status === "verified") {
@@ -12892,7 +13091,7 @@ async function paymentItems(ctx, at, c) {
       }
     });
     if (!identity.ok) {
-      unread(c, { id: `payments:${r.mode}`, class: "payment-account", subject, expected: `the credential reads the ${r.mode}-mode account ${r.accountId}`, baseline, reason: `reading the account failed: ${errMsg(identity.error)}` });
+      unread(c, { id: `payments:${r.mode}`, class: "payment-account", subject, expected: `the credential reads the ${r.mode}-mode account ${r.accountId}`, baseline, reason: `reading the account failed: ${errMsg2(identity.error)}` });
       continue;
     }
     if (identity.accountId === r.accountId) {
@@ -12944,7 +13143,7 @@ async function paymentItems(ctx, at, c) {
         subject,
         expected: "the live account can take payments (charges_enabled)",
         baseline,
-        reason: denied ? "this credential cannot read the account (restricted key without Account: Read): readiness is unknown, not drift" : `reading the account failed: ${errMsg(e)}`,
+        reason: denied ? "this credential cannot read the account (restricted key without Account: Read): readiness is unknown, not drift" : `reading the account failed: ${errMsg2(e)}`,
         checkId: "stripe-live-ready"
       });
     }
@@ -12978,7 +13177,7 @@ async function hostItems(ctx, at, c) {
       }
     });
     if (!current3.ok && isUnreadable(current3.error)) {
-      unread(c, { id: "project:hosting", class: "host-project", subject, expected: `this repo is linked to ${recordedId}`, baseline, reason: `reading the linked project failed: ${errMsg(current3.error)}` });
+      unread(c, { id: "project:hosting", class: "host-project", subject, expected: `this repo is linked to ${recordedId}`, baseline, reason: `reading the linked project failed: ${errMsg2(current3.error)}` });
     } else if (current3.ok && current3.ref && current3.ref.id === recordedId) {
       c.verified.push(`${subject}: still the project this repo links (${recordedId})`);
     } else {
@@ -12994,7 +13193,7 @@ async function hostItems(ctx, at, c) {
         });
         exists = r.ok;
       }
-      const linked = current3.ok ? current3.ref ? `${current3.ref.name ?? current3.ref.id} (${current3.ref.id})` : "nothing" : errMsg(current3.error);
+      const linked = current3.ok ? current3.ref ? `${current3.ref.name ?? current3.ref.id} (${current3.ref.id})` : "nothing" : errMsg2(current3.error);
       c.items.push({
         id: "project:hosting",
         class: "host-project",
@@ -14884,12 +15083,12 @@ function apiError2(what, res) {
   }
   return new CloudflareError(redact(`Cloudflare ${what} failed: HTTP ${res.status} ${detail}.${hint}`), res.status, codes);
 }
-function normName4(n) {
+function normName5(n) {
   const s = n.trim().replace(/\.$/, "").toLowerCase();
   return domainToASCII(s) || s;
 }
 function zoneCandidates(domain) {
-  const labels = normName4(domain).split(".");
+  const labels = normName5(domain).split(".");
   const out = [];
   for (let i = 0; i <= labels.length - 2; i++) out.push(labels.slice(i).join("."));
   return out;
@@ -14906,7 +15105,7 @@ async function findZone(ctx, domain, ignoreCache = false) {
   }
   for (const n of names) {
     const env = await api2(ctx, "GET", `/zones?name=${encodeURIComponent(n)}&status=active&per_page=5`, `zone lookup for ${n}`);
-    const z = (env.result ?? []).find((x) => normName4(x.name) === n && (x.status ?? "active") === "active");
+    const z = (env.result ?? []).find((x) => normName5(x.name) === n && (x.status ?? "active") === "active");
     if (z) {
       ctx.state.save((s) => void (s.resources[zoneKey(n)] = z.id));
       return { zone: { id: z.id, name: n }, cached: false };
@@ -14918,7 +15117,7 @@ async function requireZone(ctx, domain) {
   const found = await findZone(ctx, domain);
   if (found) return found;
   throw new Error(
-    `No active Cloudflare zone for ${normName4(domain)} is visible to this API token (tried ${zoneCandidates(domain).join(", ")}). Either the domain is not in this Cloudflare account, its nameservers are not yet delegated to Cloudflare (zone status "pending": set the nameservers Cloudflare shows at your registrar), or the token is scoped to other zones (add this zone to its Zone Resources).`
+    `No active Cloudflare zone for ${normName5(domain)} is visible to this API token (tried ${zoneCandidates(domain).join(", ")}). Either the domain is not in this Cloudflare account, its nameservers are not yet delegated to Cloudflare (zone status "pending": set the nameservers Cloudflare shows at your registrar), or the token is scoped to other zones (add this zone to its Zone Resources).`
   );
 }
 async function withZone(ctx, domain, run) {
@@ -14938,7 +15137,7 @@ async function withZone(ctx, domain, run) {
     }
     if (!fresh) {
       throw new Error(
-        `The cached Cloudflare zone ${zone.name} was rejected (${e.message}), and no active zone for ${normName4(domain)} is visible to this API token anymore. The zone may have been deleted or re-created, its nameservers may have changed, or the token may have been re-scoped or revoked; check the Cloudflare dashboard, then run \`plan\` again.`
+        `The cached Cloudflare zone ${zone.name} was rejected (${e.message}), and no active zone for ${normName5(domain)} is visible to this API token anymore. The zone may have been deleted or re-created, its nameservers may have changed, or the token may have been re-scoped or revoked; check the Cloudflare dashboard, then run \`plan\` again.`
       );
     }
     if (fresh.zone.id !== zone.id) {
@@ -14966,7 +15165,7 @@ function normContent2(type, content3) {
   return content3.trim().replace(/\s+/g, " ");
 }
 function toDnsRecord(r) {
-  const rec = { type: r.type, name: normName4(r.name), content: normContent2(r.type, r.content) };
+  const rec = { type: r.type, name: normName5(r.name), content: normContent2(r.type, r.content) };
   if (r.ttl !== void 0) rec.ttl = r.ttl;
   if (r.priority !== void 0) rec.priority = r.priority;
   if (r.proxied !== void 0) rec.proxied = r.proxied;
@@ -15096,7 +15295,7 @@ async function replaceOwned(ctx, zone, conflicts, want) {
   return "updated";
 }
 function normalizeWanted(record2) {
-  const w = { ...record2, name: normName4(record2.name), content: normContent2(record2.type, record2.content) };
+  const w = { ...record2, name: normName5(record2.name), content: normContent2(record2.type, record2.content) };
   if (!TYPES2.has(w.type)) throw new Error(`Cloudflare DNS: unsupported record type ${String(w.type)}`);
   return w;
 }
@@ -15118,7 +15317,7 @@ var cloudflareDns = {
     return withZone(ctx, domain, async (zone) => {
       const want = normalizeWanted(record2);
       if (!inZone(want.name, zone.name)) throw new Error(`Cloudflare DNS: ${want.name} is not inside the zone ${zone.name}; nothing was deleted.`);
-      const here = (await fetchRecords(ctx, zone, `name.exact=${encodeURIComponent(want.name)}`)).filter((r) => normName4(r.name) === want.name);
+      const here = (await fetchRecords(ctx, zone, `name.exact=${encodeURIComponent(want.name)}`)).filter((r) => normName5(r.name) === want.name);
       const matches3 = here.filter((r) => r.type === want.type && normContent2(r.type, r.content) === want.content);
       if (!matches3.length) return "unchanged";
       if (matches3.length > 1) {
@@ -15147,7 +15346,7 @@ var cloudflareDns = {
     return withZone(ctx, domain, async (zone) => {
       const want = normalizeWanted(record2);
       if (!inZone(want.name, zone.name)) throw new Error(`Cloudflare DNS: ${want.name} is not inside the zone ${zone.name}; nothing was changed.`);
-      const here = (await fetchRecords(ctx, zone, `name.exact=${encodeURIComponent(want.name)}`)).filter((r) => normName4(r.name) === want.name);
+      const here = (await fetchRecords(ctx, zone, `name.exact=${encodeURIComponent(want.name)}`)).filter((r) => normName5(r.name) === want.name);
       const same2 = here.find((r) => r.type === want.type && normContent2(r.type, r.content) === want.content);
       if (same2) return adopt(ctx, zone, same2, want);
       cnameExclusivity(zone, here, want);
@@ -16944,7 +17143,7 @@ var projectsLink = {
 };
 async function planAxis(ctx, axis, adapter, linker) {
   let current3 = await linker.current(ctx).catch((e) => {
-    throw new Error(`reading the ${adapter.title} project linked to this repo failed: ${errMsg(e)}`);
+    throw new Error(`reading the ${adapter.title} project linked to this repo failed: ${errMsg2(e)}`);
   });
   const account2 = await accountLine(ctx, adapter);
   const chosen = ctx.config.projects?.[axis];
@@ -16960,7 +17159,7 @@ async function planAxis(ctx, axis, adapter, linker) {
   }
   const name3 = repoName(ctx);
   const candidates3 = await linker.candidates(ctx).catch((e) => {
-    throw new Error(`listing ${adapter.title} project candidates failed: ${errMsg(e)}`);
+    throw new Error(`listing ${adapter.title} project candidates failed: ${errMsg2(e)}`);
   });
   const same2 = candidates3.find((c) => c.name.toLowerCase() === name3);
   if (same2) {
@@ -17060,7 +17259,7 @@ function createStep(ctx, axis, adapter, linker, name3, listed, account2, target)
         if (target && !sameScope(p.scope, target.scope)) throw new Error("the provider returned an unexpected project destination; inspect the created resource before continuing.");
         return { changes: [`created ${adapter.title} project ${p.name} (${p.id}) for ${axis}`] };
       } catch (e) {
-        throw new Error(`creating ${adapter.title} project ${name3} failed: ${errMsg(e)}`);
+        throw new Error(`creating ${adapter.title} project ${name3} failed: ${errMsg2(e)}`);
       }
     }
   });
@@ -17216,7 +17415,7 @@ async function fetchOutputs(ctx, target, sources, requestedKeys) {
     try {
       Object.assign(merged, await s.outputs.outputs(ctx, target, requestedKeys));
     } catch (e) {
-      throw new Error(`reading ${target} outputs from ${s.adapter.title} failed: ${errMsg(e)}`);
+      throw new Error(`reading ${target} outputs from ${s.adapter.title} failed: ${errMsg2(e)}`);
     }
   }
   return merged;
@@ -17373,7 +17572,7 @@ async function keysStep(ctx, adapter, outputs4, host, target) {
         try {
           outs = await outputs4.outputs(sctx, target);
         } catch (e) {
-          throw new Error(`reading ${adapter.title} ${mode} keys failed: ${errMsg(e)}`);
+          throw new Error(`reading ${adapter.title} ${mode} keys failed: ${errMsg2(e)}`);
         }
         const runFp = {};
         for (const [k, v] of Object.entries(outs)) if (v) runFp[k] = v instanceof Secret ? v.fingerprint : fingerprint(v);
@@ -17435,7 +17634,7 @@ async function envRefusals(ctx, env, names, strict) {
       const why = await env.canSet(ctx, n, ["production"]);
       if (why) out.push(`${n}: ${why}`);
     } catch (e) {
-      if (strict) out.push(`${n}: could not confirm it can be written (${errMsg(e)})`);
+      if (strict) out.push(`${n}: could not confirm it can be written (${errMsg2(e)})`);
     }
   }
   return out;
@@ -17486,7 +17685,7 @@ async function webhookStep2(ctx, adapter, wh, host) {
   try {
     existing = await findEndpoint(ctx, wh, url, mode);
   } catch (e) {
-    warnings.push(`reading ${adapter.title} ${mode} webhook endpoints failed (${errMsg(e)}); webhook left out of this plan`);
+    warnings.push(`reading ${adapter.title} ${mode} webhook endpoints failed (${errMsg2(e)}); webhook left out of this plan`);
     return { handoffs, warnings };
   }
   const hostPending = memo(ctx).pendingProjects.has("hosting");
@@ -17598,10 +17797,10 @@ async function webhookStep2(ctx, adapter, wh, host) {
         written = w.written;
         changes.push(...w.changes);
       } catch (e) {
-        const rm = wh.remove ? await wh.remove(sctx, endpointId, mode).catch((x) => ({ deleted: false, reason: errMsg(x) })) : { deleted: false, reason: "provider cannot delete endpoints" };
+        const rm = wh.remove ? await wh.remove(sctx, endpointId, mode).catch((x) => ({ deleted: false, reason: errMsg2(x) })) : { deleted: false, reason: "provider cannot delete endpoints" };
         const left = rm.deleted ? `it was deleted again, so nothing is left behind` : `it was left in place (${rm.reason ?? "not deleted"}): delete ${endpointId} in the ${adapter.title} dashboard`;
         const kept = oldToRemove ? ` The previous endpoint ${oldToRemove.oldId} was kept.` : "";
-        throw new Error(`created ${mode} webhook endpoint ${endpointId} but storing its signing secret in ${host.adapter.title} failed (${errMsg(e)}); ${left}.${kept} Fix the ${host.adapter.title} variable, then run \`plan\` again.`);
+        throw new Error(`created ${mode} webhook endpoint ${endpointId} but storing its signing secret in ${host.adapter.title} failed (${errMsg2(e)}); ${left}.${kept} Fix the ${host.adapter.title} variable, then run \`plan\` again.`);
       }
       sctx.remember(endpointKey(adapter, mode), endpointId);
       if (oldToRemove) {
@@ -17612,7 +17811,7 @@ async function webhookStep2(ctx, adapter, wh, host) {
         );
       }
       if (stale) {
-        const rm = wh.remove ? await wh.remove(sctx, stale.id, mode).catch((x) => ({ deleted: false, reason: errMsg(x) })) : { deleted: false, reason: "provider cannot delete endpoints" };
+        const rm = wh.remove ? await wh.remove(sctx, stale.id, mode).catch((x) => ({ deleted: false, reason: errMsg2(x) })) : { deleted: false, reason: "provider cannot delete endpoints" };
         changes.push(
           rm.deleted ? `deleted old endpoint ${stale.id} (${stale.url}) for the previous production URL` : `the old endpoint ${stale.id} (${stale.url}) was left in place (${rm.reason ?? "not deleted"}): delete it in the ${adapter.title} dashboard \u2014 its deliveries fail signature checks now`
         );
@@ -17644,7 +17843,7 @@ var authRedirectsLink = {
       try {
         before = await authConfig.get(ctx);
       } catch (e) {
-        return { steps: [], handoffs: [], warnings: [`reading ${au.adapter.title} auth settings failed (${errMsg(e)}); auth redirects left out of this plan`] };
+        return { steps: [], handoffs: [], warnings: [`reading ${au.adapter.title} auth settings failed (${errMsg2(e)}); auth redirects left out of this plan`] };
       }
     }
     if (isLocalhost2(before.siteUrl)) warnings.push(`${au.adapter.title} site URL is ${before.siteUrl} (localhost): production sign-in emails and redirects would point at a developer machine`);
@@ -17748,7 +17947,7 @@ var authSettingsLink = {
     try {
       before = await authConfig.get(ctx);
     } catch (e) {
-      return { steps: [], handoffs: [], warnings: [`reading ${au.adapter.title} auth settings failed (${errMsg(e)}); the auth policy settings are left out of this plan`] };
+      return { steps: [], handoffs: [], warnings: [`reading ${au.adapter.title} auth settings failed (${errMsg2(e)}); the auth policy settings are left out of this plan`] };
     }
     const changes = changesOf(before, target);
     if (!changes.length) return null;
@@ -17787,7 +17986,7 @@ async function verifySettings(ctx, title, authConfig, changes) {
   try {
     after = await authConfig.get(ctx);
   } catch (e) {
-    return [{ id: id2, title: checkTitle, status: "fail", severity: "high", evidence: [`could not re-read ${title} auth settings: ${errMsg(e)}`], fix: "Check the auth provider login, then re-run apply." }];
+    return [{ id: id2, title: checkTitle, status: "fail", severity: "high", evidence: [`could not re-read ${title} auth settings: ${errMsg2(e)}`], fix: "Check the auth provider login, then re-run apply." }];
   }
   const confirmed = [];
   const unconfirmed = [];
@@ -17870,7 +18069,7 @@ var authSmtpLink = {
     try {
       before = await authConfig.get(ctx);
     } catch (e) {
-      return { steps: [], handoffs: [], warnings: [`reading ${au.adapter.title} auth settings failed (${errMsg(e)}); the custom-SMTP write is left out of this plan`] };
+      return { steps: [], handoffs: [], warnings: [`reading ${au.adapter.title} auth settings failed (${errMsg2(e)}); the custom-SMTP write is left out of this plan`] };
     }
     const want = { host: SMTP_HOST, port: SMTP_PORT, user: SMTP_USER, senderEmail: sender.email, ...sender.name ? { senderName: sender.name } : {} };
     const rateLimit = ctx.config.auth?.emailRateLimitPerHour ?? DEFAULT_EMAIL_RATE_LIMIT;
@@ -17937,7 +18136,7 @@ async function verifySmtp(ctx, title, authConfig, want, rateLimit) {
   try {
     after = await authConfig.get(ctx);
   } catch (e) {
-    return [{ id: id2, title: checkTitle, status: "fail", severity: "high", evidence: [`could not re-read ${title} auth settings: ${errMsg(e)}`], fix: "Check the auth provider login, then re-run apply." }];
+    return [{ id: id2, title: checkTitle, status: "fail", severity: "high", evidence: [`could not re-read ${title} auth settings: ${errMsg2(e)}`], fix: "Check the auth provider login, then re-run apply." }];
   }
   const confirmed = [];
   const unconfirmed = [];
@@ -18124,7 +18323,7 @@ var authRecoveryLink = {
     try {
       known = await authUsers.adminUser(ctx, seeded);
     } catch (e) {
-      return { steps: [], handoffs: [], warnings: [`auth.recovery is on in golive.yaml, but reading the test account ${seeded} failed (${errMsg(e)}): the password-recovery journey is left out of this plan`] };
+      return { steps: [], handoffs: [], warnings: [`auth.recovery is on in golive.yaml, but reading the test account ${seeded} failed (${errMsg2(e)}): the password-recovery journey is left out of this plan`] };
     }
     if (!known) {
       return { steps: [], handoffs: [], warnings: [`auth.recovery is on in golive.yaml, but the test account ${seeded} recorded in .golive/state.json is gone from ${au.adapter.title}: restore the user in the provider dashboard, or remove that key from .golive/state.json to seed a new account`] };
@@ -18264,7 +18463,7 @@ var authIsolationLink = {
       try {
         firstUser = await authUsers.adminUser(ctx, first);
       } catch (e) {
-        return { steps: [], handoffs: [], warnings: [`auth.isolation is on in golive.yaml, but reading the test account ${first} failed (${errMsg(e)}): account isolation is left out of this plan`] };
+        return { steps: [], handoffs: [], warnings: [`auth.isolation is on in golive.yaml, but reading the test account ${first} failed (${errMsg2(e)}): account isolation is left out of this plan`] };
       }
       if (!firstUser) {
         return { steps: [], handoffs: [], warnings: [`auth.isolation is on in golive.yaml, but the test account ${first} recorded in .golive/state.json is gone from ${title}: restore the user in the provider dashboard, or remove that key from .golive/state.json to seed a new account`] };
@@ -18676,7 +18875,7 @@ async function scanBundleAt(ctx, base2, copy = {}) {
   try {
     bundle = await fetchBundle(ctx, base2);
   } catch (e) {
-    return result("warn", "medium", [`could not fetch ${base2}/: ${errMsg2(e)}`], `Make sure the ${what} deployment is reachable, then re-run verify.`);
+    return result("warn", "medium", [`could not fetch ${base2}/: ${errMsg(e)}`], `Make sure the ${what} deployment is reachable, then re-run verify.`);
   }
   if (copy.protected && (bundle.htmlStatus === 401 || bundle.htmlStatus === 403)) {
     return skip(`GET ${base2}/ \u2192 HTTP ${bundle.htmlStatus}: the ${what} deployment is behind a protection wall (deployment protection, visitor access or an auth wall), so nothing was scanned; a protected ${what} is not a finding, and this is not a pass`);
@@ -18743,7 +18942,7 @@ async function readPreview(ctx) {
   try {
     got = await url.get(ctx, TARGET);
   } catch (e) {
-    return { ok: false, outcome: result("warn", "medium", [`could not read the ${provider} preview deployment: ${errMsg2(e)}`], "Check the hosting login with `golive doctor`, then re-run verify.") };
+    return { ok: false, outcome: result("warn", "medium", [`could not read the ${provider} preview deployment: ${errMsg(e)}`], "Check the hosting login with `golive doctor`, then re-run verify.") };
   }
   return { ok: true, read: { recorded, url: got ? trimSlash2(got) : null, ...current3 ? { project: `${current3.name} (${current3.id})` } : {} } };
 }
@@ -18864,7 +19063,7 @@ var productionReleaseCheck = {
     try {
       served = await release2.production(ctx);
     } catch (e) {
-      return result("warn", "medium", [`could not read what ${provider} serves as production: ${errMsg2(e)}`, recordedAt2], "Check the hosting login with `golive doctor`, then re-run verify.");
+      return result("warn", "medium", [`could not read what ${provider} serves as production: ${errMsg(e)}`, recordedAt2], "Check the hosting login with `golive doctor`, then re-run verify.");
     }
     const before = released.displaced ? `golive recorded ${released.displaced} as what production served before it` : "golive recorded no production deployment before it";
     if (!served) {
@@ -19269,7 +19468,7 @@ var accountsCheck = {
           fixes.push(`${adapter.title}: ${st.howToFix ?? `log in with the ${adapter.title} CLI in a separate terminal window (Claude Code's \`!\` prefix has no interactive terminal)`}`);
         }
       } catch (e) {
-        evidence.push(`${label3}: auth check errored: ${errMsg2(e)}`);
+        evidence.push(`${label3}: auth check errored: ${errMsg(e)}`);
         fixes.push(`${adapter.title}: check that its CLI is installed and logged in, then re-run`);
       }
     }
@@ -19339,10 +19538,10 @@ var envParityCheck = {
         names = new Set(await env.listNames(ctx, target));
       } catch (e) {
         if (isHiddenEnv(e)) {
-          block(`the hosting token's role cannot read ${target} env vars`, `${target}: ${errMsg2(e)}`);
+          block(`the hosting token's role cannot read ${target} env vars`, `${target}: ${errMsg(e)}`);
           continue;
         }
-        return result("fail", "high", [`could not list ${target} env names: ${errMsg2(e)}`], "Re-run verify; if it persists, check the hosting login with `golive doctor`.");
+        return result("fail", "high", [`could not list ${target} env names: ${errMsg(e)}`], "Re-run verify; if it persists, check the hosting login with `golive doctor`.");
       }
       const mm = [];
       for (const m of mapped) {
@@ -19438,7 +19637,7 @@ async function probeTable(ctx, ref3, key, t) {
   try {
     r = await restProbe(ctx, ref3, t.name, t.schema, key);
   } catch (e) {
-    return { severity: "medium", line: `${fq}: probe failed (${errMsg2(e)})` };
+    return { severity: "medium", line: `${fq}: probe failed (${errMsg(e)})` };
   }
   if (r.status === 200 && r.rows > 0) return { severity: "critical", line: `anyone can read ${fq} (anonymous GET returned rows)` };
   if (r.status === 200 && !t.rls) return { severity: "high", line: `${fq} is exposed with RLS disabled (empty today; without RLS anyone with the public key can read and write it)` };
@@ -19467,7 +19666,7 @@ var rlsCheck = {
     try {
       tables2 = (await admin.tables(ctx)).filter((t) => !INTERNAL_SCHEMAS.test(t.schema));
     } catch (e) {
-      return result("fail", "high", [`could not list tables: ${errMsg2(e)}`], "Re-run verify; if it persists, check the Supabase login with `golive doctor`.");
+      return result("fail", "high", [`could not list tables: ${errMsg(e)}`], "Re-run verify; if it persists, check the Supabase login with `golive doctor`.");
     }
     let noKey = false;
     if (tables2.length) {
@@ -19495,7 +19694,7 @@ var rlsCheck = {
           });
         }
       } catch (e) {
-        evidence.push(`advisors unavailable: ${errMsg2(e)}`);
+        evidence.push(`advisors unavailable: ${errMsg(e)}`);
       }
     }
     const sev = worst(issues.map((i) => i.severity));
@@ -19533,7 +19732,7 @@ var dbConnectionCheck = {
       return result(
         "fail",
         "high",
-        [`read-only database probe failed: ${errMsg2(e)}`],
+        [`read-only database probe failed: ${errMsg(e)}`],
         "Confirm the selected project, branch, database and role, then re-run verify. Do not paste connection strings into chat."
       );
     }
@@ -19574,7 +19773,7 @@ async function runUnsigned(ctx, url) {
   try {
     r = await probe(ctx, url, { method: "POST", body: {}, headers: { "user-agent": "golive-verify" } });
   } catch (e) {
-    return result("fail", "high", [`POST ${url} failed: ${errMsg2(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
+    return result("fail", "high", [`POST ${url} failed: ${errMsg(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
   }
   const ev = `POST ${url} without Stripe-Signature \u2192 HTTP ${r.status}`;
   const s = r.status;
@@ -19629,7 +19828,7 @@ var webhookRegisteredCheck = {
         match = endpoints.filter((e) => e.url === expected);
       }
     } catch (e) {
-      return result("fail", "high", [`could not list ${mode}-mode webhook endpoints: ${errMsg2(e)}`], "Re-run verify; if it persists, check the Stripe login with `golive doctor`.");
+      return result("fail", "high", [`could not list ${mode}-mode webhook endpoints: ${errMsg(e)}`], "Re-run verify; if it persists, check the Stripe login with `golive doctor`.");
     }
     if (!match.length) {
       const others = endpoints.map((e) => e.url).slice(0, 5);
@@ -19662,7 +19861,7 @@ var stripeLiveReadyCheck = {
       if (e.status === 403) {
         return result("warn", "medium", ["live readiness unknown: this key cannot read the Stripe account (restricted key without Account: Read)"], "Check Settings \u2192 Account in the Stripe Dashboard, or give the key Account: Read, then re-run verify.");
       }
-      return result("fail", "high", [`could not read the live Stripe account: ${errMsg2(e)}`], "Re-run verify; if it persists, check the Stripe login with `golive doctor`.");
+      return result("fail", "high", [`could not read the live Stripe account: ${errMsg(e)}`], "Re-run verify; if it persists, check the Stripe login with `golive doctor`.");
     }
     const ev = [`charges_enabled: ${st.chargesEnabled}`, `details_submitted: ${st.detailsSubmitted}`];
     if (st.chargesEnabled) return pass(ev);
@@ -19695,7 +19894,7 @@ var authRedirectsCheck = {
     try {
       cfg2 = await auth8.get(ctx);
     } catch (e) {
-      return result("fail", "high", [`could not read auth settings: ${errMsg2(e)}`], "Re-run verify; if it persists, check the auth provider with `golive doctor`.");
+      return result("fail", "high", [`could not read auth settings: ${errMsg(e)}`], "Re-run verify; if it persists, check the auth provider with `golive doctor`.");
     }
     const problems = [];
     const evidence = [`production URL: ${prod}`, `site URL: ${cfg2.siteUrl ?? "(unset)"}`];
@@ -19746,7 +19945,7 @@ var authPolicyCheck = {
     try {
       cfg2 = await auth8.get(ctx);
     } catch (e) {
-      return result("fail", "high", [`could not read ${provider} auth settings: ${errMsg2(e)}`], "Re-run verify; if it persists, check the auth provider with `golive doctor`.");
+      return result("fail", "high", [`could not read ${provider} auth settings: ${errMsg(e)}`], "Re-run verify; if it persists, check the auth provider with `golive doctor`.");
     }
     const issues = [];
     const evidence = [];
@@ -19888,8 +20087,8 @@ var authSignupCheck = {
     try {
       signup2 = await auth8.signup(ctx, probe2, probePass);
     } catch (e) {
-      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
-      return result("fail", "high", [`signing up a probe account failed: ${errMsg2(e)}`], `Check that ${provider} auth is reachable and that the project accepts new users (\`auth.signup: true\`), then re-run verify.`);
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
+      return result("fail", "high", [`signing up a probe account failed: ${errMsg(e)}`], `Check that ${provider} auth is reachable and that the project accepts new users (\`auth.signup: true\`), then re-run verify.`);
     }
     if (signup2.captchaRequired) {
       return skip(`${title} requires a captcha for signup, so a scripted signup cannot run (golive will not claim a pass it cannot evidence)`);
@@ -19913,8 +20112,8 @@ var authSignupCheck = {
     try {
       refused = await auth8.login(ctx, probe2, probePass);
     } catch (e) {
-      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
-      return result("fail", "high", [`the password login for the probe account failed: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable and re-run verify.`);
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
+      return result("fail", "high", [`the password login for the probe account failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable and re-run verify.`);
     }
     if (refused.session) {
       return result(
@@ -19941,8 +20140,8 @@ var authSignupCheck = {
     try {
       view2 = await auth8.adminUser(ctx, seeded);
     } catch (e) {
-      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
-      return result("fail", "high", [`could not read the test account ${seeded}: ${errMsg2(e)}`, ...evidence], "Re-run verify; if it persists, check the provider login and read the user in its dashboard.");
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
+      return result("fail", "high", [`could not read the test account ${seeded}: ${errMsg(e)}`, ...evidence], "Re-run verify; if it persists, check the provider login and read the user in its dashboard.");
     }
     if (!view2) {
       return result("fail", "high", [`the test account ${seeded} recorded in .golive/state.json is gone from ${title}`, ...evidence], "Delete the recorded test account from the provider dashboard, or remove it from .golive/state.json, then re-run `plan` + `apply` to seed a new one.");
@@ -19970,8 +20169,8 @@ var authSignupCheck = {
     try {
       login2 = await auth8.login(ctx, seededEmail, seededPass);
     } catch (e) {
-      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
-      return result("fail", "high", [`the password login for the confirmed test account failed: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
+      return result("fail", "high", [`the password login for the confirmed test account failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
     }
     if (!login2.session) {
       return result(
@@ -20021,8 +20220,8 @@ var authSessionCheck = {
     try {
       outcome = await auth8.login(ctx, address, password);
     } catch (e) {
-      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
-      return result("fail", "high", [`signing in as the test account ${address} failed: ${errMsg2(e)}`], `Check that ${provider} auth is reachable, then re-run verify.`);
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
+      return result("fail", "high", [`signing in as the test account ${address} failed: ${errMsg(e)}`], `Check that ${provider} auth is reachable, then re-run verify.`);
     }
     if (!outcome.session) {
       if (outcome.rateLimited) return result("warn", "medium", [`the password login for ${address} was rate-limited (HTTP 429)`], "Wait for the rate limit to reset, then re-run verify.");
@@ -20043,8 +20242,8 @@ var authSessionCheck = {
     try {
       view2 = await auth8.user(ctx, session2.accessToken);
     } catch (e) {
-      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
-      return result("fail", "high", [`could not read the signed-in user: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
+      return result("fail", "high", [`could not read the signed-in user: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
     }
     if (view2.status === 401 || view2.status === 403) {
       return result("fail", "high", [`the session token was rejected (GET /auth/v1/user \u2192 HTTP ${view2.status})`, ...evidence], "The project rejected a token it just issued: check the project's JWT settings and auth logs, then re-run verify.");
@@ -20060,8 +20259,8 @@ var authSessionCheck = {
     try {
       anon = await auth8.user(ctx);
     } catch (e) {
-      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
-      return result("fail", "high", [`could not read the anonymous answer from the auth API: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
+      return result("fail", "high", [`could not read the anonymous answer from the auth API: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
     }
     if (anon.status === 200) {
       return result("fail", "critical", [`an anonymous GET /auth/v1/user returned a user (${anon.id ?? "no id"})`, ...evidence], "The auth API must answer 401 without a token: check for a proxy, middleware or key that turns anonymous requests into signed-in ones.");
@@ -20082,7 +20281,7 @@ var authSessionCheck = {
         try {
           r = await probe(ctx, url, { headers: { "user-agent": "golive-verify" } });
         } catch (e) {
-          issues.push({ severity: "medium", line: `GET ${url} without a session failed: ${errMsg2(e)}` });
+          issues.push({ severity: "medium", line: `GET ${url} without a session failed: ${errMsg(e)}` });
           r = null;
         }
         if (r) {
@@ -20124,7 +20323,7 @@ async function publicRouteRead(ctx, base2, url, line, status) {
     return {
       issue: {
         severity: "medium",
-        line: `${line}: golive could not attribute the refusal to the app, because the public root ${root} could not be read (${errMsg2(e)})`,
+        line: `${line}: golive could not attribute the refusal to the app, because the public root ${root} could not be read (${errMsg(e)})`,
         fix: `Re-run verify: the protected-path leg stays unconfirmed until ${root}, the route that must stay public, can be read anonymously.`
       }
     };
@@ -20164,7 +20363,7 @@ async function signedInTables(ctx, ref3, token2) {
   try {
     tables2 = (await admin.tables(ctx)).filter((t) => !INTERNAL_SCHEMAS.test(t.schema));
   } catch (e) {
-    return { lines: [`could not list tables: ${errMsg2(e)}`] };
+    return { lines: [`could not list tables: ${errMsg(e)}`] };
   }
   if (!tables2.length) return { lines: ["no tables in exposed schemas"] };
   const batch = tables2.slice(0, MAX_TABLES2);
@@ -20245,8 +20444,8 @@ var authRecoveryCheck = {
     try {
       asked = await auth8.requestRecovery(ctx, address);
     } catch (e) {
-      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
-      return result("fail", "high", [`the recovery request for ${address} failed: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
+      return result("fail", "high", [`the recovery request for ${address} failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
     }
     if (asked.captchaRequired) {
       return skip(`${title} requires a captcha for password recovery, so a scripted request cannot run (golive will not claim a pass it cannot evidence)`);
@@ -20271,8 +20470,8 @@ var authRecoveryCheck = {
       try {
         unknown = await auth8.requestRecovery(ctx, unknownAddr);
       } catch (e) {
-        if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
-        return result("fail", "high", [`the recovery request for an address with no account failed: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+        if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
+        return result("fail", "high", [`the recovery request for an address with no account failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
       }
       if (unknown.rateLimited) {
         return result(
@@ -20303,8 +20502,8 @@ var authRecoveryCheck = {
     try {
       replay = await auth8.recoverySession(ctx, token2);
     } catch (e) {
-      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
-      return result("fail", "high", [`replaying the recovery token failed: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
+      return result("fail", "high", [`replaying the recovery token failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
     }
     if (replay.session) {
       return result(
@@ -20319,8 +20518,8 @@ var authRecoveryCheck = {
     try {
       fresh = await auth8.login(ctx, address, newPass);
     } catch (e) {
-      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
-      return result("fail", "high", [`signing in with the password set through recovery failed: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
+      return result("fail", "high", [`signing in with the password set through recovery failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
     }
     if (fresh.rateLimited) return result("warn", "medium", [`the password login for ${address} was rate-limited (HTTP 429)`, ...evidence], "Wait for the rate limit to reset, then re-run verify.");
     if (!fresh.session) {
@@ -20336,8 +20535,8 @@ var authRecoveryCheck = {
     try {
       stale = await auth8.login(ctx, address, oldPass);
     } catch (e) {
-      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
-      return result("fail", "high", [`signing in with the replaced password failed: ${errMsg2(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
+      if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
+      return result("fail", "high", [`signing in with the replaced password failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
     }
     if (stale.rateLimited) return result("warn", "medium", [`the login with the replaced password was rate-limited (HTTP 429)`, ...evidence], "Wait for the rate limit to reset, then re-run verify.");
     if (stale.session) {
@@ -20359,7 +20558,7 @@ var authRecoveryCheck = {
           conf.otpExpirySeconds === void 0 ? "the provider does not report the recovery link/code window, so golive names no lifetime for it" : `the provider's one-time link/code window is ${conf.otpExpirySeconds}s (otpExpirySeconds), which bounds how long a recovery link stays usable`
         );
       } catch (e) {
-        evidence.push(`could not read the provider's auth settings, so the recovery token's expiry window is not named: ${errMsg2(e)}`);
+        evidence.push(`could not read the provider's auth settings, so the recovery token's expiry window is not named: ${errMsg(e)}`);
       }
     }
     evidence.push("the click in the inbox itself stays human-confirmed: golive never sees the inbox, only the provider's own token and password state");
@@ -20444,8 +20643,8 @@ var authIsolationCheck = {
       try {
         outcome = await auth8.login(ctx, email, password);
       } catch (e) {
-        if (e instanceof SupabaseAuthPrereqError) return skip(errMsg2(e));
-        return result("fail", "high", [`signing in as ${who} ${email} failed: ${errMsg2(e)}`], `Check that ${provider} auth is reachable, then re-run verify.`);
+        if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
+        return result("fail", "high", [`signing in as ${who} ${email} failed: ${errMsg(e)}`], `Check that ${provider} auth is reachable, then re-run verify.`);
       }
       if (outcome.rateLimited) {
         return result("skip", "info", [`the provider rate-limited the password login for ${who} (HTTP 429), so the two sessions were not established at once`, "wait for the limit to reset, then re-run verify: isolation needs a session for BOTH accounts in the same run"]);
@@ -20486,7 +20685,7 @@ var authIsolationCheck = {
       try {
         r = await send(ctx, url);
       } catch (e) {
-        return result("fail", "high", [`anonymous GET ${url} failed: ${errMsg2(e)}`, ...evidence], "Make sure the production deployment is reachable, then re-run verify.");
+        return result("fail", "high", [`anonymous GET ${url} failed: ${errMsg(e)}`, ...evidence], "Make sure the production deployment is reachable, then re-run verify.");
       }
       anon.push({ label: label3, path, r });
     }
@@ -20528,7 +20727,7 @@ var authIsolationCheck = {
       try {
         r = await send(ctx, identityUrl, { account: me });
       } catch (e) {
-        return result("fail", "high", [`GET ${identityUrl} as ${me.email} failed: ${errMsg2(e)}`, ...evidence], "Make sure the production deployment is reachable, then re-run verify.");
+        return result("fail", "high", [`GET ${identityUrl} as ${me.email} failed: ${errMsg(e)}`, ...evidence], "Make sure the production deployment is reachable, then re-run verify.");
       }
       const line = `GET ${identityUrl} as ${me.email} (${me.id}) \u2192 ${statusLine(r)}`;
       const stop = notAnswered(line, r.status, identityPath);
@@ -20556,7 +20755,7 @@ var authIsolationCheck = {
       try {
         w = await send(ctx, rowsUrl, { account: role, method: "POST", body: { marker: value } });
       } catch (e) {
-        return result("fail", "high", [`POST ${rowsUrl} as ${role.email} failed: ${errMsg2(e)}`, ...evidence], "Make sure the production deployment is reachable, then re-run verify.");
+        return result("fail", "high", [`POST ${rowsUrl} as ${role.email} failed: ${errMsg(e)}`, ...evidence], "Make sure the production deployment is reachable, then re-run verify.");
       }
       const line = `POST ${rowsUrl} as ${role.email} (${role.id}) \u2192 ${statusLine(w)}`;
       if (w.status === 405 || w.status === 501) {
@@ -20581,7 +20780,7 @@ var authIsolationCheck = {
       try {
         r = await send(ctx, rowsUrl, { account: me });
       } catch (e) {
-        return result("fail", "high", [`GET ${rowsUrl} as ${me.email} failed: ${errMsg2(e)}`, ...evidence], "Make sure the production deployment is reachable, then re-run verify.");
+        return result("fail", "high", [`GET ${rowsUrl} as ${me.email} failed: ${errMsg(e)}`, ...evidence], "Make sure the production deployment is reachable, then re-run verify.");
       }
       const line = `GET ${rowsUrl} as ${me.email} (${me.id}) \u2192 ${statusLine(r)}`;
       const stop = notAnswered(line, r.status, isolationPath);
@@ -20633,7 +20832,7 @@ var siteHeadersCheck = {
     try {
       res = await probe(ctx, url, { headers: { "user-agent": "golive-verify" }, timeoutMs: 15e3 });
     } catch (e) {
-      return result("warn", "medium", [`could not fetch ${url}: ${errMsg2(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
+      return result("warn", "medium", [`could not fetch ${url}: ${errMsg(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
     }
     const got = `GET ${url} \u2192 HTTP ${res.status}`;
     if (res.status === 401 || res.status === 403) {
@@ -21990,7 +22189,8 @@ var RECORDING_STEP = {
   webhook: ["payments:webhook:production"],
   project: ["project:hosting"],
   database: ["project:db"],
-  domain: ["email:domain"]
+  domain: ["email:domain"],
+  dns: ["domain:dns", "email:dns"]
 };
 async function buildHandover(ctx, input) {
   const generatedAt = (/* @__PURE__ */ new Date()).toISOString();
@@ -22079,7 +22279,7 @@ async function accountRows(ctx, projects2) {
       via = status.via;
       login2 = status.ok ? `connected \u2014 if access expires: ${status.howToFix ?? `sign in to ${providerTitle} again, in a separate terminal window`}` : status.howToFix ?? `sign in to ${providerTitle} again, in a separate terminal window`;
     } catch (e) {
-      login2 = `golive could not check the ${providerTitle} login (${errMsg(e)}); run \`doctor\` after fixing access`;
+      login2 = `golive could not check the ${providerTitle} login (${errMsg2(e)}); run \`doctor\` after fixing access`;
       provenance = { kind: "unknown" };
     }
     rows.push({ axis, provider: id2, providerTitle, ...via ? { via } : {}, account: account2, login: login2, provenance });
@@ -22314,17 +22514,14 @@ function retirementRows(ctx, inventory2) {
       removable: inventory2.project.created,
       provenance: { kind: "recorded", at: recordedAt(ctx, RECORDING_STEP.project) }
     });
-  } else {
-    const host = adapterFor(ctx, "hosting");
-    const linked = host ? ctx.state.resource(projectStateKeys(host.id).id) : void 0;
-    if (host && linked) {
-      rows.push({
-        resource: `${host.title} project ${ctx.state.resource(projectStateKeys(host.id).name) ?? linked} (${linked})`,
-        how: `by hand in the ${host.title} dashboard, or run \`golive teardown\` once its login and removal capability are available`,
-        removable: false,
-        provenance: { kind: "recorded", at: recordedAt(ctx, RECORDING_STEP.project) }
-      });
-    }
+  }
+  for (const g of inventory2.gaps) {
+    rows.push({
+      resource: g.subject,
+      how: `${g.why}; ${g.fix}`,
+      removable: false,
+      provenance: g.recorded ? { kind: "recorded", at: recordedAt(ctx, g.axis === "dns" ? RECORDING_STEP.dns : RECORDING_STEP.project) } : { kind: "unverifiable" }
+    });
   }
   for (const r of inventory2.recorded.filter((x) => x.created)) {
     rows.push({
@@ -22453,7 +22650,7 @@ function renderHandover(doc) {
   lines.push("");
   lines.push("## Retirement", "");
   lines.push("`golive teardown` lists exactly these resources and deletes only what golive provably created, under its own approval:", "");
-  lines.push("_golive lists only what the inventory could read: a provider it cannot reach right now contributes no rows, and never a deletion it cannot do._", "");
+  lines.push("_golive lists only what it can name and prove: a provider it cannot reach right now contributes a row saying what remains and why golive will not remove it, never a silent gap and never a deletion it cannot do._", "");
   lines.push("_A removal is reported as done only after re-reading the resource at its provider; fetching the URL proves nothing, because a CDN cache can keep answering after the resource is gone._", "");
   if (doc.retirement.length) {
     lines.push("| Resource | How it goes away | Removal |", "| --- | --- | --- |");
