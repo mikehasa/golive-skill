@@ -7736,9 +7736,10 @@ var init_config = __esm({
 });
 
 // src/core/credentials.ts
-import { closeSync as closeSync4, constants as constants4, existsSync as existsSync3, fchmodSync, fstatSync as fstatSync4, lstatSync as lstatSync4, mkdirSync as mkdirSync4, openSync as openSync4, readFileSync as readFileSync6, statSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { closeSync as closeSync4, constants as constants4, existsSync as existsSync3, fchmodSync, fstatSync as fstatSync4, fsyncSync, lstatSync as lstatSync4, mkdirSync as mkdirSync4, openSync as openSync4, readFileSync as readFileSync6, readSync, renameSync as renameSync4, statSync, unlinkSync as unlinkSync2, writeFileSync as writeFileSync5 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { dirname as dirname5, join as join6, resolve as resolve3 } from "node:path";
+import { basename as basename2, dirname as dirname5, join as join6, resolve as resolve3 } from "node:path";
 function credentialsPath() {
   return process.env.GOLIVE_CREDENTIALS || join6(process.env.XDG_CONFIG_HOME || join6(homedir2(), ".config"), "golive", "credentials");
 }
@@ -7819,17 +7820,108 @@ function credentialsStatus() {
   const names = [...parseCredentials(readFileSync6(path, "utf8")).keys()].sort();
   return { path, exists: true, private: priv, names, ...priv ? {} : { fix: `run \`chmod 600 ${path}\` in your terminal \u2014 the file is readable by other users` } };
 }
+function isCredentialName(name3) {
+  return /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name3);
+}
+function removeCredential(name3, path = credentialsPath()) {
+  if (!isCredentialName(name3)) throw new Error("A credential name uses letters, digits and underscores only; removal never accepts a value.");
+  const target = resolve3(path);
+  let before;
+  try {
+    before = lstatSync4(target);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    cache = void 0;
+    return { name: name3, path: target, removed: false };
+  }
+  if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1) throw new Error(UNSAFE_TARGET);
+  ensureDirectory(dirname5(target));
+  const { stats, text } = readStored(target, before);
+  const lines = text.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+  const kept = lines.filter((line) => assignedName(line) !== name3);
+  if (kept.length === lines.length) {
+    cache = void 0;
+    return { name: name3, path: target, removed: false };
+  }
+  replaceAtomically(target, stats, kept.join(""));
+  cache = void 0;
+  return { name: name3, path: target, removed: true };
+}
+function readStored(target, before) {
+  const fd = openSync4(target, constants4.O_RDONLY | constants4.O_NOFOLLOW | constants4.O_NONBLOCK);
+  try {
+    const opened = fstatSync4(fd);
+    if (!opened.isFile() || opened.nlink !== 1 || opened.dev !== before.dev || opened.ino !== before.ino) throw new Error(UNSAFE_TARGET);
+    return { stats: opened, text: readBounded(fd, opened.size) };
+  } finally {
+    closeSync4(fd);
+  }
+}
+function readBounded(fd, size) {
+  if (size > MAX_CREDENTIAL_BYTES) throw new Error("The credentials file is larger than golive will rewrite; edit it in your own editor instead.");
+  const chunks = [];
+  const buffer = Buffer.alloc(64 * 1024);
+  let total = 0;
+  for (; ; ) {
+    const got = readSync(fd, buffer, 0, buffer.length, null);
+    if (!got) return Buffer.concat(chunks).toString("utf8");
+    total += got;
+    if (total > MAX_CREDENTIAL_BYTES) throw new Error("The credentials file is larger than golive will rewrite; edit it in your own editor instead.");
+    chunks.push(Buffer.from(buffer.subarray(0, got)));
+  }
+}
+function assignedName(line) {
+  return line.trim().match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/)?.[1];
+}
+function replaceAtomically(target, opened, content3) {
+  const tempPath = join6(dirname5(target), `.${basename2(target)}-${randomBytes(12).toString("hex")}.tmp`);
+  const temp = openSync4(tempPath, constants4.O_CREAT | constants4.O_EXCL | constants4.O_WRONLY | constants4.O_NOFOLLOW, 384);
+  let info;
+  let committed = false;
+  let failure2;
+  try {
+    fchmodSync(temp, 384);
+    info = fstatSync4(temp);
+    if (!info.isFile() || info.nlink !== 1) throw new Error(UNSAFE_TARGET);
+    writeFileSync5(temp, content3, { encoding: "utf8" });
+    fsyncSync(temp);
+    const current3 = lstatSync4(target);
+    if (current3.isSymbolicLink() || !current3.isFile() || current3.dev !== opened.dev || current3.ino !== opened.ino || current3.size !== opened.size || current3.mtimeMs !== opened.mtimeMs) throw new Error(CHANGED_TARGET);
+    renameSync4(tempPath, target);
+    committed = true;
+  } catch (error) {
+    failure2 = error;
+  } finally {
+    try {
+      closeSync4(temp);
+    } catch {
+    }
+    if (!committed && info) removeStaged(tempPath, info);
+  }
+  if (failure2) throw failure2;
+}
+function removeStaged(path, info) {
+  try {
+    const current3 = lstatSync4(path);
+    if (!current3.isFile() || current3.dev !== info.dev || current3.ino !== info.ino) return;
+    unlinkSync2(path);
+  } catch {
+  }
+}
 function tokenHowTo(name3) {
   const p = credentialsPath();
-  return `On macOS, have the agent run \`credentials --prompt ${name3} --json\`: enter the API key/provider token in the native hidden-input dialog, never your Mac login password. The local process saves it to ${p}; the value is not returned to agent chat or command output. Existing entries require an intentional --replace; cancelling preserves them. If the dialog is unavailable or on another platform, have the agent run \`credentials --setup --json\` to prepare the private directory/file, then open ${p} in your own editor and add \`${name3}=<value>\`. In nano: Ctrl+O, then Enter to confirm the filename, then Ctrl+X. Never paste the value into this chat or put it in the repo. (Alternative: export ${name3} in the shell you launch your coding agent from, then restart the agent.)`;
+  return `On macOS, have the agent run \`credentials --prompt ${name3} --json\`: enter the API key/provider token in the native hidden-input dialog, never your Mac login password. The local process saves it to ${p}; the value is not returned to agent chat or command output. Existing entries require an intentional --replace; cancelling preserves them. To take that value back later, run \`credentials --remove ${name3} --yes\`: it deletes that one entry and reports metadata only. If the dialog is unavailable or on another platform, have the agent run \`credentials --setup --json\` to prepare the private directory/file, then open ${p} in your own editor and add \`${name3}=<value>\`. In nano: Ctrl+O, then Enter to confirm the filename, then Ctrl+X. Never paste the value into this chat or put it in the repo. (Alternative: export ${name3} in the shell you launch your coding agent from, then restart the agent.)`;
 }
 function _resetCredentialsCache() {
   cache = void 0;
 }
-var cache;
+var cache, MAX_CREDENTIAL_BYTES, UNSAFE_TARGET, CHANGED_TARGET;
 var init_credentials = __esm({
   "src/core/credentials.ts"() {
     "use strict";
+    MAX_CREDENTIAL_BYTES = 1024 * 1024;
+    UNSAFE_TARGET = "Credentials removal refuses a symlinked, non-regular or hard-linked file; nothing was removed. Edit the file in your own editor instead.";
+    CHANGED_TARGET = "The credentials file changed during removal; nothing was removed. Retry once the other writer has finished.";
   }
 });
 
@@ -8373,8 +8465,8 @@ __export(supabase_exports, {
   tablesSql: () => tablesSql,
   usesPrisma: () => usesPrisma
 });
-import { randomBytes } from "node:crypto";
-import { basename as basename3 } from "node:path";
+import { randomBytes as randomBytes2 } from "node:crypto";
+import { basename as basename4 } from "node:path";
 async function auth(ctx) {
   let tok;
   let storeUnreadable;
@@ -8469,7 +8561,7 @@ async function tokenNeeds(ctx) {
   return needs;
 }
 function repoName2(ctx) {
-  const s = basename3(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
+  const s = basename4(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
   return s || "app";
 }
 async function cliOrgs(ctx) {
@@ -8709,7 +8801,7 @@ async function create(ctx, name3, approvedTarget) {
   }
   const org = approvedTarget?.scope.id ?? await freeOrg(ctx, tok);
   const before = new Set(all.map((p) => p.id));
-  const dbPass = new Secret("SUPABASE_DB_PASSWORD", randomBytes(24).toString("base64url"));
+  const dbPass = new Secret("SUPABASE_DB_PASSWORD", randomBytes2(24).toString("base64url"));
   let created;
   try {
     created = await api(
@@ -8826,7 +8918,7 @@ async function passwordResettable(ctx, ref3) {
   return ctx.state.resource(STATE_CREATED) === ref3 && !vaultGet(dbPassKey(ref3)) && !dbUrlWritten(ctx, ref3) && await supabaseCredentialOrUndefined(ctx) !== void 0;
 }
 async function resetDbPassword(ctx, tok, ref3) {
-  const pass2 = new Secret("SUPABASE_DB_PASSWORD", randomBytes(24).toString("base64url"));
+  const pass2 = new Secret("SUPABASE_DB_PASSWORD", randomBytes2(24).toString("base64url"));
   await api(ctx, tok, "PATCH", `/projects/${ref3}/database/password`, "Setting a new database password on the Supabase project golive created", { password: pass2 }, { idempotent: true });
   vaultPut(dbPassKey(ref3), pass2);
   ctx.log.info(`set a new generated database password on Supabase project ${ref3} (created by golive; the one generated at creation was lost with the run that created it, and nothing used it yet)`);
@@ -9295,7 +9387,7 @@ __export(stripe_exports, {
   stripeKeyFor: () => stripeKeyFor
 });
 import { createHash as createHash5, randomUUID as randomUUID3 } from "node:crypto";
-import { basename as basename4 } from "node:path";
+import { basename as basename5 } from "node:path";
 function modesInUse(ctx) {
   const modes = new Set(ctx.config.targets.map((t) => modeFor(ctx.config, t)));
   if (modes.size === 0) modes.add("test");
@@ -9409,7 +9501,7 @@ function pick(raw2) {
   return { id: raw2.id, url: raw2.url, events: raw2.enabled_events ?? [], enabled: raw2.status === "enabled", metadata: raw2.metadata ?? {} };
 }
 function appName(ctx) {
-  return basename4(ctx.cwd) || "app";
+  return basename5(ctx.cwd) || "app";
 }
 function isGolive(e) {
   return e.metadata.managed_by === "golive";
@@ -9636,9 +9728,9 @@ var init_stripe = __esm({
 });
 
 // src/cli.ts
-import { writeFileSync as writeFileSync6, mkdirSync as mkdirSync6 } from "node:fs";
+import { writeFileSync as writeFileSync7, mkdirSync as mkdirSync6 } from "node:fs";
 import { join as join18, resolve as resolve8 } from "node:path";
-import { dirname as dirname9, basename as basename11 } from "node:path";
+import { dirname as dirname9, basename as basename12 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // src/core/release.ts
@@ -10921,7 +11013,7 @@ var emailVerifiedCheck = {
 
 // src/links/util.ts
 init_secret();
-import { basename as basename2 } from "node:path";
+import { basename as basename3 } from "node:path";
 async function axisStatus(ctx, axis) {
   const id2 = ctx.config.stack[axis];
   if (!id2) return { kind: "none" };
@@ -10985,7 +11077,7 @@ function errMsg2(e) {
   return redact(e instanceof Error ? e.message : String(e));
 }
 function repoName(ctx) {
-  const s = basename2(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
+  const s = basename3(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
   return s || "app";
 }
 async function productionUrl(ctx) {
@@ -13446,29 +13538,30 @@ function record(ctx, step2, planId2, status, changes, error) {
 
 // src/cli.ts
 init_credentials();
+init_secret();
 
 // src/core/credential-prompt.ts
 init_credentials();
 init_secret();
 import { execFile, execFileSync } from "node:child_process";
-import { randomBytes as randomBytes2 } from "node:crypto";
+import { randomBytes as randomBytes3 } from "node:crypto";
 import {
   closeSync as closeSync6,
   constants as constants6,
   fchmodSync as fchmodSync2,
   fstatSync as fstatSync6,
-  fsyncSync,
+  fsyncSync as fsyncSync2,
   linkSync,
   lstatSync as lstatSync6,
   mkdirSync as mkdirSync5,
   openSync as openSync6,
-  readSync,
-  renameSync as renameSync4,
-  unlinkSync as unlinkSync2,
-  writeFileSync as writeFileSync5
+  readSync as readSync2,
+  renameSync as renameSync5,
+  unlinkSync as unlinkSync3,
+  writeFileSync as writeFileSync6
 } from "node:fs";
 import { platform } from "node:os";
-import { basename as basename5, dirname as dirname7, join as join9, resolve as resolve5 } from "node:path";
+import { basename as basename6, dirname as dirname7, join as join9, resolve as resolve5 } from "node:path";
 var MAX_VALUE_BYTES = 16 * 1024;
 var MAX_FILE_BYTES = 1024 * 1024;
 var DIALOG_SECONDS = 180;
@@ -13679,7 +13772,7 @@ function snapshot(path) {
     const buffer = Buffer.alloc(MAX_FILE_BYTES + 1);
     let size = 0;
     for (; ; ) {
-      const got = readSync(fd, buffer, size, buffer.length - size, null);
+      const got = readSync2(fd, buffer, size, buffer.length - size, null);
       size += got;
       if (size > MAX_FILE_BYTES) throw new SafeFailure("unsafe-path");
       if (!got) break;
@@ -13733,7 +13826,7 @@ function removeOwned(path, info) {
     const current3 = statOrMissing(path);
     if (!current3) return true;
     if (!info || !current3.isFile() || current3.dev !== info.dev || current3.ino !== info.ino) return false;
-    unlinkSync2(path);
+    unlinkSync3(path);
     return true;
   } catch {
     return false;
@@ -13759,22 +13852,22 @@ function saveAtomically(path, before, name3, value) {
     const current3 = snapshot(path);
     if (changed(before, current3)) throw new SafeFailure("concurrent-change");
     const content3 = updated(before, name3, value);
-    const tempPath = join9(dirname7(path), `.${basename5(path)}-${randomBytes2(12).toString("hex")}.tmp`);
+    const tempPath = join9(dirname7(path), `.${basename6(path)}-${randomBytes3(12).toString("hex")}.tmp`);
     const fd = openSync6(tempPath, constants6.O_CREAT | constants6.O_EXCL | constants6.O_WRONLY | constants6.O_NOFOLLOW, 384);
     temp = { path: tempPath, fd };
     temp.info = fstatSync6(fd);
     fchmodSync2(fd, 384);
     safeFile(fstatSync6(fd));
     checkAcl(tempPath);
-    writeFileSync5(fd, content3.reveal(), { encoding: "utf8" });
-    fsyncSync(fd);
+    writeFileSync6(fd, content3.reveal(), { encoding: "utf8" });
+    fsyncSync2(fd);
     if (changed(before, snapshot(path))) throw new SafeFailure("concurrent-change");
     const staged = lstatSync6(tempPath);
     if (staged.isSymbolicLink() || staged.dev !== temp.info.dev || staged.ino !== temp.info.ino) throw new SafeFailure("concurrent-change");
     safeFile(staged);
     checkAcl(tempPath);
     if (before.file) {
-      renameSync4(tempPath, path);
+      renameSync5(tempPath, path);
       committed = true;
     } else {
       try {
@@ -13963,7 +14056,7 @@ function parseJson(text) {
 }
 
 // src/adapters/vercel-project.ts
-import { basename as basename6 } from "node:path";
+import { basename as basename7 } from "node:path";
 function toInfo(raw2) {
   if (!raw2?.id || !raw2.name) return null;
   const alias = raw2.targets?.production?.alias;
@@ -14098,7 +14191,7 @@ var vercelProject = {
     return { id: linked.id, name: linked.name, ...scope ? { scope } : {} };
   },
   async candidates(ctx) {
-    const q2 = encodeURIComponent(basename6(ctx.cwd));
+    const q2 = encodeURIComponent(basename7(ctx.cwd));
     const res = await vercelApi(ctx, "GET", `/v10/projects?search=${q2}&limit=20`);
     return (res.projects ?? []).map(toInfo).filter((p) => p !== null).map(({ id: id2, name: name3 }) => ({ id: id2, name: name3 }));
   },
@@ -14584,7 +14677,7 @@ init_secret();
 init_http();
 init_credentials();
 import { createHash as createHash7 } from "node:crypto";
-import { basename as basename7 } from "node:path";
+import { basename as basename8 } from "node:path";
 
 // src/adapters/resend-records.ts
 var TYPES = /* @__PURE__ */ new Set(["A", "AAAA", "CNAME", "TXT", "MX", "CAA"]);
@@ -14915,7 +15008,7 @@ var sendingDomain = {
   }
 };
 function appSlug(ctx) {
-  const raw2 = basename7(ctx.detect.root || ctx.cwd) || "app";
+  const raw2 = basename8(ctx.detect.root || ctx.cwd) || "app";
   return raw2.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "app";
 }
 function keyNameFor(ctx, slot) {
@@ -16299,7 +16392,7 @@ async function netlifyRead(ctx, operation, path, params) {
 init_secret();
 
 // src/adapters/netlify-project.ts
-import { basename as basename8, join as join13 } from "node:path";
+import { basename as basename9, join as join13 } from "node:path";
 import { readFileSync as readFileSync11 } from "node:fs";
 var num = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null;
 function publicOrigin(value) {
@@ -16423,7 +16516,7 @@ var netlifyProject = {
   },
   async candidates(ctx) {
     const owner = configuredAccount(ctx);
-    return (await listSites(ctx, basename8(ctx.cwd), owner ? await accountInfo(ctx, owner) : void 0)).map(ref);
+    return (await listSites(ctx, basename9(ctx.cwd), owner ? await accountInfo(ctx, owner) : void 0)).map(ref);
   },
   async resolve(ctx, idOrName) {
     return ref(await resolveSite(ctx, idOrName));
@@ -16674,7 +16767,7 @@ var netlifyAdapter = {
 // src/adapters/neon.ts
 init_secret();
 init_http();
-import { basename as basename9 } from "node:path";
+import { basename as basename10 } from "node:path";
 
 // src/adapters/neon-api.ts
 init_secret();
@@ -16830,7 +16923,7 @@ async function current2(ctx) {
 async function candidates2(ctx) {
   const o = await freeOrg2(ctx);
   const all = await projects(ctx, id(o.id));
-  const name3 = basename9(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63) || "app";
+  const name3 = basename10(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63) || "app";
   const matches3 = all.filter((p) => p.name.toLowerCase() === name3);
   if (matches3.length) {
     if (matches3.length !== 1 || !cfg(ctx).branchId || !cfg(ctx).database || !cfg(ctx).role) throw new NeonError("A same-named Neon project already exists. Select its exact projects.db ID and set neon.branchId, neon.database and neon.role before re-planning. No defaults were assumed.");
@@ -20056,10 +20149,10 @@ var authPolicyCheck = {
 // src/checks/auth-signup.ts
 init_secret();
 init_supabase_auth();
-import { randomBytes as randomBytes3 } from "node:crypto";
+import { randomBytes as randomBytes4 } from "node:crypto";
 function probeAddress(email) {
   const m = /^([^@+]+)(?:\+[^@]*)?@([^@\s]+)$/.exec(email);
-  return m ? `${m[1]}+gl-${randomBytes3(3).toString("hex")}@${m[2]}` : email;
+  return m ? `${m[1]}+gl-${randomBytes4(3).toString("hex")}@${m[2]}` : email;
 }
 var authSignupCheck = {
   id: "auth-signup",
@@ -20406,10 +20499,10 @@ async function signedInTables(ctx, ref3, token2) {
 // src/checks/auth-recovery.ts
 init_secret();
 init_supabase_auth();
-import { randomBytes as randomBytes4 } from "node:crypto";
+import { randomBytes as randomBytes5 } from "node:crypto";
 function unknownAddress(email) {
   const m = /^([^@+]+)(?:\+[^@]*)?@([^@\s]+)$/.exec(email);
-  return m ? `${m[1]}+gl-recovery-${randomBytes4(3).toString("hex")}@${m[2]}` : null;
+  return m ? `${m[1]}+gl-recovery-${randomBytes5(3).toString("hex")}@${m[2]}` : null;
 }
 var authRecoveryCheck = {
   id: "auth-recovery",
@@ -20569,9 +20662,9 @@ var authRecoveryCheck = {
 // src/checks/auth-isolation.ts
 init_secret();
 init_supabase_auth();
-import { randomBytes as randomBytes5 } from "node:crypto";
+import { randomBytes as randomBytes6 } from "node:crypto";
 function marker(role) {
-  return `gl-iso-${role}-${randomBytes5(6).toString("hex")}`;
+  return `gl-iso-${role}-${randomBytes6(6).toString("hex")}`;
 }
 var routeTask = (path) => `app-code task: deploy a route at ${path} that answers the signed-in caller the way auth.identityPath / auth.isolationPath in golive.yaml declares, then re-run verify`;
 var sessionTask = (path) => `app-code task: read the caller's session from the \`Authorization: Bearer <token>\` header on ${path} (the token is one the auth provider just issued for that account), then re-run verify`;
@@ -20914,7 +21007,7 @@ import { resolve as resolve7 } from "node:path";
 
 // src/detect/fs.ts
 import { lstat, readdir, readFile } from "node:fs/promises";
-import { basename as basename10, join as join15 } from "node:path";
+import { basename as basename11, join as join15 } from "node:path";
 var SOURCE_RE = /\.(?:[cm]?[jt]sx?|vue|svelte|astro)$/;
 var SKIP_FILE_RE = /\.d\.[cm]?ts$|\.min\.js$|\.(?:test|spec)\.[cm]?[jt]sx?$/;
 var SKIP_DIRS = /* @__PURE__ */ new Set([
@@ -20963,7 +21056,7 @@ var MAX_FILE_BYTES2 = 1e6;
 var MAX_TOTAL_BYTES = 64e6;
 var EXAMPLE_ENV_FILES = [".env.example", ".env.sample", ".env.template", ".env.local.example", ".env.dist", ".env-example", "example.env"];
 function isRealEnvFile(path) {
-  const b = basename10(path);
+  const b = basename11(path);
   if (EXAMPLE_ENV_FILES.includes(b)) return false;
   return /^\.env/.test(b) || /\.env$/.test(b) || b === ".dev.vars" || b.startsWith(".dev.vars.");
 }
@@ -21045,7 +21138,7 @@ var Repo = class {
         if (truncated) return;
         const rel = dir ? `${dir}/${e.name}` : e.name;
         if (e.isDirectory()) {
-          const installedSkills = e.name === "skills" && AGENT_SKILL_PARENTS.has(basename10(dir));
+          const installedSkills = e.name === "skills" && AGENT_SKILL_PARENTS.has(basename11(dir));
           if (!SKIP_DIRS.has(e.name) && !installedSkills) await visit(rel);
         } else if (e.isFile() && isSourceFile(e.name)) {
           if (files.length >= MAX_FILES) truncated = true;
@@ -22718,6 +22811,9 @@ Commands (add --json for machine output; --cwd <dir> to target another repo):
   credentials --setup       Prepare a private empty credentials file; preserve any existing contents.
   credentials --prompt NAME [--replace] [--lang en|zh]
                             macOS hidden input; store locally and return metadata only. Never pass a value.
+  credentials --remove NAME --yes
+                            Delete one stored credential; every other entry stays. Irreversible, so
+                            --yes is required and a name that isn't stored is reported, not an error.
   detect                     Scan the repo: framework, providers in use, env var names referenced.
   menu                       Provider options for each axis (neutral order; automated vs guided).
   init --stack k=v,...       Write golive.yaml, e.g. --stack hosting=vercel,db=supabase,payments=stripe
@@ -22751,21 +22847,30 @@ async function main(argv) {
   }
   if (cmd === "update-check") {
     const modulePath = fileURLToPath2(import.meta.url);
-    const bundleRoot = basename11(modulePath) === "cli.ts" ? resolve8(dirname9(modulePath), "../skills/golive") : resolve8(dirname9(modulePath), "..");
+    const bundleRoot = basename12(modulePath) === "cli.ts" ? resolve8(dirname9(modulePath), "../skills/golive") : resolve8(dirname9(modulePath), "..");
     const ownership = statusForBundle(bundleRoot);
     emit(await checkForUpdate(release2, { ownership, disabled: flags.offline === true || process.env.GOLIVE_UPDATE_CHECK === "0", ...flags["no-cache"] === true ? { cachePath: false } : {} }), { json: json2 });
     return 0;
   }
   if (cmd === "credentials") {
-    if (Object.keys(flags).some((key) => !["json", "cwd", "setup", "prompt", "replace", "lang"].includes(key))) {
-      throw new UsageError("credentials accepts only --setup or --prompt NAME [--replace] [--lang en|zh]; never put a secret value in arguments.");
+    if (Object.keys(flags).some((key) => !["json", "cwd", "setup", "prompt", "replace", "lang", "remove", "yes"].includes(key))) {
+      throw new UsageError("credentials accepts only --setup, --prompt NAME [--replace] [--lang en|zh] or --remove NAME --yes; never put a secret value in arguments.");
     }
+    const forms = "credentials needs --setup, --prompt NAME [--replace] [--lang en|zh] or --remove NAME --yes; supply the variable name only, never its value.";
+    if (flags.remove !== void 0) {
+      if (typeof flags.remove !== "string" || flags.setup !== void 0 || flags.prompt !== void 0 || flags.replace !== void 0 || flags.lang !== void 0) throw new UsageError(forms);
+      if (flags.yes !== true) throw new UsageError("credentials --remove deletes that stored value irreversibly; pass --yes to confirm. Nothing was removed.");
+      if (!isCredentialName(flags.remove)) throw new UsageError(forms);
+      emit({ ok: true, ...removeCredential(flags.remove) }, { json: json2 });
+      return 0;
+    }
+    if (flags.yes !== void 0) throw new UsageError(forms);
     if (flags.setup === true && flags.prompt === void 0 && flags.replace === void 0 && flags.lang === void 0) {
       emit({ ok: true, ...setupCredentials() }, { json: json2 });
       return 0;
     }
     if (flags.setup !== void 0 || typeof flags.prompt !== "string" || flags.replace !== void 0 && flags.replace !== true || flags.lang !== void 0 && flags.lang !== "en" && flags.lang !== "zh") {
-      throw new UsageError("credentials needs --setup or --prompt NAME [--replace] [--lang en|zh]; supply the variable name only, never its value.");
+      throw new UsageError(forms);
     }
     const result2 = await promptCredential(flags.prompt, { replace: flags.replace === true, language: flags.lang === "zh" ? "zh" : "en" });
     emit({ ok: result2.status === "saved", ...result2 }, { json: json2 });
@@ -22863,8 +22968,8 @@ async function main(argv) {
       const report = await makeReport(ctx, results, await handoffStatus(ctx, plan?.handoffs ?? [], results, false, plan?.steps ?? []), verification);
       const reportPaths = { json: join18(cwd, ".golive/report.json"), markdown: join18(cwd, "GOLIVE_REPORT.md") };
       mkdirSync6(join18(cwd, ".golive"), { recursive: true });
-      writeFileSync6(reportPaths.json, JSON.stringify(report, null, 2) + "\n");
-      writeFileSync6(reportPaths.markdown, renderReport(report));
+      writeFileSync7(reportPaths.json, redact(JSON.stringify(report, null, 2)) + "\n");
+      writeFileSync7(reportPaths.markdown, redact(renderReport(report)));
       emit({ ok: report.summary.fail === 0, report, reportPaths }, { json: json2 });
       return report.summary.fail === 0 ? 0 : 2;
     }
@@ -22891,8 +22996,8 @@ async function main(argv) {
       assertOverwritable(paths.json, flags.force === true);
       assertOverwritable(paths.markdown, flags.force === true);
       mkdirSync6(join18(cwd, ".golive"), { recursive: true });
-      writeFileSync6(paths.json, handoverJson(doc));
-      writeFileSync6(paths.markdown, renderHandover(doc));
+      writeFileSync7(paths.json, handoverJson(doc));
+      writeFileSync7(paths.markdown, renderHandover(doc));
       emit({
         ok: items.every((i) => i.done !== false || !i.blocking),
         handoffs: items,
