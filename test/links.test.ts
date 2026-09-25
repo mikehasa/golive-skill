@@ -7,7 +7,7 @@ import type { Check, Ctx, DeploymentInfo, Finding, Http, Plan, ReleaseIdentity, 
 import { envParityCheck } from '../src/checks/env-parity.js';
 import { previewBundleCheck, previewDeployCheck, productionReleaseCheck } from '../src/checks/release.js';
 import { ALL_LINKS } from '../src/links/all.js';
-import { availableKeys, forgetDeployFacts, previousProductionDeploy, readDeployHistory, readRelease, recordDeploy, step } from '../src/links/util.js';
+import { availableKeys, forgetDeployFacts, previousProductionDeploy, productionUrl, readDeployHistory, readRelease, recordDeploy, step } from '../src/links/util.js';
 import { emailDomain } from '../src/links/email.js';
 import { dohRoute } from './check-fakes.js';
 import { TEST_RELEASE, mockExec, mockHttp, testCtx } from './helpers.js';
@@ -127,6 +127,9 @@ describe('golden path', () => {
     expect(byId(plan, 'payments:keys:production').risk.live).toBe(true);
     expect(byId(plan, 'payments:keys:preview').risk.live).toBeUndefined();
     expect(byId(plan, 'payments:webhook:production').risk.live).toBe(true);
+    // Approving this plan is not enough to write production for the FIRST time: state records no
+    // successful production deploy, so the deploy step itself is a live write (see the gate tests).
+    expect(first.risk.live).toBe(true);
     expect(byId(plan, 'domain:dns').risk.dns).toBe(true);
     expect(byId(plan, 'email:dns').risk.dns).toBe(true);
     expect(hIds(plan)).toEqual(['fakepay:activate']);
@@ -757,6 +760,89 @@ describe('deploy', () => {
     const optedIn = await build(setup({ config: { release: { preview: true } } }).ctx);
     expect(ids(optedIn)).toEqual([...ids(plain), 'preview:deploy', 'release:check']);
     expect(optedIn.id).not.toBe(plain.id);
+  });
+});
+
+// ── The gate on a project's first production deploy ──────────────────────────────────────────────────
+
+describe('first production deploy gate (risk.live)', () => {
+  const small = { stack: { hosting: 'fakehost', db: 'fakedb' }, domain: undefined } as Partial<ShipConfig>;
+  const FRESH = { config: small, env: ['NEXT_PUBLIC_SUPABASE_URL'] };
+  const WHY = /first production deploy for this project: golive has never deployed it, so this writes production for the first time — needs --confirm-live/;
+  const deployNeeds = (plan: Plan, id = 'deploy:production') => planView(plan).steps.find((s) => s.id === id)!.needs;
+
+  it('plans a fresh deploy as a live write that says why, and names the flag in the approval view', async () => {
+    const { ctx } = setup(FRESH);
+    const plan = await build(ctx);
+    const deploy = byId(plan, 'deploy:production');
+    expect(deploy.risk).toEqual({ writes: true, live: true });
+    expect(deploy.preview.join('\n')).toMatch(WHY);
+    // Reviewers read the approval view, not the raw steps: the flag has to be on that step.
+    expect(deployNeeds(plan)).toEqual(['--confirm-live']);
+  });
+
+  it('gates deploy:production:final too, which is only ever planned alongside a first deploy', async () => {
+    const { ctx } = setup();
+    const plan = await build(ctx);
+    const final = byId(plan, 'deploy:production:final');
+    expect(final.risk).toEqual({ writes: true, live: true });
+    expect(final.preview.join('\n')).toMatch(WHY);
+    expect(deployNeeds(plan, final.id)).toEqual(['--confirm-live']);
+  });
+
+  it('refuses the first production write without --confirm-live, and runs it with it', async () => {
+    const { w, ctx } = setup(FRESH);
+    const plan = await build(ctx);
+    const blocked = await applyPlan(ctx, plan, new Map(), { approvedPlanId: plan.id, yes: true, confirmLive: false, confirmDns: false });
+    expect(blocked.at(-1)).toMatchObject({ id: 'deploy:production', status: 'blocked', next: 'needs explicit human confirmation: --confirm-live' });
+    expect(w.host.deploys).toBe(0); // nothing reached production
+    expect(ctx.state.resource('deployed:production')).toBeUndefined();
+    expect(ctx.state.get().steps['deploy:production']).toBeUndefined(); // a blocked step records nothing
+
+    const out = await applyPlan(ctx, plan, new Map(), { approvedPlanId: plan.id, yes: true, confirmLive: true, confirmDns: false });
+    expect(out.find((o) => o.id === 'deploy:production')?.status).toBe('done');
+    expect(w.host.deploys).toBe(1);
+    expect(ctx.state.resource('deployed:production')).toMatch(/^\d{4}-/);
+  });
+
+  it('keeps the gate on the next plan when the first attempt failed', async () => {
+    const { ctx } = setup({ ...FRESH, arrange: (w) => (w.host.deployError = 'build failed: missing module') });
+    const first = await apply(ctx, await build(ctx));
+    expect(first.find((o) => o.id === 'deploy:production')?.status).toBe('failed');
+    expect(ctx.state.resource('deployed:production')).toBeUndefined();
+
+    const next = await build(ctx);
+    expect(byId(next, 'deploy:production').risk).toEqual({ writes: true, live: true });
+    expect(byId(next, 'deploy:production').preview.join('\n')).toMatch(WHY);
+    expect(deployNeeds(next)).toEqual(['--confirm-live']);
+  });
+
+  it('drops the gate once a deploy has been recorded: later plans behave as before', async () => {
+    const { ctx } = setup(FRESH);
+    await apply(ctx, await build(ctx)); // records the deploy under deployed:production
+
+    ctx.detect.envRefs.push({ name: 'SUPABASE_SERVICE_ROLE_KEY', files: ['src/lib.ts'], clientExposed: false });
+    const later = await build(ctx);
+    const deploy = byId(later, 'deploy:production');
+    expect(deploy.risk).toEqual({ writes: true });
+    expect(deploy.preview.join('\n')).not.toMatch(/first production deploy/);
+    expect(deployNeeds(later)).toEqual([]);
+    // And the flag is not required any more: the redeploy runs with the plain approval.
+    const out = await applyPlan(ctx, later, new Map(), { approvedPlanId: later.id, yes: true, confirmLive: false, confirmDns: false });
+    expect(out.find((o) => o.id === 'deploy:production')?.status).toBe('done');
+  });
+
+  it('is not satisfied by a preview deploy: a done preview:deploy is not a production deploy', async () => {
+    const { ctx } = setup(FRESH);
+    // Legacy state written before the `deployed:production` marker existed, holding only a preview.
+    ctx.state.save((s) => {
+      s.steps['preview:deploy'] = { status: 'done', at: '2026-01-01T00:00:00.000Z', planId: 'approved-earlier' };
+    });
+    const plan = await build(ctx);
+    expect(byId(plan, 'deploy:production').risk).toEqual({ writes: true, live: true });
+    expect(deployNeeds(plan)).toEqual(['--confirm-live']);
+    // And production has no URL yet to point webhooks, auth redirects or the site URL at.
+    expect(await productionUrl(ctx)).toBeNull();
   });
 });
 

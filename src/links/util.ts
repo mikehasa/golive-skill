@@ -186,6 +186,12 @@ export const RELEASED_KEY = 'deployed:release';
 export const DEPLOY_HISTORY_LIMIT = 8;
 /** The step ids a deploy records (see deployLink and releaseLink): forgotten with the project's facts. */
 const DEPLOY_STEPS = ['deploy:production', 'deploy:production:final', 'preview:deploy'];
+/**
+ * The step ids that record a *production* deploy. A preview deploy is not one, and must never read as
+ * "production has been deployed": the first-deploy gate and the production URL both turn on that
+ * question. `forgetDeployFacts` still clears the preview record with the project's other facts.
+ */
+const PRODUCTION_DEPLOY_STEPS = ['deploy:production', 'deploy:production:final'];
 
 /**
  * Record a successful deploy of `target`: the `deployed:<target>` time marker the deploy link reads,
@@ -312,9 +318,11 @@ export function readRelease(ctx: Ctx): RecordedRelease | null {
 export function lastDeployAt(ctx: Ctx): string | undefined {
   const at = ctx.state.resource(DEPLOYED_KEY);
   if (at) return at;
-  // State written before DEPLOYED_KEY existed: a done deploy step counts.
+  // State written before DEPLOYED_KEY existed: a done production deploy step counts. A preview
+  // deploy does not: it says nothing about production, and the first-deploy gate and the production
+  // URL both read this as "has production been deployed".
   const steps = ctx.state.get().steps;
-  const done = DEPLOY_STEPS.map((id) => steps[id]).filter((r) => r?.status === 'done');
+  const done = PRODUCTION_DEPLOY_STEPS.map((id) => steps[id]).filter((r) => r?.status === 'done');
   return done.map((r) => r!.at).sort().at(-1);
 }
 

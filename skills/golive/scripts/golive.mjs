@@ -11094,6 +11094,7 @@ var DEPLOY_HISTORY_KEY = "deployed:history";
 var RELEASED_KEY = "deployed:release";
 var DEPLOY_HISTORY_LIMIT = 8;
 var DEPLOY_STEPS = ["deploy:production", "deploy:production:final", "preview:deploy"];
+var PRODUCTION_DEPLOY_STEPS = ["deploy:production", "deploy:production:final"];
 function recordDeploy(ctx, provider, target, deployment) {
   ctx.state.save((s) => {
     const at = (/* @__PURE__ */ new Date()).toISOString();
@@ -11155,7 +11156,7 @@ function lastDeployAt(ctx) {
   const at = ctx.state.resource(DEPLOYED_KEY);
   if (at) return at;
   const steps = ctx.state.get().steps;
-  const done = DEPLOY_STEPS.map((id2) => steps[id2]).filter((r) => r?.status === "done");
+  const done = PRODUCTION_DEPLOY_STEPS.map((id2) => steps[id2]).filter((r) => r?.status === "done");
   return done.map((r) => r.at).sort().at(-1);
 }
 function readRecordedDeploy(ctx, target) {
@@ -18658,6 +18659,7 @@ var authIsolationLink = {
 
 // src/links/deploy.ts
 var WEBHOOK_STEP = "payments:webhook:production";
+var FIRST_DEPLOY_WHY = "first production deploy for this project: golive has never deployed it, so this writes production for the first time \u2014 needs --confirm-live";
 var deployLink = {
   id: "deploy",
   async plan(ctx) {
@@ -18667,6 +18669,7 @@ var deployLink = {
     const m = memo(ctx);
     const after = [...m.redeployAfter];
     const lastOk = lastDeployAt(ctx);
+    const firstDeploy = !lastOk;
     const pending = pendingRedeploy(ctx);
     const steps = ctx.state.get().steps;
     const failed = ["deploy:production", "deploy:production:final"].map((id2) => steps[id2]).filter((r) => r?.status === "failed" && (!lastOk || r.at > lastOk)).sort((a, b) => b.at.localeCompare(a.at))[0];
@@ -18685,9 +18688,15 @@ var deployLink = {
       id: "deploy:production",
       title: `Deploy production on ${h.adapter.title}`,
       kind: "deploy",
-      risk: { writes: true },
+      // `live` only while golive has never deployed production for this project: the runner then
+      // requires --confirm-live, so approving the plan cannot write production for the first time.
+      risk: { writes: true, ...firstDeploy ? { live: true } : {} },
       dependsOn: deps(ctx, ["project:hosting", ...early]),
-      preview: [`deploy production on ${h.adapter.title}: ${reasons.join("; ")}`, `last successful golive deploy: ${lastOk ?? "none"}`],
+      preview: [
+        `deploy production on ${h.adapter.title}: ${reasons.join("; ")}`,
+        `last successful golive deploy: ${lastOk ?? "none"}`,
+        ...firstDeploy ? [FIRST_DEPLOY_WHY] : []
+      ],
       intent: intentOf({ picks: picks(early), pending, failed: failed?.at }),
       verifyWith: verifiers(ctx, early, lateWriters.length > 0),
       run: deployRun(h.adapter, h.cap)
@@ -18700,9 +18709,15 @@ var deployLink = {
           id: "deploy:production:final",
           title: `Redeploy production on ${h.adapter.title}`,
           kind: "deploy",
-          risk: { writes: true },
+          // Planned only alongside the first deploy, so it carries the same gate: production has no
+          // successful golive deploy recorded yet when this step is planned.
+          risk: { writes: true, ...firstDeploy ? { live: true } : {} },
           dependsOn: deps(ctx, [first.id, ...lateWriters]),
-          preview: [`redeploy production on ${h.adapter.title} after ${lateWriters.join(", ")}, which need the first deployment, so their env changes take effect`, `last successful golive deploy: ${lastOk ?? "none"}`],
+          preview: [
+            `redeploy production on ${h.adapter.title} after ${lateWriters.join(", ")}, which need the first deployment, so their env changes take effect`,
+            `last successful golive deploy: ${lastOk ?? "none"}`,
+            ...firstDeploy ? [FIRST_DEPLOY_WHY] : []
+          ],
           intent: intentOf({ picks: picks(lateWriters) }),
           verifyWith: verifiers(ctx, lateWriters, false),
           run: deployRun(h.adapter, h.cap)
