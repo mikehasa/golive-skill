@@ -26,13 +26,13 @@
     "references/porkbun.md": "8eaeb8890ce3c104e242ced33e77179253a9d8f3b9425be6692585254c6b6490",
     "references/resend.md": "ec673b3c75f4bb0edd9825079c2be41f165ca7a4ac2b6b732bb4024968735947",
     "references/stripe.md": "ef06e9f2782919849b49dfa5145010a8b3017e2210c655c8af45e3683d105c32",
-    "references/supabase.md": "2260ff5c1b6ce295416ac9f2ec06af171ebd1481b2096dc05e2b4a859140d79a",
+    "references/supabase.md": "d7eb2179837a48da2d2202c2c22bc0453a86d78a698a7ea811f73d19dc65d87a",
     "references/troubleshooting.md": "8a9a8bd3a4c79e5fac00edbec3db0d6c47eaf36f4f6e7a5b92a46a92b21e50fd",
     "references/updates.md": "7405e981743ca3d4815449694f560ef91d80a16b1046451f56395fc75d68de58",
     "references/vercel.md": "83e98b61a1f16ba0e76327ccf01268a3a4c42be3ffecc0ab12bc8c6f061c18df",
-    "scripts/golive.mjs": "0cffed624d50d91889d209ab069800df199d35c6cb35c80d908cbc35f6da1d2d",
+    "scripts/golive.mjs": "6eeac12e7efaff16baa5742c79334e733907c0ff7ac72ac1f5dfec477b43e6e6",
     "scripts/install-cli.mjs": "55e2a776892a9d34fa62d7ebf70bb101a0f54a3592ba9f87b77a1d43043e108a",
     "scripts/install-lib.mjs": "9d3de597acc711178e588247f3cc9b5b5445f90d492cd464018065f2cd25caec"
   },
-  "bundleDigest": "16e4dfc2d48f40f9c67029ca708da7c4a2bf5e38b2cfe31e30701b11160f9aa3"
+  "bundleDigest": "5778dd3c024a94bbdc93f09a36f9954319cff82c6d7f0d626e4ef4aac7a839f8"
 }

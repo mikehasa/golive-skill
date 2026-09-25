@@ -12,7 +12,7 @@
  * can tell "the provider said no" from a broken transport. An unusable credential or an unlinked
  * project throws `SupabaseAuthPrereqError`: that is a prerequisite, and callers skip on it.
  */
-import { randomBytes } from 'node:crypto';
+import { randomInt } from 'node:crypto';
 import type { AuthLoginOutcome, AuthRecoveryLink, AuthRecoveryOutcome, AuthSession, AuthSignupOutcome, AuthUserView, AuthUsers, Ctx, Value } from '../core/types.js';
 import { Secret, redact } from '../core/secret.js';
 import { SupabaseError } from './supabase-api.js';
@@ -36,14 +36,36 @@ export interface SupabaseAuthDeps {
   keys(ctx: Ctx, ref: string): Promise<SupabaseAuthKeys>;
 }
 
-const CHARS = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*-_';
+/**
+ * The classes a project's password policy may require one of each. `CHARS` is exactly their union, so
+ * guaranteeing them narrows nothing; the excluded look-alikes (`l`, `I`, `O`, `0`, `1`) stay excluded.
+ */
+const CLASSES = ['abcdefghijkmnopqrstuvwxyz', 'ABCDEFGHJKLMNPQRSTUVWXYZ', '23456789', '!@#$%^&*-_'] as const;
+const CHARS = CLASSES.join('');
+/** Long enough for any project minimum; the four required classes take four of its characters. */
+const PASSWORD_LENGTH = 32;
 
 /**
  * A throwaway password for a test account: 32 random characters over every class GoTrue may require,
- * long enough for any project minimum. It lives in memory (the run vault) and is never recorded.
+ * long enough for any project minimum, with those classes guaranteed rather than left to the draw — a
+ * free draw over 67 characters leaves out the 8 digits in ~1.8% of passwords, and a project whose
+ * policy requires one of each (golive writes the minimum length only) would refuse that signup. One
+ * character per class is placed first, the rest are drawn freely over the whole alphabet, and the whole
+ * draw is shuffled so no class sits at a fixed position. `randomInt` rejects a value instead of folding
+ * it, so characters and positions stay equally likely. It lives in memory (the run vault) and is never
+ * recorded.
  */
 export function testPassword(): Secret {
-  return new Secret('GOLIVE_TEST_PASSWORD', [...randomBytes(32)].map((b) => CHARS[b % CHARS.length]).join(''));
+  const chars: string[] = [];
+  for (const alphabet of CLASSES) chars.push(alphabet[randomInt(alphabet.length)]!);
+  while (chars.length < PASSWORD_LENGTH) chars.push(CHARS[randomInt(CHARS.length)]!);
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const j = randomInt(i + 1);
+    const swap = chars[i]!;
+    chars[i] = chars[j]!;
+    chars[j] = swap;
+  }
+  return new Secret('GOLIVE_TEST_PASSWORD', chars.join(''));
 }
 
 // ── Response shapes (only the fields golive reads) ───────────────────────────────────────────────
