@@ -57,10 +57,14 @@ Never update between a plan and its apply. A changed release requires a new plan
    chat. Never `sk_`, `rk_` or `whsec_`.
 3. **No provider/account writes until the human approves the plan.** Local credential setup and
    human-submitted credential entry, `init`, and report files can be prepared during onboarding. Explain `plan` and get a
-   clear yes before `apply`. Pass `--confirm-live` (live payments **or production data**, e.g. the
+   clear yes before `apply`. Pass `--confirm-live` (live payments, production data, or a **first**
+   production deploy — the first write to a destination golive has never deployed; e.g. the
    `auth:test-user` account, the `auth:isolation` second account, `auth-signup`'s throwaway probe and
    the `auth:recovery` password rotation), `--confirm-dns` (DNS records) or
-   `--confirm-destroy` (deletions) only if the human explicitly approved those categories.
+   `--confirm-destroy` (deletions) only if the human explicitly approved those categories. Say why
+   you are asking each one: `steps[].needs` names the flags a step requires, and a first production
+   deploy needs `--confirm-live` because approving the plan approves what that deploy contains, not
+   the first write to production itself. Later deploys of that target need no extra flag.
 4. **Never buy anything or create accounts for them.** Signups, payment methods, identity checks
    (KYC) and domain purchases are handoffs the human does in their browser.
 5. **A handoff is closed only by a passing check**, not by anyone saying "done". `done: false` is
@@ -116,6 +120,14 @@ In order of preference:
    **Ctrl+O → Enter → Ctrl+X** (save, confirm filename, exit). The agent never enters token values.
    On Windows the setup command reports privacy as unknown; don't claim POSIX modes verify Windows ACLs.
 4. The token exported in the shell the agent is launched from (then restart the agent).
+
+**Removing a stored credential.** `credentials --remove NAME --yes` deletes that one entry and returns
+metadata only (`removed: false` when the name was not stored — the file is left unchanged, and that is
+not an error). Every other entry, comment, blank line and line ending survives. `--yes` is required
+because the deletion is irreversible for a human who no longer holds the value anywhere else: pass it
+only when the human asked to remove that specific credential — never to tidy up on your own initiative,
+and never for a name they did not name. Removing golive's copy does not end access; revoking the token
+at the provider does.
 
 Vercel deploys always run through the Vercel CLI, so it must be installed (`npm i -g vercel`) either
 way; `VERCEL_TOKEN` only replaces `vercel login`. Use `doctor`'s `howToFix` to preserve the correct
@@ -214,6 +226,13 @@ Full access token. A passing account check doesn't prove every later endpoint pe
 ### 4. Plan: `plan --json`
 Explain the steps by provider, in plain language, and call out:
 - which steps **write**, and which `needs` `--confirm-live` / `--confirm-dns` / `--confirm-destroy`
+- `deploy:production` needs `--confirm-live` when this plan carries the project's **first** production
+  deploy (state records no successful production deploy for that target); the step's own preview says
+  why, and `deploy:production:final` carries the same flag when it runs with that first deploy. It is
+  the first write to a live destination: explain why you are asking — approving the plan approves what
+  that deploy contains, and this flag is the separate approval to write production there for the first
+  time. A failed attempt records no deploy, so the gate stays; once golive records a successful one,
+  later deploys of that target need no extra flag.
 - `project:hosting` / `project:db`: which project and account every write goes to. If a step
   **creates** a project, its preview lists existing projects; ask whether to use one of those instead
   (`init --project <axis>=<name>`, then `plan` again). Creating a project can cost money.
@@ -353,9 +372,19 @@ exact deployment id.
 records at the configured provider, recorded webhook endpoints, issued sending keys, and the host
 project whose creation marker matches. Adopted projects, records golive did not write, and anything
 without a capability become non-blocking `manual` handoffs (Supabase/Neon projects, the Resend sending
-domain). Show the list, get explicit approval, then apply with `--confirm-destroy`; DNS deletions also
-need `--confirm-dns` and live-mode endpoints `--confirm-live`. An already-removed resource is a
-harmless no-op, and a blocked deletion step deleted nothing — resolve and re-run.
+domain) — and so does anything the inventory could not even read: a DNS zone whose provider golive
+cannot use, cannot tell golive-owned records apart in, or cannot delete from, and a linked host
+project golive cannot reach or whose host exposes no project deletion. Those rows name what remains
+and the fix (reconnect the provider and re-run `teardown`, name that provider in `golive.yaml` again,
+or delete it in the dashboard), so golive never goes quiet about records left pointing at a project
+the same teardown may delete. Show the list, get explicit approval, then apply with `--confirm-destroy`;
+DNS deletions also need `--confirm-dns` and live-mode endpoints `--confirm-live`. An already-removed
+resource is a harmless no-op, and a blocked deletion step deleted nothing — resolve and re-run. A
+removal the provider's answer says is gone forgets that resource's recorded id/baseline (the DNS
+baseline, the webhook endpoint id, the sending key id), and removing the host project forgets its
+deploy facts, so a later `status` does not report golive's own teardown as drift. A webhook delete is
+re-read from the provider; a revoked sending key stays unverified (no provider read exists for an
+issued key) and is reported as a warning, never a pass.
 
 ### 6. Verify: `verify --json`
 Runs the live checks and writes `GOLIVE_REPORT.md`. A **`skip` means blocked or not applicable, never
