@@ -5,6 +5,13 @@ import { deps, intentOf, lastDeployAt, memo, pendingRedeploy, ready, recordDeplo
 const WEBHOOK_STEP = 'payments:webhook:production';
 
 /**
+ * Why a plan that performs a project's first production deploy needs `--confirm-live`: approving the
+ * plan alone must not be enough to write production for the first time. `risk.live` makes the runner
+ * demand the flag (runner.gateFlags); once state records a successful deploy the flag is gone.
+ */
+const FIRST_DEPLOY_WHY = 'first production deploy for this project: golive has never deployed it, so this writes production for the first time — needs --confirm-live';
+
+/**
  * Env changes only apply to NEW deployments, so production is (re)deployed when:
  *   - this plan writes production env (steps tracked with needsRedeploy),
  *   - state says a production env write is still waiting for a deploy (REDEPLOY_KEY — survives a
@@ -16,6 +23,10 @@ const WEBHOOK_STEP = 'payments:webhook:production';
  * When production was never deployed, the deploy runs BEFORE domain:attach (hosts may refuse to
  * attach a domain without a successful production deployment); env writes that depend on the domain
  * (e.g. the webhook secret) then get a final redeploy after them.
+ *
+ * Such a plan (and its `deploy:production:final`) also declares `risk.live`, so the runner requires
+ * `--confirm-live`: the plan's own approval must not be enough to write production for the first
+ * time. A failed attempt records no deploy and the gate stays; once state records one it is gone.
  */
 export const deployLink: Link = {
   id: 'deploy',
@@ -26,6 +37,9 @@ export const deployLink: Link = {
     const m = memo(ctx);
     const after = [...m.redeployAfter];
     const lastOk = lastDeployAt(ctx);
+    // A plan built while state records no successful deploy carries `risk.live` (FIRST_DEPLOY_WHY): a
+    // failed attempt records nothing, so the gate stays until a deploy succeeds.
+    const firstDeploy = !lastOk;
     const pending = pendingRedeploy(ctx);
     const steps = ctx.state.get().steps;
     // A failed deploy counts until a later deploy succeeds.
@@ -54,9 +68,15 @@ export const deployLink: Link = {
       id: 'deploy:production',
       title: `Deploy production on ${h.adapter.title}`,
       kind: 'deploy',
-      risk: { writes: true },
+      // `live` only while golive has never deployed production for this project: the runner then
+      // requires --confirm-live, so approving the plan cannot write production for the first time.
+      risk: { writes: true, ...(firstDeploy ? { live: true } : {}) },
       dependsOn: deps(ctx, ['project:hosting', ...early]),
-      preview: [`deploy production on ${h.adapter.title}: ${reasons.join('; ')}`, `last successful golive deploy: ${lastOk ?? 'none'}`],
+      preview: [
+        `deploy production on ${h.adapter.title}: ${reasons.join('; ')}`,
+        `last successful golive deploy: ${lastOk ?? 'none'}`,
+        ...(firstDeploy ? [FIRST_DEPLOY_WHY] : []),
+      ],
       intent: intentOf({ picks: picks(early), pending, failed: failed?.at }),
       verifyWith: verifiers(ctx, early, lateWriters.length > 0),
       run: deployRun(h.adapter, h.cap),
@@ -70,9 +90,15 @@ export const deployLink: Link = {
           id: 'deploy:production:final',
           title: `Redeploy production on ${h.adapter.title}`,
           kind: 'deploy',
-          risk: { writes: true },
+          // Planned only alongside the first deploy, so it carries the same gate: production has no
+          // successful golive deploy recorded yet when this step is planned.
+          risk: { writes: true, ...(firstDeploy ? { live: true } : {}) },
           dependsOn: deps(ctx, [first.id, ...lateWriters]),
-          preview: [`redeploy production on ${h.adapter.title} after ${lateWriters.join(', ')}, which need the first deployment, so their env changes take effect`, `last successful golive deploy: ${lastOk ?? 'none'}`],
+          preview: [
+            `redeploy production on ${h.adapter.title} after ${lateWriters.join(', ')}, which need the first deployment, so their env changes take effect`,
+            `last successful golive deploy: ${lastOk ?? 'none'}`,
+            ...(firstDeploy ? [FIRST_DEPLOY_WHY] : []),
+          ],
           intent: intentOf({ picks: picks(lateWriters) }),
           verifyWith: verifiers(ctx, lateWriters, false),
           run: deployRun(h.adapter, h.cap),

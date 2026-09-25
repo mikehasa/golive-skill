@@ -11,7 +11,10 @@ import { fakeWorld, FAKE_STACK, RAW } from './fakes.js';
 import type { Adapter } from '../src/core/types.js';
 
 const build = (ctx: Parameters<typeof buildPlan>[0]) => buildPlan(ctx, ALL_LINKS, { unmappedEnv: [], warnings: [] });
-const approval = (id: string) => ({ approvedPlanId: id, yes: true, confirmLive: false, confirmDns: false });
+// A plan on a stack that never deployed production carries `deploy:production` with risk.live, so the
+// approval these tests apply with reaches it only with --confirm-live (the step's own gate is covered
+// in test/links.test.ts); confirmDns is unused because this stack has no domain.
+const approval = (id: string) => ({ approvedPlanId: id, yes: true, confirmLive: true, confirmDns: false });
 
 describe('Neon non-secret configuration', () => {
   it('preserves explicit connection selectors', () => {
