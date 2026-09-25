@@ -13,7 +13,8 @@ detect → choose missing providers → connect accounts → plan → approve �
 
 `detect` scans the app, `menu` lists providers, `init` writes configuration, and `doctor` checks
 access. `plan` observes destinations and returns steps and handoffs; `teardown` returns the inverse
-plan of resources golive provably created. `apply` requires the approved plan identity and applicable
+plan of resources golive provably created, plus a handoff for every recorded resource it could not
+read or remove in this run. `apply` requires the approved plan identity and applicable
 risk confirmations. `verify` produces check evidence; `handoff` lists what remains outside
 automation, and `handoff --write` adds the ownership document (`GOLIVE_HANDOVER.md` and
 `.golive/handover.json`) from recorded state, cheap provider reads and the same inventory teardown
@@ -40,7 +41,11 @@ restores it, possibly needing `--confirm-dns`), or `human` (only the human can a
 step recorded by another release that `apply` refuses to replay, where the reviewed reconciliation
 path has to come first). A provider that cannot be read yields `unverifiable: true` with
 `action: 'none'` and is listed in `notChecked` — never drift, and never reported as clean. Nothing is
-re-baselined silently: only a new approved write moves a baseline.
+re-baselined silently: only a new approved write moves a baseline, and `teardown` is itself such a
+write. A resource it provably removed — the provider reported it gone, or the provider's own read no
+longer shows it — loses the recorded `dns:<zone>|<type>|<name>` baseline, webhook endpoint id or
+sending key id, so a later `status` cannot report golive's own teardown as `high`/`reconcile`. A
+removal that failed, was refused or is still listed at the provider forgets nothing.
 
 Drift is deliberately not a gate. `plan`, `apply` and `verify` never consult it, because a comparison
 that needs an unapproved decision would deadlock a legitimate intent. A freshly written DNS record may
@@ -167,8 +172,10 @@ not prove that every provider pairing or application framework has passed a live
 
 Plan identity covers the executing release, previews, secret-free intent, risk and dependencies.
 The approved destination is rechecked before writes. Changes require re-observation, a new plan
-and fresh approval. DNS and live-payment writes require their additional confirmation gates;
-purchases and account creation remain human tasks.
+and fresh approval. DNS and live-payment writes require their additional confirmation gates, and so
+does a project's first production deploy (`--confirm-live`): before golive has deployed production
+there, plan approval alone must not authorize the first write to a production destination.
+Purchases and account creation remain human tasks.
 
 Compatible completed steps can be skipped when their identity and evidence still match. Resource
 IDs, fingerprints and operation records survive interruptions. Unknown schema versions or ambiguous
@@ -189,7 +196,14 @@ there is no automatic cross-provider rollback, restore or general reconciliation
 resources — the opt-in `release:rollback` re-points production at an earlier deployment golive itself
 recorded and touches no data, DNS, payment or email resource. Its
 read-only inventory (`src/core/inventory.ts`) is shared with the handover document, so what a teardown
-would remove and what the owner is told are one list. Do not clear state to force a retry.
+would remove and what the owner is told are one list — and nothing is skipped silently: a recorded
+resource this run could not read or remove, whether a DNS zone whose provider is unusable, cannot
+report which records golive owns or cannot delete one, or a linked host project golive cannot remove
+now, becomes an explicit handoff naming what remains, why golive will not remove it and the exact fix.
+A removal is confirmed by re-reading the provider — the DNS step the zone's golive-owned list, the
+webhook step the provider's endpoint list, the host-project step its own project read — except for a
+revoked sending key, which nothing can re-read (the capability is issue and revoke only): that
+removal is reported as unverified, a warning and never a pass. Do not clear state to force a retry.
 
 Provider-specific adapters handle uncertain creation results; non-idempotent writes must not be
 blindly repeated after a timeout. A successful API response is followed by the relevant observation
@@ -209,7 +223,11 @@ The local process captures the value privately, saves it in the credentials file
 metadata. The dialog explains its purpose and local plaintext storage; it does not collect a Mac
 login password. Actual Keychain/vendor system authorization remains with the OS or vendor login.
 The fallback credentials file is outside the app repo and can be edited by the human. Setup creates
-missing directories and an empty file, preserving existing contents. Neither the agent nor logs
+missing directories and an empty file, preserving existing contents. `credentials --remove NAME --yes`
+takes one stored entry back: it drops only the assignments naming that variable, leaves every other
+entry, comment and line ending in place, and returns metadata only (`removed: false` when the name was
+not stored) — the explicit `--yes` is required because deleting a stored token is irreversible for a
+human who no longer holds it anywhere else. Neither the agent nor logs
 should read back the values. Cancelling token entry preserves existing credentials; saving a token
 does not establish provider access until the account check passes.
 
@@ -231,9 +249,11 @@ re-point golive performed under `deployed:release` (`kind|provider|id|url|displa
 project forgets them (`forgetDeployFacts`), so a later rollback can never name a deployment of a
 project golive no longer has. Everything there is secret-free: provider ids, deployment ids, URLs and
 times. `.golive/report.json` and `GOLIVE_REPORT.md` hold verification results and
-outstanding work. `.golive/handover.json` and `GOLIVE_HANDOVER.md` hold the
+outstanding work, written through the same final `redact()` pass the handover documents use.
+`.golive/handover.json` and `GOLIVE_HANDOVER.md` hold the
 ownership document: what golive provably created, the accounts and login route, what is manual, what
-recurs and how removal works, each row tagged by how it was checked. Review these files before
+recurs and how removal works, each row tagged by how it was checked, including the rows for what this
+run could not read or remove. Review these files before
 sharing them: secret-free metadata can still identify private resources. They are not credentials or
 a cloud rollback plan.
 

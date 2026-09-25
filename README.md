@@ -19,6 +19,46 @@ can be observed, and make unfinished work clear. No GoLive account, hosted backe
 > with test coverage (`golive status` also ran read-only in a live validation), while the broader
 > [roadmap](#the-full-go-live-checklist-and-roadmap) is our direction, not a claim that it is all built.
 
+## Before you hand over production access
+
+Whether to give an agent your provider accounts comes down to four questions. These are this
+project's answers, with the limits stated where they exist.
+
+- **You still approve every write.** Nothing reaches a real account without a plan you have seen and
+  approved: `apply` refuses without that plan's id and `--yes`, and it re-checks the plan's identity
+  before writing, so a changed release or config invalidates the old approval. DNS writes need
+  `--confirm-dns`, deletions need `--confirm-destroy`, and live-mode steps — live payments, production
+  data, a real account — need `--confirm-live`, which now includes a project's **first production
+  deploy**, because approving a plan alone used to be enough to write production for the first time.
+  Credential values are read only in-process, never printed, and never in arguments, plans, state or
+  reports; the file golive stores them in is plaintext at mode 0600 outside your repo, not a keychain.
+  One limit worth naming: those flags are arguments the agent passes on your behalf, and an agent
+  already logged in to your provider can write there with no golive plan at all.
+  [Trust, access and control](docs/TRUST.md) separates what the code enforces from what is only an
+  instruction the agent is asked to follow.
+- **A run stops rather than pushing on.** `apply` stops at the first failed check, missing
+  confirmation, missing prerequisite or provider that contradicts the plan. Later steps do not run,
+  and the next `apply` resumes at that step. [Recovery](docs/RECOVERY.md#the-run-stopped) covers
+  reading the failure, which steps resume, and the cases that need a reviewed decision first.
+- **Rollback is narrow, opt-in and never automatic.** A failed check never triggers a rollback.
+  `release.rollback: true` plans one step that re-points production at an earlier deployment golive
+  itself recorded; a deployment built by a dashboard, a Git push or a pull request is not a target,
+  and it touches no data, DNS, payment or email resource. Only Netlify supports these re-points
+  today — on Vercel you correct production in the dashboard (Vercel's adapter has no read of what
+  production serves). Promotion and rollback are implemented and mock-covered, **not live-validated**.
+- **Nothing is left behind silently — which is not the same as nothing being left behind.**
+  `golive teardown` removes only resources it can prove it created, re-reads the DNS zone and the
+  host project after deleting, and names every leftover it cannot remove — Supabase and Neon
+  projects, the Resend sending domain, a zone or host project it cannot read — as a handoff saying
+  what remains and how to remove it by hand. A removal also forgets the baseline golive recorded for
+  that resource, so `golive status` does not report golive's own teardown as drift.
+
+Those answers in full: [trust, access and control](docs/TRUST.md) and
+[recovery](docs/RECOVERY.md). The [architecture](docs/ARCHITECTURE.md) is the product contract,
+[provider scope](docs/PROVIDERS.md) says what each provider can do today, the
+[validation record](docs/VALIDATION.md) separates what has been exercised live from what is only
+mock-covered, and [distribution](docs/DISTRIBUTION.md) covers installation and updates.
+
 [Install](#install) · [Use GoLive](#use-golive) · [See the workflow](#what-a-run-looks-like) · [Alpha scope](#what-this-alpha-supports) · [Roadmap](#the-full-go-live-checklist-and-roadmap) · [Contribute](CONTRIBUTING.md)
 
 ## Install
@@ -391,9 +431,15 @@ live-tested milestones**, not a finished category or a completed checklist for y
   Approved `teardown` removes what golive created; backups and any restore remain manual, supervised work.
 - [x] ✅ **Uninstall / teardown:** ~~an approved inventory of golive-created resources and their removal.~~
   `golive teardown` plans the removal, deletes only what golive provably created (ownership proofs and
-  `--confirm-destroy`), confirms DNS records are gone by re-reading the zone, and hands back
-  everything else. Supabase/Neon projects and the Resend sending domain remain manual handoffs
-  ([#9](https://github.com/mikehasa/golive-skill/issues/9)).
+  `--confirm-destroy`), and re-reads the DNS zone's golive-owned record list and the host's own
+  project read after deleting. Nothing it cannot remove is dropped silently: a leftover — an
+  unreadable zone, an unremovable host project, a provider that is not signed in — becomes a handoff
+  naming what remains and the exact fix, and Supabase/Neon projects and the Resend sending domain
+  remain manual handoffs
+  ([#9](https://github.com/mikehasa/golive-skill/issues/9)). A removal forgets the baseline golive
+  recorded for that resource, so `golive status` does not report golive's own teardown as drift, and
+  a sending key golive revoked is reported as a warning instead of a pass, because the provider
+  offers no read to confirm it.
 - [ ] 🗺️ **Costs and quotas:** plan choices, budgets, alerts and capacity checks.
   Scoped Free-plan guards exist today; ongoing cost management is planned.
 - [ ] 🗺️ **Launch essentials:** metadata, share previews, indexing, accessibility, support links
@@ -476,14 +522,22 @@ drift subjects is still pending.
 
 ## Credentials and control
 
-- **Approve before account changes.** Plans name the destinations and intended writes. Changing
-  the installed release invalidates old approvals. DNS, live-payment and deletion steps have extra
-  gates (`--confirm-dns`, `--confirm-live`, `--confirm-destroy`).
+- **Approve before account changes.** Plans name the destinations and intended writes, and `apply`
+  refuses without the approved plan id and `--yes`. Changing the installed release invalidates old
+  approvals. DNS, live-payment and deletion steps have extra gates (`--confirm-dns`,
+  `--confirm-live`, `--confirm-destroy`), and a project's first production deploy needs
+  `--confirm-live` as well, because approving a plan alone used to be enough to write production for
+  the first time. [Trust, access and control](docs/TRUST.md#what-golive-may-write-and-what-comes-first)
+  walks through each gate.
 - **Keep secrets out of chat.** Supported vendor logins are reused. On macOS, a native hidden-input
   dialog can save a needed API key; your own editor is the fallback. Keys live in
-  `~/.config/golive/credentials`, a local plaintext file with restricted POSIX permissions.
-  The execution code keeps values out of plans, state and command output. Mac login passwords stay
-  with macOS/vendor authentication prompts; GoLive never asks you to enter one in its key dialog.
+  `~/.config/golive/credentials`, a local plaintext file at mode 0600 outside your app repo — not an
+  OS keychain, so anything running as your user can read it. The execution code keeps values out of
+  argv, plans, state, reports and command output, storing fingerprints instead of values.
+  `golive credentials --remove NAME --yes` deletes one stored entry, irreversibly; revoking the
+  token at the provider is what actually ends access. Mac login passwords stay with macOS/vendor
+  authentication prompts; GoLive never asks you to enter one in its key dialog. The full boundary is
+  in [trust, access and control](docs/TRUST.md#the-credential-boundary).
 - **Updates have an owner.** Skills CLI manages its installs. The optional own installer supports
   whole-bundle updates and local rollback; automatic replacement is off by default. Update between
   deployment runs, never between a plan and its apply. Cloud resources are unaffected by rollback.
@@ -501,7 +555,8 @@ or workflow addition, consider starting an issue so we can agree on the scope to
 or raw authentication responses in a report.
 
 See **[CONTRIBUTING.md](CONTRIBUTING.md)** for local setup, tests and your first contribution.
-The [architecture](docs/ARCHITECTURE.md), [provider scope](docs/PROVIDERS.md) and
+The [architecture](docs/ARCHITECTURE.md), [trust, access and control](docs/TRUST.md),
+[recovery](docs/RECOVERY.md), [provider scope](docs/PROVIDERS.md) and
 [validation record](docs/VALIDATION.md) explain what exists and where help is needed.
 
 [MIT licensed](LICENSE). Bundled third-party notices are included in

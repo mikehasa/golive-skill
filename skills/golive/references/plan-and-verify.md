@@ -55,16 +55,27 @@ really lands. The deploy step's intent includes the env writes it picks up.
 **Teardown.** `teardown` enumerates only golive-created resources with their ownership proofs
 (provider markers, state fingerprints, the host project's creation marker): DNS records golive owns,
 recorded webhook endpoints, issued sending keys and the created host project. A removal re-checks
-ownership before deleting. Each deleted DNS record is confirmed by re-reading the zone and the
-deleted host project by re-reading the project: a project that is still resolvable fails the step,
-while a read the provider cannot answer (auth, network) warns instead of passing. The webhook and key
-removals rely on the provider's successful delete response, and every removal treats "already gone"
-as done. Removing the host project also forgets its recorded deploy facts (the `deployed:…` time
-marker, the recorded deployment identity and the completed deploy step), so a project created again
-in the same repo is deployed again rather than inheriting "production was deployed". Resources it
-cannot remove — adopted projects,
-Supabase/Neon projects, the Resend sending domain — appear as non-blocking `manual` handoffs;
-records or endpoints a human created are never deleted.
+ownership before deleting, and every removal treats "already gone" as done. A delete is confirmed by
+a provider read, never by the delete response alone: the zone is re-read for a DNS record, the
+project for the host project, and the provider's own endpoint list for a webhook endpoint — a
+resource the provider still lists fails the step, while a read it cannot answer (auth, network) warns
+instead of passing. No read exists for an issued sending key (the provider offers issue and revoke
+only), so a revoked key stays **unverified**: the step reports `warn` naming the provider dashboard,
+never a pass. A removal the provider's answer says is gone also forgets that resource's recorded
+baseline — the `dns:<zone>|<type>|<name>` entry for a record, the endpoint id for a webhook, the key
+id for a sending key — and removing the host project forgets its deploy facts (the `deployed:…` time
+marker, the recorded deployment identity and the completed deploy step), so a later `golive status`
+does not report golive's own teardown as drift and a project created again in the same repo is
+deployed again rather than inheriting "production was deployed". A resource the provider still lists
+or refused to remove keeps its record. Resources it cannot remove — adopted projects, Supabase/Neon
+projects, the Resend sending domain — appear as non-blocking `manual` handoffs, and so does anything
+the inventory could not even read: a DNS zone whose provider golive cannot use, cannot tell
+golive-owned records apart in, or cannot delete from, and a linked host project golive cannot reach or
+whose host exposes no project deletion. Each such row names what remains (from state, never a guess),
+why golive cannot remove it and the exact fix — reconnect the provider and run `golive teardown`
+again, name that provider in `golive.yaml` again, or delete it in the provider's dashboard — so a
+teardown never goes quiet about records or a project left behind. Records or endpoints a human created
+are never deleted.
 
 **Which project.** Every plan has a step `project:hosting` / `project:db` naming the provider,
 project name (id), team/org if known, where the choice came from, and the logged-in account.
@@ -82,7 +93,14 @@ write is still waiting for a deploy, when the last deploy failed, or when golive
 production. Preview-only env changes don't trigger a production deploy. If production was never
 deployed by golive, `deploy:production` runs **before** `domain:attach`, and
 `deploy:production:final` redeploys after env writes that need the domain (the webhook secret). Once
-deployed, attaching a domain neither waits for nor triggers a deploy.
+deployed, attaching a domain neither waits for nor triggers a deploy. A production deploy planned
+while state records no successful production deploy for that target carries `risk.live`, so `apply`
+also needs `--confirm-live`: the plan approval covers what the deploy writes, and this flag is the
+human's separate yes to writing production there for the first time — explain that when you present
+the plan (`deploy:production`, and `deploy:production:final` when it runs as part of that first
+deploy, both carry it, and each step's preview says so). A failed attempt records no deploy, so the
+gate stays on the next plan; once a successful production deploy is recorded for the target, later
+deploys carry `risk: { writes: true }` alone and need no extra flag.
 
 A successful deploy records the deployment the provider reported: the `deployed:production` time
 marker plus, when the provider gives one, its own identity under `deployed:production:id` as

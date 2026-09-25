@@ -13,7 +13,7 @@
     "approval": 1
   },
   "files": {
-    "SKILL.md": "0ef9efba84fcde7370b8dcd3a8aee9db47a2876ba140d44ed447fc6aed50460d",
+    "SKILL.md": "154cdb397e636a88304745a87e342b2f21a9cf628ea8c642a47b9a37017db55e",
     "LICENSE": "b1546216882fd37b1602f3a004e8548b5f6c38ada73117308d4c3ac6968235e9",
     "THIRD_PARTY_NOTICES.md": "ad33f954a31c411cc667c07460859c77a014d6720e581a5ce5edd48c9c962781",
     "references/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -22,7 +22,7 @@
     "references/guided.md": "0c2c1b3938edf38d76f371af5159a155692628c032010eb2c1f0a8e7a8d2b0d4",
     "references/neon.md": "a5a85919d318b8f15fca6dd49a8a495a6aeb3e713ddac620978747c5a67bd400",
     "references/netlify.md": "fbfb69e41cf49ee263940a7b36d8f8c0a1552634d6a6581ef32a72379dea668f",
-    "references/plan-and-verify.md": "9121cf659cc695c924fe01d2e389190d6742f49182992512d90adab619c7cd75",
+    "references/plan-and-verify.md": "5ab54db4820a706b5ca15798b6a03828aca91ed11173c9d798341b8566a17aec",
     "references/porkbun.md": "8eaeb8890ce3c104e242ced33e77179253a9d8f3b9425be6692585254c6b6490",
     "references/resend.md": "ec673b3c75f4bb0edd9825079c2be41f165ca7a4ac2b6b732bb4024968735947",
     "references/stripe.md": "ef06e9f2782919849b49dfa5145010a8b3017e2210c655c8af45e3683d105c32",
@@ -34,5 +34,5 @@
     "scripts/install-cli.mjs": "55e2a776892a9d34fa62d7ebf70bb101a0f54a3592ba9f87b77a1d43043e108a",
     "scripts/install-lib.mjs": "9d3de597acc711178e588247f3cc9b5b5445f90d492cd464018065f2cd25caec"
   },
-  "bundleDigest": "46121746f2a22386cb324502092427f402f10fff63768b819e0b27f297f72413"
+  "bundleDigest": "e455c6f5b94313fbf72b002f5790a960fe5550baa40db875d5f064171aabb4cc"
 }

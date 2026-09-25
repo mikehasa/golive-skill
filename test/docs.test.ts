@@ -9,7 +9,9 @@ import { describe, expect, it } from 'vitest';
 const root = join(__dirname, '..');
 const read = (p: string): string => readFileSync(join(root, p), 'utf8');
 const refs = readdirSync(join(root, 'skills/golive/references')).map((f) => `skills/golive/references/${f}`);
-const docs = ['skills/golive/SKILL.md', 'README.md', 'docs/ARCHITECTURE.md', ...refs];
+const docs = ['skills/golive/SKILL.md', 'README.md', 'docs/ARCHITECTURE.md', 'docs/TRUST.md', 'docs/RECOVERY.md', ...refs];
+/** Docs that name golive's own flags. README.md and VALIDATION.md also quote other tools' flags (skills CLI, Vercel, Neon), so that check stays with the golive-command docs. */
+const flagDocs = ['skills/golive/SKILL.md', 'docs/ARCHITECTURE.md', 'docs/TRUST.md', 'docs/RECOVERY.md'];
 
 describe('agent docs', () => {
   it('never tells the human to run an interactive vendor login through Claude Code `!` (no TTY)', () => {
@@ -53,11 +55,20 @@ describe('agent docs', () => {
 
   it('only names CLI flags the CLI actually parses', () => {
     const cli = read('src/cli.ts');
-    const flags = new Set(read('skills/golive/SKILL.md').match(/--[a-z][a-z-]*/g) ?? []);
-    for (const f of flags) {
-      if (f === '--token' || f === '--key') continue; // named only as "never use"
-      const name = f.slice(2);
-      expect(cli.includes(f) || cli.includes(`'${name}'`), f).toBe(true);
+    const parses = (f: string): boolean => cli.includes(f) || cli.includes(`'${f.slice(2)}'`);
+    for (const p of flagDocs) {
+      const text = read(p);
+      for (const m of text.matchAll(/--[a-z][a-z-]*/g)) {
+        const f = m[0]!;
+        const at = m.index ?? 0;
+        if (f === '--token' || f === '--key') continue; // named only as "never use"
+        // A `--flag-*` wildcard stands for a family: it passes when the CLI parses a concrete member.
+        if (text.slice(at + f.length).startsWith('*') && new RegExp(`${f}[a-z]`).test(cli)) continue;
+        // A doc may also name a flag only to say there is no such flag ("there is no `--confirm-promote`"),
+        // which can start on the line before the flag, so the window before the mention is what counts.
+        if (/(?:\bno\b|\bnot\b|\bnever\b|\bwithout\b)(?:[\s`]|--[a-z-]*|or)*`?$/.test(text.slice(0, at))) continue;
+        expect(parses(f), `${p}: ${f}`).toBe(true);
+      }
     }
   });
 });

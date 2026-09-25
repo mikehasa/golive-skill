@@ -329,7 +329,18 @@ Cross-provider pairings beyond the tested paths have mocked integration coverage
 document is live-validated on a host-only Vercel stack only: its DNS, database, email and payment
 rows, its open-handoff rows and its recurring jobs are covered by mocked tests, and the account-column
 and runbook repairs made after that run have not been re-exercised live — the ownership-claim and
-handoff-evidence repairs made after the recovery run are mocked too. First-time
+handoff-evidence repairs made after the recovery run are mocked too. Teardown's later read-back and
+state hygiene are mocked as well, with no live teardown since: a removal is confirmed by re-reading the
+provider (the webhook endpoint from its own endpoint list, the DNS record from the zone's
+golive-owned list, the host project from its own read), a revoked sending key — which no provider read
+can re-check — is reported unverified rather than as a pass, a resource a teardown provably removed
+loses its recorded baseline, endpoint id or key id so `golive status` reports no drift for golive's
+own teardown, and a zone or linked host project the run could not read or remove is named as an
+explicit handoff with its reason and its fix. `golive credentials --remove NAME --yes` (one stored
+entry deleted, metadata-only result) is mock-covered and has not been run against a real credentials
+file. The opt-in promotion and rollback re-points remain implemented and mock-covered, not
+live-validated, and Supabase and Neon database projects and the Resend sending domain still expose no
+delete capability to golive, so a teardown always hands them back for manual removal. First-time
 account/login UX, other OS credential stores and framework-specific behavior need further coverage.
 A native Linux/Windows keyring path is not claimed by the Supabase reuse implementation; the own
 updater's Windows filesystem behavior is not a validated alpha channel.
