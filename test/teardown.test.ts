@@ -85,11 +85,22 @@ describe('teardown: DNS records', () => {
     expect(ids(await build())).toEqual(['teardown:dns:fakedns:A:example.com']);
   });
 
-  it('skips a DNS provider that cannot enumerate golive-owned records, with no handoff', async () => {
+  it('hands a DNS provider that cannot enumerate golive-owned records back, with the zone and the fix', async () => {
     const { build } = setup({ arrange: (w) => { w.dns.withOwned = false; w.dns.owned = [...OWNED]; } });
     const plan = await build();
     expect(plan.steps).toEqual([]);
-    expect(plan.handoffs).toEqual([]);
+    // Silently skipping the zone would leave golive-written records pointing at a host project the
+    // same teardown may delete, so the zone is handed back with why and what to do instead.
+    expect(plan.handoffs).toEqual([
+      {
+        id: 'teardown:dns:fakedns',
+        why: expect.stringContaining('no read that reports which records golive owns and no way to delete a record'),
+        action: expect.stringContaining('Delete those records in the FakeDNS dashboard by hand'),
+        blocking: false,
+        manual: true,
+      },
+    ]);
+    expect(plan.handoffs[0]!.why).toContain('example.com, send.example.com'); // the zones it could not check
   });
 
   it('refuses an ambiguous pair of records instead of guessing which one to delete', async () => {
@@ -282,6 +293,10 @@ describe('teardown: webhooks, keys and the host project', () => {
       ['teardown:webhook:fakepay:live', 'done', 'left as is: not created by golive'],
     ]);
     expect(w.pay.endpoints.map((e) => e.id)).toEqual(['we_human']);
+    // The endpoint that is not golive's is still registered, so its record stays too: forgetting it
+    // would hide a live endpoint that keeps delivering to the app.
+    expect(ctx.state.resource('fakepay.live.webhookEndpointId')).toBe('we_human');
+    expect(ctx.state.resource('fakepay.test.webhookEndpointId')).toBeUndefined();
   });
 
   it('fails the webhook step when the provider throws', async () => {
@@ -329,7 +344,7 @@ describe('teardown: webhooks, keys and the host project', () => {
     expect(ctx.state.resource('fakemail.keyId@preview')).toBe('key_7'); // the key is still recorded
   });
 
-  it('reports an already-revoked sending key as done, so a retry can finish', async () => {
+  it('reports an already-revoked sending key as done and forgets the record it leaves behind', async () => {
     const { w, ctx, build } = setup({
       arrange: (w) => void (w.mail.revokeResult = { revoked: false, reason: 'key not found' }),
       state: stateWith({ 'fakemail.keyId@preview': 'key_7' }),
@@ -341,7 +356,9 @@ describe('teardown: webhooks, keys and the host project', () => {
     expect(ctx.state.get().steps['teardown:key:fakemail:preview']?.status).toBe('done');
     expect(calls(w, 'keys.revoke')).toHaveLength(1);
     expect(w.mail.revoked).toEqual([]); // nothing to revoke: the provider did not have it
-    expect(ctx.state.resource('fakemail.keyId@preview')).toBe('key_7');
+    // The key is not there, so the record of it goes with the step: a state entry saying "the app
+    // uses key_7" would otherwise outlive the revocation (and read as drift later).
+    expect(ctx.state.resource('fakemail.keyId@preview')).toBeUndefined();
   });
 
   it('fails the key step when the provider reports a refusal for any other reason', async () => {
@@ -461,11 +478,22 @@ describe('teardown: webhooks, keys and the host project', () => {
     }
   });
 
-  it('skips a host that cannot delete projects, with no handoff', async () => {
+  it('hands a host that cannot delete projects back instead of skipping the project', async () => {
     const { build } = setup({ arrange: (w) => void (w.host.canRemoveProject = false), state: stateWith(CREATED_PROJECT) });
     const plan = await build();
     expect(plan.steps).toEqual([]);
-    expect(plan.handoffs).toEqual([]);
+    // The contract allows a host with no delete capability; the project golive created is still
+    // there, so it is named with its reason and what the human does about it.
+    expect(plan.handoffs).toEqual([
+      {
+        id: 'teardown:hosting:fakehost',
+        why: expect.stringContaining('the FakeHost project shop (prj_1): the FakeHost adapter exposes no project deletion'),
+        action: expect.stringContaining('Delete the project in the FakeHost dashboard yourself'),
+        blocking: false,
+        manual: true,
+      },
+    ]);
+    expect(plan.handoffs[0]!.action).toContain('fakehost.createdProjectId'); // the ownership proof
   });
 });
 
@@ -733,5 +761,193 @@ describe('teardown: recorded resources the provider cannot remove right now', ()
     const h = plan.handoffs.find((x) => x.id === 'teardown:key:fakemail:production')!;
     expect(h).toMatchObject({ manual: true, blocking: false });
     expect(h.action).toContain('key_9');
+  });
+});
+
+// ── What the inventory itself could not read ────────────────────────────────────────────────────
+
+const DNS_WRITE = { zone: 'example.com', type: 'A' as const, name: 'example.com', content: '76.76.21.21' };
+const recordedDns = (over: Partial<typeof DNS_WRITE> = {}) => {
+  const b = { ...DNS_WRITE, ...over };
+  return [`dns:${b.zone}|${b.type}|${b.name}`, JSON.stringify({ provider: 'fakedns', ...b, at: '2026-09-20T10:00:00.000Z' })];
+};
+const handoffOf = (p: Plan, id: string) => p.handoffs.find((h) => h.id === id);
+
+describe('teardown: a zone the DNS provider cannot be read for is handed back', () => {
+  it('names the records golive recorded writing when the provider is not signed in', async () => {
+    const { w, build } = setup({ arrange: (w) => void (w.dns.authed = false), state: stateWith(Object.fromEntries([recordedDns()])) });
+    const plan = await build();
+
+    expect(plan.steps).toEqual([]);
+    const h = handoffOf(plan, 'teardown:dns:fakedns')!;
+    expect(h).toMatchObject({ manual: true, blocking: false });
+    expect(h.why).toContain('A example.com = 76.76.21.21'); // what remains, from state
+    expect(h.why).toContain('the FakeDNS login is not usable');
+    expect(h.action).toMatch(/Reconnect FakeDNS/);
+    expect(h.action).toMatch(/golive teardown/);
+    expect(calls(w, 'dns.listOwned')).toEqual([]); // nothing was read: this is a gap, not an empty zone
+  });
+
+  it('names the zone when golive.yaml names no DNS provider and no domain any more', async () => {
+    const { build } = setup({
+      config: { stack: { hosting: 'fakehost' }, domain: undefined, email: undefined },
+      state: stateWith(Object.fromEntries([recordedDns()])),
+    });
+    const plan = await build();
+
+    const h = handoffOf(plan, 'teardown:dns')!; // no provider to name: the id carries the axis alone
+    expect(h).toMatchObject({ manual: true, blocking: false });
+    expect(h.why).toContain('golive.yaml names no DNS provider');
+    expect(h.why).toContain('example.com');
+    expect(h.action).toMatch(/Name the provider that serves example\.com in golive\.yaml/);
+  });
+
+  it('stays quiet when neither golive.yaml nor state names a zone at all', async () => {
+    const { build } = setup({ config: { stack: { hosting: 'fakehost' }, domain: undefined, email: undefined } });
+    expect((await build()).handoffs).toEqual([]);
+  });
+
+  it('hands a zone back when state recorded it through a provider golive.yaml no longer names', async () => {
+    const written = { provider: 'otherdns', zone: 'old.example.com', type: 'A' as const, name: 'old.example.com', content: '203.0.113.9', at: '2026-09-20T10:00:00.000Z' };
+    const { w, build } = setup({ state: stateWith({ [`dns:${written.zone}|${written.type}|${written.name}`]: JSON.stringify(written) }) });
+    const plan = await build();
+
+    // The configured provider's API does not serve that zone, so it is not asked about it: the
+    // records are handed back instead of left behind unmentioned.
+    expect(calls(w, 'dns.listOwned').map((c) => c.args[0])).toEqual(['example.com', 'send.example.com']);
+    expect(plan.steps).toEqual([]);
+    const h = handoffOf(plan, 'teardown:dns:otherdns')!;
+    expect(h.why).toContain('A old.example.com = 203.0.113.9');
+    expect(h.why).toContain('golive.yaml does not name as the DNS provider now');
+    expect(h.action).toMatch(/Set otherdns as the DNS provider again/);
+  });
+});
+
+describe('teardown: a host project golive cannot remove is handed back', () => {
+  const PROJECT = stateWith(CREATED_PROJECT);
+
+  it('names the project when the host login is not usable', async () => {
+    const { w, build } = setup({ arrange: (w) => void (w.host.authed = false), state: PROJECT });
+    const plan = await build();
+
+    expect(plan.steps).toEqual([]);
+    const h = handoffOf(plan, 'teardown:hosting:fakehost')!;
+    expect(h).toMatchObject({ manual: true, blocking: false });
+    expect(h.why).toContain('the FakeHost project shop (prj_1)');
+    expect(h.why).toContain('the FakeHost login is not usable');
+    expect(h.action).toMatch(/run `golive teardown`/);
+    expect(calls(w, 'project.remove')).toEqual([]);
+  });
+
+  it('names a project state links through a provider golive.yaml no longer chooses', async () => {
+    const { build } = setup({ config: { stack: { hosting: 'fakeguided' } }, state: PROJECT });
+    const plan = await build();
+
+    const h = handoffOf(plan, 'teardown:hosting:fakehost')!;
+    expect(h.why).toContain('prj_1');
+    expect(h.why).toContain('FakeGuided');
+    expect(h.action).toMatch(/Set FakeHost as the hosting provider again/);
+  });
+
+  it('says an adopted project would not be deleted even once the host is reachable', async () => {
+    const { build } = setup({ arrange: (w) => void (w.host.authed = false), state: stateWith({ 'fakehost.projectId': 'prj_adopted', 'fakehost.projectName': 'their-app' }) });
+    const h = handoffOf(await build(), 'teardown:hosting:fakehost')!;
+    expect(h.action).toContain('treats it as adopted');
+  });
+});
+
+// ── Verifying a webhook endpoint and a sending key after the removal ────────────────────────────
+
+/** A payments adapter whose removal works but whose endpoint list cannot be re-read. */
+function unreadablePay(listError: string): Adapter {
+  return {
+    id: 'fakepay',
+    title: 'FakePay',
+    axes: ['payments'],
+    automated: true,
+    auth: async () => ({ ok: true }),
+    capabilities: {
+      webhooks: {
+        ensure: async () => ({ id: 'we_x', created: true }),
+        list: async () => {
+          throw new Error(listError);
+        },
+        remove: async () => ({ deleted: true }),
+      },
+    },
+  };
+}
+
+describe('teardown: re-reading the provider after deleting an endpoint or a key', () => {
+  const withEndpoint = (w: FakeWorld) => void (w.pay.endpoints = [{ id: 'we_test', url: 'https://example.com/hook', events: [], enabled: true, mode: 'test' }]);
+  const KEY_STATE = stateWith({ 'fakepay.test.webhookEndpointId': 'we_test', 'fakemail.keyId@preview': 'key_7' });
+
+  it('proves the endpoint is gone and forgets the id golive recorded for it', async () => {
+    const reads: string[] = [];
+    const { w, ctx, build } = setup({
+      arrange: (x) => {
+        withEndpoint(x);
+        // The fake adapter does not record its own list calls: wrap it so the read-back is visible.
+        const cap = x.adapters.find((a) => a.id === 'fakepay')!.capabilities.webhooks!;
+        const list = cap.list.bind(cap);
+        cap.list = async (c, mode) => { reads.push(mode); return list(c, mode); };
+      },
+      state: KEY_STATE,
+    });
+    const plan = await build();
+    expect(ids(plan)).toEqual(['teardown:webhook:fakepay:test', 'teardown:key:fakemail:preview']);
+
+    const out = await apply(ctx, plan);
+    expect(out.map((o) => [o.id, o.status])).toEqual([['teardown:webhook:fakepay:test', 'done'], ['teardown:key:fakemail:preview', 'done']]);
+    expect(out[0]!.checks.map((c) => [c.id, c.status, c.severity])).toEqual([['teardown:webhook:fakepay:test:removed', 'pass', 'info']]);
+    expect(reads).toEqual(['test']); // the provider's own list, read back after the delete
+    expect(w.pay.deleted).toEqual(['we_test']);
+    expect(ctx.state.resource('fakepay.test.webhookEndpointId')).toBeUndefined();
+    expect(ctx.state.resource('fakemail.keyId@preview')).toBeUndefined();
+  });
+
+  it('fails and keeps the record when the provider still lists the endpoint it claimed to delete', async () => {
+    const { w, ctx, build } = setup({
+      arrange: (w) => {
+        withEndpoint(w);
+        // Reports success without deleting: the read-back is what catches it.
+        w.pay.removeResult = { deleted: true };
+      },
+      state: KEY_STATE,
+    });
+    const out = await apply(ctx, await build());
+
+    expect(out.map((o) => [o.id, o.status])).toEqual([['teardown:webhook:fakepay:test', 'failed']]);
+    expect(out[0]!.checks[0]).toMatchObject({ id: 'teardown:webhook:fakepay:test:removed', status: 'fail', severity: 'high' });
+    expect(out[0]!.next).toMatch(/dashboard/);
+    expect(ctx.state.get().steps['teardown:webhook:fakepay:test']?.status).toBe('failed');
+    expect(ctx.state.resource('fakepay.test.webhookEndpointId')).toBe('we_test'); // still there: the record stays
+    expect(calls(w, 'keys.revoke')).toEqual([]); // the run stopped at the failure
+  });
+
+  it('warns instead of passing when the endpoint list cannot be re-read, and still forgets the id', async () => {
+    const { ctx, build } = setup({
+      arrange: (w) => void (w.adapters = [...w.adapters.filter((a) => a.id !== 'fakepay'), unreadablePay('rate limited')]),
+      state: KEY_STATE,
+    });
+    const out = await apply(ctx, await build());
+
+    expect(out.map((o) => [o.id, o.status])).toEqual([['teardown:webhook:fakepay:test', 'done'], ['teardown:key:fakemail:preview', 'done']]);
+    expect(out[0]!.checks[0]).toMatchObject({ status: 'warn', severity: 'medium' });
+    expect(out[0]!.checks[0]!.evidence.join(' ')).toContain('rate limited');
+    expect(ctx.state.resource('fakepay.test.webhookEndpointId')).toBeUndefined();
+  });
+
+  it('reports a revoked sending key as unverified, never as a pass (no provider read exists)', async () => {
+    const { ctx, build } = setup({ state: stateWith({ 'fakemail.keyId@preview': 'key_7' }) });
+    const out = await apply(ctx, await build());
+
+    expect(out.map((o) => [o.id, o.status])).toEqual([['teardown:key:fakemail:preview', 'done']]);
+    const check = out[0]!.checks[0]!;
+    expect(check).toMatchObject({ id: 'teardown:key:fakemail:preview:revoked', status: 'warn', severity: 'medium' });
+    expect(check.evidence.join(' ')).toContain('no read for an issued key');
+    expect(check.fix).toContain('key_7');
+    expect(out[0]!.checks.some((c) => c.status === 'pass')).toBe(false);
+    expect(ctx.state.resource('fakemail.keyId@preview')).toBeUndefined();
   });
 });
