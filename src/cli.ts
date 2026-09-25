@@ -22,7 +22,8 @@ import { buildPlan, planView } from './core/plan.js';
 import { approvedPlan, buildTeardownPlan } from './core/teardown.js';
 import { detectDrift } from './core/drift.js';
 import { applyPlan, runCheck, PlanMismatchError } from './core/runner.js';
-import { credentialsStatus, setupCredentials } from './core/credentials.js';
+import { credentialsStatus, isCredentialName, removeCredential, setupCredentials } from './core/credentials.js';
+import { redact } from './core/secret.js';
 import { promptCredential } from './core/credential-prompt.js';
 import { AXES, type Axis, type Check, type CheckResult, type Ctx, type HandoffItem, type Report, type ShipConfig, type Step } from './core/types.js';
 import { ADAPTERS, CHECKS, adapterById, adapterFor, checkMap, linkList } from './registry.js';
@@ -63,6 +64,9 @@ Commands (add --json for machine output; --cwd <dir> to target another repo):
   credentials --setup       Prepare a private empty credentials file; preserve any existing contents.
   credentials --prompt NAME [--replace] [--lang en|zh]
                             macOS hidden input; store locally and return metadata only. Never pass a value.
+  credentials --remove NAME --yes
+                            Delete one stored credential; every other entry stays. Irreversible, so
+                            --yes is required and a name that isn't stored is reported, not an error.
   detect                     Scan the repo: framework, providers in use, env var names referenced.
   menu                       Provider options for each axis (neutral order; automated vs guided).
   init --stack k=v,...       Write golive.yaml, e.g. --stack hosting=vercel,db=supabase,payments=stripe
@@ -105,9 +109,22 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
   if (cmd === 'credentials') {
-    if (Object.keys(flags).some((key) => !['json', 'cwd', 'setup', 'prompt', 'replace', 'lang'].includes(key))) {
-      throw new UsageError('credentials accepts only --setup or --prompt NAME [--replace] [--lang en|zh]; never put a secret value in arguments.');
+    if (Object.keys(flags).some((key) => !['json', 'cwd', 'setup', 'prompt', 'replace', 'lang', 'remove', 'yes'].includes(key))) {
+      throw new UsageError('credentials accepts only --setup, --prompt NAME [--replace] [--lang en|zh] or --remove NAME --yes; never put a secret value in arguments.');
     }
+    const forms = 'credentials needs --setup, --prompt NAME [--replace] [--lang en|zh] or --remove NAME --yes; supply the variable name only, never its value.';
+    if (flags.remove !== undefined) {
+      if (typeof flags.remove !== 'string' || flags.setup !== undefined || flags.prompt !== undefined
+        || flags.replace !== undefined || flags.lang !== undefined) throw new UsageError(forms);
+      // Deleting a stored token is irreversible for a human who no longer holds it anywhere else.
+      // The message never echoes the argument: a value mistakenly passed in the name position must
+      // not reach stdout through our own error text.
+      if (flags.yes !== true) throw new UsageError('credentials --remove deletes that stored value irreversibly; pass --yes to confirm. Nothing was removed.');
+      if (!isCredentialName(flags.remove)) throw new UsageError(forms);
+      emit({ ok: true, ...removeCredential(flags.remove) }, { json });
+      return 0;
+    }
+    if (flags.yes !== undefined) throw new UsageError(forms);
     if (flags.setup === true && flags.prompt === undefined && flags.replace === undefined && flags.lang === undefined) {
       emit({ ok: true, ...setupCredentials() }, { json });
       return 0;
@@ -115,7 +132,7 @@ async function main(argv: string[]): Promise<number> {
     if (flags.setup !== undefined || typeof flags.prompt !== 'string' ||
         (flags.replace !== undefined && flags.replace !== true) ||
         (flags.lang !== undefined && flags.lang !== 'en' && flags.lang !== 'zh')) {
-      throw new UsageError('credentials needs --setup or --prompt NAME [--replace] [--lang en|zh]; supply the variable name only, never its value.');
+      throw new UsageError(forms);
     }
     const result = await promptCredential(flags.prompt, { replace: flags.replace === true, language: flags.lang === 'zh' ? 'zh' : 'en' });
     emit({ ok: result.status === 'saved', ...result }, { json });
@@ -222,8 +239,10 @@ async function main(argv: string[]): Promise<number> {
       const report = await makeReport(ctx, results, await handoffStatus(ctx, plan?.handoffs ?? [], results, false, plan?.steps ?? []), verification);
       const reportPaths = { json: join(cwd, '.golive/report.json'), markdown: join(cwd, 'GOLIVE_REPORT.md') };
       mkdirSync(join(cwd, '.golive'), { recursive: true });
-      writeFileSync(reportPaths.json, JSON.stringify(report, null, 2) + '\n');
-      writeFileSync(reportPaths.markdown, renderReport(report));
+      // Both artifacts get the same final redaction pass as the handover documents: check evidence can
+      // echo a provider response, and these files are the ones a human copies out of the repo.
+      writeFileSync(reportPaths.json, redact(JSON.stringify(report, null, 2)) + '\n');
+      writeFileSync(reportPaths.markdown, redact(renderReport(report)));
       emit({ ok: report.summary.fail === 0, report, reportPaths }, { json });
       return report.summary.fail === 0 ? 0 : 2;
     }
