@@ -260,10 +260,11 @@ What stays human, and why the evidence says so:
 - **Email delivery and the click.** golive cannot read an inbox. It never claims delivery: it reports
   the provider's own confirmation state. `auth:confirm-email` is closed only by `auth-signup` passing,
   and until then the report says the address is not confirmed yet.
-- **The generated password.** `auth:test-user` generates one per run (32 random characters) and keeps
-  it in that run's memory only — never in state, a report or evidence. A later run re-runs the step
-  with a new password for the same account (recorded as `supabase.testUserId` + the address in
-  `.golive/state.json`). A `verify`-only run holds no password, so `auth-session` skips with
+- **The generated password.** `auth:test-user` generates one per run (32 random characters, carrying one
+  character of every class a project's password policy can require, so a policy that demands a digit or a
+  symbol never refuses it) and keeps it in that run's memory only — never in state, a report or evidence. A
+  later run re-runs the step with a new password for the same account (recorded as `supabase.testUserId` +
+  the address in `.golive/state.json`). A `verify`-only run holds no password, so `auth-session` skips with
   `blocked by: no password for the test account in this run`; `auth-signup` still passes on the
   provider reads alone (probe signup, its refused login, the account's `email_confirmed_at`, with an
   evidence line naming where the confirmed login itself is exercised), so `handoff` reports the

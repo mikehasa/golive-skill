@@ -8091,9 +8091,18 @@ var init_supabase_api = __esm({
 });
 
 // src/adapters/supabase-auth.ts
-import { randomBytes } from "node:crypto";
+import { randomInt } from "node:crypto";
 function testPassword() {
-  return new Secret("GOLIVE_TEST_PASSWORD", [...randomBytes(32)].map((b) => CHARS[b % CHARS.length]).join(""));
+  const chars = [];
+  for (const alphabet of CLASSES) chars.push(alphabet[randomInt(alphabet.length)]);
+  while (chars.length < PASSWORD_LENGTH) chars.push(CHARS[randomInt(CHARS.length)]);
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const j = randomInt(i + 1);
+    const swap = chars[i];
+    chars[i] = chars[j];
+    chars[j] = swap;
+  }
+  return new Secret("GOLIVE_TEST_PASSWORD", chars.join(""));
 }
 function codeOf(json2) {
   const o = asObject(json2);
@@ -8331,7 +8340,7 @@ function supabaseAuthUsers(deps2) {
     destination: (ctx) => destination(deps2, ctx)
   };
 }
-var SupabaseAuthPrereqError, CHARS, asObject, str, isCaptcha, confirmedOf, base;
+var SupabaseAuthPrereqError, CLASSES, CHARS, PASSWORD_LENGTH, asObject, str, isCaptcha, confirmedOf, base;
 var init_supabase_auth = __esm({
   "src/adapters/supabase-auth.ts"() {
     "use strict";
@@ -8339,7 +8348,9 @@ var init_supabase_auth = __esm({
     init_supabase_api();
     SupabaseAuthPrereqError = class extends SupabaseError {
     };
-    CHARS = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*-_";
+    CLASSES = ["abcdefghijkmnopqrstuvwxyz", "ABCDEFGHJKLMNPQRSTUVWXYZ", "23456789", "!@#$%^&*-_"];
+    CHARS = CLASSES.join("");
+    PASSWORD_LENGTH = 32;
     asObject = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
     str = (v) => typeof v === "string" && v ? v : void 0;
     isCaptcha = (code, detail) => /captcha|challenge/i.test(`${code ?? ""} ${detail}`);
@@ -8362,7 +8373,7 @@ __export(supabase_exports, {
   tablesSql: () => tablesSql,
   usesPrisma: () => usesPrisma
 });
-import { randomBytes as randomBytes2 } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { basename as basename3 } from "node:path";
 async function auth(ctx) {
   let tok;
@@ -8698,7 +8709,7 @@ async function create(ctx, name3, approvedTarget) {
   }
   const org = approvedTarget?.scope.id ?? await freeOrg(ctx, tok);
   const before = new Set(all.map((p) => p.id));
-  const dbPass = new Secret("SUPABASE_DB_PASSWORD", randomBytes2(24).toString("base64url"));
+  const dbPass = new Secret("SUPABASE_DB_PASSWORD", randomBytes(24).toString("base64url"));
   let created;
   try {
     created = await api(
@@ -8815,7 +8826,7 @@ async function passwordResettable(ctx, ref3) {
   return ctx.state.resource(STATE_CREATED) === ref3 && !vaultGet(dbPassKey(ref3)) && !dbUrlWritten(ctx, ref3) && await supabaseCredentialOrUndefined(ctx) !== void 0;
 }
 async function resetDbPassword(ctx, tok, ref3) {
-  const pass2 = new Secret("SUPABASE_DB_PASSWORD", randomBytes2(24).toString("base64url"));
+  const pass2 = new Secret("SUPABASE_DB_PASSWORD", randomBytes(24).toString("base64url"));
   await api(ctx, tok, "PATCH", `/projects/${ref3}/database/password`, "Setting a new database password on the Supabase project golive created", { password: pass2 }, { idempotent: true });
   vaultPut(dbPassKey(ref3), pass2);
   ctx.log.info(`set a new generated database password on Supabase project ${ref3} (created by golive; the one generated at creation was lost with the run that created it, and nothing used it yet)`);
@@ -13241,7 +13252,7 @@ init_credentials();
 init_credentials();
 init_secret();
 import { execFile, execFileSync } from "node:child_process";
-import { randomBytes as randomBytes3 } from "node:crypto";
+import { randomBytes as randomBytes2 } from "node:crypto";
 import {
   closeSync as closeSync6,
   constants as constants6,
@@ -13549,7 +13560,7 @@ function saveAtomically(path, before, name3, value) {
     const current3 = snapshot(path);
     if (changed(before, current3)) throw new SafeFailure("concurrent-change");
     const content3 = updated(before, name3, value);
-    const tempPath = join9(dirname7(path), `.${basename5(path)}-${randomBytes3(12).toString("hex")}.tmp`);
+    const tempPath = join9(dirname7(path), `.${basename5(path)}-${randomBytes2(12).toString("hex")}.tmp`);
     const fd = openSync6(tempPath, constants6.O_CREAT | constants6.O_EXCL | constants6.O_WRONLY | constants6.O_NOFOLLOW, 384);
     temp = { path: tempPath, fd };
     temp.info = fstatSync6(fd);
@@ -19846,10 +19857,10 @@ var authPolicyCheck = {
 // src/checks/auth-signup.ts
 init_secret();
 init_supabase_auth();
-import { randomBytes as randomBytes4 } from "node:crypto";
+import { randomBytes as randomBytes3 } from "node:crypto";
 function probeAddress(email) {
   const m = /^([^@+]+)(?:\+[^@]*)?@([^@\s]+)$/.exec(email);
-  return m ? `${m[1]}+gl-${randomBytes4(3).toString("hex")}@${m[2]}` : email;
+  return m ? `${m[1]}+gl-${randomBytes3(3).toString("hex")}@${m[2]}` : email;
 }
 var authSignupCheck = {
   id: "auth-signup",
@@ -20196,10 +20207,10 @@ async function signedInTables(ctx, ref3, token2) {
 // src/checks/auth-recovery.ts
 init_secret();
 init_supabase_auth();
-import { randomBytes as randomBytes5 } from "node:crypto";
+import { randomBytes as randomBytes4 } from "node:crypto";
 function unknownAddress(email) {
   const m = /^([^@+]+)(?:\+[^@]*)?@([^@\s]+)$/.exec(email);
-  return m ? `${m[1]}+gl-recovery-${randomBytes5(3).toString("hex")}@${m[2]}` : null;
+  return m ? `${m[1]}+gl-recovery-${randomBytes4(3).toString("hex")}@${m[2]}` : null;
 }
 var authRecoveryCheck = {
   id: "auth-recovery",
@@ -20359,9 +20370,9 @@ var authRecoveryCheck = {
 // src/checks/auth-isolation.ts
 init_secret();
 init_supabase_auth();
-import { randomBytes as randomBytes6 } from "node:crypto";
+import { randomBytes as randomBytes5 } from "node:crypto";
 function marker(role) {
-  return `gl-iso-${role}-${randomBytes6(6).toString("hex")}`;
+  return `gl-iso-${role}-${randomBytes5(6).toString("hex")}`;
 }
 var routeTask = (path) => `app-code task: deploy a route at ${path} that answers the signed-in caller the way auth.identityPath / auth.isolationPath in golive.yaml declares, then re-run verify`;
 var sessionTask = (path) => `app-code task: read the caller's session from the \`Authorization: Bearer <token>\` header on ${path} (the token is one the auth provider just issued for that account), then re-run verify`;

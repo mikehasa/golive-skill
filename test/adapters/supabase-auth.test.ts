@@ -499,9 +499,30 @@ describe('testPassword', () => {
     expect(a.name).toBe('GOLIVE_TEST_PASSWORD');
     expect(a.reveal()).toHaveLength(32);
     expect(a.reveal()).not.toBe(b.reveal());
+    expect(a.reveal()).toMatch(/^[A-Za-z2-9!@#$%^&*_\-]{32}$/);
     expect(a.reveal()).toMatch(/[a-z]/);
     expect(a.reveal()).toMatch(/[A-Z]/);
     expect(a.reveal()).toMatch(/[0-9]/);
+    expect(a.reveal()).toMatch(/[!@#$%^&*_\-]/);
     expect(String(a)).not.toContain(a.reveal());
+  });
+
+  /**
+   * The generator's own promise, held over many draws: a project policy that requires one of each class
+   * must never refuse the password. It is not left to chance — a free draw over the 67 characters misses
+   * the 8 digits in ~1.8% of draws, which is what made this suite fail about one run in 54. Failing draws
+   * report the class and the index, never the password itself.
+   */
+  it('carries every class GoTrue may require in every draw', () => {
+    const classes: Array<[string, RegExp]> = [
+      ['a lowercase letter', /[a-z]/],
+      ['an uppercase letter', /[A-Z]/],
+      ['a digit', /[0-9]/],
+      ['a symbol', /[!@#$%^&*_\-]/],
+    ];
+    for (let i = 0; i < 1000; i += 1) {
+      const draw = testPassword().reveal();
+      for (const [what, pattern] of classes) expect(pattern.test(draw), `draw ${i} carries no ${what}`).toBe(true);
+    }
   });
 });
