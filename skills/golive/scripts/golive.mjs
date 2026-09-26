@@ -9742,7 +9742,7 @@ import { fileURLToPath } from "node:url";
 // package.json
 var package_default = {
   name: "golive",
-  version: "0.1.0-alpha.3",
+  version: "0.1.0-alpha.4",
   description: "Agent skill: take an app from repo to live production on your own accounts, with the providers you choose.",
   license: "MIT",
   type: "module",

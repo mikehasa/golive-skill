@@ -9,7 +9,7 @@
 
 プロバイダが公開している部分は自動化します。人間が必要な部分は案内します。観測できるものは検証し、終わっていない作業は終わっていないと分かる形にします。GoLive のアカウントも、ホスト型バックエンドも、製品テレメトリもありません。
 
-> **早期 alpha · 0.1.0-alpha.3**
+> **早期 alpha · 0.1.0-alpha.4**
 > 使い捨ての live テストは現在 6 つのジャーニーをカバーしています。**ホスティング**（Vercel、Netlify）、**データベース**（Supabase、Neon）、**カスタムドメインの DNS**（Porkbun、GoDaddy）、**トランザクションメール**（Resend）、
 > **test モードの決済**（Stripe）、**Supabase の認証**、そして `teardown` によるアンインストール経路です。所有権ドキュメントとオンデマンドのドリフト検査 `golive status` はテストカバレッジ付きで実装済みです（`golive status` は live 検証で読み取り専用としても実行しました）。一方、より広い
 > [ロードマップ](README.md#the-full-go-live-checklist-and-roadmap) は私たちの目指す方向であり、すべてが作り終わっているという主張ではありません。
@@ -75,7 +75,7 @@ Stop after installation; don't connect accounts or deploy yet.
 
 ### npm からインストール
 
-同じ skill は npm にも `golive@0.1.0-alpha.3`（dist-tag は `alpha` と `latest`）として公開されており、Git も Skills CLI も使わずオフラインでインストールできます:
+同じ skill は npm にも `golive@0.1.0-alpha.4`（dist-tag は `alpha` と `latest`）として公開されており、Git も Skills CLI も使わずオフラインでインストールできます:
 
 ```bash
 # Codex

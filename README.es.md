@@ -16,7 +16,7 @@ Automatiza las partes que los proveedores exponen. Te guía en las que necesitan
 Verifica lo que se puede observar y deja claro lo que quedó sin terminar. Sin cuenta de GoLive, sin
 backend alojado y sin telemetría del producto.
 
-> **Alpha temprana · 0.1.0-alpha.3**
+> **Alpha temprana · 0.1.0-alpha.4**
 > Las pruebas desechables en vivo ya cubren seis recorridos: **hosting** (Vercel, Netlify),
 > **base de datos** (Supabase, Neon), **DNS de dominio personalizado** (Porkbun, GoDaddy),
 > **correo transaccional** (Resend), **pagos en modo de prueba** (Stripe) y **autenticación de
@@ -126,7 +126,7 @@ verificación del runtime y el instalador propio opcional.
 
 ### Instalar desde npm
 
-El mismo skill está publicado en npm como `golive@0.1.0-alpha.3` (dist-tags `alpha` y `latest`), lo
+El mismo skill está publicado en npm como `golive@0.1.0-alpha.4` (dist-tags `alpha` y `latest`), lo
 que lo instala sin conexión, sin Git ni Skills CLI de por medio:
 
 ```bash

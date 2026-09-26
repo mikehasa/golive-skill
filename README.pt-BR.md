@@ -17,7 +17,7 @@ Automatize as partes que os provedores expõem. Guie você pelas partes que prec
 Verifique o que dá para observar e deixe claro o que ficou inacabado. Sem conta no GoLive, sem
 backend hospedado e sem telemetria do produto.
 
-> **Alpha inicial · 0.1.0-alpha.3**
+> **Alpha inicial · 0.1.0-alpha.4**
 > Testes ao vivo descartáveis já cobrem seis jornadas: **hospedagem** (Vercel, Netlify), **banco de
 > dados** (Supabase, Neon), **DNS de domínio próprio** (Porkbun, GoDaddy), **e-mail transacional**
 > (Resend), **pagamentos em modo de teste** (Stripe) e **autenticação do Supabase**, além do caminho
@@ -120,7 +120,7 @@ as flags não interativas dos agentes, a verificação do runtime e o instalador
 
 ### Instalação via npm
 
-A mesma skill é publicada no npm como `golive@0.1.0-alpha.3` (dist-tags `alpha` e `latest`), o que a
+A mesma skill é publicada no npm como `golive@0.1.0-alpha.4` (dist-tags `alpha` e `latest`), o que a
 instala offline, sem Git nem Skills CLI envolvidos:
 
 ```bash

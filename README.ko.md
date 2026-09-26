@@ -15,7 +15,7 @@
 검증하고, 끝나지 않은 작업은 분명히 드러냅니다. GoLive 계정도, 호스팅 백엔드도, 제품 텔레메트리도
 없습니다.
 
-> **초기 alpha · 0.1.0-alpha.3**
+> **초기 alpha · 0.1.0-alpha.4**
 > 이제 일회용 live 테스트가 여섯 가지 경로를 다룹니다. **호스팅**(Vercel, Netlify), **데이터베이스**
 > (Supabase, Neon), **사용자 지정 도메인 DNS**(Porkbun, GoDaddy), **트랜잭션 이메일**(Resend),
 > **테스트 모드 결제**(Stripe), **Supabase 인증**이며, 여기에 `teardown` 제거 경로도 포함됩니다.
@@ -115,7 +115,7 @@ Stop after installation; don't connect accounts or deploy yet.
 
 ### npm에서 설치
 
-같은 skill이 npm에 `golive@0.1.0-alpha.3`으로도 게시되어 있습니다(dist-tag `alpha`와 `latest`).
+같은 skill이 npm에 `golive@0.1.0-alpha.4`으로도 게시되어 있습니다(dist-tag `alpha`와 `latest`).
 Git이나 Skills CLI 없이 오프라인으로 설치할 수 있습니다:
 
 ```bash

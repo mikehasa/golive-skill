@@ -9,7 +9,7 @@
 
 凡是服务商开放了接口的部分，就自动化；凡是必须由人来做的部分，就一步步带你走。能被观测到的就验证，没做完的就明说。不需要 GoLive 账号、托管后端，也不收集产品遥测。
 
-> **早期 alpha · 0.1.0-alpha.3**
+> **早期 alpha · 0.1.0-alpha.4**
 > 一次性 live 测试现在覆盖六条链路：**托管**（Vercel、Netlify）、**数据库**（Supabase、Neon）、
 > **自定义域名 DNS**（Porkbun、GoDaddy）、**事务性邮件**（Resend）、**测试模式支付**（Stripe）
 > 和 **Supabase 认证**，外加 `teardown` 卸载路径。归属文档和按需运行的 `golive status`
@@ -73,7 +73,7 @@ Stop after installation; don't connect accounts or deploy yet.
 
 ### 从 npm 安装
 
-同一个 skill 也发布在 npm 上，包名 `golive@0.1.0-alpha.3`（dist-tag 为 `alpha` 和 `latest`），可以离线安装，不需要 Git，也不需要 Skills CLI：
+同一个 skill 也发布在 npm 上，包名 `golive@0.1.0-alpha.4`（dist-tag 为 `alpha` 和 `latest`），可以离线安装，不需要 Git，也不需要 Skills CLI：
 
 ```bash
 # Codex
