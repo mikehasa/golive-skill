@@ -14,4 +14,11 @@ Rules:
 - **Bundle:** `pnpm build` generates the runtime, installer helpers and `skills/golive/release.json`.
   Keep generated artifacts consistent with their source; never hand-edit runtime bytes or hashes.
   Runtime dependencies must stay at zero. Use Node 24 for tests and Node 20 for runtime compatibility.
+- **Translations:** `README.<lang>.md` are full translations of `README.md`, and English is
+  authoritative — they never state a claim the English README does not, and never strengthen or weaken
+  one. Keep fenced code blocks byte-identical, never translate identifiers, link in-page anchors as
+  `README.md#anchor`, and update the `golive-translation` marker (`source-commit`, `updated`) when you
+  touch one. `test/readme-translations.test.ts` guards section order, switcher, code blocks, versions
+  and links; `reviewed=true` needs a named native-speaker reviewer. Write idiomatically for a native
+  developer, not word for word.
 - **Git:** commit or push only when the human asks.

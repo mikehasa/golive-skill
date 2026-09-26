@@ -57,6 +57,14 @@ describe('owned npm install', () => {
   it.each(['codex', 'claude'])('uses explicit home only for global %s', async (agent) => {
     await run(['install', '--agent', agent, '--global']); expect(existsSync(join(home, agent === 'codex' ? '.agents' : '.claude', 'skills/golive/SKILL.md'))).toBe(true); expect(readdirSync(project)).toEqual([]);
   });
+  it('accepts the claude-code spelling the Skills CLI channel uses, for the same destination', async () => {
+    const lib = await import(library);
+    expect(lib.installLocation({ cwd: project, home, agent: 'claude-code' })).toBe(lib.installLocation({ cwd: project, home, agent: 'claude' }));
+    const { result } = await run(['install', '--agent', 'claude-code']);
+    const destination = join(project, '.claude/skills/golive');
+    expect(result).toBe(0); expect(lstatSync(destination).isSymbolicLink()).toBe(true);
+    expect(lib.installationStatus(destination)).toMatchObject({ manager: 'owned', version: '0.1.0-alpha.1' });
+  });
   it('refuses existing copy without modifying it', async () => {
     const path = join(project, '.agents/skills/golive'); put(join(path, 'owner.md'), 'unchanged'); await expect(run(['install', '--agent', 'codex'])).rejects.toThrow(/already exists/); expect(readFileSync(join(path, 'owner.md'), 'utf8')).toBe('unchanged');
   });

@@ -84,6 +84,15 @@ describe('source rename preview and apply', () => {
     expect(existsSync(join(root, 'src/legacy-runtime.ts'))).toBe(false);
   });
 
+  it('carries the translated READMEs through a rename instead of leaving the old name in them', async () => {
+    checkout();
+    put('README.zh-CN.md', 'legacy 简体中文说明\n');
+    put('README.de.md', 'legacy deutsche Fassung\n');
+    await rename(['golive', 'legacy', '--apply']);
+    expect(readFileSync(join(root, 'README.zh-CN.md'), 'utf8')).toBe('golive 简体中文说明\n');
+    expect(readFileSync(join(root, 'README.de.md'), 'utf8')).toBe('golive deutsche Fassung\n');
+  });
+
   it('removes the old generated bundle so the renamed source must be rebuilt', async () => {
     checkout();
     put('skills/legacy/scripts/legacy.mjs', 'generated legacy LEGACY fixture that must never be text-edited\n');

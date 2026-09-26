@@ -1,5 +1,7 @@
 # GoLive
 
+[English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Português (Brasil)](README.pt-BR.md) · [Deutsch](README.de.md)
+
 **Take your agent-built product live: hosting, database, auth, domain, email, payments — on your own accounts. Then hand it over, or tear it all down.**
 
 Your coding agent can build an app in minutes. Getting it to real users still means accounts,
@@ -121,15 +123,19 @@ npx golive@alpha install --agent claude
 ```
 
 Add `--global` to install into your home directory (`~/.agents/skills/golive` or
-`~/.claude/skills/golive`) instead of the current project. The installer copies the complete skill
-the package ships with, refuses an existing destination, and never connects provider accounts.
+`~/.claude/skills/golive`) instead of the current project; `--agent claude-code`, the spelling the
+Skills CLI channel uses, is accepted as well. The installer copies the complete skill the package
+ships with, refuses an existing destination, and never connects provider accounts.
 
 **Both channels carry the same release.** The npm package publishes the version in this repository,
 including the standalone installer helpers, so an npm installation is an owned copy that updates in
 place. The earlier `0.1.0-alpha.0` snapshot has no updater: remove that copy and reinstall, or use
 the GitHub channel, which manages its own installs.
-The npm package also exposes the terminal CLI: `npx golive@alpha help`, `version`, `detect`, `menu`,
-`plan`, `apply`, `verify`, `handoff` — `apply` needs the approved plan ID and explicit confirmation.
+The npm package also exposes the terminal CLI: the golive commands `npx golive@alpha help`,
+`version`, `update-check`, `credentials`, `detect`, `menu`, `init`, `doctor`, `plan`, `teardown`,
+`apply`, `verify`, `status` and `handoff` (`apply` needs the approved plan ID and explicit
+confirmation), plus the installer commands `install`, `install-status`, `update`, `rollback`,
+`update-policy` and `recover-lock` for the copies it owns.
 See [installation and updates](docs/DISTRIBUTION.md#alternative-installation-the-npm-package) for
 the channel's exact limits.
 
@@ -401,15 +407,16 @@ live-tested milestones**, not a finished category or a completed checklist for y
   needs `--confirm-live` when a live-mode value fills a preview env name, and records the provider's
   own identity as `deployed:preview:id` — and `release:check`, which writes nothing, declares
   `preview:deploy` as its prerequisite, and fails the plan when the provider's read of that deployment
-  or a credential scan of its bundle fails. In a cut plan that check is the last step, so what it gates
-  is the promotion (whose own plan re-runs the check before production changes), not a production
-  deploy the plan emits before it. **Promotion
+  or a credential scan of its bundle fails. In a plan that builds a release candidate, that check is
+  the last step, so what it gates is the promotion (whose own plan re-runs the check before production
+  changes), not the production deploy the same plan already emitted before it. **Promotion
   and rollback — implemented, not live-validated:** with `release.promote: true` (on top of the
   preview opt-in) a plan asks for a release by promotion, and with `release.rollback: true` it asks to
   re-point production at an earlier deployment golive itself created and recorded. `promote:production`
   names the exact deployment id it would make production — the provider reports a deployment's id only
-  once the deployment exists, so cutting the candidate and promoting it are two plans and the preview
-  says which one it is — is gated by `release:check` re-reading that deployment in the same plan, and
+  once the deployment exists, so building the candidate and promoting it are two plans, and the plan
+  you approve names which one it is — is gated by `release:check` re-reading that deployment in the
+  same plan, and
   needs **no extra confirmation flag**: the plan id, the named deployment and the fresh gate are the
   approval. Both steps re-read the target deployment and what production serves before writing and
   prove what production serves afterwards; both keep the cross-release stop (neither is `replayable`

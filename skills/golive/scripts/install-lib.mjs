@@ -71,9 +71,12 @@ export function verifyBundle(source) {
   if (canonical(found.sort()) !== canonical([...Object.keys(manifest.files), 'release.json'].sort())) fail('Bundle file set is incomplete or mixed.');
   return manifest;
 }
+// `claude-code` is the spelling the Skills CLI channel uses; it names the same Claude Code destination.
+const AGENT_DIRS = new Map([['codex', '.agents'], ['claude', '.claude'], ['claude-code', '.claude']]);
 export function installLocation({ cwd, home, agent, global = false }) {
-  if (!['codex', 'claude'].includes(agent)) fail('Choose --agent codex or --agent claude.');
-  return join(resolve(global ? home : cwd), agent === 'codex' ? '.agents' : '.claude', 'skills', PRODUCT);
+  const dir = AGENT_DIRS.get(agent);
+  if (!dir) fail('Choose --agent codex or --agent claude (--agent claude-code is accepted too).');
+  return join(resolve(global ? home : cwd), dir, 'skills', PRODUCT);
 }
 function layout(destination) { return { store: join(dirname(destination), `.${PRODUCT}-owned`), destination: resolve(destination) }; }
 function active(destination) {

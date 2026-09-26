@@ -15,6 +15,9 @@ export const INSTALL_HELP = `${PRODUCT}: manage complete agent skill installatio
   ${PRODUCT} update-policy --agent codex|claude [--global] --auto on|off
   ${PRODUCT} recover-lock --agent codex|claude [--global]
 
+--agent claude-code is accepted anywhere --agent claude is: the Skills CLI uses that spelling for the
+same destination.
+
 Installed owned copies can run scripts/install-cli.mjs without --agent or --global.
 Automatic replacement is off by default; enabled copies may run update --auto --between-runs
 with an explicit --ref at the start of a new run, never between plan approval and apply.

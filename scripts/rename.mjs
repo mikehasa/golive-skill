@@ -9,6 +9,9 @@ import { pathToFileURL } from 'node:url';
 const execFileAsync = promisify(execFile);
 const USAGE = 'Usage: scripts/rename.sh <new-name> <old-name> [--apply]\nPreview is the default. Names must be lowercase letters/digits, starting with a letter (max 64).';
 const ROOT_FILES = new Set(['README.md', 'AGENTS.md', 'LICENSE', 'package.json', 'pnpm-lock.yaml', 'build.mjs', 'tsconfig.json', 'vitest.config.ts', '.gitignore', '.npmignore', 'plugin.json']);
+// Translated READMEs sit at the root too, and they name the product; a rename must not leave the old
+// name in them.
+const TRANSLATED_README = /^README\.[A-Za-z-]+\.md$/;
 const SOURCE_DIRS = new Set(['src', 'test', 'skills', 'docs', 'scripts', 'bin', '.github', '.claude-plugin', '.codex-plugin']);
 // These describe the transition or record real historical names. Do not rewrite history or
 // mutate this helper's regression fixtures when renaming the product.
@@ -41,7 +44,7 @@ function included(file, oldName, newName) {
   if (PRESERVE.has(file)) return false;
   if (parts.some((part) => ['.git', 'node_modules', 'dist', '.fixtures-local', `.${oldName}`, `.${newName}`].includes(part))) return false;
   if (parts.some((part) => /^\.env(?:\.|$)/i.test(part) || /^(?:\.?credentials)(?:\.json)?$/i.test(part) || /\.(?:pem|key|p12|pfx)$/i.test(part))) return false;
-  return ROOT_FILES.has(file) || (parts.length > 1 && SOURCE_DIRS.has(parts[0]));
+  return ROOT_FILES.has(file) || TRANSLATED_README.test(file) || (parts.length > 1 && SOURCE_DIRS.has(parts[0]));
 }
 
 function statOrNull(path) {

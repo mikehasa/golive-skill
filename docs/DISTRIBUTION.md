@@ -112,8 +112,8 @@ may coexist. Installation status reports duplicates and leaves them unchanged.
 The zero-dependency entrypoint is `bin/golive.mjs`, also reachable through npm as
 `npx golive@alpha install` above. The npm `files` allowlist in this repository includes the wrapper,
 the standalone installer and the complete skill with licenses, and the published `0.1.0-alpha.3`
-carries all of them. The own installer's Claude flag is `claude`, unlike Skills CLI's
-`claude-code`.
+carries all of them. The own installer's Claude flag is `claude`; the Skills CLI's `claude-code` spelling is accepted as
+well, so either works and both name `.claude/skills/golive`.
 
 ```bash
 node bin/golive.mjs install --agent codex --global

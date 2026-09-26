@@ -64,6 +64,31 @@ it. Screenshots or a short, sanitized example can help explain a confusing inter
 Before sending a PR, run the tests, TypeScript check and build above. Mention any checks you could
 not run. Maintainers may ask for a narrower change or additional coverage before merging.
 
+## Translations
+
+`README.<lang>.md` at the repository root are full translations of `README.md`. **English is
+authoritative:** a translation may lag in wording, and it must never be the place where a claim
+appears that the English README does not make. `test/readme-translations.test.ts` guards the
+structure — section order, switcher, code blocks, versions and links.
+
+- Write for a native developer, not for a translator. A literal word-for-word rendering is a
+  regression: rewrite idioms, units and sentence rhythm the way a native technical author would.
+- Keep fenced code blocks byte-identical to `README.md`; only prose is translated. The
+  paste-into-your-agent prompts stay English on purpose, so the same text produces the same behavior
+  for every reader.
+- Translate identifiers never (`golive.yaml`, `--confirm-destroy`, `auth.e2e`, provider and flag
+  names, env vars, file names); gloss them in parentheses if a reader needs help.
+- In-page anchors (`#install-from-npm`) name English headings, so link them as
+  `README.md#install-from-npm` instead of guessing a translated fragment.
+- Never strengthen or weaken a claim. “Implemented and mock-covered, not live-validated”, “skipped is
+  not passed” and the four trust limits must survive translation intact.
+- Keep the `golive-translation` marker on the first line current (`source-commit`, `updated`) when you
+  touch a translation. Set `reviewed=true` only with a named native-speaker reviewer.
+- Adding a language: add the file, add it to `TRANSLATIONS` in `test/readme-translations.test.ts`, and
+  add the switcher entry to `README.md` and every translation. The test reports what you missed.
+- When `README.md` gains a section, changes a command or moves to a new version, the test fails until
+  the translations follow. Fix them in the same PR.
+
 ## Accounts, secrets and live testing
 
 Issue reports should include the command, relevant versions, expected versus actual behavior,
