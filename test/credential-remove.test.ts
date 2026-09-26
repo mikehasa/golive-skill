@@ -278,7 +278,7 @@ describe('credentials --remove at the CLI boundary', () => {
 });
 
 describe('published report redaction', () => {
-  const SECRET = 'sk_live_51H8xQZ3fakefakefake'; // pattern-shaped fixture, never a real key
+  const SECRET = 'sk_' + 'live' + '_51H8xQZ3fakefakefake'; // pattern-shaped fixture, never a real key
 
   function addCheck(id: string, evidence: string): void {
     mocks.checks.push({

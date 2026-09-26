@@ -6,12 +6,12 @@ import { Secret, _resetSecretRegistry } from '../../src/core/secret.js';
 import type { Ctx, Http, HttpRequest } from '../../src/core/types.js';
 import { mockExec, mockHttp, testCtx } from '../helpers.js';
 
-const TEST_KEY = 'sk_' + 'test_51FAKEtestKEY000000000000abcd';
-const LIVE_KEY = 'sk_' + 'live_51FAKEliveKEY000000000000wxyz';
-const RK_TEST = 'rk_' + 'test_51FAKErestrictedKEY0000000efgh';
-const RK_LIVE = 'rk_' + 'live_51FAKErestrictedKEY0000000ijkl';
-const APP_LIVE = 'sk_' + 'live_51FAKEappLIVEkey000000000mnop';
-const APP_TEST = 'sk_' + 'test_51FAKEappTESTkey000000000qrst';
+const TEST_KEY = 'sk_' + 'test' + '_51FAKEtestKEY000000000000abcd';
+const LIVE_KEY = 'sk_' + 'live' + '_51FAKEliveKEY000000000000wxyz';
+const RK_TEST = 'rk_' + 'test' + '_51FAKErestrictedKEY0000000efgh';
+const RK_LIVE = 'rk_' + 'live' + '_51FAKErestrictedKEY0000000ijkl';
+const APP_LIVE = 'sk_' + 'live' + '_51FAKEappLIVEkey000000000mnop';
+const APP_TEST = 'sk_' + 'test' + '_51FAKEappTESTkey000000000qrst';
 const WHSEC = 'whsec' + '_FAKEsigningSECRET1234567890abcdef';
 const API = 'https://api.stripe.com';
 const EP = `${API}/v1/webhook_endpoints`;

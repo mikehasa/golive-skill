@@ -15,11 +15,14 @@ export interface Call {
 }
 
 // Raw values the fakes hand out. Tests assert these never show up anywhere printable.
+// Provider prefixes are split into fragments (`'sk_' + 'live' + '_…'`) so that a scanner never sees
+// a contiguous token shape in the source; the concatenated value is what the tests exercise. Keep
+// them split — joining a fragment back would put a scanner-shaped literal in the tree again.
 export const RAW = {
   supabaseSecret: 'sb_secret_FAKEsupabaseSECRETvalue0123456789',
   dbUrl: 'postgres://postgres:FAKEdbPASSWORD9876@db.fake.local:5432/postgres',
-  stripeLive: 'sk_' + 'live_FAKEliveSECRETkey0123456789abcdef',
-  stripeTest: 'sk_' + 'test_FAKEtestSECRETkey0123456789abcdef',
+  stripeLive: 'sk_' + 'live' + '_FAKEliveSECRETkey0123456789abcdef',
+  stripeTest: 'sk_' + 'test' + '_FAKEtestSECRETkey0123456789abcdef',
   resendKey: 're' + '_FAKEresend_KEYvalue0123456789',
   whsecPrefix: 'whsec' + '_FAKEwebhookSIGNINGsecret',
   authSession: 'fake-auth-session-TOKEN-0123456789abcdef',
@@ -28,8 +31,8 @@ export const RAW = {
 export const PUBLIC = {
   supabaseUrl: 'https://abcd.fakedb.co',
   supabasePublishable: 'sb_publishable_FAKEpublic123',
-  pkLive: 'pk_live_FAKEpublishable123',
-  pkTest: 'pk_test_FAKEpublishable123',
+  pkLive: 'pk_' + 'live' + '_FAKEpublishable123',
+  pkTest: 'pk_' + 'test' + '_FAKEpublishable123',
 } as const;
 
 export const ALL_RAW_SECRETS = (): string[] => [RAW.supabaseSecret, RAW.dbUrl, 'FAKEdbPASSWORD9876', RAW.stripeLive, RAW.stripeTest, RAW.resendKey, RAW.whsecPrefix, RAW.authSession];
