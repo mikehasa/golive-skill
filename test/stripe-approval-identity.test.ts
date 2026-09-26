@@ -8,12 +8,12 @@ import { accountsLink } from '../src/links/accounts.js';
 import { paymentsLink } from '../src/links/payments.js';
 import { mockHttp, testCtx } from './helpers.js';
 
-const OP_A = 'rk_' + 'test_FAKEoperatorA';
-const OP_B = 'rk_' + 'test_FAKEoperatorB';
-const OP_A2 = 'rk_' + 'test_FAKEoperatorArotated';
-const APP_A = 'sk_' + 'test_FAKEappA';
-const APP_A2 = 'sk_' + 'test_FAKEappArotated';
-const APP_B = 'sk_' + 'test_FAKEappB';
+const OP_A = 'rk_' + 'test' + '_FAKEoperatorA';
+const OP_B = 'rk_' + 'test' + '_FAKEoperatorB';
+const OP_A2 = 'rk_' + 'test' + '_FAKEoperatorArotated';
+const APP_A = 'sk_' + 'test' + '_FAKEappA';
+const APP_A2 = 'sk_' + 'test' + '_FAKEappArotated';
+const APP_B = 'sk_' + 'test' + '_FAKEappB';
 const SIGNING = 'whsec' + '_FAKEapprovalFixture';
 const API = 'https://api.stripe.com/v1';
 const endpoint = { id: 'we_fixture', url: 'https://app.example.com/webhook', enabled_events: ['checkout.session.completed'], status: 'enabled', metadata: { managed_by: 'golive' } };

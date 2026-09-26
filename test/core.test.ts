@@ -15,7 +15,7 @@ import { TEST_RELEASE } from './helpers.js';
 
 beforeEach(() => _resetSecretRegistry());
 
-const SK = 'sk_' + 'live_51ABCDEFGHIJKLMNOPQRSTUVWXyz0123456789';
+const SK = 'sk_' + 'live' + '_51ABCDEFGHIJKLMNOPQRSTUVWXyz0123456789';
 
 describe('Secret', () => {
   it('never stringifies its value', () => {

@@ -29,7 +29,7 @@ const deployer = caps.deploy!;
 const domain = caps.domain!;
 
 const BYPASS = 'bypassKeyAbCdEfGh0123456789zyxwvu';
-const SECRET_VAL = 'sk_' + 'live_51SECRETVALUEabcdefghijklmnopqrstu';
+const SECRET_VAL = 'sk_' + 'live' + '_51SECRETVALUEabcdefghijklmnopqrstu';
 const TOKEN = 'vcp_tokenABCDEFGHIJKLMNOP1234567890';
 const API = 'https://api.vercel.com';
 

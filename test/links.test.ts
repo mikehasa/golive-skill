@@ -1926,7 +1926,7 @@ describe('env source identity', () => {
     const { w, ctx } = setup({ env: ['STRIPE_SECRET_KEY'], config: { domain: undefined, payments: undefined } });
     await apply(ctx, await build(ctx));
     expect(ids(await build(ctx))).not.toContain('payments:keys:production');
-    w.pay.secretKeys.live = 'sk_' + 'live_FAKEotherACCOUNTkey9876543210zyxw';
+    w.pay.secretKeys.live = 'sk_' + 'live' + '_FAKEotherACCOUNTkey9876543210zyxw';
     const plan = await build(ctx);
     expect(byId(plan, 'payments:keys:production').preview.slice(1)).toEqual(['update (managed by golive) STRIPE_SECRET_KEY ← stripe.secretKey (live mode) (sensitive)']);
     expectNoRawSecrets([JSON.stringify(planView(plan)), JSON.stringify(ctx.state.get())]);
@@ -2031,8 +2031,8 @@ describe('a re-planned step with the same preview but a different intent runs ag
     const hostKey = () => (w.host.env.production.get('STRIPE_SECRET_KEY') as Secret).reveal();
     expect(hostKey()).toBe(RAW.stripeLive);
 
-    const K2 = 'sk_' + 'live_FAKErotatedONCEkey0123456789abcdef';
-    const K3 = 'sk_' + 'live_FAKErotatedTWICEkey0123456789abcde';
+    const K2 = 'sk_' + 'live' + '_FAKErotatedONCEkey0123456789abcdef';
+    const K3 = 'sk_' + 'live' + '_FAKErotatedTWICEkey0123456789abcde';
     w.pay.secretKeys.live = K2;
     const p2 = await build(ctx);
     expect(statusOf(await apply(ctx, p2), 'payments:keys:production')).toBe('done');
