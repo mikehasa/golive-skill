@@ -94,6 +94,7 @@ function inventory(root: string, prefix = ''): string[] {
   const files: string[] = [];
   for (const entry of readdirSync(dir).sort()) {
     const relative = prefix ? `${prefix}/${entry}` : entry;
+    if (isInstallMetadata(relative)) continue;
     const next = lstatSync(join(root, relative));
     if (next.isSymbolicLink()) throw new ReleaseIntegrityError(BUNDLE_ERROR);
     if (next.isDirectory()) {
@@ -103,6 +104,17 @@ function inventory(root: string, prefix = ''): string[] {
     else throw new ReleaseIntegrityError(BUNDLE_ERROR);
   }
   return files;
+}
+
+/**
+ * Metadata a skill marketplace writes into the installed folder next to our files: ClawHub adds
+ * `_meta.json`, `skill-card.md` and `.clawhub/origin.json`. The manifest never lists them and they
+ * are inert, but refusing them would make every marketplace-installed copy unverifiable — the
+ * channel would install a bundle that immediately reports itself damaged. Everything else still has
+ * to match the manifest exactly, so a stray file is refused as before.
+ */
+function isInstallMetadata(relative: string): boolean {
+  return relative === '_meta.json' || relative === 'skill-card.md' || relative === '.clawhub' || relative.startsWith('.clawhub/');
 }
 
 /** Verifies every distributed file, including instructions, before any account access. */

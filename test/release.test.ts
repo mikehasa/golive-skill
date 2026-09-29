@@ -62,6 +62,18 @@ describe('release manifest integrity', () => {
     manifestFixture(); put(path, 'untracked');
     expect(() => verifyReleaseBundle(root)).toThrow(/complete skill/);
   });
+  it('accepts marketplace metadata written next to the bundle, and still refuses anything else', () => {
+    const manifest = manifestFixture();
+    // ClawHub installs the bundle with its own metadata inside the folder (its copy used to report
+    // itself damaged because of it).
+    put('_meta.json', JSON.stringify({ ownerId: 'o', slug: 'golive', version: '0.1.0-alpha.5', publishedAt: 1 }));
+    put('skill-card.md', '## Description:\n\nA generated card.\n');
+    put('.clawhub/origin.json', JSON.stringify({ slug: 'golive' }));
+    expect(verifyReleaseBundle(root)).toEqual(manifest);
+    // The same names below references/ are not marketplace metadata.
+    put('references/_meta.json', '{}');
+    expect(() => verifyReleaseBundle(root)).toThrow(/complete skill/);
+  });
   it('rejects symlink and hardlink files even when their bytes match', () => {
     manifestFixture();
     const path = join(root, 'SKILL.md');

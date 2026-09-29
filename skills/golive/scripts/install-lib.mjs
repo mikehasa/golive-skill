@@ -46,6 +46,10 @@ function newer(candidate, current) {
   return false;
 }
 function filePath(path) { return typeof path === 'string' && !path.includes('\\') && !path.includes('%') && !path.split('/').some((p) => !p || p === '.' || p === '..') && /^(?:SKILL\.md|LICENSE|THIRD_PARTY_NOTICES\.md|(?:references|scripts)\/[A-Za-z0-9._/-]+)$/.test(path); }
+// Metadata a skill marketplace writes into the installed folder: ClawHub adds `_meta.json`,
+// `skill-card.md` and `.clawhub/`. The manifest never lists it and it is inert, so it is skipped;
+// anything else still has to match the manifest exactly.
+function installMetadata(rel) { return rel === '_meta.json' || rel === 'skill-card.md' || rel === '.clawhub' || rel.startsWith('.clawhub/'); }
 function exactKeys(value, expected) { return value && typeof value === 'object' && !Array.isArray(value) && canonical(Object.keys(value).sort()) === canonical(expected.slice().sort()); }
 export function validateManifest(manifest) {
   if (!exactKeys(manifest, ['schema', 'name', 'version', 'source', 'node', 'schemas', 'files', 'bundleDigest']) || !exactKeys(manifest.source, ['repository', 'ref']) || !exactKeys(manifest.schemas, ['config', 'state', 'approval'])) fail('Release metadata fields are incompatible.');
@@ -60,7 +64,9 @@ export function verifyBundle(source) {
   safePath(source); const manifest = validateManifest(json(join(source, 'release.json'))); const found = []; let total = 0;
   function walk(path, prefix = '') {
     for (const name of readdirSync(path).sort()) {
-      const rel = prefix ? `${prefix}/${name}` : name; const full = join(path, name); const info = stat(full);
+      const rel = prefix ? `${prefix}/${name}` : name; const full = join(path, name);
+      if (installMetadata(rel)) continue;
+      const info = stat(full);
       if (info?.isSymbolicLink()) fail('Bundle contains a symlink.');
       if (info?.isDirectory()) { if (!['references', 'scripts'].includes(rel) && !rel.startsWith('references/') && !rel.startsWith('scripts/')) fail('Bundle contains an unsupported directory.'); walk(full, rel); }
       else if (info?.isFile()) { found.push(rel); const bytes = readSafe(full); total += bytes.length; if (total > MAX_TOTAL) fail('Bundle exceeds its total size limit.'); if (rel !== 'release.json' && sha(bytes) !== manifest.files[rel]) fail('Bundle integrity failed; reinstall the complete skill.'); }

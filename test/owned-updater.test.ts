@@ -128,6 +128,16 @@ describe('whole owned release lifecycle', () => {
 });
 describe('source and ownership boundaries', () => {
   it('requires exact manifest fields, notices and at least one reference', async () => { const lib = await import(library); const manifest = JSON.parse(readFileSync(join(first, 'release.json'), 'utf8')); const extra = { ...manifest, unexpected: true }; delete extra.bundleDigest; extra.bundleDigest = sha(lib.canonical(extra)); expect(() => lib.validateManifest(extra)).toThrow(/fields/); for (const path of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'references/example.md']) { const bad = structuredClone(manifest); delete bad.files[path]; delete bad.bundleDigest; bad.bundleDigest = sha(lib.canonical(bad)); expect(() => lib.validateManifest(bad)).toThrow(/incomplete/); } });
+  it('accepts marketplace metadata written next to the bundle and still refuses anything else', async () => {
+    const lib = await import(library);
+    await install();
+    put(join(first, '_meta.json'), JSON.stringify({ ownerId: 'o', slug: 'golive', version: '0.1.0-alpha.1', publishedAt: 1 }));
+    put(join(first, 'skill-card.md'), '## Description:\n\nA generated card.\n');
+    put(join(first, '.clawhub/origin.json'), JSON.stringify({ slug: 'golive' }));
+    expect((await lib.verifyBundle(first)).name).toBe('golive');
+    mkdirSync(join(first, 'unexpected'));
+    await expect(update({ source: first })).rejects.toThrow(/unsupported directory/);
+  });
   it('rejects unrecognized empty root directories', async () => { await install(); mkdirSync(join(second, 'unexpected')); await expect(update()).rejects.toThrow(/unsupported directory/); });
   it.each(['01.0.0', '0.01.0', '0.0.01', '1.0.0-alpha.01', '1.0.0-alpha..1', '1.0.0-', '1.0.0+build'])('rejects malformed release version %s', async (version) => {
     const lib = await import(library); expect(lib.isReleaseVersion(version)).toBe(false); const invalid = await makeBundle(version); await expect(install(invalid)).rejects.toThrow(/incompatible/);

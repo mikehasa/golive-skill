@@ -9902,6 +9902,7 @@ function inventory(root, prefix = "") {
   const files = [];
   for (const entry of readdirSync(dir).sort()) {
     const relative2 = prefix ? `${prefix}/${entry}` : entry;
+    if (isInstallMetadata(relative2)) continue;
     const next = lstatSync(join(root, relative2));
     if (next.isSymbolicLink()) throw new ReleaseIntegrityError(BUNDLE_ERROR);
     if (next.isDirectory()) {
@@ -9911,6 +9912,9 @@ function inventory(root, prefix = "") {
     else throw new ReleaseIntegrityError(BUNDLE_ERROR);
   }
   return files;
+}
+function isInstallMetadata(relative2) {
+  return relative2 === "_meta.json" || relative2 === "skill-card.md" || relative2 === ".clawhub" || relative2.startsWith(".clawhub/");
 }
 function verifyReleaseBundle(root) {
   try {
@@ -10194,6 +10198,9 @@ function isRef(ref3) {
 function filePath(path) {
   return typeof path === "string" && !path.includes("\\") && !path.includes("%") && !path.split("/").some((p) => !p || p === "." || p === "..") && /^(?:SKILL\.md|LICENSE|THIRD_PARTY_NOTICES\.md|(?:references|scripts)\/[A-Za-z0-9._/-]+)$/.test(path);
 }
+function installMetadata(rel) {
+  return rel === "_meta.json" || rel === "skill-card.md" || rel === ".clawhub" || rel.startsWith(".clawhub/");
+}
 function exactKeys2(value, expected) {
   return value && typeof value === "object" && !Array.isArray(value) && canonical(Object.keys(value).sort()) === canonical(expected.slice().sort());
 }
@@ -10215,6 +10222,7 @@ function verifyBundle(source) {
     for (const name3 of readdirSync2(path).sort()) {
       const rel = prefix ? `${prefix}/${name3}` : name3;
       const full = join3(path, name3);
+      if (installMetadata(rel)) continue;
       const info = stat(full);
       if (info?.isSymbolicLink()) fail("Bundle contains a symlink.");
       if (info?.isDirectory()) {

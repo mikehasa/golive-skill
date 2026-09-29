@@ -30,9 +30,9 @@
     "references/troubleshooting.md": "8a9a8bd3a4c79e5fac00edbec3db0d6c47eaf36f4f6e7a5b92a46a92b21e50fd",
     "references/updates.md": "931f430d466b9e61b7c3118542449cbca281b48828b99df5ba08fc808c078043",
     "references/vercel.md": "f3f915c763ce5bb623ce706021be43fa9a358be632b56d818b00063153532ad6",
-    "scripts/golive.mjs": "a11c39c75d042b90ffcfe0e97308e9f0ad0818ed03d834b5665df7e60fc9a2a3",
+    "scripts/golive.mjs": "4b7b1188ea31fe6094196b46d101798c533c6889ca53ae7a028b25fa4559b5c2",
     "scripts/install-cli.mjs": "ac9ee3f57b5fcbc54ef16b1ee0b22c967b846cc32512750046b13d5c1a7075bd",
-    "scripts/install-lib.mjs": "1c5e3cddb9ace5e4fbd8c882f134ab06f512043bfc238890716c7d49fcbefd98"
+    "scripts/install-lib.mjs": "43086f4d12380b6ce425d6188136b523f0cdda7bf168acc7c420f80bc3cff8f9"
   },
-  "bundleDigest": "9087083c346da8dd214538d6212405e2b5d631cdabe81b8f297a362becac4cdb"
+  "bundleDigest": "0bc33409df01f477c201927e053177dead3eedd8ec4ff651e2a8cada01d04eea"
 }
