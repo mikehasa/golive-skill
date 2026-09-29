@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=es; source=README.md; source-commit=88a3ccf; reviewed=false; updated=2026-09-26 -->
+<!-- golive-translation: lang=es; source=README.md; source-commit=88a3ccf; reviewed=false; updated=2026-09-29 -->
 # GoLive
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Português (Brasil)](README.pt-BR.md) · [Deutsch](README.de.md)
@@ -16,7 +16,7 @@ Automatiza las partes que los proveedores exponen. Te guía en las que necesitan
 Verifica lo que se puede observar y deja claro lo que quedó sin terminar. Sin cuenta de GoLive, sin
 backend alojado y sin telemetría del producto.
 
-> **Alpha temprana · 0.1.0-alpha.5**
+> **Alpha temprana · 0.1.0-alpha.6**
 > Las pruebas desechables en vivo ya cubren seis recorridos: **hosting** (Vercel, Netlify),
 > **base de datos** (Supabase, Neon), **DNS de dominio personalizado** (Porkbun, GoDaddy),
 > **correo transaccional** (Resend), **pagos en modo de prueba** (Stripe) y **autenticación de
@@ -126,7 +126,7 @@ verificación del runtime y el instalador propio opcional.
 
 ### Instalar desde npm
 
-El mismo skill está publicado en npm como `golive@0.1.0-alpha.5` (dist-tags `alpha` y `latest`), lo
+El mismo skill está publicado en npm como `golive@0.1.0-alpha.6` (dist-tags `alpha` y `latest`), lo
 que lo instala sin conexión, sin Git ni Skills CLI de por medio:
 
 ```bash
@@ -154,6 +154,17 @@ explícita), además de los comandos del instalador `install`, `install-status`,
 `update-policy` y `recover-lock` para las copias que son suyas. Consulta [instalación y
 actualizaciones](docs/DISTRIBUTION.md#alternative-installation-the-npm-package) para conocer los
 límites exactos de este canal.
+
+### Instalar desde ClawHub (OpenClaw)
+
+Si usas [OpenClaw](https://docs.openclaw.ai), el mismo skill también está publicado en su registro público, [ClawHub](https://clawhub.ai/mikehasa/skills/golive):
+
+```bash
+npx clawhub@latest install golive     # into ./skills, recorded in .clawhub/lock.json
+npx clawhub@latest update golive      # later updates stay with ClawHub
+```
+
+ClawHub instala en la carpeta `skills/` del directorio actual, no en el directorio global de skills del agente, así que encaja en un espacio de trabajo de OpenClaw; los clientes que este proyecto verifica son Codex y Claude Code, mediante los dos canales anteriores. El registro guarda sus propios metadatos (`_meta.json`, `skill-card.md`, `.clawhub/`) junto al bundle, y la comprobación de integridad de golive los ignora. Los límites de este canal están en [instalación y actualizaciones](docs/DISTRIBUTION.md#clawhub-openclaw-registry).
 
 ## Usar GoLive
 

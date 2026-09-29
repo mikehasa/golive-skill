@@ -13,7 +13,7 @@ created, re-checks it for drift on demand, and can remove it again.
 Automate the parts providers expose. Guide you through the parts that need a human. Verify what
 can be observed, and make unfinished work clear. No GoLive account, hosted backend or product telemetry.
 
-> **Early alpha · 0.1.0-alpha.5**
+> **Early alpha · 0.1.0-alpha.6**
 > Disposable live tests now cover six journeys: **hosting** (Vercel, Netlify), **database**
 > (Supabase, Neon), **custom-domain DNS** (Porkbun, GoDaddy), **transactional email** (Resend),
 > **test-mode payments** (Stripe) and **Supabase authentication**, plus the `teardown` uninstall
@@ -111,7 +111,7 @@ noninteractive agent flags, runtime verification and the optional own installer.
 
 ### Install from npm
 
-The same skill is published to npm as `golive@0.1.0-alpha.5` (dist-tags `alpha` and `latest`), which
+The same skill is published to npm as `golive@0.1.0-alpha.6` (dist-tags `alpha` and `latest`), which
 installs it offline, with no Git or Skills CLI involved:
 
 ```bash
@@ -138,6 +138,22 @@ confirmation), plus the installer commands `install`, `install-status`, `update`
 `update-policy` and `recover-lock` for the copies it owns.
 See [installation and updates](docs/DISTRIBUTION.md#alternative-installation-the-npm-package) for
 the channel's exact limits.
+
+### Install from ClawHub (OpenClaw)
+
+If you use [OpenClaw](https://docs.openclaw.ai), the same skill is listed on
+[ClawHub](https://clawhub.ai/mikehasa/skills/golive), its public registry:
+
+```bash
+npx clawhub@latest install golive     # into ./skills, recorded in .clawhub/lock.json
+npx clawhub@latest update golive      # later updates stay with ClawHub
+```
+
+ClawHub installs into the current directory's `skills/` folder rather than an agent's global skills
+directory, so it suits an OpenClaw workspace; Codex and Claude Code are the clients this project
+verifies, through the two channels above. The registry keeps its own metadata (`_meta.json`,
+`skill-card.md`, `.clawhub/`) beside the bundle, which golive's own integrity check ignores. See
+[installation and updates](docs/DISTRIBUTION.md#clawhub-openclaw-registry) for the channel's limits.
 
 ## Use GoLive
 

@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=zh-CN; source=README.md; source-commit=88a3ccf; reviewed=false; updated=2026-09-26 -->
+<!-- golive-translation: lang=zh-CN; source=README.md; source-commit=88a3ccf; reviewed=false; updated=2026-09-29 -->
 # GoLive
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Português (Brasil)](README.pt-BR.md) · [Deutsch](README.de.md)
@@ -9,7 +9,7 @@
 
 凡是服务商开放了接口的部分，就自动化；凡是必须由人来做的部分，就一步步带你走。能被观测到的就验证，没做完的就明说。不需要 GoLive 账号、托管后端，也不收集产品遥测。
 
-> **早期 alpha · 0.1.0-alpha.5**
+> **早期 alpha · 0.1.0-alpha.6**
 > 一次性 live 测试现在覆盖六条链路：**托管**（Vercel、Netlify）、**数据库**（Supabase、Neon）、
 > **自定义域名 DNS**（Porkbun、GoDaddy）、**事务性邮件**（Resend）、**测试模式支付**（Stripe）
 > 和 **Supabase 认证**，外加 `teardown` 卸载路径。归属文档和按需运行的 `golive status`
@@ -73,7 +73,7 @@ Stop after installation; don't connect accounts or deploy yet.
 
 ### 从 npm 安装
 
-同一个 skill 也发布在 npm 上，包名 `golive@0.1.0-alpha.5`（dist-tag 为 `alpha` 和 `latest`），可以离线安装，不需要 Git，也不需要 Skills CLI：
+同一个 skill 也发布在 npm 上，包名 `golive@0.1.0-alpha.6`（dist-tag 为 `alpha` 和 `latest`），可以离线安装，不需要 Git，也不需要 Skills CLI：
 
 ```bash
 # Codex
@@ -86,6 +86,17 @@ npx golive@alpha install --agent claude
 加上 `--global` 会装进你的主目录（`~/.agents/skills/golive` 或 `~/.claude/skills/golive`），而不是当前项目；`--agent claude-code` 这个 Skills CLI 渠道使用的写法同样可以接受。安装器复制的是包里完整的 skill，目标目录已存在时会拒绝安装，并且绝不连接服务商账号。
 
 **两个渠道发布的是同一个版本。** npm 包发布的就是本仓库里的版本，包含独立的安装器辅助脚本，所以从 npm 装出来的是一份自己拥有的副本，可以在原地更新。更早的 `0.1.0-alpha.0` 快照没有更新器：删掉那份重装，或者改用 GitHub 渠道 —— 它会自行管理安装。npm 包同时提供终端 CLI：golive 命令有 `npx golive@alpha help`、`version`、`update-check`、`credentials`、`detect`、`menu`、`init`、`doctor`、`plan`、`teardown`、`apply`、`verify`、`status` 和 `handoff`（`apply` 需要已批准计划的 ID 和显式确认），另有针对它自己拥有的那些副本的安装器命令 `install`、`install-status`、`update`、`rollback`、`update-policy` 和 `recover-lock`。这个渠道的确切限制见[安装与更新](docs/DISTRIBUTION.md#alternative-installation-the-npm-package)。
+
+### 从 ClawHub 安装（OpenClaw）
+
+如果你用 [OpenClaw](https://docs.openclaw.ai)，同一个 skill 也列在它的公共 registry [ClawHub](https://clawhub.ai/mikehasa/skills/golive) 上：
+
+```bash
+npx clawhub@latest install golive     # into ./skills, recorded in .clawhub/lock.json
+npx clawhub@latest update golive      # later updates stay with ClawHub
+```
+
+ClawHub 装到当前目录的 `skills/` 里，而不是 agent 的全局 skills 目录，所以它适合 OpenClaw 工作区；本项目验证过的客户端是 Codex 和 Claude Code，走上面两个渠道。registry 会在 bundle 旁边放它自己的元数据（`_meta.json`、`skill-card.md`、`.clawhub/`），golive 自己的完整性校验会忽略它们。这个渠道的界限见[安装与更新](docs/DISTRIBUTION.md#clawhub-openclaw-registry)。
 
 ## 使用 GoLive
 

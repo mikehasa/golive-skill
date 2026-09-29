@@ -3,9 +3,10 @@
 GoLive is the project name; `golive` is the skill name, and the repository is
 [`mikehasa/golive-skill`](https://github.com/mikehasa/golive-skill).
 
-The current alpha is `0.1.0-alpha.5`. There are two installation channels: GitHub through Skills CLI
-and the npm package, which both serve the current release (the earlier `0.1.0-alpha.0` snapshot
-remains a separate version on the registry). GitHub installation works without npm.
+The current alpha is `0.1.0-alpha.6`. Three installation channels are served: GitHub through Skills
+CLI and the npm package, which both carry the release built from this repository, and ClawHub, the
+OpenClaw registry, which is published separately (the earlier `0.1.0-alpha.0` snapshot remains a
+separate version on the npm registry). GitHub installation works without npm.
 See [validation](VALIDATION.md) for tested capabilities and remaining channel acceptance.
 
 ## Default installation: GitHub through Skills CLI
@@ -38,7 +39,7 @@ Skills CLI has its own telemetry policy; GoLive has no product telemetry.
 
 ## Alternative installation: the npm package
 
-The registry serves `golive@0.1.0-alpha.5` under the `alpha` and `latest` dist-tags. The tarball
+The registry serves `golive@0.1.0-alpha.6` under the `alpha` and `latest` dist-tags. The tarball
 carries the zero-dependency wrapper (`bin/golive.mjs`), the standalone installer helpers
 (`scripts/install-cli.mjs`, `scripts/install-lib.mjs`), the complete skill and the licenses, so it
 installs the skill offline — without Git or the Skills CLI:
@@ -58,13 +59,44 @@ and the workflow commands `init`, `doctor`, `plan`, `apply`, `verify` and `hando
 requires the approved plan ID and explicit confirmation.
 
 **This channel matches the GitHub channel.** The registry serves the release published from this
-repository (`0.1.0-alpha.5`), including the standalone installer helpers, so an npm installation is
+repository (`0.1.0-alpha.6`), including the standalone installer helpers, so an npm installation is
 an owned copy with the same update, pin and rollback flow as the
 [own installer](#optional-own-installer). The earlier `0.1.0-alpha.0` snapshot predates the helpers
 and has no updater: the installer refuses an existing destination, so updating such a copy means
 removing it first, or switching to the Skills CLI channel, which manages its own installs. Both
 `alpha` and `latest` point at the current alpha, so `npx golive` and `npx golive@alpha` resolve to
 the same version.
+
+## Third channel: ClawHub (the OpenClaw registry)
+
+[ClawHub](https://clawhub.ai/mikehasa/skills/golive) is OpenClaw's public registry, and the skill is
+listed there at the same version as the two channels above. It is a separate registry with its own
+copy: publishing to it is a deliberate step of every release, not a mirror of GitHub. It installs
+into the current directory rather than an agent's global skills directory, so it suits an OpenClaw
+workspace; the clients this project verifies are served by the two channels above.
+
+```bash
+npx clawhub@latest install golive     # into ./skills here, recorded in .clawhub/lock.json
+npx clawhub@latest update golive      # later updates stay with ClawHub
+npx clawhub@latest skill verify golive  # the registry's own scan summary for the release
+```
+
+Publishing (maintainer, after the GitHub tag exists in step 3 of [releasing a version](#releasing-a-version)):
+
+```bash
+npx clawhub@latest skill publish skills/golive --slug golive --name GoLive \
+  --version <version> --changelog "<what changed>"
+```
+
+Always pass `--version` and preview with `--dry-run` first: `skills/golive` carries no version field
+of its own, so the CLI would otherwise publish `1.0.0` or the next patch and put the release
+ordering out of step with the other channels.
+
+ClawHub writes its own metadata *inside* the installed folder: `_meta.json`, `skill-card.md` and
+`.clawhub/origin.json`. The runtime's bundle check and the standalone installer ignore exactly those
+names — and nothing else. Without that tolerance every ClawHub copy reported itself as damaged, which
+is why the check carries the exception (it is the only marketplace that does this today). Updates are
+ClawHub's; nothing adopts that copy, and the own installer leaves it unchanged as an external copy.
 
 ## One version and complete bundle integrity
 
@@ -102,7 +134,8 @@ installation ownership and applicable update instructions.
 | Agent plugin | That plugin manager |
 | Manual copy | User replaces the complete verified bundle |
 | Own installer | Our explicit whole-bundle update/rollback flow |
-| npm package (`npx golive@alpha install`) | Own installer, from `0.1.0-alpha.5`; a copy installed from `0.1.0-alpha.0` has no updater — remove it and reinstall, or move to the Skills CLI channel |
+| npm package (`npx golive@alpha install`) | Own installer, from `0.1.0-alpha.6`; a copy installed from `0.1.0-alpha.0` has no updater — remove it and reinstall, or move to the Skills CLI channel |
+| ClawHub (`npx clawhub@latest install golive`) | ClawHub; `npx clawhub@latest update golive` |
 
 Externally managed copies are not adopted or deleted automatically. Deliberate per-project pins
 may coexist. Installation status reports duplicates and leaves them unchanged.
@@ -111,7 +144,7 @@ may coexist. Installation status reports duplicates and leaves them unchanged.
 
 The zero-dependency entrypoint is `bin/golive.mjs`, also reachable through npm as
 `npx golive@alpha install` above. The npm `files` allowlist in this repository includes the wrapper,
-the standalone installer and the complete skill with licenses, and the published `0.1.0-alpha.5`
+the standalone installer and the complete skill with licenses, and the published `0.1.0-alpha.6`
 carries all of them. The own installer's Claude flag is `claude`; the Skills CLI's `claude-code` spelling is accepted as
 well, so either works and both name `.claude/skills/golive`.
 
@@ -182,14 +215,52 @@ other non-secret metadata before sharing configuration, state or reports publicl
 
 ## Releasing a version
 
-Run the full mocked suite, typecheck and build. Use Node 24 for tests, Node 20 for the installed
-runtime. Set `GOLIVE_RELEASE_REF=v<version>` for the release build, matching `package.json` exactly.
-Review package contents, licenses and the full manifest. Verify isolated Codex/Claude installation,
-version/help/menu/detect, offline checks and owned update/rollback on the actual artifact.
+Four independent places carry a release: the repository (source, tag and GitHub Release), the npm
+registry, ClawHub, and — without any publish step — the Skills CLI channel and the skill's own
+`update-check`, which read the repository. Work through this list in order; it is the memory of what
+each place needs.
 
-Keep live provider evidence separate from package acceptance. After publication, verify anonymous
-clone, public Skills CLI installation and tagged downloads before marking that channel available.
-CI tests the already-renamed source and its generated artifacts; it does not rename it again.
+**1. Pre-flight (source).** `pnpm vitest run`, `pnpm tsc --noEmit` (Node 24 for tests, Node 20 for
+the installed runtime) and `pnpm build`. Then `GOLIVE_RELEASE_REF=v<version> pnpm build` with
+`<version>` matching `package.json` exactly, and confirm a second build leaves `git status` clean:
+CI's `Tests and committed bundle` job rebuilds and compares those bytes.
+
+**2. Version bump, one commit and one PR.** `package.json` is the single source of truth;
+`.claude-plugin/marketplace.json` must match it (a test enforces this); `README.md` and the six
+`README.<lang>.md` carry the version in their alpha banner and npm line; `docs/DISTRIBUTION.md`
+names the current alpha and the dist-tags; the translations' `golive-translation` marker gets today's
+`updated` date, and its `source-commit` is pointed at the release commit in a small follow-up commit
+once that commit exists on `main` (the marker records which commit the translation was synced to).
+Merge with CI green.
+
+**3. GitHub, the release of record.** Tag the release commit `v<version>` (annotated) and push it,
+then publish a GitHub Release with the release notes and the registry tarball attached (`npm pack`
+from the tagged commit). The tag must equal the version inside `release.json`, or installed copies
+refuse the update.
+
+**4. npm.** From the tagged commit: `npm publish --tag alpha`, then `npm dist-tag add
+golive@<version> latest` so `npx golive` and `npx golive@alpha` resolve to the same release, and
+confirm with `npm view golive dist-tags`. The publish needs the maintainer's own 2FA; the machine
+that builds the release is not required to be logged in.
+
+**5. ClawHub.** `npx clawhub@latest skill publish skills/golive --slug golive --name GoLive
+--version <version> --changelog "<what changed>"` (dry-run first, `--version` never omitted — see
+[the ClawHub channel](#third-channel-clawhub-the-openclaw-registry)), then confirm
+`npx clawhub@latest search golive --exact` reports the new version.
+
+**6. Channels that need no publish.** The GitHub channel (`npx skills add
+https://github.com/mikehasa/golive-skill --skill golive`) and the skill's `update-check` read the
+repository, so the tag and `main`'s `skills/golive/release.json` carry the release as soon as step 3
+is done. `npx skills` has no publish command, and no other registry mirrors this repository.
+
+**7. Post-release verification, from outside the checkout.** An anonymous clone, a global Skills CLI
+install, `npx golive@alpha install` into a scratch project, and `npx clawhub@latest install golive`
+into a scratch directory: every copy must answer `version --json` with the new version and digest,
+and the offline checks must still pass. Record what was observed — and what was not — in
+[validation](VALIDATION.md), keeping provider evidence separate from package acceptance.
+
+CI tests the already-renamed source and its generated artifacts; it does not rename it again. Keep
+live provider evidence separate from package acceptance.
 
 ## Renaming a source fork
 

@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=ko; source=README.md; source-commit=88a3ccf; reviewed=false; updated=2026-09-26 -->
+<!-- golive-translation: lang=ko; source=README.md; source-commit=88a3ccf; reviewed=false; updated=2026-09-29 -->
 # GoLive
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Português (Brasil)](README.pt-BR.md) · [Deutsch](README.de.md)
@@ -15,7 +15,7 @@
 검증하고, 끝나지 않은 작업은 분명히 드러냅니다. GoLive 계정도, 호스팅 백엔드도, 제품 텔레메트리도
 없습니다.
 
-> **초기 alpha · 0.1.0-alpha.5**
+> **초기 alpha · 0.1.0-alpha.6**
 > 이제 일회용 live 테스트가 여섯 가지 경로를 다룹니다. **호스팅**(Vercel, Netlify), **데이터베이스**
 > (Supabase, Neon), **사용자 지정 도메인 DNS**(Porkbun, GoDaddy), **트랜잭션 이메일**(Resend),
 > **테스트 모드 결제**(Stripe), **Supabase 인증**이며, 여기에 `teardown` 제거 경로도 포함됩니다.
@@ -115,7 +115,7 @@ Stop after installation; don't connect accounts or deploy yet.
 
 ### npm에서 설치
 
-같은 skill이 npm에 `golive@0.1.0-alpha.5`으로도 게시되어 있습니다(dist-tag `alpha`와 `latest`).
+같은 skill이 npm에 `golive@0.1.0-alpha.6`으로도 게시되어 있습니다(dist-tag `alpha`와 `latest`).
 Git이나 Skills CLI 없이 오프라인으로 설치할 수 있습니다:
 
 ```bash
@@ -141,6 +141,17 @@ npm 패키지는 터미널 CLI도 제공합니다. golive 명령은 `npx golive@
 설치 프로그램 명령은 `install`, `install-status`, `update`, `rollback`, `update-policy`,
 `recover-lock`입니다. 이 채널의 정확한 한계는
 [배포와 업데이트](docs/DISTRIBUTION.md#alternative-installation-the-npm-package)를 보세요.
+
+### ClawHub(OpenClaw)에서 설치
+
+[OpenClaw](https://docs.openclaw.ai)를 쓴다면 같은 skill이 그 공개 레지스트리 [ClawHub](https://clawhub.ai/mikehasa/skills/golive)에도 올라와 있습니다:
+
+```bash
+npx clawhub@latest install golive     # into ./skills, recorded in .clawhub/lock.json
+npx clawhub@latest update golive      # later updates stay with ClawHub
+```
+
+ClawHub는 agent의 전역 skills 디렉터리가 아니라 현재 디렉터리의 `skills/`에 설치하므로 OpenClaw 작업 공간에 어울립니다. 이 프로젝트가 검증한 클라이언트는 위 두 채널을 쓰는 Codex와 Claude Code입니다. 레지스트리는 자기 메타데이터(`_meta.json`, `skill-card.md`, `.clawhub/`)를 번들 옆에 두지만, golive 자체 무결성 검사는 이를 무시합니다. 이 채널의 한계는 [배포와 업데이트](docs/DISTRIBUTION.md#clawhub-openclaw-registry)를 보세요.
 
 ## GoLive 사용하기
 

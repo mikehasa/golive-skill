@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=ja; source=README.md; source-commit=88a3ccf; reviewed=false; updated=2026-09-26 -->
+<!-- golive-translation: lang=ja; source=README.md; source-commit=88a3ccf; reviewed=false; updated=2026-09-29 -->
 # GoLive
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Português (Brasil)](README.pt-BR.md) · [Deutsch](README.de.md)
@@ -9,7 +9,7 @@
 
 プロバイダが公開している部分は自動化します。人間が必要な部分は案内します。観測できるものは検証し、終わっていない作業は終わっていないと分かる形にします。GoLive のアカウントも、ホスト型バックエンドも、製品テレメトリもありません。
 
-> **早期 alpha · 0.1.0-alpha.5**
+> **早期 alpha · 0.1.0-alpha.6**
 > 使い捨ての live テストは現在 6 つのジャーニーをカバーしています。**ホスティング**（Vercel、Netlify）、**データベース**（Supabase、Neon）、**カスタムドメインの DNS**（Porkbun、GoDaddy）、**トランザクションメール**（Resend）、
 > **test モードの決済**（Stripe）、**Supabase の認証**、そして `teardown` によるアンインストール経路です。所有権ドキュメントとオンデマンドのドリフト検査 `golive status` はテストカバレッジ付きで実装済みです（`golive status` は live 検証で読み取り専用としても実行しました）。一方、より広い
 > [ロードマップ](README.md#the-full-go-live-checklist-and-roadmap) は私たちの目指す方向であり、すべてが作り終わっているという主張ではありません。
@@ -75,7 +75,7 @@ Stop after installation; don't connect accounts or deploy yet.
 
 ### npm からインストール
 
-同じ skill は npm にも `golive@0.1.0-alpha.5`（dist-tag は `alpha` と `latest`）として公開されており、Git も Skills CLI も使わずオフラインでインストールできます:
+同じ skill は npm にも `golive@0.1.0-alpha.6`（dist-tag は `alpha` と `latest`）として公開されており、Git も Skills CLI も使わずオフラインでインストールできます:
 
 ```bash
 # Codex
@@ -89,6 +89,17 @@ npx golive@alpha install --agent claude
 
 **どちらのチャネルも同じリリースを配ります。** npm パッケージはこのリポジトリのバージョンを、単体で使えるインストーラヘルパーも含めて公開しているので、npm で入れたものはその場で更新できる自分専用のコピーになります。以前の `0.1.0-alpha.0` スナップショットには更新手段がありません。そのコピーを削除して入れ直すか、インストールを自分で管理する GitHub チャネルを使ってください。
 npm パッケージはターミナル CLI も公開しています。golive のコマンドは `npx golive@alpha help`、`version`、`update-check`、`credentials`、`detect`、`menu`、`init`、`doctor`、`plan`、`teardown`、`apply`、`verify`、`status`、`handoff`（`apply` には承認済みの plan ID と明示的な確認が必要です）。さらに、自分が管理するコピー向けのインストーラコマンド `install`、`install-status`、`update`、`rollback`、`update-policy`、`recover-lock` があります。このチャネルの正確な限界は [インストールと更新](docs/DISTRIBUTION.md#alternative-installation-the-npm-package) にあります。
+
+### ClawHub（OpenClaw）からインストール
+
+[OpenClaw](https://docs.openclaw.ai) を使っている場合、同じ skill はその公開レジストリ [ClawHub](https://clawhub.ai/mikehasa/skills/golive) にも登録されています:
+
+```bash
+npx clawhub@latest install golive     # into ./skills, recorded in .clawhub/lock.json
+npx clawhub@latest update golive      # later updates stay with ClawHub
+```
+
+ClawHub はエージェントのグローバルな skills ディレクトリではなく、現在のディレクトリの `skills/` にインストールするため、OpenClaw のワークスペースに向いています。このプロジェクトが検証しているクライアントは、上記 2 つのチャネルを使う Codex と Claude Code です。レジストリは独自のメタデータ（`_meta.json`、`skill-card.md`、`.clawhub/`）をバンドルの隣に置きますが、golive 自身の完全性チェックはそれらを無視します。このチャネルの限界は [インストールと更新](docs/DISTRIBUTION.md#clawhub-openclaw-registry) にあります。
 
 ## GoLive を使う
 

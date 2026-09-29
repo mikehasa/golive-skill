@@ -1,6 +1,6 @@
 {
   "name": "golive",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0-alpha.6",
   "description": "Agent skill: take an app from repo to live production on your own accounts, with the providers you choose.",
   "keywords": [
     "agent-skill",

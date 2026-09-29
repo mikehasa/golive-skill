@@ -440,3 +440,26 @@ see the project ([#66]); and a plan that redeploys nothing says so and names the
 change ships through ([#67]). The evidence for these is offline: vitest cases over mock adapters,
 temporary repo directories and scripted git output. None of the four has been re-run against a live
 provider account, so nothing above extends the walkthrough's live evidence to them.
+
+## The ClawHub channel: an install that refused to run, and the fix
+
+Recorded 2026-09-29 against the published `0.1.0-alpha.5`. ClawHub lists this skill
+(`npx clawhub@latest search golive --exact` reported `golive @mikehasa`, version `0.1.0-alpha.5`;
+`npx clawhub@latest skill verify golive` reported `decision: pass` with the registry's own scan
+summary). Installing it with `npx clawhub@latest install golive` into an empty directory copied every
+one of the bundle's 20 files **and** wrote ClawHub's own metadata inside the folder: `_meta.json`,
+`skill-card.md` and `.clawhub/origin.json`. Every command on that copy then failed with "Release
+bundle is incomplete, mixed or damaged" — `src/core/release.ts` and `scripts/install-lib.mjs` counted
+those three names as unexpected files, so the channel installed a bundle that immediately reported
+itself broken. The registry's `skill-card.md` is generated from the listing; the other two are the
+CLI's install metadata.
+
+Both verifiers now ignore exactly those names, and nothing else. Vitest covers the tolerated set, the
+same names under `references/` (still refused), and the installer's own copy; a stray unrelated file
+is still refused. Observed locally against a ClawHub-shaped folder — the rebuilt bundle beside the
+install's own metadata — where `node …/scripts/golive.mjs version --json` and the installer's
+`verifyBundle` both answer `0.1.0-alpha.6`, while one extra stray file is refused.
+
+**Not verified:** the live channel for `0.1.0-alpha.6` (the published copy was still
+`0.1.0-alpha.5`, and the fix ships in `0.1.0-alpha.6`), and any OpenClaw client — the install path
+above was exercised through the registry's own CLI, not through an agent session.
