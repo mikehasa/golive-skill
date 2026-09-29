@@ -456,10 +456,19 @@ CLI's install metadata.
 
 Both verifiers now ignore exactly those names, and nothing else. Vitest covers the tolerated set, the
 same names under `references/` (still refused), and the installer's own copy; a stray unrelated file
-is still refused. Observed locally against a ClawHub-shaped folder — the rebuilt bundle beside the
-install's own metadata — where `node …/scripts/golive.mjs version --json` and the installer's
-`verifyBundle` both answer `0.1.0-alpha.6`, while one extra stray file is refused.
+is still refused.
 
-**Not verified:** the live channel for `0.1.0-alpha.6` (the published copy was still
-`0.1.0-alpha.5`, and the fix ships in `0.1.0-alpha.6`), and any OpenClaw client — the install path
-above was exercised through the registry's own CLI, not through an agent session.
+**The second half of the same problem, found by publishing.** `0.1.0-alpha.6` was published to
+ClawHub, and the copy it installs still failed its integrity check. The published artifact was
+compared file by file against the release manifest: the twenty files matched, except that
+`references/.gitkeep` was missing. The registry's CLI skips every path with a dot-prefixed segment
+(`hasDotPathSegment` in its `listSkillFiles`), so the empty placeholder could never be published,
+while the manifest required it. The placeholder is gone from the bundle in `0.1.0-alpha.7`; the
+registry's own review of the alpha.6 artifact said the same thing in its verdict ("the shipped bundle
+fails its own integrity check"). A manifest-listed file going missing is still a hard failure — the
+zero-byte placeholder was removed rather than the check weakened.
+
+**Not verified:** the live ClawHub copy of `0.1.0-alpha.7` (published after this was written; its
+registry verdict and installed copy are re-checked then), the `0.1.0-alpha.6` copy on ClawHub, which
+stays broken, and any OpenClaw client — the install path above was exercised through the registry's
+own CLI, not through an agent session.

@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "GoLive: take an app from repo to live production on the user's own accounts.",
-    "version": "0.1.0-alpha.6"
+    "version": "0.1.0-alpha.7"
   },
   "plugins": [
     {
