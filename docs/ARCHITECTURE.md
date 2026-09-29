@@ -137,7 +137,8 @@ names the missing capability. See [provider scope](PROVIDERS.md) for the per-hos
 
 An adapter speaks to a provider and exposes capabilities such as `EnvStore`, `PublicUrl`,
 `DomainAttach`, `DnsZone`, `DbAdmin`, `DbConnection`, `AuthConfig`, `AuthUsers`, `WebhookRegistry`,
-`SendingDomain`, `Deployer` and `ReleaseControl`. Links compose those capabilities, for example
+`SendingDomain`, `Deployer`, `ReleaseControl` and `UploadRules`. Links compose those capabilities, for
+example
 database output → hosting env or hosting URL → auth redirects. A new adapter does not need a separate
 recipe for every pairing.
 
@@ -153,9 +154,19 @@ the id golive recorded, and re-point production at one. An adapter without it (V
 with that reason. Preview deployments, the release check that gates them, promotion and rollback are
 opt-in (`release` in `golive.yaml`) and described above.
 
+`UploadRules` covers the deploys that are not a build: a host whose own command uploads this folder
+and serves what it uploaded (Vercel's `vercel deploy`) declares the ignore file its CLI reads, and the
+`upload` link adds golive's own files — `.golive/`, `golive.yaml`, the report and handover documents,
+the `docs/GOLIVE-*` run docs — to that file before the deploy, which then depends on the step. The
+edit is inside the repo (`risk: { writes: false }`, no provider write), the block is added once and
+existing rules are untouched, and a deploy that would carry it is planned for that reason
+(`upload:excludes`: an upload only changes with a new deployment). The `upload-exposure` check
+re-reads the live site for those paths; only a body that IS the file fails.
+
 | Source | Responsibility |
 | --- | --- |
 | `src/core/types.ts` | Adapter, capability, step, plan, state and report contracts |
+| `src/core/artifacts.ts` | golive's own files in a repo, and the ignore block a CLI upload must not serve |
 | `src/core/drift.ts` | Recorded baselines vs reads taken now: the `status` model and its comparisons (read-only) |
 | `src/adapters/` | Provider transport, observation and operations |
 | `src/links/` | Destination selection and approved cross-provider changes |

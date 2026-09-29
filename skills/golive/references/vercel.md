@@ -37,6 +37,27 @@ golive automates (after plan approval):
 - **Picks the project** (`project:hosting`): the linked one, else `projects.hosting` from `golive.yaml`,
   else a same-named one, else a Create step that lists existing projects the human could use instead
   (`init --project hosting=<name>`).
+- **Names a project it creates after the repository, not the folder golive ran in**: the git `origin`
+  remote's name when there is one (a worktree like `setup-deploy-b59cf2`, or a second checkout of the
+  repo, then proposes — and later finds — the same project), else the working folder. The Create
+  step's preview says which one it used, and `plan` warns when the two differ, because a project named
+  after a scratch folder is orphaned as soon as the repo is checked out somewhere else. To use another
+  name, create the project at Vercel first and adopt it with `init --project hosting=<name>`.
+- **Keeps `.vercel/project.json` in sync** in the repo whenever it selects or creates the project
+  (`{projectId, orgId, projectName}`, the shape `vercel link` writes). A local file, no provider write:
+  the `vercel` CLI and tools that detect Vercel from `vercel.json` or `.vercel/` then see the project
+  golive deployed instead of "no platform" (issue #66). Keep `.vercel/` out of git; `.golive/state.json`
+  remains golive's own record.
+- **Keeps its own files out of the upload.** `vercel deploy` uploads this folder and serves what it
+  uploaded, and its ignore filter reads **only** `.vercelignore`/`.nowignore` — never `.gitignore`.
+  Before a deploy on an unframed app golive therefore plans `upload:excludes`: it appends a marked
+  block to `.vercelignore` (created when absent, your rules above untouched) for `.golive/`,
+  `golive.yaml`, `GOLIVE_REPORT.md`, `GOLIVE_HANDOVER.md`, `SHIP_REPORT.md` and `docs/GOLIVE-*`, and
+  the deployment that follows carries it — the edit is local, nothing is written at Vercel. A legacy
+  `.nowignore` present instead means no step and a warning: the CLI refuses both files at once. Other
+  private files in the repo are yours to exclude: for a static site an allowlist (`/*` plus `!api`,
+  `!index.html`) hides everything the app does not name. `verify`'s `upload-exposure` check re-reads
+  the live site for golive's own paths and **fails** when one is served.
 - Writes env vars **by name** for Production and Preview separately: secrets as Vercel's **Sensitive**
   type (write-only), public values as Encrypted. Local development is left to `.env.local`. It checks
   every target before writing any, so a refusal (hidden production env, a Marketplace-owned var, or
@@ -82,6 +103,13 @@ Stays with the human (and why):
 - **Env changes need a redeploy.** Existing deployments keep the old values. golive redeploys production
   after it writes production env; preview-only changes apply on the next preview deploy. After a
   dashboard edit, the human redeploys.
+- **A later code change does not trigger a golive deploy.** golive deploys production only for the
+  first deploy, a production env change, or a retry after a failure — a code-only change plans no
+  deploy step, and the plan's `warnings` say so. Ship it Vercel's own way: `vercel deploy --prod` in
+  this repo (golive keeps `.vercel/project.json` in sync when it selects or creates the project, so the
+  CLI finds it) or Vercel's Git integration. That deployment is outside golive: it is not recorded in
+  `.golive/state.json`, and `status` does not report it as drift. See `plan-and-verify.md`,
+  "Shipping a later code change".
 - **Secret vars can't be read back**, even in the dashboard. That's intended. `verify` checks names
   only.
 - **Browser-visible names** (`NEXT_PUBLIC_`, `VITE_`, names inlined by the framework config, …) ship to

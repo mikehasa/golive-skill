@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Secret, _resetSecretRegistry } from '../../src/core/secret.js';
@@ -241,6 +241,21 @@ describe('vercel project', () => {
     expect(JSON.stringify(list)).not.toContain(BYPASS);
   });
 
+  it('candidates() searches by the git repository name, not a worktree folder (issue #64)', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'golive-wt-'));
+    try {
+      writeFileSync(join(cwd, '.git'), 'gitdir: /main/.git/worktrees/setup-deploy-b59cf2\n');
+      const h = mockHttp([['GET', `${API}/v10/projects`, () => ({ json: { projects: [RAW_PROJECT] } })]]);
+      const ex = mockExec([WHOAMI_OUT, ['git config --get remote.origin.url', { code: 0, stdout: 'git@github.com:mikehasa/golive-gstack-demo.git\n' }]]);
+      const ctx = testCtx({ exec: ex.run, http: h.http, tokens: { VERCEL_TOKEN: TOKEN }, cwd });
+      await project.candidates(ctx);
+      // A second checkout of the same repository then finds the project it created before.
+      expect(h.calls[0]!.url).toBe(`${API}/v10/projects?search=golive-gstack-demo&limit=20`);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('create() adopts an existing project with the same name', async () => {
     const ex = mockExec([WHOAMI_OK, cliApi({ 'GET /v9/projects/my-app': RAW_PROJECT })]);
     const ctx = testCtx({ exec: ex.run });
@@ -330,6 +345,80 @@ describe('vercel project', () => {
   it('exists() throws when the project read fails for any other reason', async () => {
     const limited = mockExec([WHOAMI_OK, cliApi({ 'GET /v9/projects/prj_1': () => ({ code: 1, stderr: 'Error: Rate limited (429)' }) })]);
     await expect(project.exists!(testCtx({ exec: limited.run }), 'prj_1')).rejects.toThrow(/HTTP 429/);
+  });
+});
+
+describe('vercel local link file (issue #66)', () => {
+  /** A real cwd: the point of this behaviour is the file on disk. */
+  function inTmp(): string {
+    return mkdtempSync(join(tmpdir(), 'golive-vercel-link-'));
+  }
+
+  const readLink = (cwd: string): unknown => JSON.parse(readFileSync(join(cwd, '.vercel', 'project.json'), 'utf8'));
+
+  it('select() writes .vercel/project.json in the shape vercel link uses, so other tools detect the project', async () => {
+    const cwd = inTmp();
+    try {
+      const ex = mockExec([WHOAMI_OK, cliApi({ 'GET /v9/projects/my-app': RAW_PROJECT })]);
+      const ctx = testCtx({ exec: ex.run, cwd });
+      await project.select(ctx, 'my-app');
+      expect(readLink(cwd)).toEqual({ projectId: 'prj_1', orgId: 'team_1', projectName: 'my-app' });
+      // The account ids are not secret, but the file is the repo's own: it says where it came from.
+      expect(ctx.logs.join('\n')).toMatch(/wrote .vercel\/project\.json/);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves an existing link to the same project untouched, and rewrites one that points elsewhere', async () => {
+    const cwd = inTmp();
+    try {
+      mkdirSync(join(cwd, '.vercel'), { recursive: true });
+      const mine = `{"projectId":"prj_1","orgId":"team_1","projectName":"my-app"}`;
+      writeFileSync(join(cwd, '.vercel', 'project.json'), mine);
+      await project.select(testCtx({ exec: mockExec([WHOAMI_OK, cliApi({ 'GET /v9/projects/my-app': RAW_PROJECT })]).run, cwd }), 'my-app');
+      expect(readFileSync(join(cwd, '.vercel', 'project.json'), 'utf8')).toBe(mine);
+
+      writeFileSync(join(cwd, '.vercel', 'project.json'), '{"projectId":"prj_other","orgId":"team_other"}');
+      await project.select(testCtx({ exec: mockExec([WHOAMI_OK, cliApi({ 'GET /v9/projects/my-app': RAW_PROJECT })]).run, cwd }), 'my-app');
+      expect(readLink(cwd)).toEqual({ projectId: 'prj_1', orgId: 'team_1', projectName: 'my-app' });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('reports, without failing, a link file it cannot write', async () => {
+    const cwd = inTmp();
+    try {
+      // `.vercel` as a regular file: the same shape a read-only checkout or a stray file produces.
+      writeFileSync(join(cwd, '.vercel'), 'not a directory');
+      const ex = mockExec([WHOAMI_OK, cliApi({ 'GET /v9/projects/my-app': RAW_PROJECT })]);
+      const ctx = testCtx({ exec: ex.run, cwd });
+      await expect(project.select(ctx, 'my-app')).resolves.toMatchObject({ id: 'prj_1' });
+      expect(ctx.logs.join('\n')).toMatch(/could not write \.vercel\/project\.json/);
+      expect(ctx.state.resource('vercel.projectId')).toBe('prj_1');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('remove() deletes the link only while it points at the deleted project', async () => {
+    const cwd = inTmp();
+    try {
+      mkdirSync(join(cwd, '.vercel'), { recursive: true });
+      writeFileSync(join(cwd, '.vercel', 'project.json'), '{"projectId":"prj_1","orgId":"team_1"}');
+      const gone = testCtx({ exec: mockExec([WHOAMI_OK, cliApi({ 'DELETE /v9/projects/prj_1': {} })]).run, cwd, state: linkedState({ 'vercel.createdProjectId': 'prj_1' }) });
+      expect(await project.remove!(gone)).toEqual({ removed: true });
+      expect(existsSync(join(cwd, '.vercel', 'project.json'))).toBe(false);
+
+      // Another project's link survives the deletion golive performed.
+      writeFileSync(join(cwd, '.vercel', 'project.json'), '{"projectId":"prj_other","orgId":"team_1"}');
+      const other = testCtx({ exec: mockExec([WHOAMI_OK, cliApi({ 'DELETE /v9/projects/prj_1': {} })]).run, cwd, state: linkedState({ 'vercel.createdProjectId': 'prj_1' }) });
+      expect(await project.remove!(other)).toEqual({ removed: true });
+      expect(existsSync(join(cwd, '.vercel', 'project.json'))).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });
 

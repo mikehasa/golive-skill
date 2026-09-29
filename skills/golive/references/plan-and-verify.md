@@ -86,10 +86,14 @@ project name (id), team/org if known, where the choice came from, and the logged
   one.
 - Nothing linked: a configured (`init --project`) or same-named project is selected; otherwise a
   **Create** step whose preview lists existing projects the human could use instead. Ask them, and
-  use `init --project <axis>=<name>` to adopt one.
+  use `init --project <axis>=<name>` to adopt one. The name a Create step proposes comes from the
+  repository — the git `origin` remote's name when there is one, else the working folder — and its
+  preview says which; `plan` warns when the two differ, so a worktree name such as
+  `setup-deploy-b59cf2` never becomes the project (issue #64).
 
 **Deploys.** Production is (re)deployed when this plan writes production env, when a production env
-write is still waiting for a deploy, when the last deploy failed, or when golive has never deployed
+write is still waiting for a deploy, when this plan changes what the host uploads
+(`upload:excludes`, below), when the last deploy failed, or when golive has never deployed
 production. Preview-only env changes don't trigger a production deploy. If production was never
 deployed by golive, `deploy:production` runs **before** `domain:attach`, and
 `deploy:production:final` redeploys after env writes that need the domain (the webhook secret). Once
@@ -107,6 +111,31 @@ marker plus, when the provider gives one, its own identity under `deployed:produ
 `<provider>|<deployment id>|<url>|<time>` in `.golive/state.json` — the name a later promotion or
 rollback of exactly that deployment would use. A provider that reports no identity records the
 marker alone; golive never derives one from the URL.
+
+**The upload (`upload:excludes`).** A host whose own CLI uploads this folder and serves what it
+uploaded (Vercel: `vercel deploy`) would publish the files golive writes into the repo —
+`.golive/state.json` with its team/project ids and account name, `golive.yaml`, `GOLIVE_REPORT.md`,
+`GOLIVE_HANDOVER.md` and the agent-written `docs/GOLIVE-*` run documents. The host declares its
+ignore file (`capabilities.upload`; Vercel's CLI reads `.vercelignore`/`.nowignore` and **not**
+`.gitignore`), and `upload:excludes` appends golive's marked block to it **before** the deploy, which
+then depends on it. It is a local edit inside the repo — `risk: { writes: false }`, nothing at the
+provider — its preview names the file and every line, existing rules are left exactly as they are,
+and the block is added once. The deploy it precedes is planned for that reason too: an upload only
+changes with a new deployment. A conflicting ignore file the CLI refuses (`.nowignore` beside
+`.vercelignore`) means no step and a warning instead. `verify`'s `upload-exposure` check re-reads the
+live site for these paths afterwards: a 404 passes, a body that IS the file fails high, and the app's
+own catch-all answering 200 is named as such.
+
+**Shipping a later code change.** golive is not a CI: a plan deploys production only for the reasons
+above, so once a successful deploy is recorded a code-only change plans **no** deploy step, and the
+plan's `warnings` say so and name this section. That is the boundary, not a missing feature. A later
+code change ships through the host's own path: its CLI in this repository (on Vercel
+`vercel deploy --prod` — golive keeps `.vercel/project.json` in sync when it selects or creates the
+project, and `.golive/state.json` records the org/project ids; other hosts: their CLI or the deploy
+command their own docs name), or the host's Git integration. Such a deploy is outside golive: it is
+not recorded in `.golive/state.json`, and `status` does not report it as drift — `status` compares
+what golive recorded with reads taken now, and production simply serving a newer deployment is not a
+difference in any recorded baseline. Re-run `verify` after it to re-read the live site.
 
 **Preview deployments (`release: { preview: true }` in `golive.yaml`).** With the opt-in — and
 `preview` in `targets` — `plan` adds two steps at the end (a stack without the opt-in is unchanged),
@@ -381,7 +410,7 @@ vars`). Only `accounts` fails for login problems; fix it first, then re-run `ver
 
 **Active probes** (`bundle-secrets`, `webhook-unsigned`, `auth-session`'s protected-path GET and the
 public-root GET that corroborates it, `auth-isolation`'s route reads and its one marker row per test
-account, and the key `rls-probe` takes from the bundle) only target the production URL the hosting
+account, `upload-exposure`'s reads of golive's own paths, and the key `rls-probe` takes from the bundle) only target the production URL the hosting
 adapter reports
 for the linked project, never `config.domain` directly. If the host can't confirm it, the check skips with `cannot confirm <url>
 belongs to your project yet`. If the host reports another origin than `config.domain` (e.g. the domain
@@ -396,6 +425,7 @@ state — and a protected preview skips instead of being reported as scanned.
 | `env-parity` | every referenced name exists per target (names only; unmapped missing names only warn) | guided host; a source provider not logged in (`blocked by: login:<id> (NAME@target, …)`); the role can't read production env |
 | `domain-live` | automated host reports the domain `ok` (`pending` warns), it resolves, HTTPS answers 2xx/3xx; guided/no host: DNS + HTTPS only, evidence says the attachment isn't confirmed | no domain; `blocked by: login:<host>` / `project:hosting`; the host's status lookup errors (`cannot confirm <d> is attached …`) |
 | `bundle-secrets` | no known credential patterns in the complete bounded fetch set | production URL not confirmed; **warns** on asset fetch failures, scan limits or off-origin production redirects |
+| `upload-exposure` | production serves none of golive's own files: every path this repo holds (`.golive/state.json`, `.golive/report.json`, `.golive/handover.json`, `golive.yaml`, `GOLIVE_REPORT.md`, `GOLIVE_HANDOVER.md`, `SHIP_REPORT.md`, `docs/GOLIVE-*`) answers 404/410, or 200 with a body that is not that file (an SPA catch-all is named as such) | production URL not confirmed; a 401/403 (a private deployment is not evidence); nothing of golive's exists in this repo; **warns** when a path could not be read |
 | `rls-probe` | tables in exposed schemas aren't readable with the publishable key; advisors clean | `blocked by: project:db`; no publishable/anon key |
 | `db-connection` | the selected Neon compute accepts a fixed read-only query and returns the expected database and role; no schema/Auth/app-isolation claim | no connection-probe capability; `blocked by: login:<db>` / `project:db` |
 | `auth-redirects` | site URL and allowlist point at production, no localhost | guided auth; `blocked by: deploy:production` |

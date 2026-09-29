@@ -3,9 +3,12 @@
  * of `protectionBypass`, so every project response is reduced to `ProjectInfo` immediately and the
  * raw object is never returned, logged or stored.
  */
-import { basename } from 'node:path';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { redact } from '../core/secret.js';
 import type { Ctx, DetectResult, ProjectCreateTarget, ProjectLinker, ProjectRef, ProjectScope } from '../core/types.js';
-import { VercelError, isNotFound, orgId, readLinkFile, session, vercelApi } from './vercel-api.js';
+import { repoIdentity } from '../core/repo.js';
+import { VercelError, isNotFound, orgId, parseJson, readLinkFile, session, vercelApi, type LinkFile } from './vercel-api.js';
 
 export interface ProjectInfo {
   id: string;
@@ -34,12 +37,61 @@ export async function projectInfo(ctx: Ctx, idOrName: string, scopeId?: string):
   return info;
 }
 
+const errMsg = (e: unknown): string => redact(e instanceof Error ? e.message : String(e));
+
 function remember(ctx: Ctx, p: ProjectInfo): void {
   ctx.state.save((s) => {
     s.resources['vercel.projectId'] = p.id;
     s.resources['vercel.projectName'] = p.name;
     if (p.accountId) s.resources['vercel.orgId'] = p.accountId;
   });
+  writeLinkFile(ctx, p);
+}
+
+/**
+ * `.vercel/project.json`, in the shape `vercel link` writes (`{projectId, orgId, projectName}`).
+ * LOCAL file only — no provider write: tools that detect Vercel from `.vercel/` (issue #66: gstack's
+ * `/setup-deploy` found none) and the `vercel` CLI then see the project golive selected, while
+ * `VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` keep golive's own deploys pinned independently of it. An
+ * existing link to the same project is left untouched; a write that fails is reported, never fatal
+ * (the provider-side binding already succeeded).
+ */
+function writeLinkFile(ctx: Ctx, p: ProjectInfo): void {
+  const file = '.vercel/project.json';
+  if (!p.accountId) {
+    ctx.log.info(`vercel: ${file} not written (Vercel did not report the owning account); deploys still pin the project`);
+    return;
+  }
+  const current = readProjectLink(ctx);
+  if (current?.projectId === p.id && current.orgId === p.accountId) return;
+  try {
+    mkdirSync(join(ctx.cwd, '.vercel'), { recursive: true });
+    writeFileSync(join(ctx.cwd, '.vercel', 'project.json'), JSON.stringify({ projectId: p.id, orgId: p.accountId, projectName: p.name }, null, 2) + '\n');
+    ctx.log.info(`vercel: wrote ${file} (local link file, no provider write) so the Vercel CLI and other tools detect ${p.name}; keep it out of git (it names the account and project)`);
+  } catch (e) {
+    ctx.log.warn(`vercel: could not write ${file} (${errMsg(e)}); golive's own deploys still pin the project through VERCEL_ORG_ID/VERCEL_PROJECT_ID`);
+  }
+}
+
+/** Parse `.vercel/project.json` itself (golive never follows it through the detection cache). */
+function readProjectLink(ctx: Ctx): LinkFile | null {
+  try {
+    const parsed = parseJson<LinkFile>(readFileSync(join(ctx.cwd, '.vercel', 'project.json'), 'utf8'));
+    return parsed && (parsed.projectId || parsed.orgId) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Delete the local link only while it still points at the project golive just deleted. */
+function removeLinkFile(ctx: Ctx, projectId: string): void {
+  try {
+    if (readProjectLink(ctx)?.projectId !== projectId) return;
+    rmSync(join(ctx.cwd, '.vercel', 'project.json'));
+    ctx.log.info(`vercel: removed .vercel/project.json (it linked the deleted project ${projectId})`);
+  } catch {
+    // The project is gone either way; a link file golive could not remove must not fail the removal.
+  }
 }
 
 /** Marks a project golive itself created; teardown deletes only a project carrying this marker. */
@@ -170,6 +222,7 @@ async function linkedProject(ctx: Ctx): Promise<(ProjectRef & { accountId?: stri
 export const vercelProject: ProjectLinker = {
   creationTarget,
   resolve: resolveProject,
+  localLinkFile: '.vercel/project.json',
   /** Read-only existence probe for a deletion golive performed (the provider's own not-found). */
   async exists(ctx, id) {
     try {
@@ -188,7 +241,9 @@ export const vercelProject: ProjectLinker = {
   },
 
   async candidates(ctx) {
-    const q = encodeURIComponent(basename(ctx.cwd));
+    // The name the create step would use (the git origin remote, else the folder), so a second
+    // checkout of this repository finds the project instead of creating another one (issue #64).
+    const q = encodeURIComponent((await repoIdentity(ctx)).name);
     const res = await vercelApi<{ projects?: RawProject[] }>(ctx, 'GET', `/v10/projects?search=${q}&limit=20`);
     return (res.projects ?? []).map(toInfo).filter((p): p is ProjectInfo => p !== null).map(({ id, name }) => ({ id, name }));
   },
@@ -253,6 +308,7 @@ export const vercelProject: ProjectLinker = {
       delete s.resources['vercel.projectName'];
       delete s.resources['vercel.createdProjectId'];
     });
+    removeLinkFile(ctx, id);
     ctx.log.info(`vercel: deleted project ${id}`);
     return { removed: true };
   },

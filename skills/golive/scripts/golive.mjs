@@ -7925,10 +7925,51 @@ var init_credentials = __esm({
   }
 });
 
+// src/core/repo.ts
+import { existsSync as existsSync4 } from "node:fs";
+import { basename as basename3, join as join7 } from "node:path";
+function repoIdentity(ctx) {
+  let p = identities.get(ctx.exec);
+  if (!p) {
+    p = resolve5(ctx);
+    identities.set(ctx.exec, p);
+  }
+  return p;
+}
+async function resolve5(ctx) {
+  const folder = basename3(ctx.cwd);
+  const remote = await readOriginRemote(ctx);
+  const fromRemote = remote ? repoFromRemote(remote) : "";
+  return fromRemote ? { name: fromRemote, from: "git-remote", folder } : { name: slug(folder) || "app", from: "folder", folder };
+}
+async function readOriginRemote(ctx) {
+  if (!existsSync4(join7(ctx.cwd, ".git"))) return null;
+  try {
+    const r = await ctx.exec("git", ["config", "--get", "remote.origin.url"], { cwd: ctx.cwd, timeoutMs: 5e3 });
+    return r.code === 0 ? (r.stdout.trim().split("\n")[0] ?? "").trim() || null : null;
+  } catch {
+    return null;
+  }
+}
+function repoFromRemote(url) {
+  const parts = url.trim().replace(/\.git$/i, "").split(/[\\/:]+/).filter(Boolean);
+  return slug(parts.at(-1) ?? "");
+}
+function slug(raw2) {
+  return raw2.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
+}
+var identities;
+var init_repo = __esm({
+  "src/core/repo.ts"() {
+    "use strict";
+    identities = /* @__PURE__ */ new WeakMap();
+  }
+});
+
 // src/adapters/supabase-credentials.ts
 import { closeSync as closeSync5, constants as constants5, fstatSync as fstatSync5, lstatSync as lstatSync5, openSync as openSync5, readFileSync as readFileSync7 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { dirname as dirname6, isAbsolute as isAbsolute3, join as join7 } from "node:path";
+import { dirname as dirname6, isAbsolute as isAbsolute3, join as join8 } from "node:path";
 function storedFile(path, secret) {
   let fd;
   try {
@@ -7981,9 +8022,9 @@ async function readSupabaseCliCredential(ctx, options = {}) {
   }
   const platform2 = options.platform ?? process.platform;
   if (platform2 === "win32") throw failure("Windows Credential Manager reuse is not implemented by golive.");
-  const root = ctx.env("SUPABASE_HOME")?.trim() || join7(options.home ?? homedir3(), ".supabase");
+  const root = ctx.env("SUPABASE_HOME")?.trim() || join8(options.home ?? homedir3(), ".supabase");
   if (!isAbsolute3(root)) throw failure("SUPABASE_HOME must be an absolute path for safe credential reuse.");
-  const profile = ctx.env("SUPABASE_PROFILE") || storedFile(join7(root, "profile"), false)?.trim() || "supabase";
+  const profile = ctx.env("SUPABASE_PROFILE") || storedFile(join8(root, "profile"), false)?.trim() || "supabase";
   if (profile.toLowerCase() !== "supabase") throw failure("The selected Supabase CLI profile is not the supported production supabase profile; golive will not use another profile or API.");
   const noKeyring = ctx.env("SUPABASE_NO_KEYRING") === "1";
   const wsl = options.wsl ?? (platform2 === "linux" && (() => {
@@ -8006,7 +8047,7 @@ async function readSupabaseCliCredential(ctx, options = {}) {
       if (answer.kind === "item") return credential(answer.result.stdout, true);
     }
   }
-  const file = storedFile(join7(root, "access-token"), true);
+  const file = storedFile(join8(root, "access-token"), true);
   return file === void 0 ? void 0 : credential(file);
 }
 async function keychainRead(ctx, account2, timeoutMs) {
@@ -8062,8 +8103,8 @@ var init_supabase_credentials = __esm({
 });
 
 // src/adapters/supabase-api.ts
-import { existsSync as existsSync4, readFileSync as readFileSync8 } from "node:fs";
-import { join as join8 } from "node:path";
+import { existsSync as existsSync5, readFileSync as readFileSync8 } from "node:fs";
+import { join as join9 } from "node:path";
 function tokenHelp() {
   return `At https://supabase.com/dashboard/account/tokens, create a token scoped to the existing project and the operations needed (API Keys and API Key Secrets Read to reveal keys; Auth Config Read to inspect auth, plus Auth Config and Project Settings Read-write to update it). Creating projects also needs organization/account management access to the intended organization; project-scoped Full access is not enough. In the current Dashboard rollout, that option may be under experimental API tokens; check the token's access scope, not just the Full access label. Use a short expiry. ${tokenHowTo(TOKEN_ENV)}`;
 }
@@ -8075,8 +8116,8 @@ function assertRef(ref3) {
   return ref3;
 }
 function linkedRef(cwd) {
-  const p = join8(cwd, "supabase", ".temp", "project-ref");
-  if (!existsSync4(p)) return void 0;
+  const p = join9(cwd, "supabase", ".temp", "project-ref");
+  if (!existsSync5(p)) return void 0;
   const ref3 = readFileSync8(p, "utf8").trim();
   return REF_RE.test(ref3) ? ref3 : void 0;
 }
@@ -8275,8 +8316,8 @@ async function signup(deps2, ctx, email, password) {
   const body2 = asObject(res.json);
   const ok = res.status >= 200 && res.status < 300;
   const session2 = ok && Boolean(str(body2.access_token));
-  const identities2 = Array.isArray(body2.identities) ? body2.identities : void 0;
-  const existing = ok && !session2 && identities2?.length === 0;
+  const identities3 = Array.isArray(body2.identities) ? body2.identities : void 0;
+  const existing = ok && !session2 && identities3?.length === 0;
   const userId = str(body2.id) ?? str(asObject(body2.user).id);
   const detail = detailOf(res.json);
   return {
@@ -8466,7 +8507,6 @@ __export(supabase_exports, {
   usesPrisma: () => usesPrisma
 });
 import { randomBytes as randomBytes2 } from "node:crypto";
-import { basename as basename4 } from "node:path";
 async function auth(ctx) {
   let tok;
   let storeUnreadable;
@@ -8550,19 +8590,15 @@ async function tokenNeeds(ctx) {
     try {
       if (await resolveRef(ctx)) needsCreate = false;
       else {
-        const name3 = repoName2(ctx);
+        const name3 = (await repoIdentity(ctx)).name;
         needsCreate = !(await adoptable(ctx)).some((p) => p.name.toLowerCase() === name3);
       }
     } catch {
       needsCreate = false;
     }
-    if (needsCreate) needs.push(`creating the Supabase project (none is linked and no project named "${repoName2(ctx)}" can be adopted)`);
+    if (needsCreate) needs.push(`creating the Supabase project (none is linked and no project named "${(await repoIdentity(ctx)).name}" can be adopted)`);
   }
   return needs;
-}
-function repoName2(ctx) {
-  const s = basename4(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
-  return s || "app";
 }
 async function cliOrgs(ctx) {
   const key = "supabase.cliOrgs";
@@ -8575,8 +8611,8 @@ async function cliOrgs(ctx) {
       try {
         const raw2 = JSON.parse(r.stdout.trim() || "[]");
         for (const o of Array.isArray(raw2) ? raw2 : []) {
-          const slug = typeof o.slug === "string" ? o.slug : typeof o.id === "string" ? o.id : void 0;
-          if (slug) out.push(slug);
+          const slug2 = typeof o.slug === "string" ? o.slug : typeof o.id === "string" ? o.id : void 0;
+          if (slug2) out.push(slug2);
         }
       } catch {
       }
@@ -8724,9 +8760,9 @@ async function orgSlugs(ctx, tok) {
 }
 async function freeOrgs(ctx, tok, slugs) {
   const free = [];
-  for (const slug of slugs) {
-    const o = await api(ctx, tok, "GET", `/organizations/${encodeURIComponent(slug)}`, `Reading Supabase organization ${slug}`);
-    if (o?.plan === "free") free.push(slug);
+  for (const slug2 of slugs) {
+    const o = await api(ctx, tok, "GET", `/organizations/${encodeURIComponent(slug2)}`, `Reading Supabase organization ${slug2}`);
+    if (o?.plan === "free") free.push(slug2);
   }
   return free;
 }
@@ -9185,6 +9221,7 @@ var init_supabase = __esm({
     init_supabase_credentials();
     init_supabase_auth();
     init_secret();
+    init_repo();
     init_supabase_api();
     init_supabase_api();
     supabaseTiming = { pollMs: 5e3, timeoutMs: 5 * 6e4, createTimeoutMs: 15 * 6e4 };
@@ -9387,7 +9424,7 @@ __export(stripe_exports, {
   stripeKeyFor: () => stripeKeyFor
 });
 import { createHash as createHash5, randomUUID as randomUUID3 } from "node:crypto";
-import { basename as basename5 } from "node:path";
+import { basename as basename4 } from "node:path";
 function modesInUse(ctx) {
   const modes = new Set(ctx.config.targets.map((t) => modeFor(ctx.config, t)));
   if (modes.size === 0) modes.add("test");
@@ -9501,7 +9538,7 @@ function pick(raw2) {
   return { id: raw2.id, url: raw2.url, events: raw2.enabled_events ?? [], enabled: raw2.status === "enabled", metadata: raw2.metadata ?? {} };
 }
 function appName(ctx) {
-  return basename5(ctx.cwd) || "app";
+  return basename4(ctx.cwd) || "app";
 }
 function isGolive(e) {
   return e.metadata.managed_by === "golive";
@@ -9728,9 +9765,9 @@ var init_stripe = __esm({
 });
 
 // src/cli.ts
-import { writeFileSync as writeFileSync7, mkdirSync as mkdirSync6 } from "node:fs";
-import { join as join18, resolve as resolve8 } from "node:path";
-import { dirname as dirname9, basename as basename12 } from "node:path";
+import { writeFileSync as writeFileSync9, mkdirSync as mkdirSync7 } from "node:fs";
+import { join as join22, resolve as resolve9 } from "node:path";
+import { dirname as dirname9, basename as basename10 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // src/core/release.ts
@@ -10256,7 +10293,7 @@ var exec = async (cmd, args, opts = {}) => {
   for (const a of [cmd, ...args]) {
     if (isRegisteredSecret(a)) throw new ExecError(`refusing to pass a secret in argv to ${cmd}; use stdin`);
   }
-  return new Promise((resolve9, reject) => {
+  return new Promise((resolve10, reject) => {
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
       env: { ...process.env, ...opts.env },
@@ -10279,7 +10316,7 @@ var exec = async (cmd, args, opts = {}) => {
     });
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
-      resolve9({ code: code ?? 1, stdout, stderr });
+      resolve10({ code: code ?? 1, stdout, stderr });
     });
     const input = opts.stdin instanceof Secret ? opts.stdin.reveal() : opts.stdin;
     if (input !== void 0) child.stdin.write(input);
@@ -10321,8 +10358,8 @@ function emptyState() {
 function assertCompatibleState(state, release2) {
   assertReleaseSchemas(release2);
   if (state.version !== release2.schemas.state) throw new Error(`${STATE_FILE}: incompatible state schema; preserve this file and use a compatible release before generating a new plan.`);
-  const identities2 = [state.release, ...Object.values(state.steps).map((r) => r.release)].filter((r) => r !== void 0);
-  for (const prior of identities2) {
+  const identities3 = [state.release, ...Object.values(state.steps).map((r) => r.release)].filter((r) => r !== void 0);
+  for (const prior of identities3) {
     validateReleaseIdentity(prior);
     if (prior.name !== release2.name || prior.source.repository !== release2.source.repository || prior.schemas.config !== release2.schemas.config || prior.schemas.state !== release2.schemas.state || prior.schemas.approval !== release2.schemas.approval) {
       throw new Error(`${STATE_FILE}: incompatible release identity or schemas; preserve resource IDs, fingerprints and step evidence. Re-observe with a compatible release before planning; no automatic migration or write replay.`);
@@ -11027,7 +11064,7 @@ var emailVerifiedCheck = {
 
 // src/links/util.ts
 init_secret();
-import { basename as basename3 } from "node:path";
+init_repo();
 async function axisStatus(ctx, axis) {
   const id2 = ctx.config.stack[axis];
   if (!id2) return { kind: "none" };
@@ -11090,9 +11127,8 @@ function intentOf(parts) {
 function errMsg2(e) {
   return redact(e instanceof Error ? e.message : String(e));
 }
-function repoName(ctx) {
-  const s = basename3(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
-  return s || "app";
+async function repoName(ctx) {
+  return (await repoIdentity(ctx)).name;
 }
 async function productionUrl(ctx) {
   if (ctx.config.domain) return `https://${ctx.config.domain}`;
@@ -11328,14 +11364,14 @@ async function projectIdentity(ctx, adapter, opts) {
   if (!linker) return "";
   const axis = projectAxisFor(ctx, adapter);
   if (opts.planning && axis && memo(ctx).pendingProjects.has(axis)) return "pending";
-  const read = () => linker.current(ctx).then(
+  const read2 = () => linker.current(ctx).then(
     (p2) => p2?.id ?? null,
     () => null
   );
-  if (!opts.planning) return read();
+  if (!opts.planning) return read2();
   const m = memo(ctx);
   let p = m.identity.get(adapter.id);
-  if (!p) m.identity.set(adapter.id, p = read());
+  if (!p) m.identity.set(adapter.id, p = read2());
   return p;
 }
 async function projectIntent(ctx, adapter) {
@@ -11589,8 +11625,8 @@ async function webhookInventory(ctx) {
 }
 async function dnsInventory(ctx) {
   const baselines = readDnsBaselines(ctx.state.get());
-  const { read, foreign } = dnsZones(ctx, baselines);
-  const known = [...read, ...foreign.map((f) => f.zone)];
+  const { read: read2, foreign } = dnsZones(ctx, baselines);
+  const known = [...read2, ...foreign.map((f) => f.zone)];
   if (!known.length) return { records: [], gaps: [] };
   const s = await axisStatus(ctx, "dns");
   const zone = s.kind === "ready" ? s.adapter.capabilities.dns : void 0;
@@ -11599,7 +11635,7 @@ async function dnsInventory(ctx) {
   if (s.kind !== "ready" || !zone || !listOwned || !remove2) return { records: [], gaps: [dnsGap(known, baselines, s)] };
   const gaps = foreign.length ? foreignDnsGaps(ctx, foreign, baselines) : [];
   const candidates3 = [];
-  for (const domain of read) {
+  for (const domain of read2) {
     for (const record2 of await listOwned(ctx, domain)) candidates3.push({ domain, record: record2 });
   }
   candidates3.sort((a, b) => {
@@ -11620,17 +11656,17 @@ async function dnsInventory(ctx) {
 }
 function dnsZones(ctx, baselines) {
   const configured = ctx.config.stack.dns;
-  const read = /* @__PURE__ */ new Map();
+  const read2 = /* @__PURE__ */ new Map();
   for (const d of [ctx.config.domain, ctx.config.email?.domain]) {
-    if (d && !read.has(d.toLowerCase())) read.set(d.toLowerCase(), d);
+    if (d && !read2.has(d.toLowerCase())) read2.set(d.toLowerCase(), d);
   }
   const foreign = /* @__PURE__ */ new Map();
   for (const b of baselines) {
-    if (b.provider === configured || read.has(b.zone)) continue;
+    if (b.provider === configured || read2.has(b.zone)) continue;
     if (!foreign.has(b.zone)) foreign.set(b.zone, b.provider);
   }
-  for (const b of baselines) if (b.provider === configured && !read.has(b.zone)) read.set(b.zone, b.zone);
-  return { read: [...read.values()], foreign: [...foreign.entries()].map(([zone, provider]) => ({ zone, provider })) };
+  for (const b of baselines) if (b.provider === configured && !read2.has(b.zone)) read2.set(b.zone, b.zone);
+  return { read: [...read2.values()], foreign: [...foreign.entries()].map(([zone, provider]) => ({ zone, provider })) };
 }
 function foreignDnsGaps(ctx, foreign, baselines) {
   const byProvider = /* @__PURE__ */ new Map();
@@ -11707,7 +11743,7 @@ async function projectInventory(ctx) {
   const remove2 = ready2?.adapter.capabilities.project?.remove;
   const mine = ready2 && remove2 ? linked.find((l) => l.provider === ready2.adapter.id) : void 0;
   if (ready2 && remove2 && mine) {
-    const read = ready2.adapter.capabilities.project?.exists;
+    const read2 = ready2.adapter.capabilities.project?.exists;
     return {
       project: {
         provider: ready2.adapter.id,
@@ -11717,7 +11753,7 @@ async function projectInventory(ctx) {
         ...mine.name ? { name: mine.name } : {},
         created: mine.created,
         remove: remove2,
-        ...read ? { exists: (x) => read(x, mine.id) } : {}
+        ...read2 ? { exists: (x) => read2(x, mine.id) } : {}
       },
       gaps: linked.filter((l) => l !== mine).map((l) => hostGap(s, l))
     };
@@ -12325,18 +12361,18 @@ function manualAttach(title, domain) {
 // src/core/drift.ts
 async function detectDrift(ctx, plan) {
   const at = (/* @__PURE__ */ new Date()).toISOString();
-  const read = readOnlyContext(ctx);
+  const read2 = readOnlyContext(ctx);
   const c = { items: [], verified: [], notChecked: [], limits: [STANDING_LIMIT] };
-  await dnsItems(read, at, c);
-  await envItems(read, at, c);
-  await webhookItems(read, at, c);
-  await domainItems(read, at, c);
-  await dbItems(read, at, c);
-  await emailItems(read, at, c);
-  keyItems(read, c);
-  await paymentItems(read, at, c);
-  await hostItems(read, at, c);
-  releaseItems(read, at, c, plan);
+  await dnsItems(read2, at, c);
+  await envItems(read2, at, c);
+  await webhookItems(read2, at, c);
+  await domainItems(read2, at, c);
+  await dbItems(read2, at, c);
+  await emailItems(read2, at, c);
+  keyItems(read2, c);
+  await paymentItems(read2, at, c);
+  await hostItems(read2, at, c);
+  releaseItems(read2, at, c, plan);
   const items = c.items.sort((a, b) => RANK2[a.severity] - RANK2[b.severity] || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const count = (s) => items.filter((i) => i.severity === s).length;
   return {
@@ -12365,11 +12401,11 @@ var KEY_READ_LIMIT = "no read exposes whether a sending key golive issued was re
 function readOnlyContext(ctx) {
   return { ...ctx, state: readOnlyStateStore(ctx.state) };
 }
-function once(ctx, key, read) {
+function once(ctx, key, read2) {
   const k = `drift:${key}`;
   const hit = ctx.cache.get(k);
   if (hit) return hit;
-  const p = read();
+  const p = read2();
   ctx.cache.set(k, p);
   return p;
 }
@@ -13576,7 +13612,7 @@ import {
   writeFileSync as writeFileSync6
 } from "node:fs";
 import { platform } from "node:os";
-import { basename as basename6, dirname as dirname7, join as join9, resolve as resolve5 } from "node:path";
+import { basename as basename5, dirname as dirname7, join as join10, resolve as resolve6 } from "node:path";
 var MAX_VALUE_BYTES = 16 * 1024;
 var MAX_FILE_BYTES = 1024 * 1024;
 var DIALOG_SECONDS = 180;
@@ -13593,7 +13629,7 @@ async function promptCredential(name3, options = {}) {
   if (!/^[A-Z_][A-Z0-9_]{0,127}$/.test(name3)) throw new Error("Use a credential variable name containing uppercase letters, digits and underscores.");
   if (options.language !== void 0 && options.language !== "en" && options.language !== "zh") throw new Error("Credential prompt language must be en or zh.");
   if (options.replace !== void 0 && typeof options.replace !== "boolean") throw new Error("Credential replacement must be explicitly enabled.");
-  const path = resolve5(credentialsPath());
+  const path = resolve6(credentialsPath());
   const base2 = { name: name3, path, envOverride: Boolean(process.env[name3]) };
   const unavailable = (reason) => ({ ...base2, status: "unavailable", reason });
   if (platform() !== "darwin") return unavailable("unsupported-platform");
@@ -13867,7 +13903,7 @@ function saveAtomically(path, before, name3, value) {
     const current3 = snapshot(path);
     if (changed(before, current3)) throw new SafeFailure("concurrent-change");
     const content3 = updated(before, name3, value);
-    const tempPath = join9(dirname7(path), `.${basename6(path)}-${randomBytes3(12).toString("hex")}.tmp`);
+    const tempPath = join10(dirname7(path), `.${basename5(path)}-${randomBytes3(12).toString("hex")}.tmp`);
     const fd = openSync6(tempPath, constants6.O_CREAT | constants6.O_EXCL | constants6.O_WRONLY | constants6.O_NOFOLLOW, 384);
     temp = { path: tempPath, fd };
     temp.info = fstatSync6(fd);
@@ -13926,7 +13962,7 @@ init_secret();
 init_credentials();
 init_secret();
 import { readFileSync as readFileSync9 } from "node:fs";
-import { join as join10 } from "node:path";
+import { join as join11 } from "node:path";
 var API_BASE = "https://api.vercel.com";
 var CLI_TIMEOUT = 12e4;
 var TOKEN_WHERE = "Create a team-scoped token with an expiry at https://vercel.com/account/tokens.";
@@ -13974,7 +14010,7 @@ async function resolveSession(ctx) {
 function readLinkFile(ctx) {
   const candidates3 = [];
   try {
-    candidates3.push(readFileSync9(join10(ctx.cwd, ".vercel", "project.json"), "utf8"));
+    candidates3.push(readFileSync9(join11(ctx.cwd, ".vercel", "project.json"), "utf8"));
   } catch {
   }
   const fromDetect = ctx.detect.configs[".vercel/project.json"];
@@ -14071,7 +14107,10 @@ function parseJson(text) {
 }
 
 // src/adapters/vercel-project.ts
-import { basename as basename7 } from "node:path";
+init_secret();
+init_repo();
+import { mkdirSync as mkdirSync6, readFileSync as readFileSync10, rmSync as rmSync2, writeFileSync as writeFileSync7 } from "node:fs";
+import { join as join12 } from "node:path";
 function toInfo(raw2) {
   if (!raw2?.id || !raw2.name) return null;
   const alias = raw2.targets?.production?.alias;
@@ -14083,12 +14122,46 @@ async function projectInfo(ctx, idOrName, scopeId) {
   if (!info) throw new VercelError(`Vercel returned an unexpected project shape for "${idOrName}".`);
   return info;
 }
+var errMsg4 = (e) => redact(e instanceof Error ? e.message : String(e));
 function remember2(ctx, p) {
   ctx.state.save((s) => {
     s.resources["vercel.projectId"] = p.id;
     s.resources["vercel.projectName"] = p.name;
     if (p.accountId) s.resources["vercel.orgId"] = p.accountId;
   });
+  writeLinkFile(ctx, p);
+}
+function writeLinkFile(ctx, p) {
+  const file = ".vercel/project.json";
+  if (!p.accountId) {
+    ctx.log.info(`vercel: ${file} not written (Vercel did not report the owning account); deploys still pin the project`);
+    return;
+  }
+  const current3 = readProjectLink(ctx);
+  if (current3?.projectId === p.id && current3.orgId === p.accountId) return;
+  try {
+    mkdirSync6(join12(ctx.cwd, ".vercel"), { recursive: true });
+    writeFileSync7(join12(ctx.cwd, ".vercel", "project.json"), JSON.stringify({ projectId: p.id, orgId: p.accountId, projectName: p.name }, null, 2) + "\n");
+    ctx.log.info(`vercel: wrote ${file} (local link file, no provider write) so the Vercel CLI and other tools detect ${p.name}; keep it out of git (it names the account and project)`);
+  } catch (e) {
+    ctx.log.warn(`vercel: could not write ${file} (${errMsg4(e)}); golive's own deploys still pin the project through VERCEL_ORG_ID/VERCEL_PROJECT_ID`);
+  }
+}
+function readProjectLink(ctx) {
+  try {
+    const parsed = parseJson(readFileSync10(join12(ctx.cwd, ".vercel", "project.json"), "utf8"));
+    return parsed && (parsed.projectId || parsed.orgId) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+function removeLinkFile(ctx, projectId) {
+  try {
+    if (readProjectLink(ctx)?.projectId !== projectId) return;
+    rmSync2(join12(ctx.cwd, ".vercel", "project.json"));
+    ctx.log.info(`vercel: removed .vercel/project.json (it linked the deleted project ${projectId})`);
+  } catch {
+  }
 }
 function rememberCreated(ctx, id2) {
   ctx.state.save((s) => void (s.resources["vercel.createdProjectId"] = id2));
@@ -14189,6 +14262,7 @@ async function linkedProject(ctx) {
 var vercelProject = {
   creationTarget: creationTarget2,
   resolve: resolveProject2,
+  localLinkFile: ".vercel/project.json",
   /** Read-only existence probe for a deletion golive performed (the provider's own not-found). */
   async exists(ctx, id2) {
     try {
@@ -14206,7 +14280,7 @@ var vercelProject = {
     return { id: linked.id, name: linked.name, ...scope ? { scope } : {} };
   },
   async candidates(ctx) {
-    const q2 = encodeURIComponent(basename7(ctx.cwd));
+    const q2 = encodeURIComponent((await repoIdentity(ctx)).name);
     const res = await vercelApi(ctx, "GET", `/v10/projects?search=${q2}&limit=20`);
     return (res.projects ?? []).map(toInfo).filter((p) => p !== null).map(({ id: id2, name: name3 }) => ({ id: id2, name: name3 }));
   },
@@ -14266,6 +14340,7 @@ var vercelProject = {
       delete s.resources["vercel.projectName"];
       delete s.resources["vercel.createdProjectId"];
     });
+    removeLinkFile(ctx, id2);
     ctx.log.info(`vercel: deleted project ${id2}`);
     return { removed: true };
   }
@@ -14589,9 +14664,9 @@ var vercelUrl = {
   async previewPatterns(ctx) {
     const p = await vercelProject.current(ctx);
     if (!p) return [];
-    const slug = await scopeSlug(ctx);
-    if (!slug) return [];
-    return [`https://${p.name}-*-${slug}.vercel.app/**`, `https://${p.name}-git-*-${slug}.vercel.app/**`];
+    const slug2 = await scopeSlug(ctx);
+    if (!slug2) return [];
+    return [`https://${p.name}-*-${slug2}.vercel.app/**`, `https://${p.name}-git-*-${slug2}.vercel.app/**`];
   }
 };
 function pickProductionAlias(name3, aliases) {
@@ -14675,7 +14750,16 @@ var vercelAdapter = {
     env: vercelEnv,
     url: vercelUrl,
     deploy: vercelDeploy,
-    domain: vercelDomain
+    domain: vercelDomain,
+    upload: {
+      ignoreFile: ".vercelignore",
+      // The CLI refuses a `.vercelignore` and a legacy `.nowignore` together: never add one beside it.
+      conflicting: [".nowignore"],
+      // `vercel deploy` uploads this folder; a framework build serves its build output, but an
+      // unframed app (golive: `static`, or `unknown` when Vercel knows the preset and golive does
+      // not) serves what was uploaded — golive's own files included (issue #65).
+      servesFolder: (ctx) => ctx.detect.framework === "static" || ctx.detect.framework === "unknown"
+    }
     // No `release` capability: this adapter has no read of which deployment production currently
     // serves (only aliases, which a promotion cannot be proven against) and no promote/rollback call
     // golive has exercised, so promotion and rollback are refused/skipped with that reason rather than
@@ -14692,7 +14776,7 @@ init_secret();
 init_http();
 init_credentials();
 import { createHash as createHash7 } from "node:crypto";
-import { basename as basename8 } from "node:path";
+import { basename as basename6 } from "node:path";
 
 // src/adapters/resend-records.ts
 var TYPES = /* @__PURE__ */ new Set(["A", "AAAA", "CNAME", "TXT", "MX", "CAA"]);
@@ -15023,7 +15107,7 @@ var sendingDomain = {
   }
 };
 function appSlug(ctx) {
-  const raw2 = basename8(ctx.detect.root || ctx.cwd) || "app";
+  const raw2 = basename6(ctx.detect.root || ctx.cwd) || "app";
   return raw2.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "app";
 }
 function keyNameFor(ctx, slot) {
@@ -15516,7 +15600,7 @@ init_credentials();
 
 // src/adapters/godaddy-cli.ts
 import { homedir as homedir4 } from "node:os";
-import { join as join11 } from "node:path";
+import { join as join13 } from "node:path";
 var MIN_VERSION = [0, 2, 20];
 var EXPIRY_MARGIN_MS = 5 * 60 * 1e3;
 var CACHE_KEY = "godaddy.cli";
@@ -15533,7 +15617,7 @@ async function godaddyCli(ctx) {
   return found;
 }
 async function detect2(ctx) {
-  for (const bin of ["gddy", join11(homedir4(), ".local", "bin", "gddy")]) {
+  for (const bin of ["gddy", join13(homedir4(), ".local", "bin", "gddy")]) {
     try {
       const version = await ctx.exec(bin, ["--version"], { timeoutMs: VERSION_TIMEOUT_MS });
       if (version.code !== 0) continue;
@@ -16240,15 +16324,15 @@ init_secret();
 
 // src/adapters/netlify-credentials.ts
 init_secret();
-import { closeSync as closeSync7, constants as constants7, fstatSync as fstatSync7, lstatSync as lstatSync7, openSync as openSync7, readFileSync as readFileSync10 } from "node:fs";
+import { closeSync as closeSync7, constants as constants7, fstatSync as fstatSync7, lstatSync as lstatSync7, openSync as openSync7, readFileSync as readFileSync11 } from "node:fs";
 import { homedir as homedir5 } from "node:os";
-import { dirname as dirname8, join as join12 } from "node:path";
+import { dirname as dirname8, join as join14 } from "node:path";
 function netlifyConfigPath(options = {}) {
   const platform2 = options.platform ?? process.platform;
   const home = options.home ?? homedir5();
-  if (platform2 === "darwin") return join12(home, "Library", "Preferences", "netlify", "config.json");
-  if (platform2 === "win32") return join12(options.appData ?? process.env.APPDATA ?? join12(home, "AppData", "Roaming"), "netlify", "Config", "config.json");
-  return join12(options.xdgConfigHome ?? process.env.XDG_CONFIG_HOME ?? join12(home, ".config"), "netlify", "config.json");
+  if (platform2 === "darwin") return join14(home, "Library", "Preferences", "netlify", "config.json");
+  if (platform2 === "win32") return join14(options.appData ?? process.env.APPDATA ?? join14(home, "AppData", "Roaming"), "netlify", "Config", "config.json");
+  return join14(options.xdgConfigHome ?? process.env.XDG_CONFIG_HOME ?? join14(home, ".config"), "netlify", "config.json");
 }
 function readNetlifyCliToken(expectedUserId, path = netlifyConfigPath()) {
   let fd;
@@ -16266,7 +16350,7 @@ function readNetlifyCliToken(expectedUserId, path = netlifyConfigPath()) {
     const current3 = fstatSync7(fd);
     if (current3.ino !== before.ino || current3.dev !== before.dev || current3.nlink !== 1 || current3.size > 1024 * 1024) throw new Error();
     if (!current3.isFile() || process.platform !== "win32" && ((current3.mode & 63) !== 0 || process.getuid && current3.uid !== process.getuid())) throw new Error();
-    const data = JSON.parse(readFileSync10(fd, "utf8"));
+    const data = JSON.parse(readFileSync11(fd, "utf8"));
     if (typeof data.userId !== "string" || data.userId !== expectedUserId || !Object.hasOwn(data.users ?? {}, data.userId)) throw new Error();
     const value = data.users?.[data.userId]?.auth?.token;
     if (typeof value !== "string" || !value) return void 0;
@@ -16407,8 +16491,8 @@ async function netlifyRead(ctx, operation, path, params) {
 init_secret();
 
 // src/adapters/netlify-project.ts
-import { basename as basename9, join as join13 } from "node:path";
-import { readFileSync as readFileSync11 } from "node:fs";
+import { basename as basename7, join as join15 } from "node:path";
+import { readFileSync as readFileSync12 } from "node:fs";
 var num = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null;
 function publicOrigin(value) {
   if (typeof value !== "string") return null;
@@ -16487,7 +16571,7 @@ async function resolveSite(ctx, idOrName) {
 }
 function localSite(ctx) {
   try {
-    const raw2 = JSON.parse(readFileSync11(join13(ctx.cwd, ".netlify", "state.json"), "utf8"));
+    const raw2 = JSON.parse(readFileSync12(join15(ctx.cwd, ".netlify", "state.json"), "utf8"));
     return raw2.siteId ? identifier(raw2.siteId) : void 0;
   } catch {
     return void 0;
@@ -16531,7 +16615,7 @@ var netlifyProject = {
   },
   async candidates(ctx) {
     const owner = configuredAccount(ctx);
-    return (await listSites(ctx, basename9(ctx.cwd), owner ? await accountInfo(ctx, owner) : void 0)).map(ref);
+    return (await listSites(ctx, basename7(ctx.cwd), owner ? await accountInfo(ctx, owner) : void 0)).map(ref);
   },
   async resolve(ctx, idOrName) {
     return ref(await resolveSite(ctx, idOrName));
@@ -16782,7 +16866,7 @@ var netlifyAdapter = {
 // src/adapters/neon.ts
 init_secret();
 init_http();
-import { basename as basename10 } from "node:path";
+import { basename as basename8 } from "node:path";
 
 // src/adapters/neon-api.ts
 init_secret();
@@ -16922,7 +17006,7 @@ async function exact(ctx, projectId) {
   if (pRef.id !== projectId || orgOverride(ctx) && pRef.scope.id !== orgOverride(ctx)) throw new NeonError("Neon returned a project outside the selected project/organization.");
   return p;
 }
-async function resolve6(ctx, selected) {
+async function resolve7(ctx, selected) {
   const explicitOrg = orgOverride(ctx);
   if (!explicitOrg) return ref2(await exact(ctx, selected));
   const all = await projects(ctx, explicitOrg);
@@ -16933,12 +17017,12 @@ async function resolve6(ctx, selected) {
 }
 async function current2(ctx) {
   const chosen = ctx.config.projects?.db ?? ctx.state.resource(STATE_PROJECT);
-  return chosen ? resolve6(ctx, chosen) : null;
+  return chosen ? resolve7(ctx, chosen) : null;
 }
 async function candidates2(ctx) {
   const o = await freeOrg2(ctx);
   const all = await projects(ctx, id(o.id));
-  const name3 = basename10(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63) || "app";
+  const name3 = basename8(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63) || "app";
   const matches3 = all.filter((p) => p.name.toLowerCase() === name3);
   if (matches3.length) {
     if (matches3.length !== 1 || !cfg(ctx).branchId || !cfg(ctx).database || !cfg(ctx).role) throw new NeonError("A same-named Neon project already exists. Select its exact projects.db ID and set neon.branchId, neon.database and neon.role before re-planning. No defaults were assumed.");
@@ -17109,8 +17193,8 @@ var neonAdapter = {
     }
   },
   capabilities: {
-    project: { current: current2, candidates: candidates2, resolve: resolve6, creationTarget: creationTarget4, select: async (ctx, chosen) => {
-      const p = await resolve6(ctx, chosen);
+    project: { current: current2, candidates: candidates2, resolve: resolve7, creationTarget: creationTarget4, select: async (ctx, chosen) => {
+      const p = await resolve7(ctx, chosen);
       remember6(ctx, p);
       return p;
     }, create: create4 },
@@ -17228,6 +17312,7 @@ var exposureLink = {
 };
 
 // src/links/projects.ts
+init_repo();
 var PROJECT_AXES = ["hosting", "db"];
 var MAX_LISTED = 10;
 var projectsLink = {
@@ -17265,7 +17350,8 @@ async function planAxis(ctx, axis, adapter, linker) {
     const resolved = linker.resolve ? await linker.resolve(ctx, chosen) : void 0;
     return { step: selectStep(ctx, axis, adapter, linker, resolved?.id ?? chosen, resolved?.name ?? chosen, account2, resolved) };
   }
-  const name3 = repoName(ctx);
+  const identity = await repoIdentity(ctx);
+  const name3 = identity.name;
   const candidates3 = await linker.candidates(ctx).catch((e) => {
     throw new Error(`listing ${adapter.title} project candidates failed: ${errMsg2(e)}`);
   });
@@ -17278,7 +17364,7 @@ async function planAxis(ctx, axis, adapter, linker) {
   const listed = names.length ? `${names.slice(0, MAX_LISTED).join(", ")}${names.length > MAX_LISTED ? ", \u2026" : ""}` : "";
   if (linker.create) {
     const target = linker.creationTarget ? await linker.creationTarget(ctx) : void 0;
-    return { step: createStep(ctx, axis, adapter, linker, name3, listed, account2, target) };
+    return { step: createStep(ctx, axis, adapter, linker, name3, listed, account2, target, identity), warning: nameWarning(axis, adapter, identity) };
   }
   return {
     handoff: {
@@ -17301,13 +17387,14 @@ var scopeOf = (p) => {
 };
 var sameScope = (a, b) => a?.kind === b?.kind && a?.id === b?.id;
 var sameTarget = (a, b) => sameScope(a.scope, b.scope) && a.region === b.region;
+var localLinkLines = (linker) => linker.localLinkFile ? [`also keeps ${linker.localLinkFile} in sync (a local file in this repo, no provider write) so the provider's CLI and other tools detect this project`] : [];
 function pinStep(axis, adapter, linker, planned, source, account2) {
   return step({
     id: `project:${axis}`,
     title: `Use ${adapter.title} project ${planned.name} for ${axis}`,
     kind: "provision",
     risk: { writes: false },
-    preview: [`${axis}: ${adapter.title} project ${planned.name} (${planned.id})${scopeOf(planned)}, from ${source}; every ${adapter.title} write in this plan goes there`, ...account2 ? [account2] : []],
+    preview: [`${axis}: ${adapter.title} project ${planned.name} (${planned.id})${scopeOf(planned)}, from ${source}; every ${adapter.title} write in this plan goes there`, ...localLinkLines(linker), ...account2 ? [account2] : []],
     intent: intentOf({ pin: `${adapter.id}:${planned.id}` }),
     destination: { axis, provider: adapter.id, providerTitle: adapter.title, action: "pin", project: { id: planned.id, name: planned.name }, ...planned.scope ? { scope: planned.scope } : {}, ...account2 ? { access: account2 } : {} },
     async run(sctx) {
@@ -17329,7 +17416,7 @@ function selectStep(ctx, axis, adapter, linker, idOrName, label3, account2, plan
     title: `Use existing ${adapter.title} project ${label3}`,
     kind: "provision",
     risk: { writes: true },
-    preview: [`Use existing ${adapter.title} project ${label3}${planned ? ` (${planned.id})${scopeOf(planned)}` : ""} for ${axis} (links it locally; nothing is changed at ${adapter.title})`, ...account2 ? [account2] : []],
+    preview: [`Use existing ${adapter.title} project ${label3}${planned ? ` (${planned.id})${scopeOf(planned)}` : ""} for ${axis} (links it locally; nothing is changed at ${adapter.title})`, ...localLinkLines(linker), ...account2 ? [account2] : []],
     intent: intentOf({ select: `${adapter.id}:${idOrName}` }),
     destination: { axis, provider: adapter.id, providerTitle: adapter.title, action: "select", project: { ...planned ? { id: planned.id } : {}, name: label3 }, ...planned?.scope ? { scope: planned.scope } : {}, ...account2 ? { access: account2 } : {} },
     async run(sctx) {
@@ -17343,7 +17430,7 @@ function selectStep(ctx, axis, adapter, linker, idOrName, label3, account2, plan
     }
   });
 }
-function createStep(ctx, axis, adapter, linker, name3, listed, account2, target) {
+function createStep(ctx, axis, adapter, linker, name3, listed, account2, target, identity) {
   memo(ctx).pendingProjects.set(axis, "create");
   return step({
     id: `project:${axis}`,
@@ -17352,8 +17439,10 @@ function createStep(ctx, axis, adapter, linker, name3, listed, account2, target)
     risk: { writes: true },
     preview: [
       `Create ${adapter.title} project ${name3} for ${axis}${target ? scopeOf({ id: "", name: name3, scope: target.scope }) : ""} (no existing project matched this repo)`,
+      ...identity ? [nameSource(identity)] : [],
       ...target?.region ? [`region: ${target.region}`] : [],
       ...listed ? [`existing ${adapter.title} projects that could be used instead: ${listed} \u2014 ask the human; to use one, run \`init --project ${axis}=<name>\` and \`plan\` again`] : [],
+      ...localLinkLines(linker),
       ...account2 ? [account2] : []
     ],
     intent: intentOf({ create: `${adapter.id}:${name3}` }),
@@ -17371,6 +17460,14 @@ function createStep(ctx, axis, adapter, linker, name3, listed, account2, target)
       }
     }
   });
+}
+function nameSource(identity) {
+  if (identity.from === "folder") return `name "${identity.name}" comes from the working folder (no git origin remote to read)`;
+  return identity.name.toLowerCase() === identity.folder.toLowerCase() ? `name "${identity.name}" comes from the git origin remote (this folder is named the same)` : `name "${identity.name}" comes from the git origin remote; "${identity.folder}" is only the working folder this run happens in`;
+}
+function nameWarning(axis, adapter, identity) {
+  if (identity.from !== "git-remote" || identity.name.toLowerCase() === identity.folder.toLowerCase()) return void 0;
+  return `the ${adapter.title} project golive would create for ${axis} is named "${identity.name}" (from the git origin remote), not "${identity.folder}" (the folder this run happens in). To use another name, create it at ${adapter.title} first and adopt it with \`init --project ${axis}=<name>\`, then run \`plan\` again.`;
 }
 
 // src/links/env.ts
@@ -17414,7 +17511,7 @@ var envLink = {
     return { steps: track(ctx, steps, { needsRedeploy: writesProduction }), handoffs, warnings };
   }
 };
-async function identities(ctx, sources, planning) {
+async function identities2(ctx, sources, planning) {
   const ids = [];
   for (const s of sources) {
     const id2 = await projectIdentity(ctx, s.adapter, { planning });
@@ -17458,7 +17555,7 @@ async function planTarget(ctx, target, hostAdapter, env, mine, sources) {
     if (identity === null) return ctx.state.resource(envSourceKey(name3, target)) ?? `${k}|${srcIds}|?`;
     return `${k}|${srcIds}|${identity}`;
   };
-  const planIdentity = await identities(ctx, sources, true);
+  const planIdentity = await identities2(ctx, sources, true);
   const decision = decideEnv(ctx, target, wanted.map((m) => m.name), present, (n) => sourceAt(n, planIdentity));
   if (decision.write.length === 0) return { warnings, dbMissing };
   const intent = intentOf({ host: await projectIntent(ctx, hostAdapter), write: decision.write.map((w) => `${w.name}=${sourceAt(w.name, planIdentity)}`) });
@@ -17490,7 +17587,7 @@ async function planTarget(ctx, target, hostAdapter, env, mine, sources) {
       const kept = decision.write.filter((w) => presentNow?.has(w.name) && !isManaged(sctx, w.name, target));
       const needed = decision.write.filter((w) => !kept.includes(w)).map((w) => ({ name: w.name, key: keyOf.get(w.name) }));
       const outs = needed.some((n) => n.key !== "app.url") ? await fetchOutputs(sctx, target, sources, needed.map((n) => n.key)) : {};
-      const runIdentity = await identities(sctx, sources, false);
+      const runIdentity = await identities2(sctx, sources, false);
       const entries = [];
       const missing = [];
       for (const n of needed) {
@@ -18671,9 +18768,122 @@ var authIsolationLink = {
   }
 };
 
+// src/links/upload.ts
+import { existsSync as existsSync6, readFileSync as readFileSync13, writeFileSync as writeFileSync8 } from "node:fs";
+import { join as join17 } from "node:path";
+
+// src/core/artifacts.ts
+init_config();
+import { readdirSync as readdirSync3, statSync as statSync2 } from "node:fs";
+import { join as join16 } from "node:path";
+var REPORT_FILE = "GOLIVE_REPORT.md";
+var HANDOVER_FILE = "GOLIVE_HANDOVER.md";
+var LEGACY_REPORT_FILE = "SHIP_REPORT.md";
+var STATE_DIR_FILES = ["state.json", "report.json", "handover.json"];
+var GOLIVE_IGNORE_MARKER = "# golive: keep its own files (state, config, reports, run docs) out of this upload";
+var GOLIVE_IGNORE_LINES = [".golive/", CONFIG_FILE, REPORT_FILE, HANDOVER_FILE, LEGACY_REPORT_FILE, "docs/GOLIVE-*"];
+function hasGoliveIgnoreBlock(text) {
+  return text.split("\n").some((line) => line.trim() === GOLIVE_IGNORE_MARKER);
+}
+function withGoliveIgnoreBlock(text) {
+  const base2 = text.replace(/\s*$/, "");
+  return `${base2 ? `${base2}
+
+` : ""}${[GOLIVE_IGNORE_MARKER, ...GOLIVE_IGNORE_LINES].join("\n")}
+`;
+}
+function goliveRepoFiles(cwd) {
+  const isFile = (rel) => {
+    try {
+      return statSync2(join16(cwd, rel)).isFile();
+    } catch {
+      return false;
+    }
+  };
+  const out = [];
+  for (const name3 of STATE_DIR_FILES) {
+    const rel = `${STATE_FILE.split("/")[0]}/${name3}`;
+    if (isFile(rel)) out.push(rel);
+  }
+  for (const name3 of [CONFIG_FILE, REPORT_FILE, HANDOVER_FILE, LEGACY_REPORT_FILE]) if (isFile(name3)) out.push(name3);
+  try {
+    for (const entry of readdirSync3(join16(cwd, "docs")).sort()) {
+      if (/^GOLIVE-.+\.(?:md|json)$/i.test(entry) && isFile(join16("docs", entry))) out.push(`docs/${entry}`);
+    }
+  } catch {
+  }
+  return out;
+}
+
+// src/links/upload.ts
+function read(path) {
+  try {
+    return readFileSync13(path, "utf8");
+  } catch {
+    return null;
+  }
+}
+var uploadLink = {
+  id: "upload",
+  async plan(ctx) {
+    const h = await ready(ctx, "hosting", "deploy");
+    const rules = h?.adapter.capabilities.upload;
+    if (!h || !rules || !await rules.servesFolder(ctx)) return null;
+    const conflicting = (rules.conflicting ?? []).filter((file) => existsSync6(join17(ctx.cwd, file)));
+    if (conflicting.length) {
+      return {
+        steps: [],
+        handoffs: [],
+        warnings: [
+          `golive did not add ${rules.ignoreFile}: the ${h.adapter.title} CLI refuses it while ${conflicting.join(", ")} exists. Delete that file (the ${h.adapter.title} docs name the replacement), then run \`plan\` again, or keep golive's own files out of the upload yourself.`
+        ]
+      };
+    }
+    const ignoreFile = join17(ctx.cwd, rules.ignoreFile);
+    const current3 = read(ignoreFile);
+    if (current3 !== null && hasGoliveIgnoreBlock(current3)) return null;
+    const files = goliveRepoFiles(ctx.cwd);
+    if (!files.length) return null;
+    return {
+      steps: track(ctx, [
+        step({
+          id: "upload:excludes",
+          title: `Keep golive's files out of the ${h.adapter.title} upload`,
+          kind: "provision",
+          // An edit inside this repo, not a provider write. The preview names the file and every line.
+          risk: { writes: false },
+          preview: [
+            `keep golive's own files out of the ${h.adapter.title} upload: append golive's block to ${rules.ignoreFile} (a local file in this repo; nothing is written at ${h.adapter.title}, and existing rules stay exactly as they are)`,
+            `${h.adapter.title} uploads this folder and serves what it uploaded, so these paths would be publicly fetchable: ${files.join(", ")}`,
+            ...GOLIVE_IGNORE_LINES.map((line) => `+ ${line}`)
+          ],
+          intent: intentOf({ file: rules.ignoreFile, lines: [...GOLIVE_IGNORE_LINES] }),
+          async run(sctx) {
+            const path = join17(sctx.cwd, rules.ignoreFile);
+            const text = read(path) ?? "";
+            if (hasGoliveIgnoreBlock(text)) {
+              return { changes: [`${rules.ignoreFile} already keeps golive's own files out of the ${h.adapter.title} upload`] };
+            }
+            try {
+              writeFileSync8(path, withGoliveIgnoreBlock(text));
+            } catch (e) {
+              throw new Error(
+                `could not write ${rules.ignoreFile} (${errMsg2(e)}): add golive's block to it yourself (${GOLIVE_IGNORE_MARKER}) and run \`apply\` again \u2014 golive does not deploy while its own files would be uploaded`
+              );
+            }
+            return { changes: [`wrote ${rules.ignoreFile}: golive's own files stay out of the ${h.adapter.title} upload (${files.join(", ")})`] };
+          }
+        })
+      ]),
+      handoffs: []
+    };
+  }
+};
+
 // src/links/deploy.ts
 var WEBHOOK_STEP = "payments:webhook:production";
 var FIRST_DEPLOY_WHY = "first production deploy for this project: golive has never deployed it, so this writes production for the first time \u2014 needs --confirm-live";
+var NO_DEPLOY_NOTE = `no production deploy is planned: golive deploys on the first deploy, after a production env change, or to retry a failed deploy, never because app code changed. Ship a later code change through the hosting provider's own path (its CLI in this repo, with the project golive recorded, or its Git integration); see references/plan-and-verify.md, "Shipping a later code change".`;
 var deployLink = {
   id: "deploy",
   async plan(ctx) {
@@ -18681,19 +18891,27 @@ var deployLink = {
     const h = await ready(ctx, "hosting", "deploy");
     if (!h) return null;
     const m = memo(ctx);
-    const after = [...m.redeployAfter];
+    const envAfter = [...m.redeployAfter];
+    const excludes = m.planned.has("upload:excludes") ? ["upload:excludes"] : [];
+    const after = [...envAfter, ...excludes];
     const lastOk = lastDeployAt(ctx);
     const firstDeploy = !lastOk;
     const pending = pendingRedeploy(ctx);
     const steps = ctx.state.get().steps;
     const failed = ["deploy:production", "deploy:production:final"].map((id2) => steps[id2]).filter((r) => r?.status === "failed" && (!lastOk || r.at > lastOk)).sort((a, b) => b.at.localeCompare(a.at))[0];
-    if (!after.length && lastOk && !pending && !failed) return null;
+    if (!after.length && lastOk && !pending && !failed) {
+      const releaseFlow = Boolean(ctx.config.release?.preview || ctx.config.release?.promote || ctx.config.release?.rollback);
+      return { steps: [], handoffs: [], warnings: releaseFlow ? [] : [NO_DEPLOY_NOTE] };
+    }
     const attach = lastOk ? void 0 : m.steps.get("domain:attach");
     const late = attach ? dependents(m.steps, attach.id) : /* @__PURE__ */ new Set();
     const early = after.filter((id2) => !late.has(id2));
     const lateWriters = after.filter((id2) => late.has(id2));
     const reasons = [];
-    if (early.length) reasons.push(`so the env changes above take effect (${early.join(", ")}); env vars only apply to new deployments`);
+    const earlyEnv = early.filter((id2) => !excludes.includes(id2));
+    const earlyUpload = early.filter((id2) => excludes.includes(id2));
+    if (earlyEnv.length) reasons.push(`so the env changes above take effect (${earlyEnv.join(", ")}); env vars only apply to new deployments`);
+    if (earlyUpload.length) reasons.push(`so golive's own files leave the upload (${earlyUpload.join(", ")}); an upload only changes with a new deployment`);
     if (pending) reasons.push(`production env changed at ${pending} and no deploy has picked it up yet`);
     if (failed) reasons.push(`the last production deploy failed (${failed.at}); deploying again`);
     if (!lastOk) reasons.push(`golive has not deployed production yet${attach ? "; the domain is attached after this deploy" : ""}`);
@@ -19555,7 +19773,7 @@ function livePreviewNames(ctx, planned) {
 }
 
 // src/links/all.ts
-var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, emailDomainLink, emailKeysLink, authSmtpLink, authE2eLink, authIsolationLink, authRecoveryLink, deployLink, netlifyVisibilityLink, releaseLink];
+var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, emailDomainLink, emailKeysLink, authSmtpLink, authE2eLink, authIsolationLink, authRecoveryLink, uploadLink, deployLink, netlifyVisibilityLink, releaseLink];
 
 // src/links/index.ts
 var LINKS = ALL_LINKS;
@@ -19863,13 +20081,13 @@ var dbConnectionCheck = {
 
 // src/checks/webhook.ts
 init_config();
-function join14(base2, path) {
+function join18(base2, path) {
   return /^https?:\/\//.test(path) ? path : `${base2.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
 }
 async function registeredUrl(ctx) {
   const path = ctx.config.payments?.webhook?.path;
   const base2 = await baseUrl(ctx);
-  return path && base2 ? join14(base2, path) : null;
+  return path && base2 ? join18(base2, path) : null;
 }
 var looksLikeHtml = (text) => /^\s*(<!doctype html|<html)/i.test(text);
 var webhookUnsignedCheck = {
@@ -19880,7 +20098,7 @@ var webhookUnsignedCheck = {
   async run(ctx) {
     const confirmed = await confirmedProductionUrl(ctx);
     if (!confirmed.ok) return confirmed.outcome;
-    const url = join14(confirmed.url, ctx.config.payments.webhook.path);
+    const url = join18(confirmed.url, ctx.config.payments.webhook.path);
     const notes = [];
     const registered = await registeredUrl(ctx);
     if (registered && new URL(registered).origin !== new URL(url).origin) {
@@ -20489,7 +20707,7 @@ async function signedInTables(ctx, ref3, token2) {
   }
   if (!tables2.length) return { lines: ["no tables in exposed schemas"] };
   const batch = tables2.slice(0, MAX_TABLES2);
-  const read = [];
+  const read2 = [];
   for (const t of batch) {
     let verdict;
     try {
@@ -20498,14 +20716,14 @@ async function signedInTables(ctx, ref3, token2) {
     } catch {
       verdict = "undecided";
     }
-    read.push({ fq: `${t.schema}.${t.name}`, verdict });
+    read2.push({ fq: `${t.schema}.${t.name}`, verdict });
   }
-  const count = (v) => read.filter((t) => t.verdict === v).length;
+  const count = (v) => read2.filter((t) => t.verdict === v).length;
   const denied = count("denied");
   const lines = [
     `probed ${batch.length} exposed table(s) as the signed-in user: ${count("reachable")} reachable, ${denied} denied, ${count("undecided")} undecided`,
     ...["reachable", "denied", "undecided"].flatMap((v) => {
-      const names = read.filter((t) => t.verdict === v).map((t) => t.fq);
+      const names = read2.filter((t) => t.verdict === v).map((t) => t.fq);
       if (!names.length) return [];
       const beyond = names.length - MAX_NAMED;
       return [`${v}: ${names.slice(0, MAX_NAMED).join(", ")}${beyond > 0 ? ` (+${beyond} more)` : ""}`];
@@ -20991,6 +21209,84 @@ var siteHeadersCheck = {
   }
 };
 
+// src/checks/upload-exposure.ts
+function identifies(file, body2) {
+  const head = body2.slice(0, 4e3);
+  if (file.endsWith(".json")) {
+    let json2;
+    try {
+      json2 = JSON.parse(head);
+    } catch {
+      return null;
+    }
+    if (!json2 || typeof json2 !== "object") return null;
+    const keys3 = json2;
+    if ("resources" in keys3 && "steps" in keys3) return "the state file (.golive/state.json: resources + steps)";
+    if ("checks" in keys3 && "summary" in keys3) return "the verify report (.golive/report.json: checks + summary)";
+    if ("runbook" in keys3 && "retirement" in keys3) return "the ownership document (.golive/handover.json: runbook + retirement)";
+    return null;
+  }
+  if (/\.ya?ml$/i.test(file)) {
+    return /(^|\n)version:\s*1\s*(\n|$)/.test(head) && /(^|\n)stack:/.test(head) ? "the golive.yaml config (version + stack)" : null;
+  }
+  if (/\.md$/i.test(file)) {
+    if (head.includes("Generated by golive")) return 'a golive document (its "Generated by golive" marker)';
+    return /^\s*#{1,2}\s/.test(head) && !/<html[\s>]/i.test(head) ? "a markdown document served as-is (the app would answer HTML here)" : null;
+  }
+  return null;
+}
+function fixFor(ctx) {
+  const rules = cap(ctx, "hosting", "upload");
+  const where = rules ? `add them to ${rules.ignoreFile} in this repo (golive plans that as \`upload:excludes\`)` : "take them out of the directory this host publishes (its publish/output setting, or its ignore file if it has one)";
+  return `Keep golive's own files out of the deployment and deploy again: ${where} \u2014 .golive/, golive.yaml, GOLIVE_REPORT.md, GOLIVE_HANDOVER.md and docs/GOLIVE-* \u2014 then re-run \`verify\`.`;
+}
+var uploadExposureCheck = {
+  id: "upload-exposure",
+  title: "Production does not serve golive's own state, config or reports",
+  severity: "high",
+  applies: () => true,
+  async run(ctx) {
+    const confirmed = await confirmedProductionUrl(ctx);
+    if (!confirmed.ok) return confirmed.outcome;
+    const files = goliveRepoFiles(ctx.cwd);
+    if (!files.length) return skip("no .golive state, golive.yaml or run document exists in this repo \u2014 and the check reads the folder golive runs in \u2014 so there is nothing of golive's to serve");
+    const base2 = trimSlash(confirmed.url);
+    const evidence = [];
+    const served = [];
+    const unreadable3 = [];
+    for (const file of files) {
+      const url = `${base2}/${file}`;
+      let res;
+      try {
+        res = await probe(ctx, url, { headers: { "user-agent": "golive-verify" }, timeoutMs: 15e3 });
+      } catch (e) {
+        unreadable3.push(`${file} (${errMsg(e)})`);
+        continue;
+      }
+      const got = `GET ${url} \u2192 HTTP ${res.status}`;
+      if (res.status === 401 || res.status === 403) {
+        return skip(`${got}: production may be private (visitor access, SSO or an auth wall answering anonymous requests), so what it serves was not read`);
+      }
+      if (res.status === 404 || res.status === 410) {
+        evidence.push(`${got} (not served)`);
+        continue;
+      }
+      if (res.status !== 200) {
+        evidence.push(`${got}: an unexpected status, so this path is not read as served`);
+        continue;
+      }
+      const what = identifies(file, res.text ?? "");
+      if (what) served.push(`${file} (${what})`);
+      else evidence.push(`${got}: the body is not ${file} \u2014 the app's own routing answered, so no golive content was read`);
+    }
+    if (served.length) return result("fail", "high", [...evidence, `publicly fetchable: ${served.join("; ")}`], fixFor(ctx));
+    if (unreadable3.length) {
+      return result("warn", "medium", [...evidence, `could not read: ${unreadable3.join(", ")} \u2014 not evidence either way`], fixFor(ctx));
+    }
+    return pass(evidence);
+  }
+};
+
 // src/checks/all.ts
 var ALL_CHECKS = [
   accountsCheck,
@@ -20998,6 +21294,7 @@ var ALL_CHECKS = [
   domainLiveCheck,
   netlifyPublicAccessCheck,
   siteHeadersCheck,
+  uploadExposureCheck,
   bundleSecretsCheck,
   rlsCheck,
   dbConnectionCheck,
@@ -21032,11 +21329,11 @@ function linkList() {
 }
 
 // src/detect/index.ts
-import { resolve as resolve7 } from "node:path";
+import { resolve as resolve8 } from "node:path";
 
 // src/detect/fs.ts
 import { lstat, readdir, readFile } from "node:fs/promises";
-import { basename as basename11, join as join15 } from "node:path";
+import { basename as basename9, join as join19 } from "node:path";
 var SOURCE_RE = /\.(?:[cm]?[jt]sx?|vue|svelte|astro)$/;
 var SKIP_FILE_RE = /\.d\.[cm]?ts$|\.min\.js$|\.(?:test|spec)\.[cm]?[jt]sx?$/;
 var SKIP_DIRS = /* @__PURE__ */ new Set([
@@ -21085,7 +21382,7 @@ var MAX_FILE_BYTES2 = 1e6;
 var MAX_TOTAL_BYTES = 64e6;
 var EXAMPLE_ENV_FILES = [".env.example", ".env.sample", ".env.template", ".env.local.example", ".env.dist", ".env-example", "example.env"];
 function isRealEnvFile(path) {
-  const b = basename11(path);
+  const b = basename9(path);
   if (EXAMPLE_ENV_FILES.includes(b)) return false;
   return /^\.env/.test(b) || /\.env$/.test(b) || b === ".dev.vars" || b.startsWith(".dev.vars.");
 }
@@ -21102,7 +21399,7 @@ var Repo = class {
   cache = /* @__PURE__ */ new Map();
   async exists(rel) {
     try {
-      await lstat(join15(this.root, rel));
+      await lstat(join19(this.root, rel));
       return true;
     } catch {
       return false;
@@ -21110,7 +21407,7 @@ var Repo = class {
   }
   async mtime(rel) {
     try {
-      return (await lstat(join15(this.root, rel))).mtimeMs;
+      return (await lstat(join19(this.root, rel))).mtimeMs;
     } catch {
       return 0;
     }
@@ -21121,7 +21418,7 @@ var Repo = class {
     if (hit !== void 0) return hit;
     let text = null;
     try {
-      const abs = join15(this.root, rel);
+      const abs = join19(this.root, rel);
       const st = await lstat(abs);
       if (st.isFile() && st.size <= MAX_FILE_BYTES2) {
         this.opts.onRead?.(rel);
@@ -21145,7 +21442,7 @@ var Repo = class {
   /** Sorted names of the subdirectories of `rel` (no symlinks). */
   async dirs(rel) {
     try {
-      const entries = await readdir(join15(this.root, rel), { withFileTypes: true });
+      const entries = await readdir(join19(this.root, rel), { withFileTypes: true });
       return entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
     } catch {
       return [];
@@ -21158,7 +21455,7 @@ var Repo = class {
     const visit = async (dir) => {
       let entries;
       try {
-        entries = await readdir(dir ? join15(this.root, dir) : this.root, { withFileTypes: true });
+        entries = await readdir(dir ? join19(this.root, dir) : this.root, { withFileTypes: true });
       } catch {
         return;
       }
@@ -21167,7 +21464,7 @@ var Repo = class {
         if (truncated) return;
         const rel = dir ? `${dir}/${e.name}` : e.name;
         if (e.isDirectory()) {
-          const installedSkills = e.name === "skills" && AGENT_SKILL_PARENTS.has(basename11(dir));
+          const installedSkills = e.name === "skills" && AGENT_SKILL_PARENTS.has(basename9(dir));
           if (!SKIP_DIRS.has(e.name) && !installedSkills) await visit(rel);
         } else if (e.isFile() && isSourceFile(e.name)) {
           if (files.length >= MAX_FILES) truncated = true;
@@ -22041,7 +22338,7 @@ function stripeVerification(file, text) {
   return { ok: true };
 }
 var stripExt = (s) => s.replace(/\.[cm]?[jt]sx?$/, "");
-var join16 = (segs) => "/" + segs.filter(Boolean).join("/");
+var join20 = (segs) => "/" + segs.filter(Boolean).join("/");
 function nextAppPath(dir) {
   const out = [];
   for (const raw2 of dir.split("/").filter(Boolean)) {
@@ -22050,11 +22347,11 @@ function nextAppPath(dir) {
     if (seg.startsWith("_")) return null;
     out.push(seg.replace(/^%5F/i, "_"));
   }
-  return join16(out);
+  return join20(out);
 }
 function flatRoutePath(name3) {
   const segs = name3.replace(/\[\.\]/g, "\0").split(".").filter((s) => s !== "_index" && !s.startsWith("_")).map((s) => s.replace(/_$/, "").replace(/^\((.*)\)$/, "$1").replace(/^\$$/, "*").replace(/^\$/, ":").replace(/\u0000/g, "."));
-  return join16(segs);
+  return join20(segs);
 }
 function reactRouterConfigRoutes(text) {
   const ranges = [];
@@ -22076,7 +22373,7 @@ function reactRouterConfigRoutes(text) {
   for (const c of calls) {
     const parents = ranges.filter((r) => r.start < c.at && c.at < r.end).sort((a, b) => a.start - b.start);
     const file = "app/" + c.file.replace(/^\.\//, "");
-    out.set(file, join16([...parents.map((p) => p.path), c.path].flatMap((p) => p.split("/"))));
+    out.set(file, join20([...parents.map((p) => p.path), c.path].flatMap((p) => p.split("/"))));
   }
   return out;
 }
@@ -22100,7 +22397,7 @@ function routePath(file, text, fw, rrRoutes) {
   const byFramework = frameworkRoutePath(file, text, fw, rrRoutes);
   if (byFramework) return byFramework;
   const api5 = /^api\/(.+)\.[cm]?[jt]s$/.exec(file);
-  if (api5 && fw.framework !== "next") return join16(["api", ...api5[1].split("/")]).replace(/\/index$/, "");
+  if (api5 && fw.framework !== "next") return join20(["api", ...api5[1].split("/")]).replace(/\/index$/, "");
   return serverRoutePath(text);
 }
 function frameworkRoutePath(file, text, fw, rrRoutes) {
@@ -22112,11 +22409,11 @@ function frameworkRoutePath(file, text, fw, rrRoutes) {
         return p === null ? null : fw.basePath + p;
       }
       const pages = /^(?:src\/)?pages\/(api\/.+)\.[jt]sx?$/.exec(file);
-      return pages ? fw.basePath + join16(pages[1].split("/")).replace(/\/index$/, "") : null;
+      return pages ? fw.basePath + join20(pages[1].split("/")).replace(/\/index$/, "") : null;
     }
     case "sveltekit": {
       const m = /^src\/routes\/(?:(.*)\/)?\+server\.[jt]s$/.exec(file);
-      return m ? join16((m[1] ?? "").split("/").filter((s) => !/^\(.*\)$/.test(s))) : null;
+      return m ? join20((m[1] ?? "").split("/").filter((s) => !/^\(.*\)$/.test(s))) : null;
     }
     case "remix":
     case "react-router": {
@@ -22127,13 +22424,13 @@ function frameworkRoutePath(file, text, fw, rrRoutes) {
     }
     case "astro": {
       const m = /^src\/pages\/(.+)\.[jt]s$/.exec(file);
-      return m ? join16(m[1].split("/")).replace(/\/index$/, "") || "/" : null;
+      return m ? join20(m[1].split("/")).replace(/\/index$/, "") || "/" : null;
     }
     case "nuxt": {
       const m = /^(?:src\/)?server\/(api|routes)\/(.+)\.[jt]s$/.exec(file);
       if (!m) return null;
       const segs = stripExt(m[2]).replace(/\.(?:get|post|put|patch|delete)$/, "").split("/");
-      return join16([m[1] === "api" ? "api" : "", ...segs]).replace(/\/index$/, "");
+      return join20([m[1] === "api" ? "api" : "", ...segs]).replace(/\/index$/, "");
     }
     default:
       return null;
@@ -22182,7 +22479,7 @@ async function detect3(cwd) {
   return detectRepo(cwd);
 }
 async function detectRepo(cwd, opts = {}) {
-  const root = resolve7(cwd);
+  const root = resolve8(cwd);
   const repo = new Repo(root, opts);
   const notes = [];
   const findings = [];
@@ -22327,7 +22624,7 @@ async function buildHandover(ctx, input) {
     generator: HANDOVER_MARKER,
     generatedAt,
     release: { name: ctx.release.name, version: ctx.release.version, bundleDigest: ctx.release.bundleDigest, ref: ctx.release.source.ref },
-    product: { name: repoName(ctx), root: ctx.cwd, framework: ctx.detect.framework, ...ctx.config.domain ? { domain: ctx.config.domain } : {} },
+    product: { name: await repoName(ctx), root: ctx.cwd, framework: ctx.detect.framework, ...ctx.config.domain ? { domain: ctx.config.domain } : {} },
     urls,
     limits: limits(ctx, input),
     accounts,
@@ -22363,12 +22660,12 @@ async function currentProjects(ctx) {
     const adapter = adapterFor(ctx, axis);
     const linker = adapter?.capabilities.project;
     if (!adapter || !linker) continue;
-    let read = seen2.get(adapter.id);
-    if (!read) {
-      read = linker.current(ctx).catch(() => null);
-      seen2.set(adapter.id, read);
+    let read2 = seen2.get(adapter.id);
+    if (!read2) {
+      read2 = linker.current(ctx).catch(() => null);
+      seen2.set(adapter.id, read2);
     }
-    out.set(axis, await read);
+    out.set(axis, await read2);
   }
   return out;
 }
@@ -22683,11 +22980,11 @@ function axesUsed(ctx) {
 }
 
 // src/report/handover.ts
-import { lstatSync as lstatSync8, readFileSync as readFileSync12 } from "node:fs";
-import { join as join17 } from "node:path";
+import { lstatSync as lstatSync8, readFileSync as readFileSync14 } from "node:fs";
+import { join as join21 } from "node:path";
 init_secret();
 function handoverPaths(cwd) {
-  return { json: join17(cwd, ".golive/handover.json"), markdown: join17(cwd, "GOLIVE_HANDOVER.md") };
+  return { json: join21(cwd, ".golive/handover.json"), markdown: join21(cwd, "GOLIVE_HANDOVER.md") };
 }
 function assertOverwritable(path, force) {
   if (force) return;
@@ -22698,7 +22995,7 @@ function assertOverwritable(path, force) {
     return;
   }
   if (!stat2.isFile()) throw new Error(`${path} exists and is not a regular file, so golive will not overwrite it; move it aside or pass --force.`);
-  if (!readFileSync12(path, "utf8").includes(HANDOVER_MARKER)) {
+  if (!readFileSync14(path, "utf8").includes(HANDOVER_MARKER)) {
     throw new Error(`${path} exists and carries no "${HANDOVER_MARKER}" marker, so golive will not overwrite it; move it aside or pass --force.`);
   }
 }
@@ -22864,7 +23161,7 @@ Commands (add --json for machine output; --cwd <dir> to target another repo):
 async function main(argv) {
   const { cmd, flags } = parseArgs(argv);
   const json2 = flags.json === true;
-  const cwd = resolve8(typeof flags.cwd === "string" ? flags.cwd : process.cwd());
+  const cwd = resolve9(typeof flags.cwd === "string" ? flags.cwd : process.cwd());
   const release2 = loadRuntimeRelease(import.meta.url);
   if (cmd === "help" || flags.help) {
     process.stdout.write(HELP);
@@ -22876,7 +23173,7 @@ async function main(argv) {
   }
   if (cmd === "update-check") {
     const modulePath = fileURLToPath2(import.meta.url);
-    const bundleRoot = basename12(modulePath) === "cli.ts" ? resolve8(dirname9(modulePath), "../skills/golive") : resolve8(dirname9(modulePath), "..");
+    const bundleRoot = basename10(modulePath) === "cli.ts" ? resolve9(dirname9(modulePath), "../skills/golive") : resolve9(dirname9(modulePath), "..");
     const ownership = statusForBundle(bundleRoot);
     emit(await checkForUpdate(release2, { ownership, disabled: flags.offline === true || process.env.GOLIVE_UPDATE_CHECK === "0", ...flags["no-cache"] === true ? { cachePath: false } : {} }), { json: json2 });
     return 0;
@@ -22995,10 +23292,10 @@ async function main(argv) {
       };
       const plan = await buildPlan(ctx, linkList(), { unmappedEnv: env.unmapped, warnings: [] }).catch(() => null);
       const report = await makeReport(ctx, results, await handoffStatus(ctx, plan?.handoffs ?? [], results, false, plan?.steps ?? []), verification);
-      const reportPaths = { json: join18(cwd, ".golive/report.json"), markdown: join18(cwd, "GOLIVE_REPORT.md") };
-      mkdirSync6(join18(cwd, ".golive"), { recursive: true });
-      writeFileSync7(reportPaths.json, redact(JSON.stringify(report, null, 2)) + "\n");
-      writeFileSync7(reportPaths.markdown, redact(renderReport(report)));
+      const reportPaths = { json: join22(cwd, ".golive/report.json"), markdown: join22(cwd, "GOLIVE_REPORT.md") };
+      mkdirSync7(join22(cwd, ".golive"), { recursive: true });
+      writeFileSync9(reportPaths.json, redact(JSON.stringify(report, null, 2)) + "\n");
+      writeFileSync9(reportPaths.markdown, redact(renderReport(report)));
       emit({ ok: report.summary.fail === 0, report, reportPaths }, { json: json2 });
       return report.summary.fail === 0 ? 0 : 2;
     }
@@ -23024,9 +23321,9 @@ async function main(argv) {
       const paths = handoverPaths(cwd);
       assertOverwritable(paths.json, flags.force === true);
       assertOverwritable(paths.markdown, flags.force === true);
-      mkdirSync6(join18(cwd, ".golive"), { recursive: true });
-      writeFileSync7(paths.json, handoverJson(doc));
-      writeFileSync7(paths.markdown, renderHandover(doc));
+      mkdirSync7(join22(cwd, ".golive"), { recursive: true });
+      writeFileSync9(paths.json, handoverJson(doc));
+      writeFileSync9(paths.markdown, renderHandover(doc));
       emit({
         ok: items.every((i) => i.done !== false || !i.blocking),
         handoffs: items,

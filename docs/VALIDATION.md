@@ -428,3 +428,15 @@ deploy by design, with no documentation for the expected path afterwards.
 **Limits.** One agent client (Claude Code) and one install channel (Skills CLI global); the owner's
 own machine, not an independent end user; no discovery of a plugin-manager or npm-tarball copy
 inside an agent session. This is not the cross-agent matrix.
+
+**Follow-up on the four findings (offline only).** Each one was addressed after the walkthrough: a
+project golive creates is named from the repository's git `origin` remote (the working folder only
+when there is none), and the Create step and a plan warning say which was used ([#64]); a host whose
+own CLI uploads the folder declares its ignore file, so `upload:excludes` keeps `.golive/`,
+`golive.yaml` and the run documents out of the upload before the deploy that carries it, and the new
+`upload-exposure` check re-reads the live site for them ([#65]); `.vercel/project.json` is written
+locally in the shape `vercel link` uses, so tools that detect Vercel from `vercel.json`/`.vercel/`
+see the project ([#66]); and a plan that redeploys nothing says so and names the path a later code
+change ships through ([#67]). The evidence for these is offline: vitest cases over mock adapters,
+temporary repo directories and scripted git output. None of the four has been re-run against a live
+provider account, so nothing above extends the walkthrough's live evidence to them.

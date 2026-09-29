@@ -136,7 +136,10 @@ and never for a name they did not name. Removing golive's copy does not end acce
 at the provider does.
 
 Vercel deploys always run through the Vercel CLI, so it must be installed (`npm i -g vercel`) either
-way; `VERCEL_TOKEN` only replaces `vercel login`. Use `doctor`'s `howToFix` to preserve the correct
+way; `VERCEL_TOKEN` only replaces `vercel login`. When golive selects or creates the project it also
+keeps `.vercel/project.json` in sync in the repo (a local file, no provider write), so the Vercel CLI
+and tools that detect Vercel from `.vercel/` find the project golive deployed; `.golive/state.json`
+stays the source of truth, and `.vercel/` should stay out of git. Use `doctor`'s `howToFix` to preserve the correct
 login, variable and permissions, but present only the applicable entry method in the human's language;
 do not recite editor setup when the native prompt is available. A login it
 shows as `! <cmd>` goes in a separate terminal window too. Supabase can reuse a supported CLI
@@ -239,9 +242,25 @@ Explain the steps by provider, in plain language, and call out:
   that deploy contains, and this flag is the separate approval to write production there for the first
   time. A failed attempt records no deploy, so the gate stays; once golive records a successful one,
   later deploys of that target need no extra flag.
+- `upload:excludes`: only when the host's CLI uploads the folder itself (Vercel) and the repo holds
+  golive's own files. It appends golive's block — `.golive/`, `golive.yaml`, `GOLIVE_REPORT.md`,
+  `GOLIVE_HANDOVER.md`, `docs/GOLIVE-*` — to the host's ignore file (`.vercelignore`): a **local file
+  edit** (`writes: false`, no provider write), the existing rules kept above it, added once, and the
+  deployment that follows carries it (that is why the plan redeploys). Explain that the host serves
+  what it uploads and ignores `.gitignore`; a conflicting ignore file the CLI refuses (`.nowignore`)
+  means no step and a warning instead.
+- a plan with **no deploy step** although production is live: golive deploys only for the first
+  deploy, a production env change, or a retry after a failure, never for app code alone. Its
+  `warnings` say so and name what does ship a code change (the host's own CLI in this repo, or its
+  Git integration; `references/plan-and-verify.md`, "Shipping a later code change"). Relay that
+  boundary rather than implying a code change is live.
 - `project:hosting` / `project:db`: which project and account every write goes to. If a step
   **creates** a project, its preview lists existing projects; ask whether to use one of those instead
-  (`init --project <axis>=<name>`, then `plan` again). Creating a project can cost money.
+  (`init --project <axis>=<name>`, then `plan` again). Creating a project can cost money. Its preview
+  also says where the proposed name came from — the git `origin` remote's name when there is one, so a
+  worktree or second checkout proposes the same project, else the working folder — and `plan` warns
+  when the two differ, because a name taken from a scratch folder is orphaned the next time the repo is
+  checked out elsewhere. To use another name, create the project at the provider first and adopt it.
 - `handoffs`: what only the human can do. For a missing Stripe publishable key, ask for the `pk_` key
   and run `init --stripe-publishable <mode>=pk_<mode>_…`, then `plan` again.
 - `auth:settings` / `auth:redirects` (Supabase Auth): the auth policy comes from `auth` in
@@ -408,6 +427,7 @@ Check scope:
 | `domain-live` | custom domain is attached at an automated host (`ok`), resolves, serves HTTPS; with a guided host, DNS + HTTPS only (attachment not confirmed) |
 | `netlify-public-access` | Netlify's confirmed production homepage accepts an anonymous request; a private gate needs the exact-project visibility UI handoff, without changing team defaults or exposing previews |
 | `bundle-secrets` | known secret patterns in fetched production HTML/JavaScript; incomplete fetches or scan limits warn instead of passing |
+| `upload-exposure` | production serves none of golive's own files (`.golive/*`, `golive.yaml`, `GOLIVE_REPORT.md`, `GOLIVE_HANDOVER.md`, `docs/GOLIVE-*`): 404 is a pass, a body that is the file fails **high**, the app's own catch-all answering 200 is named as such, and a private deployment (401/403) skips |
 | `rls-probe` | tables not readable with the public key |
 | `db-connection` | selected Neon database and role accept a fixed read-only query; does not verify migrations, deployed app access or user isolation |
 | `auth-redirects` | auth site URL / redirect allowlist point at production |
@@ -507,6 +527,10 @@ contains no secret values, but it names accounts and resources: tell the human t
 sharing it. The CLI's report is `GOLIVE_REPORT.md`. Recommend adding `.golive/`, `GOLIVE_REPORT.md`
 and `GOLIVE_HANDOVER.md` to the app's own `.gitignore`: state, report and handover carry resource ids
 and account names, while credential values live outside the repo in the private credentials file.
+That is git hygiene, not upload filtering: a host whose CLI uploads the folder (Vercel) ignores
+`.gitignore` and reads only its own ignore file, so `plan` adds golive's block to `.vercelignore` as
+`upload:excludes` before a deploy — the deploy depends on it, and `upload-exposure` then re-reads the
+live site for those paths (a static site's own allowlist `.vercelignore` is the human's call).
 
 ## More detail (load only what you need)
 

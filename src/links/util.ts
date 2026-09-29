@@ -1,4 +1,3 @@
-import { basename } from 'node:path';
 import { Secret, fingerprint, redact } from '../core/secret.js';
 import { mapEnv, type EnvMapping } from '../core/envmap.js';
 import type { Adapter, AuthStatus, Axis, Capabilities, CheckResult, Ctx, EnvStore, EnvTarget, Finding, OutputKey, Outputs, OutputsProvider, Risk, Step, StepContext, StepResult, Value } from '../core/types.js';
@@ -10,6 +9,7 @@ import type { Adapter, AuthStatus, Axis, Capabilities, CheckResult, Ctx, EnvStor
 
 export { adapterFor, cap } from '../core/caps.js';
 import { adapterFor, cap } from '../core/caps.js';
+import { repoIdentity } from '../core/repo.js';
 
 export type AxisStatus =
   | { kind: 'none' }
@@ -143,14 +143,12 @@ export function errMsg(e: unknown): string {
 
 // ── URLs / names ──────────────────────────────────────────────────────────────────────────────────
 
-/** Project name derived from the repo directory (lowercase, dash-separated). */
-export function repoName(ctx: Ctx): string {
-  const s = basename(ctx.cwd)
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 63);
-  return s || 'app';
+/**
+ * Project name derived from the repository (its git origin remote, so a worktree or a second checkout
+ * proposes the same name), else from the working folder (lowercase, dash-separated).
+ */
+export async function repoName(ctx: Ctx): Promise<string> {
+  return (await repoIdentity(ctx)).name;
 }
 
 /**

@@ -118,6 +118,13 @@ function vercelCli() {
 }
 
 describe('Vercel approved project scope', () => {
+  it('names the local link file it keeps in sync in the project step preview (issue #66)', async () => {
+    const ex = vercelCli();
+    const ctx = testCtx({ exec: ex.run, adapters: [vercelAdapter], config: { stack: { hosting: 'vercel' } }, cwd: '/work/demo' });
+    const p = await build(ctx);
+    expect(planView(p).steps[0]!.preview.join('\n')).toContain('also keeps .vercel/project.json in sync (a local file in this repo, no provider write)');
+  });
+
   it('binds an explicit scope override even though CLI whoami default stays unchanged', async () => {
     const ex = vercelCli();
     const env = { VERCEL_ORG_ID: 'team_a' };

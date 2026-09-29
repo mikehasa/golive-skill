@@ -190,6 +190,15 @@ export const vercelAdapter: Adapter = {
     url: vercelUrl,
     deploy: vercelDeploy,
     domain: vercelDomain,
+    upload: {
+      ignoreFile: '.vercelignore',
+      // The CLI refuses a `.vercelignore` and a legacy `.nowignore` together: never add one beside it.
+      conflicting: ['.nowignore'],
+      // `vercel deploy` uploads this folder; a framework build serves its build output, but an
+      // unframed app (golive: `static`, or `unknown` when Vercel knows the preset and golive does
+      // not) serves what was uploaded — golive's own files included (issue #65).
+      servesFolder: (ctx) => ctx.detect.framework === 'static' || ctx.detect.framework === 'unknown',
+    },
     // No `release` capability: this adapter has no read of which deployment production currently
     // serves (only aliases, which a promotion cannot be proven against) and no promote/rollback call
     // golive has exercised, so promotion and rollback are refused/skipped with that reason rather than

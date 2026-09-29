@@ -22,6 +22,11 @@ host env vars, DNS records, deployments, a Resend sending domain and per-environ
 webhook endpoints, auth settings, one seeded test account for the auth journey, and the deletions an
 approved `teardown` plans.
 
+Steps that declare `writes: false` still maintain golive's own files in your repo: `.golive/state.json`,
+the report and handover documents, and — only when the step's preview says so — the host's local link
+file (`.vercel/project.json`) or its upload exclusion (`.vercelignore`). Those are local files, never
+provider or account writes, and each one is named in the preview the human approves.
+
 Per-step risk flags own extra confirmations, checked at apply time (`src/core/runner.ts:169-176`):
 
 | Step risk | Meaning | Required flag |

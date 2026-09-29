@@ -12,6 +12,15 @@ const WEBHOOK_STEP = 'payments:webhook:production';
 const FIRST_DEPLOY_WHY = 'first production deploy for this project: golive has never deployed it, so this writes production for the first time — needs --confirm-live';
 
 /**
+ * Shown when production is live and this plan redeploys nothing: the deploy link is not a CI, so a
+ * code change ships through the host's own path. The walkthrough that produced issue #67 planned an
+ * empty plan for a code-only change and neither the skill nor the references said what to do next;
+ * this note is the plan's half of the answer (the other half is `plan-and-verify.md`).
+ */
+const NO_DEPLOY_NOTE =
+  'no production deploy is planned: golive deploys on the first deploy, after a production env change, or to retry a failed deploy, never because app code changed. Ship a later code change through the hosting provider\'s own path (its CLI in this repo, with the project golive recorded, or its Git integration); see references/plan-and-verify.md, "Shipping a later code change".';
+
+/**
  * Env changes only apply to NEW deployments, so production is (re)deployed when:
  *   - this plan writes production env (steps tracked with needsRedeploy),
  *   - state says a production env write is still waiting for a deploy (REDEPLOY_KEY — survives a
@@ -27,6 +36,11 @@ const FIRST_DEPLOY_WHY = 'first production deploy for this project: golive has n
  * Such a plan (and its `deploy:production:final`) also declares `risk.live`, so the runner requires
  * `--confirm-live`: the plan's own approval must not be enough to write production for the first
  * time. A failed attempt records no deploy and the gate stays; once state records one it is gone.
+ *
+ * Once production is deployed and nothing this plan writes needs a new deployment, the link
+ * contributes no step but one warning: a code change does not trigger a deploy, so `plan` says where
+ * such a change ships instead of planning nothing in silence. With a `release` opt-in configured the
+ * note is dropped — that plan's own release steps carry the deployment story.
  */
 export const deployLink: Link = {
   id: 'deploy',
@@ -35,7 +49,12 @@ export const deployLink: Link = {
     const h = await ready(ctx, 'hosting', 'deploy');
     if (!h) return null;
     const m = memo(ctx);
-    const after = [...m.redeployAfter];
+    // Steps whose effect only reaches production through a new deployment: production env writes, and
+    // the upload exclusion that keeps golive's own files off the site (issue #65) — an upload changes
+    // only when the site is deployed again.
+    const envAfter = [...m.redeployAfter];
+    const excludes = m.planned.has('upload:excludes') ? ['upload:excludes'] : [];
+    const after = [...envAfter, ...excludes];
     const lastOk = lastDeployAt(ctx);
     // A plan built while state records no successful deploy carries `risk.live` (FIRST_DEPLOY_WHY): a
     // failed attempt records nothing, so the gate stays until a deploy succeeds.
@@ -47,7 +66,12 @@ export const deployLink: Link = {
       .map((id) => steps[id])
       .filter((r) => r?.status === 'failed' && (!lastOk || r.at > lastOk))
       .sort((a, b) => b!.at.localeCompare(a!.at))[0];
-    if (!after.length && lastOk && !pending && !failed) return null;
+    if (!after.length && lastOk && !pending && !failed) {
+      // With a release opt-in configured, this plan's own release steps carry the deployment story
+      // (the release link runs after this one), so the steady-state note would only contradict them.
+      const releaseFlow = Boolean(ctx.config.release?.preview || ctx.config.release?.promote || ctx.config.release?.rollback);
+      return { steps: [], handoffs: [], warnings: releaseFlow ? [] : [NO_DEPLOY_NOTE] };
+    }
 
     // Steps that must wait for a first deployment: domain:attach and everything depending on it.
     const attach = lastOk ? undefined : m.steps.get('domain:attach');
@@ -56,7 +80,10 @@ export const deployLink: Link = {
     const lateWriters = after.filter((id) => late.has(id));
 
     const reasons: string[] = [];
-    if (early.length) reasons.push(`so the env changes above take effect (${early.join(', ')}); env vars only apply to new deployments`);
+    const earlyEnv = early.filter((id) => !excludes.includes(id));
+    const earlyUpload = early.filter((id) => excludes.includes(id));
+    if (earlyEnv.length) reasons.push(`so the env changes above take effect (${earlyEnv.join(', ')}); env vars only apply to new deployments`);
+    if (earlyUpload.length) reasons.push(`so golive's own files leave the upload (${earlyUpload.join(', ')}); an upload only changes with a new deployment`);
     if (pending) reasons.push(`production env changed at ${pending} and no deploy has picked it up yet`);
     if (failed) reasons.push(`the last production deploy failed (${failed.at}); deploying again`);
     if (!lastOk) reasons.push(`golive has not deployed production yet${attach ? '; the domain is attached after this deploy' : ''}`);

@@ -168,7 +168,8 @@ describe('Netlify anonymous production access', () => {
     setStatus(200);
     expect((await runCheck(ctx, netlifyPublicAccessCheck)).status).toBe('pass');
     expect(await netlifyVisibilityLink.plan(ctx)).toBeNull();
-    expect(await deployLink.plan(ctx)).toBeNull();
+    // No redeployment: the deploy link contributes no step (only its steady-state warning).
+    expect((await deployLink.plan(ctx))?.steps ?? []).toEqual([]);
     expect(ctx.state.get()).toEqual(before);
     expect(ex.calls.every(call => call.args[0] === 'api')).toBe(true);
   });

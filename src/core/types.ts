@@ -143,6 +143,24 @@ export interface Capabilities {
   testSend: TestSend;
   keys: KeyIssuer;
   authUsers?: AuthUsers;
+  upload?: UploadRules;
+}
+
+/**
+ * A host whose own CLI uploads the deploy folder (Vercel's `vercel deploy`) and can serve what it
+ * uploaded. `ignoreFile` is the file that CLI reads before uploading; `servesFolder` says whether the
+ * uploaded folder is also what the site serves — no framework build output, the case where files
+ * golive wrote into the repo would become publicly fetchable (issue #65).
+ */
+export interface UploadRules {
+  /** Repo-relative ignore file the host's CLI reads before uploading (e.g. `.vercelignore`). */
+  ignoreFile: string;
+  /**
+   * Ignore files that must not coexist with `ignoreFile`: the CLI refuses both at once, so golive
+   * plans nothing and says why instead of creating a combination the host rejects.
+   */
+  conflicting?: string[];
+  servesFolder(ctx: Ctx): boolean | Promise<boolean>;
 }
 
 /** Secret-free payment destination and operator credential identity, bound into approvals. */
@@ -217,6 +235,13 @@ export interface ProjectLinker {
    * reason. Only teardown steps call this.
    */
   remove?(ctx: Ctx): Promise<{ removed: boolean; reason?: string }>;
+  /**
+   * A local file this provider's own tooling reads to find the linked project (Vercel:
+   * `.vercel/project.json`). golive keeps it in sync when it selects or creates the project, so tools
+   * that detect the host from that file see the project golive deployed — a local file only, never a
+   * provider write. Plan previews for the project steps say so.
+   */
+  localLinkFile?: string;
 }
 
 export interface EnvStore {

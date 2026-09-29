@@ -1,6 +1,7 @@
 import type { Link } from '../core/plan.js';
 import type { Adapter, Axis, Ctx, HandoffItem, ProjectCreateTarget, ProjectLinker, ProjectRef, Step } from '../core/types.js';
-import { authOf, errMsg, intentOf, memo, ready, repoName, step, track } from './util.js';
+import { repoIdentity, type RepoName } from '../core/repo.js';
+import { authOf, errMsg, intentOf, memo, ready, step, track } from './util.js';
 
 const PROJECT_AXES: Axis[] = ['hosting', 'db'];
 const MAX_LISTED = 10;
@@ -53,7 +54,8 @@ async function planAxis(ctx: Ctx, axis: Axis, adapter: Adapter, linker: ProjectL
     return { step: selectStep(ctx, axis, adapter, linker, resolved?.id ?? chosen, resolved?.name ?? chosen, account, resolved) };
   }
 
-  const name = repoName(ctx);
+  const identity = await repoIdentity(ctx);
+  const name = identity.name;
   // A failed inventory is not an empty account. In particular, a provider may refuse ambiguous
   // branch/scope discovery; never turn that refusal into approval to create a different resource.
   const candidates = await linker.candidates(ctx).catch((e: unknown) => {
@@ -69,7 +71,7 @@ async function planAxis(ctx: Ctx, axis: Axis, adapter: Adapter, linker: ProjectL
   const listed = names.length ? `${names.slice(0, MAX_LISTED).join(', ')}${names.length > MAX_LISTED ? ', …' : ''}` : '';
   if (linker.create) {
     const target = linker.creationTarget ? await linker.creationTarget(ctx) : undefined;
-    return { step: createStep(ctx, axis, adapter, linker, name, listed, account, target) };
+    return { step: createStep(ctx, axis, adapter, linker, name, listed, account, target, identity), warning: nameWarning(axis, adapter, identity) };
   }
 
   return {
@@ -103,6 +105,14 @@ const sameTarget = (a: ProjectCreateTarget, b: ProjectCreateTarget): boolean =>
   sameScope(a.scope, b.scope) && a.region === b.region;
 
 /**
+ * One preview line for a linker that keeps its own local link file in sync (Vercel writes
+ * `.vercel/project.json`, so tools that detect the host from `.vercel/` see this project). It is an
+ * edit inside this repo, no provider write — and the plan never hides an edit from the human.
+ */
+const localLinkLines = (linker: ProjectLinker): string[] =>
+  linker.localLinkFile ? [`also keeps ${linker.localLinkFile} in sync (a local file in this repo, no provider write) so the provider's CLI and other tools detect this project`] : [];
+
+/**
  * Zero-write step naming the destination of this plan's writes. At apply time it refuses if the repo
  * now resolves to a different project (link file changed, state edited), then pins the project in
  * golive state so later runs don't depend on local link files.
@@ -113,7 +123,7 @@ function pinStep(axis: Axis, adapter: Adapter, linker: ProjectLinker, planned: P
     title: `Use ${adapter.title} project ${planned.name} for ${axis}`,
     kind: 'provision',
     risk: { writes: false },
-    preview: [`${axis}: ${adapter.title} project ${planned.name} (${planned.id})${scopeOf(planned)}, from ${source}; every ${adapter.title} write in this plan goes there`, ...(account ? [account] : [])],
+    preview: [`${axis}: ${adapter.title} project ${planned.name} (${planned.id})${scopeOf(planned)}, from ${source}; every ${adapter.title} write in this plan goes there`, ...localLinkLines(linker), ...(account ? [account] : [])],
     intent: intentOf({ pin: `${adapter.id}:${planned.id}` }),
     destination: { axis, provider: adapter.id, providerTitle: adapter.title, action: 'pin', project: { id: planned.id, name: planned.name }, ...(planned.scope ? { scope: planned.scope } : {}), ...(account ? { access: account } : {}) },
     async run(sctx) {
@@ -136,7 +146,7 @@ function selectStep(ctx: Ctx, axis: Axis, adapter: Adapter, linker: ProjectLinke
     title: `Use existing ${adapter.title} project ${label}`,
     kind: 'provision',
     risk: { writes: true },
-    preview: [`Use existing ${adapter.title} project ${label}${planned ? ` (${planned.id})${scopeOf(planned)}` : ''} for ${axis} (links it locally; nothing is changed at ${adapter.title})`, ...(account ? [account] : [])],
+    preview: [`Use existing ${adapter.title} project ${label}${planned ? ` (${planned.id})${scopeOf(planned)}` : ''} for ${axis} (links it locally; nothing is changed at ${adapter.title})`, ...localLinkLines(linker), ...(account ? [account] : [])],
     intent: intentOf({ select: `${adapter.id}:${idOrName}` }),
     destination: { axis, provider: adapter.id, providerTitle: adapter.title, action: 'select', project: { ...(planned ? { id: planned.id } : {}), name: label }, ...(planned?.scope ? { scope: planned.scope } : {}), ...(account ? { access: account } : {}) },
     async run(sctx) {
@@ -151,7 +161,7 @@ function selectStep(ctx: Ctx, axis: Axis, adapter: Adapter, linker: ProjectLinke
   });
 }
 
-function createStep(ctx: Ctx, axis: Axis, adapter: Adapter, linker: ProjectLinker, name: string, listed: string, account: string | undefined, target?: ProjectCreateTarget): Step {
+function createStep(ctx: Ctx, axis: Axis, adapter: Adapter, linker: ProjectLinker, name: string, listed: string, account: string | undefined, target?: ProjectCreateTarget, identity?: RepoName): Step {
   memo(ctx).pendingProjects.set(axis, 'create');
   return step({
     id: `project:${axis}`,
@@ -160,8 +170,10 @@ function createStep(ctx: Ctx, axis: Axis, adapter: Adapter, linker: ProjectLinke
     risk: { writes: true },
     preview: [
       `Create ${adapter.title} project ${name} for ${axis}${target ? scopeOf({ id: '', name, scope: target.scope }) : ''} (no existing project matched this repo)`,
+      ...(identity ? [nameSource(identity)] : []),
       ...(target?.region ? [`region: ${target.region}`] : []),
       ...(listed ? [`existing ${adapter.title} projects that could be used instead: ${listed} — ask the human; to use one, run \`init --project ${axis}=<name>\` and \`plan\` again`] : []),
+      ...localLinkLines(linker),
       ...(account ? [account] : []),
     ],
     intent: intentOf({ create: `${adapter.id}:${name}` }),
@@ -179,4 +191,21 @@ function createStep(ctx: Ctx, axis: Axis, adapter: Adapter, linker: ProjectLinke
       }
     },
   });
+}
+
+/**
+ * Where the created project's name came from. Named in the preview so a worktree ("setup-deploy-b59cf2")
+ * never looks like the intended project name (issue #64).
+ */
+function nameSource(identity: RepoName): string {
+  if (identity.from === 'folder') return `name "${identity.name}" comes from the working folder (no git origin remote to read)`;
+  return identity.name.toLowerCase() === identity.folder.toLowerCase()
+    ? `name "${identity.name}" comes from the git origin remote (this folder is named the same)`
+    : `name "${identity.name}" comes from the git origin remote; "${identity.folder}" is only the working folder this run happens in`;
+}
+
+/** The same difference as a plan warning: the human may want a project name the repository does not carry. */
+function nameWarning(axis: Axis, adapter: Adapter, identity: RepoName): string | undefined {
+  if (identity.from !== 'git-remote' || identity.name.toLowerCase() === identity.folder.toLowerCase()) return undefined;
+  return `the ${adapter.title} project golive would create for ${axis} is named "${identity.name}" (from the git origin remote), not "${identity.folder}" (the folder this run happens in). To use another name, create it at ${adapter.title} first and adopt it with \`init --project ${axis}=<name>\`, then run \`plan\` again.`;
 }

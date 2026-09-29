@@ -24,6 +24,12 @@ Existing values are updated per context. Do not replace all contexts, widen scop
 
 Local Netlify builds see masked non-development secret values. Runtime-only server credentials fit this flow. If the application needs raw secrets during its build, explain the boundary and prepare a separately reviewed remote-build workflow; do not change secrets to readable values to get a passing build. [Secrets Controller](https://docs.netlify.com/build/environment-variables/secrets-controller/).
 
+## Deploys after the first one
+
+A plan deploys production for the same reasons on any host — the first deploy, a production env write waiting for one, or a retry after a failure (see `plan-and-verify.md`, "Shipping a later code change"). A code-only change therefore plans no deploy step, and the plan's warnings say so. Ship it with the Netlify CLI (`netlify deploy --prod`, against the selected site) or Netlify's Git integration; that deployment is outside golive — it is not recorded in `.golive/state.json`, and `status` does not report it as drift. Re-run `verify` afterwards to re-read the live site.
+
+Netlify's CLI publishes the site's publish directory rather than the repository folder, so golive plans no upload-ignore step here (Vercel does: `upload:excludes`, see `vercel.md`). The `upload-exposure` check still re-reads production for golive's own paths (`.golive/*`, `golive.yaml`, `GOLIVE_REPORT.md`, `GOLIVE_HANDOVER.md`, `docs/GOLIVE-*`) and names what to change when one of them is served.
+
 ## Verify and report
 
 The official CLI builds by default. Deployment targets the exact selected site with an explicit context; production adds `--prod`. Verify ready state, owning site ID and published production ID before reporting a URL. Only observed HTTPS Netlify default origins count; configured custom domains and guessed preview patterns do not.

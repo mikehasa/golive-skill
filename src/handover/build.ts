@@ -195,7 +195,7 @@ export async function buildHandover(ctx: Ctx, input: HandoverInput): Promise<Han
     generator: HANDOVER_MARKER,
     generatedAt,
     release: { name: ctx.release.name, version: ctx.release.version, bundleDigest: ctx.release.bundleDigest, ref: ctx.release.source.ref },
-    product: { name: repoName(ctx), root: ctx.cwd, framework: ctx.detect.framework, ...(ctx.config.domain ? { domain: ctx.config.domain } : {}) },
+    product: { name: await repoName(ctx), root: ctx.cwd, framework: ctx.detect.framework, ...(ctx.config.domain ? { domain: ctx.config.domain } : {}) },
     urls,
     limits: limits(ctx, input),
     accounts,

@@ -702,16 +702,23 @@ describe('dns + email', () => {
 });
 
 describe('deploy', () => {
-  it('is omitted when nothing needs a new deployment', async () => {
+  it('is omitted when nothing needs a new deployment, and says where a code change ships', async () => {
     const { ctx } = setup({ config: { stack: { hosting: 'fakehost', db: 'fakedb', auth: 'fakedb' }, domain: undefined }, env: [], state: stateWith([], { 'deployed:production': '2026-01-01T00:00:00.000Z' }) });
     const plan = await build(ctx);
     expect(ids(plan)).toEqual(['project:hosting', 'project:db', 'auth:redirects']);
+    // Issue #67: the empty plan explains itself. golive is not a CI, so a code change ships through
+    // the host's own path — named here and in references/plan-and-verify.md.
+    expect(plan.warnings.join('\n')).toMatch(/no production deploy is planned/);
+    expect(plan.warnings.join('\n')).toMatch(/hosting provider's own path/);
+    expect(plan.warnings.join('\n')).toMatch(/Shipping a later code change/);
   });
 
   it('is planned when production was never deployed', async () => {
     const { ctx } = setup({ config: { stack: { hosting: 'fakehost' }, domain: undefined }, env: [], arrange: (w) => (w.host.urls.production = null) });
     const plan = await build(ctx);
     expect(ids(plan)).toEqual(['project:hosting', 'deploy:production']);
+    // A deploy is planned, so the steady-state note does not apply.
+    expect(plan.warnings.join('\n')).not.toMatch(/no production deploy is planned/);
     // No webhook secret has been written yet, so the unsigned-webhook probe waits for `verify`.
     expect(byId(plan, 'deploy:production').verifyWith).toEqual(['bundle-secrets']);
   });

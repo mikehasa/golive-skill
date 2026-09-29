@@ -8,7 +8,6 @@
  * (e.g. an unanswered macOS Keychain dialog), which must never take those reads down with it.
  */
 import { randomBytes } from 'node:crypto';
-import { basename } from 'node:path';
 import { credentialVia, SupabaseCredentialError, SupabaseCredentialUnreadable, supabaseCredentialOrUndefined } from './supabase-credentials.js';
 import { supabaseAuthUsers } from './supabase-auth.js';
 import type {
@@ -33,6 +32,7 @@ import type {
   Value,
 } from '../core/types.js';
 import { Secret, redact, registerSecretValue, vaultGet, vaultPut } from '../core/secret.js';
+import { repoIdentity } from '../core/repo.js';
 import {
   CLI_COVERS,
   LOGIN_HELP,
@@ -198,25 +198,15 @@ async function tokenNeeds(ctx: Ctx): Promise<string[]> {
     try {
       if (await resolveRef(ctx)) needsCreate = false;
       else {
-        const name = repoName(ctx);
+        const name = (await repoIdentity(ctx)).name;
         needsCreate = !(await adoptable(ctx)).some((p) => p.name.toLowerCase() === name);
       }
     } catch {
       needsCreate = false; // listing failed: plan surfaces that error itself; don't guess
     }
-    if (needsCreate) needs.push(`creating the Supabase project (none is linked and no project named "${repoName(ctx)}" can be adopted)`);
+    if (needsCreate) needs.push(`creating the Supabase project (none is linked and no project named "${(await repoIdentity(ctx)).name}" can be adopted)`);
   }
   return needs;
-}
-
-/** Same rule as links/util repoName (adapters don't import links). */
-function repoName(ctx: Ctx): string {
-  const s = basename(ctx.cwd)
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 63);
-  return s || 'app';
 }
 
 /** Org slugs the logged-in CLI can see (null = not logged in / not installed). Memoized per run. */
