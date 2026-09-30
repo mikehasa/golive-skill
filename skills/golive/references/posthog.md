@@ -2,9 +2,18 @@
 
 Load this when the plan uses `monitoring=posthog`.
 
-Status: the adapter, the link and the `posthog-ingest` check are **implemented and mock-covered, not
-live-validated**. Nothing here has run against a real PostHog account yet; the reference records what
-the code does and what the official API contract behind it is (checked 2026-09-29).
+Status: the adapter, the link and the `posthog-ingest` check are **implemented and live-validated in
+part**. A 2026-09-30 run on a disposable fixture and the owner's free PostHog US-Cloud account
+accepted the personal API key and its single organization, adopted the account's existing project
+through `projects.monitoring` (a zero-write pin recorded in state, no creation marker), passed
+`posthog-ingest` twice — one synthetic `golive_ingest_check` event each, read back through PostHog's
+own HogQL count after 22 s and 23 s — saw the free plan refuse a create live (HTTP 403
+`permission_denied`, "maximum limit of allowed projects for your current plan", mapped to
+reuse/delete/upgrade with nothing created), and left the adopted project to an explicit teardown
+handoff. A project read on that account returned `api_token`. Still unverified: the create **and
+delete** path of a golive-created project, writing the token to a host env, the EU region and the
+app's own event flows. The reference records what the code does and what the official API contract
+behind it is (checked 2026-09-29).
 
 ## 1. Logging in (least friction first)
 
@@ -104,10 +113,11 @@ Stays with the human:
 
 ## Unverified
 
-- The exact status codes and wording PostHog uses for plan-limit refusals: golive maps them by message
-  pattern (`project limit`, `upgrade`, `quota`, …) across 4xx, because the docs do not pin one code.
-- Whether every PostHog plan/serializer returns `api_token` on `GET /api/organizations/:org/projects/:id`
-  (the create response carries it; golive refuses to invent one when a read omits it).
+- The create **and delete** path of a golive-created project: the live run's account was on the free
+  plan's one-project limit, so the create was refused live and the deletion of a golive-created
+  project has never been exercised — both stay mock-covered.
+- Writing the project token to a host env: no live run has had a host with mapped env names to write.
 - EU Cloud behaviour end to end: the host pair is configurable and mock-covered, but no EU account has
   run it.
-- The ~180 s read-back window: from PostHog's documented ingestion lag, not from a measured live run.
+- The ~180 s read-back window: from PostHog's documented ingestion lag — the live runs read their
+  markers back after 22 s and 23 s, so nothing has approached the window's edge.

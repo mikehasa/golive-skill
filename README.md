@@ -409,8 +409,13 @@ live-tested milestones**, not a finished category or a completed checklist for y
 - [ ] 🗺️ **Monitoring and alerts:** error tracking, logs, uptime and actionable alerts.
   Provider suggestions are guided today; verified setup is planned. On-demand drift checks exist
   (`golive status`, below) — continuous monitoring and alerting do not.
-- [ ] 🗺️ **Product analytics:** event validation and consent/data settings, beyond today's guided
-  provider suggestions.
+- [ ] 🚧 **Product analytics:** event validation and consent/data settings, beyond today's guided
+  provider suggestions. PostHog analytics is wired through an approved plan — the app's analytics
+  project is adopted or selected (a create is planned when nothing matches), and the `posthog-ingest`
+  check proves ingest by sending one synthetic event and reading it back through PostHog's own query
+  API — live-validated on a disposable project (2026-09-30). Host env writing, consent settings and
+  the app's own event flows stay open; the create/delete path of a golive-created project is
+  mock-covered only.
 - [ ] 🚧 **CI/CD and safe releases:** previews, release checks, promotion, rollback and drift
   detection, building on today's approved CLI deployments. **Deployment identity — implemented, not
   live-validated:** each successful deploy records the provider's own identity for the deployment it

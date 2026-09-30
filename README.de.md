@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=de; source=README.md; source-commit=c5e265d; reviewed=false; updated=2026-09-29 -->
+<!-- golive-translation: lang=de; source=README.md; source-commit=c5e265d; reviewed=false; updated=2026-09-30 -->
 # GoLive
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Português (Brasil)](README.pt-BR.md) · [Deutsch](README.de.md)
@@ -458,8 +458,14 @@ aus) · **🗺️ Geplant**
 - [ ] 🗺️ **Monitoring und Alarme:** Fehler-Tracking, Logs, Uptime und umsetzbare Alarme.
   Provider-Vorschläge sind heute geführt; eine verifizierte Einrichtung ist geplant. Drift-Prüfungen
   auf Abruf gibt es (`golive status`, unten) — kontinuierliches Monitoring und Alerting nicht.
-- [ ] 🗺️ **Produkt-Analytics:** Event-Validierung sowie Consent- und Dateneinstellungen, über die
-  heutigen geführten Provider-Vorschläge hinaus.
+- [ ] 🚧 **Produkt-Analytics:** Event-Validierung sowie Consent- und Dateneinstellungen, über die
+  heutigen geführten Provider-Vorschläge hinaus. PostHog-Analytics wird über einen freigegebenen Plan
+  verdrahtet — das Analytics-Projekt der App wird übernommen oder ausgewählt (wenn nichts passt, wird
+  das Anlegen geplant), und der Check `posthog-ingest` belegt den Event-Ingest, indem er ein
+  synthetisches Event sendet und es über PostHogs eigene Query-API zurückliest — live validiert an
+  einem Wegwerf-Projekt (2026-09-30). Das Schreiben der Host-Umgebungsvariablen, die
+  Consent-Einstellungen und die Event-Flows der App selbst bleiben offen; das Anlegen und Löschen eines
+  von golive erstellten Projekts ist nur Mock-abgedeckt.
 - [ ] 🚧 **CI/CD und sichere Releases:** Previews, Release-Checks, Promotion, Rollback und
   Drift-Erkennung, aufbauend auf den heutigen freigegebenen CLI-Deployments. **Deployment-Identität —
   implementiert, nicht live validiert:** Jedes erfolgreiche Deployment zeichnet die Identität auf, die

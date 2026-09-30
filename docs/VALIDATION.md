@@ -517,3 +517,38 @@ URL — are the ones to read before concluding a publish failed.
 
 These results cover publication and installation. They do not extend the provider evidence above, and
 no OpenClaw client was exercised.
+
+## PostHog monitoring live run (2026-09-30)
+
+Recorded 2026-09-30, after publication, at bundle `0.1.0-alpha.7`, from a disposable fixture
+(`/tmp/golive-posthog-live`) and the owner's own free PostHog account on the US Cloud. The run
+exercised the monitoring adapter as far as that account's plan allowed; these are its observed
+results.
+
+- **The credential and the one-organization rule passed.** `doctor` accepted the personal API key
+  (`POSTHOG_API_KEY`) and resolved the account's single organization, so the adapter's
+  one-organization rule matched instead of refusing a guess.
+- **A free-plan create refusal, mapped live.** With nothing linked, the first plan proposed creating a
+  project named from the repository. PostHog refused it: HTTP 403 `permission_denied`, "maximum limit
+  of allowed projects for your current plan" — the free plan allows one project and the account already
+  had "Default project (637241)". golive mapped the refusal to its actionable message (reuse the
+  existing project, delete one, or upgrade; golive never spends) and created nothing. This refusal
+  mapping had been mock-covered; this run is its live evidence.
+- **Adoption and the zero-write pin.** The run then adopted the existing project (setting
+  `projects.monitoring`): the zero-write pin step re-read the destination and recorded the project's
+  id, name and organization id in `.golive/state.json` — with no creation marker, so teardown can
+  never treat it as golive's.
+- **Ingest, proven only by read-back, twice.** `golive verify --only posthog-ingest` **passed** twice
+  (once before and once after a later fix): each run sent one synthetic `golive_ingest_check` event
+  (markers `bc7ed0b3` and `4a173708`), accepted with HTTP 200 by the capture endpoint, and read it
+  back through PostHog's own HogQL count after 22 s and 23 s respectively. The read-back is the only
+  proof the check accepts; the 200 is acceptance.
+- **Teardown leaves the adopted project to the human.** `golive teardown` did not — and could not —
+  remove the adopted project: with no creation marker it became an explicit manual handoff naming the
+  PostHog dashboard, never a silent skip.
+
+**Limits.** Not exercised live, and still mock-covered or unverified: a successful **create and
+delete of a golive-created project** (blocked by the free plan's one-project limit); **writing the
+project token to a host env** (that fixture had no host and no mapped env names); the **EU region**;
+and the **app's own event flow** (no app code existed). Everything above is one account, one region
+and one project: `posthog-ingest` proves ingest of one synthetic event, not the app's own analytics.

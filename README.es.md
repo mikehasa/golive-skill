@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=es; source=README.md; source-commit=c5e265d; reviewed=false; updated=2026-09-29 -->
+<!-- golive-translation: lang=es; source=README.md; source-commit=c5e265d; reviewed=false; updated=2026-09-30 -->
 # GoLive
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Português (Brasil)](README.pt-BR.md) · [Deutsch](README.de.md)
@@ -466,8 +466,14 @@ de verificación completada para tu app.
   accionables. Hoy las sugerencias de proveedores son guiadas; la configuración verificada está
   planificada. Existen comprobaciones de deriva bajo demanda (`golive status`, más abajo) — la
   monitorización continua y las alertas no.
-- [ ] 🗺️ **Analítica de producto:** validación de eventos y ajustes de consentimiento y datos, más
-  allá de las sugerencias guiadas de proveedores que hay hoy.
+- [ ] 🚧 **Analítica de producto:** validación de eventos y ajustes de consentimiento y datos, más
+  allá de las sugerencias guiadas de proveedores que hay hoy. La analítica de PostHog se cablea a
+  través de un plan aprobado — el proyecto de analítica de la app se adopta o se selecciona (si no hay
+  coincidencia, se planifica una creación), y la comprobación `posthog-ingest` demuestra la ingesta
+  enviando un evento sintético y leyéndolo de vuelta con la propia API de consulta de PostHog —
+  validado en vivo sobre un proyecto desechable (2026-09-30). La escritura de las variables de entorno
+  del host, los ajustes de consentimiento y los flujos de eventos de la propia app siguen abiertos; la
+  ruta de creación/borrado de un proyecto creado por golive solo tiene cobertura de mocks.
 - [ ] 🚧 **CI/CD y releases seguros:** previews, comprobaciones de release, promoción, reversión y
   detección de deriva, sobre los despliegues por CLI aprobados que ya existen. **Identidad del
   despliegue — implementado, no validado en vivo:** cada despliegue correcto registra la identidad

@@ -23,7 +23,7 @@
     "references/netlify.md": "692727974530b549434af97b693c6cd9a51869b5cd5262983d8fc6e56ce459de",
     "references/plan-and-verify.md": "337a7afe90cb868c24406b386191be04efdce544f88fad0c41d69693da4e12fe",
     "references/porkbun.md": "8eaeb8890ce3c104e242ced33e77179253a9d8f3b9425be6692585254c6b6490",
-    "references/posthog.md": "3b62bc7e066778f7c0a533c7bfe327f1635dd875ec659ed9eb9164dbe278e5a8",
+    "references/posthog.md": "4bcc6bd92c0e6c142dcc9627aaea292da743c6532ca4450aeba0c7a6e0337a41",
     "references/resend.md": "ec673b3c75f4bb0edd9825079c2be41f165ca7a4ac2b6b732bb4024968735947",
     "references/stripe.md": "ef06e9f2782919849b49dfa5145010a8b3017e2210c655c8af45e3683d105c32",
     "references/supabase.md": "d7eb2179837a48da2d2202c2c22bc0453a86d78a698a7ea811f73d19dc65d87a",
@@ -34,5 +34,5 @@
     "scripts/install-cli.mjs": "ac9ee3f57b5fcbc54ef16b1ee0b22c967b846cc32512750046b13d5c1a7075bd",
     "scripts/install-lib.mjs": "43086f4d12380b6ce425d6188136b523f0cdda7bf168acc7c420f80bc3cff8f9"
   },
-  "bundleDigest": "590f38b2b4d4cba02312854820cb6c2e17f10ae7ec7f31b08a8bbe244d09071f"
+  "bundleDigest": "c08691cb79283fd385cbb4570b4943ccb038a0463a5d0471a13e2da40c3b6300"
 }

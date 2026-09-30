@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=pt-BR; source=README.md; source-commit=c5e265d; reviewed=false; updated=2026-09-29 -->
+<!-- golive-translation: lang=pt-BR; source=README.md; source-commit=c5e265d; reviewed=false; updated=2026-09-30 -->
 
 # GoLive
 
@@ -448,8 +448,14 @@ pendente) · **🗺️ Planejado**
 - [ ] 🗺️ **Monitoramento e alertas:** rastreamento de erros, logs, uptime e alertas acionáveis.
   Sugestões de provedores são guiadas hoje; uma configuração verificada está planejada. Checagens de
   drift sob demanda existem (`golive status`, abaixo) — monitoramento contínuo e alertas, não.
-- [ ] 🗺️ **Analytics de produto:** validação de eventos e configurações de consentimento/dados, além
-  das sugestões guiadas de provedores que existem hoje.
+- [ ] 🚧 **Analytics de produto:** validação de eventos e configurações de consentimento/dados, além
+  das sugestões guiadas de provedores que existem hoje. O analytics do PostHog é conectado através de
+  um plano aprovado — o projeto de analytics do app é adotado ou selecionado (uma criação é planejada
+  quando nada corresponde), e a checagem `posthog-ingest` prova a ingestão enviando um evento sintético
+  e lendo-o de volta pela própria API de consulta do PostHog — validado ao vivo em um projeto
+  descartável (2026-09-30). A escrita das variáveis de ambiente do host, as configurações de
+  consentimento e os fluxos de eventos do próprio app continuam abertos; o caminho de criação/exclusão
+  de um projeto criado pelo golive tem apenas cobertura por mocks.
 - [ ] 🚧 **CI/CD e releases seguros:** previews, checagens de release, promoção, rollback e detecção
   de drift, com base nos deploys por CLI aprovados que já existem hoje. **Identidade de deployment —
   implementada, sem validação ao vivo:** cada deploy bem-sucedido registra a identidade que o próprio

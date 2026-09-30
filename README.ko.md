@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=ko; source=README.md; source-commit=c5e265d; reviewed=false; updated=2026-09-29 -->
+<!-- golive-translation: lang=ko; source=README.md; source-commit=c5e265d; reviewed=false; updated=2026-09-30 -->
 # GoLive
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Português (Brasil)](README.pt-BR.md) · [Deutsch](README.de.md)
@@ -405,8 +405,12 @@ alpha 경로가 아닙니다.** 다른 인증 프로바이더는 안내형으로
 - [ ] 🗺️ **모니터링과 알림:** 오류 추적, 로그, 업타임, 조치 가능한 알림. 프로바이더 제안은 오늘
   안내형으로 제공하고, 검증된 설정은 계획 단계입니다. 요청 시 실행하는 드리프트 점검은 있습니다(아래
   `golive status`) — 지속적인 모니터링과 알림은 없습니다.
-- [ ] 🗺️ **제품 분석:** 이벤트 검증과 동의/데이터 설정. 오늘의 안내형 프로바이더 제안을 넘어서는
-  범위입니다.
+- [ ] 🚧 **제품 분석:** 이벤트 검증과 동의/데이터 설정. 오늘의 안내형 프로바이더 제안을 넘어서는
+  범위입니다. PostHog 분석은 승인된 계획을 통해 연결됩니다 — 앱의 분석 프로젝트를 채택하거나
+  선택하며(일치하는 것이 없으면 생성이 계획됩니다), `posthog-ingest` 검사가 합성 이벤트 하나를 보내고
+  PostHog 자체 쿼리 API로 다시 읽어 수집을 증명합니다 — 일회용 프로젝트에서 live 검증을 마쳤습니다
+  (2026-09-30). 호스트 환경 변수 쓰기, 동의 설정, 앱 자체의 이벤트 흐름은 아직 열려 있고, golive가
+  만든 프로젝트의 생성/삭제 경로는 mock 커버리지뿐입니다.
 - [ ] 🚧 **CI/CD와 안전한 릴리스:** 프리뷰, 릴리스 검사, 프로모션, 롤백, 드리프트 감지. 오늘의 승인된
   CLI 배포를 토대로 합니다. **배포 식별 정보 — 구현됨, live 검증은 안 됨:** 배포에 성공할 때마다 그
   배포에 대해 프로바이더 자신의 식별자를 기록합니다(`deployed:<target>:id` =
