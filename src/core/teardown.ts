@@ -14,8 +14,10 @@
  * in, another provider is configured, or it has no removal capability) becomes a manual, non-blocking
  * handoff instead of silently missing from the plan — including the zones and the host project the
  * inventory could not even read (`inventory.gaps`). Supabase, Neon and the Resend sending domain
- * have no delete capability at all, so they always become manual handoffs — and one state records
- * without a creation marker is handed back as adopted, with wording that never claims golive made it.
+ * have no delete capability at all, so they always become manual handoffs; the PostHog analytics
+ * project does have one (`RecordedRemoval`), so it becomes a destroy step that is confirmed by the
+ * provider's own read — and one state records without a creation marker is handed back as adopted,
+ * with wording that never claims golive made it.
  *
  * Teardown is itself the approved write, so the baseline of a resource it provably removed goes with
  * it: the `dns:<zone>|<TYPE>|<name>` baseline, the webhook endpoint id and the sending key id are
@@ -24,7 +26,7 @@
  * forgotten when the removal could not be confirmed or was refused.
  */
 import type { Ctx, DnsRecord, HandoffItem, Plan, Step } from './types.js';
-import { buildInventory, createdProjectKey, type InventoryDnsRecord, type InventoryGap, type InventoryProject, type InventoryRecorded, type InventorySendingKey, type InventoryWebhook } from './inventory.js';
+import { buildInventory, createdProjectKey, type InventoryDnsRecord, type InventoryGap, type InventoryProject, type InventoryRecorded, type InventorySendingKey, type InventoryWebhook, type RecordedRemoval } from './inventory.js';
 import { dnsBaselineKey } from './dns-baseline.js';
 import { orderSteps, planId } from './plan.js';
 import { redact } from './secret.js';
@@ -33,9 +35,10 @@ import { formatRecord } from '../links/email.js';
 import { errMsg, forgetDeployFacts, intentOf, step } from '../links/util.js';
 
 /**
- * Build the teardown plan: webhooks, DNS records, sending keys, then the host project. Smallest blast
- * radius first, so a failure part-way leaves the app running rather than pointing at a deleted host
- * project. Nothing here writes; `apply --plan <id>` plus the risk confirmations does.
+ * Build the teardown plan: webhooks, DNS records, sending keys, then the recorded projects/domains
+ * with a removal this run can perform, then the host project. Smallest blast radius first, so a
+ * failure part-way leaves the app running rather than pointing at a deleted host project. Nothing
+ * here writes; `apply --plan <id>` plus the risk confirmations does.
  */
 export async function buildTeardownPlan(ctx: Ctx): Promise<Plan> {
   assertCompatibleState(ctx.state.get(), ctx.release);
@@ -45,15 +48,16 @@ export async function buildTeardownPlan(ctx: Ctx): Promise<Plan> {
   const inventory = await buildInventory(ctx);
   const webhooks = webhookTeardown(inventory.webhooks);
   const keys = keyTeardown(inventory.sendingKeys);
+  const recorded = recordedTeardown(inventory.recorded);
   const project = projectTeardown(inventory.project);
-  const steps: Step[] = [...webhooks.steps, ...dnsSteps(inventory.dnsRecords), ...keys.steps, ...project.steps];
+  const steps: Step[] = [...webhooks.steps, ...dnsSteps(inventory.dnsRecords), ...keys.steps, ...recorded.steps, ...project.steps];
   // One step per resource: a repeated id would silently drop a step when the plan is ordered.
   const stepIds = new Set<string>();
   for (const s of steps) {
     if (stepIds.has(s.id)) throw new Error(`teardown: two resources map to step ${s.id}, so golive cannot plan an unambiguous deletion. Resolve the duplicate and re-run.`);
     stepIds.add(s.id);
   }
-  const handoffs: HandoffItem[] = [...dbHandoffs(inventory.recorded), ...emailHandoffs(inventory.recorded), ...webhooks.handoffs, ...keys.handoffs, ...project.handoffs, ...gapHandoffs(inventory.gaps)];
+  const handoffs: HandoffItem[] = [...recorded.handoffs, ...webhooks.handoffs, ...keys.handoffs, ...project.handoffs, ...gapHandoffs(inventory.gaps)];
   const ordered = orderSteps(steps);
   return { id: planId(ordered, handoffs, ctx.release), release: structuredClone(ctx.release), steps: ordered, handoffs, unmappedEnv: [], warnings: [] };
 }
@@ -420,26 +424,128 @@ function gapHandoffs(gaps: InventoryGap[]): HandoffItem[] {
   }));
 }
 
-function dbHandoffs(recorded: InventoryRecorded[]): HandoffItem[] {
-  return recorded.filter((r) => r.axis === 'db').map(manualHandoff);
+// ── Recorded projects and domains ───────────────────────────────────────────────────────────────
+// A recorded resource golive can prove it created AND can remove right now (the provider exposes a
+// delete plus a read that confirms it — today the PostHog analytics project) becomes a destroy step.
+// Everything else golive created but cannot delete at this provider is handed back by hand, and a
+// resource state records without a creation marker is handed back as adopted, with wording that never
+// claims golive made it — silently dropping it would hide that state still records it.
+
+function recordedTeardown(recorded: InventoryRecorded[]): { steps: Step[]; handoffs: HandoffItem[] } {
+  const steps: Step[] = [];
+  const handoffs: HandoffItem[] = [];
+  for (const r of recorded) {
+    if (r.removal) {
+      steps.push(recordedStep(r, r.removal));
+      continue;
+    }
+    handoffs.push(manualHandoff(r));
+  }
+  return { steps, handoffs };
 }
 
-function emailHandoffs(recorded: InventoryRecorded[]): HandoffItem[] {
-  return recorded.filter((r) => r.kind === 'sending-domain').map(manualHandoff);
+/** How a recorded resource is named in one phrase, per kind, for a preview, a step title or a handoff. */
+function recordedSubject(r: InventoryRecorded): string {
+  if (r.kind === 'database-project') return `${r.providerTitle} project ${r.id}`;
+  if (r.kind === 'sending-domain') return `${r.providerTitle} sending domain ${r.name}`;
+  return `${r.providerTitle} project ${r.name} (${r.id})`;
+}
+
+function recordedThing(r: InventoryRecorded): string {
+  if (r.kind === 'database-project') return `the ${r.providerTitle} project ${r.id}`;
+  if (r.kind === 'sending-domain') return `the sending domain ${r.name}`;
+  return `the ${r.providerTitle} project ${r.name} (${r.id})`;
+}
+
+function recordedStep(r: InventoryRecorded, removal: RecordedRemoval): Step {
+  const { adapter, remove, confirm } = removal;
+  const id = `teardown:${r.axis}:${r.provider}`;
+  const label = recordedSubject(r);
+  // Whether this run deleted the resource. A refusal (state no longer records it, or the provider
+  // says it is not golive's) leaves it in place on purpose, so no absence re-read applies.
+  let deleted = false;
+  return step({
+    id,
+    title: `Delete the ${label} golive created`,
+    kind: 'destroy',
+    risk: { writes: true, destroy: true },
+    preview: [`delete the ${label} — golive created it (marker ${r.markers.join(', ')})${r.extra ?? ''}`],
+    intent: intentOf({ provider: adapter.id, kind: r.kind, resource: r.id }),
+    async run(sctx) {
+      const outcome = await remove(sctx);
+      deleted = outcome.removed;
+      if (outcome.removed) {
+        forgetRecorded(sctx, r);
+        return { changes: [`deleted ${label}`] };
+      }
+      const reason = outcome.reason ?? 'the provider kept it';
+      if (sctx.state.resource(r.key) !== r.id) return { changes: [`left as is: ${reason}`] };
+      throw new Error(`could not delete the ${label}: ${redact(reason)}`);
+    },
+    // A delete is only reported as done once the provider's own read confirms it — here with three
+    // states, because PostHog schedules a deletion instead of applying it at once: `pending` is the
+    // provider saying it accepted and queued the removal, which is confirmation, not a maybe.
+    async verifyInline(vctx) {
+      if (!deleted) return [];
+      const checkId = `${id}:removed`;
+      const title = `${r.providerTitle} no longer reports the ${label} golive created`;
+      let state: 'present' | 'gone' | 'pending';
+      try {
+        state = await confirm(vctx);
+      } catch (e) {
+        forgetRecorded(vctx, r);
+        return [{
+          id: checkId,
+          title,
+          status: 'warn',
+          severity: 'medium',
+          evidence: [`the delete was reported, but ${r.providerTitle} could not be re-read: ${errMsg(e)}`],
+          fix: `Check ${r.providerTitle} access, then confirm ${label} is gone.`,
+        }];
+      }
+      if (state === 'present') {
+        return [{
+          id: checkId,
+          title,
+          status: 'fail',
+          severity: 'high',
+          evidence: [`${r.providerTitle} still reports ${label} after the delete`],
+          fix: `Delete it in the ${r.providerTitle} dashboard; golive does not report a delete it cannot confirm.`,
+        }];
+      }
+      forgetRecorded(vctx, r);
+      return [{
+        id: checkId,
+        title,
+        status: 'pass',
+        severity: 'info',
+        evidence: [
+          state === 'pending'
+            ? `${r.providerTitle} accepted the deletion and reports ${label} as pending deletion (scheduled, not live)`
+            : `${r.providerTitle} no longer has ${label}`,
+        ],
+      }];
+    },
+  });
+}
+
+/** Forget the recorded resource teardown provably removed (see the DNS baseline note above). */
+function forgetRecorded(ctx: Ctx, r: InventoryRecorded): void {
+  ctx.state.save((s) => {
+    delete s.resources[r.key];
+  });
 }
 
 /**
- * The inventoried resource a human deletes by hand, in the provider's own dashboard or console. A
- * resource golive only adopted (its creation marker is absent or names another id) is handed back the
- * same way — silently dropping it would hide that state still records it — but the wording never
- * claims golive made it, so nobody deletes an account's own project or sending domain on golive's word.
+ * The inventoried resource a human deletes by hand, in the provider's own dashboard or console.
  */
 function manualHandoff(r: InventoryRecorded): HandoffItem {
-  const subject = r.kind === 'database-project' ? `${r.providerTitle} project ${r.id}` : `${r.providerTitle} sending domain ${r.name}`;
-  const thing = r.kind === 'database-project' ? `the ${r.providerTitle} project ${r.id}` : `the sending domain ${r.name}`;
+  const subject = recordedSubject(r);
+  const thing = recordedThing(r);
+  const id = `teardown:${r.axis}:${r.provider}`;
   if (!r.created) {
     return {
-      id: `teardown:${r.axis === 'db' ? 'db' : 'email'}:${r.provider}`,
+      id,
       why: `the ${subject} is recorded in .golive/state.json, but no creation marker (${r.markers.join(', ') || 'none declared'}) covers it, so golive cannot prove it created it: it was adopted`,
       action: `Check ${thing} in ${r.where} before touching it: golive adopted it, so it may belong to this account already and predate this app. Delete it by hand there only if it is really disposable.`,
       blocking: false,
@@ -447,7 +553,7 @@ function manualHandoff(r: InventoryRecorded): HandoffItem {
     };
   }
   return {
-    id: `teardown:${r.axis === 'db' ? 'db' : 'email'}:${r.provider}`,
+    id,
     why: `the ${subject} was created by golive, and deleting it needs ${r.needs}`,
     action: `Delete ${thing} in ${r.where} if intended${r.extra ?? ''}.`,
     blocking: false,

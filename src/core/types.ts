@@ -362,6 +362,8 @@ export type OutputKey =
   | 'stripe.publishableKey'
   | 'stripe.webhookSecret'
   | 'resend.apiKey'
+  | 'posthog.key'
+  | 'posthog.host'
   | 'app.url';
 
 export interface OutputsProvider {
@@ -840,6 +842,11 @@ export interface ShipConfig {
   email?: { from?: string; domain?: string; region?: string };
   supabase?: { region?: string };
   neon?: { organizationId?: string; region?: string; branchId?: string; database?: string; role?: string };
+  /**
+   * PostHog (monitoring) selectors. `region` picks the API/ingestion hosts: us (default) or eu. The
+   * project itself is selected by `projects.monitoring`, like every other axis.
+   */
+  posthog?: { region?: 'us' | 'eu' };
   auth?: {
     redirectPaths?: string[];
     /** Also allow preview-deployment URL patterns on the (production) auth project. Default false. */

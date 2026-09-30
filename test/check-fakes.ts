@@ -1,8 +1,15 @@
 /** Fakes for check tests: capability-only adapters and a DoH responder. */
 import type { Adapter, AuthStatus, Axis, Capabilities } from '../src/core/types.js';
+import type { AnalyticsProvider } from '../src/adapters/posthog.js';
 import type { HttpCall } from './helpers.js';
 
-export function fakeAdapter(a: { id: string; axes: Axis[]; automated?: boolean; auth?: AuthStatus | (() => Promise<AuthStatus>); capabilities?: Partial<Capabilities> }): Adapter {
+/**
+ * Non-contract capability extensions a check may read (the same shape an adapter publishes beside its
+ * contract capabilities, e.g. PostHog's capture/read-back surface).
+ */
+export type FakeCapabilities = Partial<Capabilities> & { analytics?: AnalyticsProvider };
+
+export function fakeAdapter(a: { id: string; axes: Axis[]; automated?: boolean; auth?: AuthStatus | (() => Promise<AuthStatus>); capabilities?: FakeCapabilities }): Adapter {
   return {
     id: a.id,
     title: a.id[0]!.toUpperCase() + a.id.slice(1),

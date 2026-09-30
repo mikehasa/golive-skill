@@ -6,7 +6,7 @@ import { mockHttp, testCtx } from './helpers.js';
 import { dohRoute, fakeAdapter, fakeFetch, jwt } from './check-fakes.js';
 import { createHttp } from '../src/core/http.js';
 import { _resetSecretRegistry, fingerprint, Secret } from '../src/core/secret.js';
-import type { Adapter, AuthSettings, Check, Ctx, DnsRecord, TableInfo } from '../src/core/types.js';
+import type { Adapter, AuthSettings, AuthStatus, Check, Ctx, DnsRecord, TableInfo } from '../src/core/types.js';
 import { ALL_CHECKS } from '../src/checks/all.js';
 import { accountsCheck } from '../src/checks/accounts.js';
 import { envParityCheck } from '../src/checks/env-parity.js';
@@ -19,12 +19,16 @@ import { authRedirectsCheck } from '../src/checks/auth-redirects.js';
 import { authPolicyCheck } from '../src/checks/auth.js';
 import { authSignupCheck } from '../src/checks/auth-signup.js';
 import { emailDnsCheck, emailVerifiedCheck } from '../src/checks/email.js';
+import { posthogIngestCheck } from '../src/checks/posthog-ingest.js';
+import { posthogTiming } from '../src/adapters/posthog.js';
 import { dnsBaselineKey } from '../src/core/dns-baseline.js';
 import { domainLiveCheck } from '../src/checks/domain.js';
 import { siteHeadersCheck } from '../src/checks/site-headers.js';
 import { uploadExposureCheck } from '../src/checks/upload-exposure.js';
 import { addressDomain, confirmedProductionUrl, globMatch, hostVariants } from '../src/checks/util.js';
 import { restProbe, accountStatus } from '../src/checks/providers.js';
+import { mapEnv } from '../src/core/envmap.js';
+import { secretBlocked } from '../src/links/util.js';
 
 vi.mock('../src/checks/providers.js', () => ({ restProbe: vi.fn(), accountStatus: vi.fn(), authedRestProbe: vi.fn() }));
 const probeMock = vi.mocked(restProbe);
@@ -53,7 +57,7 @@ describe('ALL_CHECKS', () => {
     const ids = ALL_CHECKS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.sort()).toEqual(
-      ['accounts', 'auth-isolation', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'preview-bundle', 'preview-deploy', 'production-release', 'rls-probe', 'site-headers', 'stripe-live-ready', 'upload-exposure', 'webhook-registered', 'webhook-unsigned'].sort(),
+      ['accounts', 'auth-isolation', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'posthog-ingest', 'preview-bundle', 'preview-deploy', 'production-release', 'rls-probe', 'site-headers', 'stripe-live-ready', 'upload-exposure', 'webhook-registered', 'webhook-unsigned'].sort(),
     );
   });
 });
@@ -1725,5 +1729,181 @@ describe('email-dns with guided providers (round-2 finding 15)', () => {
     const r = await run(emailDnsCheck, ctxFor('resend', { ...dmarc, [`MX send.${D}`]: ['10 x.amazonses.com.'], [`TXT resend._domainkey.${D}`]: ['p=MIGf'] }));
     expect(r.status).toBe('fail');
     expect(r.evidence.join('\n')).toContain(`no SPF record at send.${D} or ${D}`);
+  });
+});
+
+// ── posthog-ingest ──────────────────────────────────────────────────────────────────────────────
+
+describe('posthog-ingest', () => {
+  const LINKED = { id: '42', name: 'shop', scope: { kind: 'organization' as const, id: 'org-1', name: 'Acme' } };
+
+  /** A monitoring adapter with the capture/read-back surface a check may reach. */
+  function monitor(over: {
+    auth?: AuthStatus;
+    current?: () => Promise<typeof LINKED | null>;
+    capture?: () => Promise<{ status: number }>;
+    count?: () => Promise<number>;
+  } = {}) {
+    const captured: Array<{ projectId: string; event: string; distinctId: string; properties?: Record<string, string> }> = [];
+    const adapter = fakeAdapter({
+      id: 'posthog',
+      axes: ['monitoring'],
+      auth: over.auth ?? { ok: true, via: 'POSTHOG_API_KEY env (us, Acme)' },
+      capabilities: {
+        project: { current: over.current ?? (async () => LINKED), candidates: async () => [], select: async () => LINKED },
+        analytics: {
+          token: async () => 'phc_FAKEpublicTOKENvalue0123456789',
+          capture: async (_c, projectId, spec) => {
+            captured.push({ projectId, ...spec });
+            return over.capture ? over.capture() : { status: 200 };
+          },
+          count: async () => (over.count ? over.count() : 0),
+        },
+      },
+    });
+    return { adapter, captured };
+  }
+
+  const ctxFor = (m: ReturnType<typeof monitor>) => testCtx({ config: { stack: { monitoring: 'posthog' } }, adapters: [m.adapter] });
+
+  beforeEach(() => {
+    // The real window is minutes; tests only need the loop's shape (a bounded poll) and its wording.
+    posthogTiming.pollMs = 0;
+    posthogTiming.windowMs = 40;
+  });
+  afterEach(() => {
+    posthogTiming.pollMs = 10_000;
+    posthogTiming.windowMs = 180_000;
+  });
+
+  it('applies only when the monitoring axis is PostHog', () => {
+    expect(posthogIngestCheck.applies(testCtx({ config: { stack: { monitoring: 'posthog' } } }))).toBe(true);
+    expect(posthogIngestCheck.applies(testCtx({ config: { stack: { monitoring: 'sentry' } } }))).toBe(false);
+    expect(posthogIngestCheck.applies(testCtx())).toBe(false);
+  });
+
+  it('passes only on the provider\'s own read-back, naming the seconds and the marker', async () => {
+    const m = monitor({ count: async () => 1 });
+    const r = await run(posthogIngestCheck, ctxFor(m));
+    expect(r.status).toBe('pass');
+    expect(r.evidence.join('\n')).toMatch(/wrote one "golive_ingest_check" event|sent one "golive_ingest_check" event/);
+    expect(r.evidence.join('\n')).toMatch(/distinct id golive-verify, marker [0-9a-f]{8}/);
+    expect(r.evidence.join('\n')).toMatch(/ingestion endpoint answered HTTP 200/);
+    expect(r.evidence.join('\n')).toMatch(/the 2xx means accepted, not ingested/);
+    expect(r.evidence.join('\n')).toMatch(/HogQL counted 1 event\(s\) with marker [0-9a-f]{8} after \d+s/);
+    // The synthetic event is exactly the one golive documents, sent to the linked project.
+    expect(m.captured).toHaveLength(1);
+    expect(m.captured[0]).toMatchObject({ projectId: '42', event: 'golive_ingest_check', distinctId: 'golive-verify' });
+    expect(m.captured[0]!.properties!.golive_marker).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it('warns (never passes) when the event is not visible within the window', async () => {
+    const m = monitor({ count: async () => 0 });
+    const r = await run(posthogIngestCheck, ctxFor(m));
+    expect(r.status).toBe('warn');
+    expect(r.severity).toBe('medium');
+    expect(r.evidence.join('\n')).toMatch(/had not recorded the marker [0-9a-f]{8} yet after \d+s/);
+    expect(r.evidence.join('\n')).toMatch(/the read-back counts ingested events and can lag minutes/);
+    expect(r.fix).toMatch(/not a failure yet/);
+    expect(r.fix).toMatch(/re-run `golive verify --only posthog-ingest`/);
+  });
+
+  it('skips when the credential is unusable, like every other non-accounts check', async () => {
+    const m = monitor({ auth: { ok: false, howToFix: 'Create a personal API key at us.posthog.com/settings/user-api-keys' } });
+    const r = await run(posthogIngestCheck, ctxFor(m));
+    expect(r.status).toBe('skip');
+    expect(r.evidence[0]).toMatch(/^blocked by: login:posthog/);
+  });
+
+  it('fails when the linked project cannot be read (auth or a provider refusal)', async () => {
+    const m = monitor({ current: async () => { throw new Error('PostHog list projects failed (HTTP 401): the key was rejected'); } });
+    const r = await run(posthogIngestCheck, ctxFor(m));
+    expect(r.status).toBe('fail');
+    expect(r.evidence.join('\n')).toMatch(/could not read the Posthog project this app reports to/);
+    expect(r.evidence.join('\n')).toMatch(/HTTP 401/);
+    expect(r.fix).toMatch(/golive doctor/);
+  });
+
+  it('fails when the capture endpoint refuses the event', async () => {
+    const m = monitor({ capture: async () => { throw new Error('PostHog send a test event failed (HTTP 403): the plan refused it'); } });
+    const r = await run(posthogIngestCheck, ctxFor(m));
+    expect(r.status).toBe('fail');
+    expect(r.evidence.join('\n')).toMatch(/sending one "golive_ingest_check" event to Posthog project shop \(42\) failed/);
+    expect(r.fix).toMatch(/golive verify --only posthog-ingest/);
+  });
+
+  it('fails when the read-back itself is refused (a 403: the key may not query)', async () => {
+    const m = monitor({ count: async () => { throw Object.assign(new Error('PostHog read the event count failed (HTTP 403): missing query:read'), { status: 403 }); } });
+    const r = await run(posthogIngestCheck, ctxFor(m));
+    expect(r.status).toBe('fail');
+    expect(r.evidence.join('\n')).toMatch(/the read-back was refused/);
+    expect(r.fix).toMatch(/query:read scope/);
+  });
+
+  it('warns when the read-back never answered for a non-auth reason', async () => {
+    const m = monitor({ count: async () => { throw new Error('socket hang up'); } });
+    const r = await run(posthogIngestCheck, ctxFor(m));
+    expect(r.status).toBe('warn');
+    expect(r.evidence.join('\n')).toMatch(/the read-back could not be read within \d+s: socket hang up/);
+    expect(r.fix).toMatch(/re-run `golive verify --only posthog-ingest`/);
+  });
+
+  it('skips when no project is linked, naming the step that provides one', async () => {
+    const m = monitor({ current: async () => null });
+    const r = await run(posthogIngestCheck, ctxFor(m));
+    expect(r.status).toBe('skip');
+    expect(r.evidence[0]).toMatch(/^blocked by: analytics:project/);
+  });
+
+  it('skips a guided monitoring provider and an adapter without the surface', async () => {
+    const sentry = fakeAdapter({ id: 'sentry', axes: ['monitoring'], automated: false });
+    // applies() is false for a non-PostHog axis; the check still answers with a reason when called.
+    expect(posthogIngestCheck.applies(testCtx({ config: { stack: { monitoring: 'sentry' } } }))).toBe(false);
+    expect((await posthogIngestCheck.run(testCtx({ config: { stack: { monitoring: 'sentry' } }, adapters: [sentry] }))).status).toBe('skip');
+
+    const bare = fakeAdapter({ id: 'posthog', axes: ['monitoring'], capabilities: { project: { current: async () => LINKED, candidates: async () => [], select: async () => LINKED } } });
+    const r = await posthogIngestCheck.run(testCtx({ config: { stack: { monitoring: 'posthog' } }, adapters: [bare] }));
+    expect(r.status).toBe('skip');
+    expect(r.evidence[0]).toMatch(/no capture \+ read-back surface/);
+  });
+
+  it('a bundle carrying the PUBLIC project token is not a leak, and a client-prefixed name is no finding', () => {
+    // The phc token is designed to ship in the browser: the bundle scan (bundle-secrets) finds only
+    // known server-credential shapes, the anon/publishable role among them is deliberately ignored,
+    // and the env map must not raise the critical secret-in-client-env finding for these names.
+    expect(scanSecrets({ path: '/app.js', text: 'posthog.init("phc_FAKEposthogPUBLICtokenValue0123456789",{api_host:"https://us.i.posthog.com"})' })).toEqual([]);
+    const mapped = mapEnv([{ name: 'NEXT_PUBLIC_POSTHOG_KEY', files: ['src/lib.ts'], clientExposed: true }, { name: 'NEXT_PUBLIC_POSTHOG_HOST', files: ['src/lib.ts'], clientExposed: true }]);
+    expect(mapped.findings).toEqual([]);
+    expect(mapped.mapped).toEqual([
+      { name: 'NEXT_PUBLIC_POSTHOG_KEY', key: 'posthog.key', clientExposed: true },
+      { name: 'NEXT_PUBLIC_POSTHOG_HOST', key: 'posthog.host', clientExposed: true },
+    ]);
+  });
+
+  it('maps the project-token names but never the PERSONAL-key name', () => {
+    const names = ['NEXT_PUBLIC_POSTHOG_KEY', 'NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN', 'NEXT_PUBLIC_POSTHOG_PROJECT_API_KEY', 'NEXT_PUBLIC_POSTHOG_HOST'];
+    const out = mapEnv(names.map((name) => ({ name, files: ['src/lib.ts'], clientExposed: true })));
+    expect(out.mapped.map((m) => m.key)).toEqual(['posthog.key', 'posthog.key', 'posthog.key', 'posthog.host']);
+    // POSTHOG_API_KEY is PostHog's own name for a personal API key — golive's operator credential —
+    // so an app reading it is left unmapped rather than filled with the public project token.
+    const personal = mapEnv([{ name: 'POSTHOG_API_KEY', files: ['src/server.ts'], clientExposed: false }]);
+    expect(personal.mapped).toEqual([]);
+    expect(personal.unmapped).toEqual(['POSTHOG_API_KEY']);
+  });
+
+  it('never blocks writing the public token, even under a critical exposure finding', () => {
+    const ctx = testCtx({
+      detect: { findings: [{ id: 'inlined', severity: 'critical', title: 'a server secret is inlined into the bundle', evidence: ['next.config env'], fix: 'remove it' }], envRefs: [{ name: 'NEXT_PUBLIC_POSTHOG_KEY', files: ['next.config.ts'], clientExposed: true }] },
+    });
+    // A public-by-design key is not a server secret: `secretBlocked` is only ever consulted for
+    // SECRET_KEYS, so no exposure finding can stop the analytics wiring.
+    expect(secretBlocked(ctx, 'NEXT_PUBLIC_POSTHOG_KEY', 'posthog.key')).toBe(false);
+    expect(secretBlocked(ctx, 'SUPABASE_SERVICE_ROLE_KEY', 'supabase.secretKey')).toBe(true);
+  });
+
+  it('never puts the project token into its evidence', async () => {
+    const m = monitor({ count: async () => 2 });
+    const r = await run(posthogIngestCheck, ctxFor(m));
+    expect(JSON.stringify(r)).not.toContain('phc_FAKEpublicTOKENvalue0123456789');
   });
 });

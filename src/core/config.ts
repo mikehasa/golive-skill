@@ -130,6 +130,16 @@ export function parseConfig(text: string): ShipConfig {
     }
     cfg.neon = raw.neon as ShipConfig['neon'];
   }
+  if (raw.posthog !== undefined) {
+    if (!raw.posthog || typeof raw.posthog !== 'object' || Array.isArray(raw.posthog)) {
+      throw new ConfigError(`${CONFIG_FILE}: posthog must be a mapping of non-secret selectors`);
+    }
+    for (const [key, value] of Object.entries(raw.posthog)) {
+      if (key !== 'region') throw new ConfigError(`${CONFIG_FILE}: unknown posthog setting; expected region ("us" or "eu") — no credentials`);
+      if (value !== 'us' && value !== 'eu') throw new ConfigError(`${CONFIG_FILE}: posthog.${key} must be "us" (default) or "eu"`);
+    }
+    cfg.posthog = raw.posthog as ShipConfig['posthog'];
+  }
   const auth = raw.auth as Record<string, unknown> | undefined;
   if (auth !== undefined) {
     if (!auth || typeof auth !== 'object' || Array.isArray(auth)) throw new ConfigError(`${CONFIG_FILE}: auth must be a mapping of non-secret settings`);

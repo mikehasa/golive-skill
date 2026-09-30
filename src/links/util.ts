@@ -542,7 +542,7 @@ export interface Exposure {
   names: Set<string>;
 }
 
-const OUTPUT_KEYS: OutputKey[] = ['supabase.url', 'supabase.publishableKey', 'supabase.secretKey', 'db.url', 'db.directUrl', 'stripe.secretKey', 'stripe.publishableKey', 'stripe.webhookSecret', 'resend.apiKey', 'app.url'];
+const OUTPUT_KEYS: OutputKey[] = ['supabase.url', 'supabase.publishableKey', 'supabase.secretKey', 'db.url', 'db.directUrl', 'stripe.secretKey', 'stripe.publishableKey', 'stripe.webhookSecret', 'resend.apiKey', 'posthog.key', 'posthog.host', 'app.url'];
 
 /**
  * A CRITICAL offline finding (e.g. a framework config that inlines a server secret into the browser

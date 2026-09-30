@@ -18,6 +18,10 @@ const ALLOWED = new Set([
   'api.porkbun.com',
   'cloudflare-dns.com',
   'dns.google',
+  'us.posthog.com',
+  'eu.posthog.com',
+  'us.i.posthog.com',
+  'eu.i.posthog.com',
 ]);
 const ALLOWED_SUFFIXES = ['.supabase.co'];
 const dynamicHosts = new Set<string>();

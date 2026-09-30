@@ -538,4 +538,4 @@ live site for those paths (a static site's own allowlist `.vercelignore` is the 
   check needs and why it skips, and what `status` compares.
 - `references/guided.md`: when the chosen provider isn't automated.
 - `references/troubleshooting.md`: setup failures, CLI/PATH mismatches and resuming after a repair.
-- `references/<provider>.md`: `vercel`, `netlify`, `supabase`, `neon`, `stripe`, `resend`, `cloudflare-dns`, `godaddy`, `porkbun`.
+- `references/<provider>.md`: `vercel`, `netlify`, `supabase`, `neon`, `stripe`, `resend`, `posthog`, `cloudflare-dns`, `godaddy`, `porkbun`.

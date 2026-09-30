@@ -691,6 +691,127 @@ export function fakeWorld() {
     },
   };
 
+  // ── Monitoring (an analytics project + a public project token + a capture/read-back surface) ────
+  const mon = {
+    authed: true,
+    /** The provider id this fake answers as: `posthog` exercises golive's own capture/read-back paths. */
+    providerId: 'fakemonitor',
+    current: { id: 'prj_9', name: 'shop', scope: { kind: 'organization', id: 'org_1', name: 'Fake Org' } } as ProjectRef | null,
+    candidates: [] as ProjectRef[],
+    canCreate: true,
+    createError: null as string | null,
+    /** Names project.create was called with. */
+    created: [] as string[],
+    /** Project ids project.remove was called for. */
+    removed: [] as string[],
+    /** What remove() answers instead of deleting, e.g. a provider that kept the project. */
+    removeResult: null as { removed: boolean; reason?: string } | null,
+    /** The provider's own state read after a delete: 'present' | 'gone' | 'pending' (scheduled). */
+    projectState: 'present' as 'present' | 'gone' | 'pending',
+    /** When false, the fake exposes no analytics surface (a provider golive cannot capture through). */
+    withAnalytics: true,
+    /** The PUBLIC project token the API hands out. null = the provider returns none. */
+    token: 'phc_FAKEposthogPUBLICtokenValue0123456789' as string | null,
+    /** When set, the token read throws this (a read that cannot be answered). */
+    tokenError: null as string | null,
+    /** When set, the synthetic capture throws this. */
+    captureError: null as string | null,
+    /** When set, the read-back throws this (with a status, e.g. a 403 for a missing scope). */
+    countError: null as { status?: number; message: string } | null,
+    /**
+     * What the read-back answers, one per poll (the last answer repeats). `[0]` is "not visible yet";
+     * `[0, 0, 1]` is an ingestion that only shows up on the third poll.
+     */
+    counts: [1] as number[],
+    /** Every synthetic event the fake was asked to send. */
+    captured: [] as Array<{ projectId: string; event: string; distinctId: string; properties?: Record<string, string> }>,
+  };
+  const monCaps = {
+    project: {
+      current: async () => mon.current,
+      candidates: async () => mon.candidates,
+      creationTarget: async () => ({ scope: { kind: 'organization' as const, id: 'org_1', name: 'Fake Org' } }),
+      resolve: async (_c: unknown, idOrName: string): Promise<ProjectRef> => {
+        const known = [...(mon.current ? [mon.current] : []), ...mon.candidates];
+        const p = known.find((x) => x.id === idOrName || x.name === idOrName);
+        if (!p) throw new Error(`FakeMonitor has no project ${idOrName}`);
+        return p;
+      },
+      select: async (c: Ctx, idOrName: string) => {
+        rec(mon.providerId, 'project.select', idOrName);
+        const known = [...(mon.current ? [mon.current] : []), ...mon.candidates];
+        mon.current = known.find((x) => x.id === idOrName || x.name === idOrName) ?? { id: idOrName, name: idOrName };
+        // Like the real adapters, selecting records the project in state (and no creation marker: an
+        // adopted project is never golive's to delete).
+        c.state.save((s) => {
+          s.resources[`${mon.providerId}.projectId`] = mon.current!.id;
+          s.resources[`${mon.providerId}.projectName`] = mon.current!.name;
+        });
+        return mon.current;
+      },
+      get create() {
+        return mon.canCreate
+          ? async (c: Ctx, name: string) => {
+              rec(mon.providerId, 'project.create', name);
+              if (mon.createError) throw new Error(mon.createError);
+              mon.created.push(name);
+              mon.current = { id: `prj_new_${mon.created.length}`, name, scope: { kind: 'organization', id: 'org_1', name: 'Fake Org' } };
+              c.state.save((s) => {
+                s.resources[`${mon.providerId}.projectId`] = mon.current!.id;
+                s.resources[`${mon.providerId}.projectName`] = mon.current!.name;
+                s.resources[`${mon.providerId}.createdProjectId`] = mon.current!.id;
+              });
+              return mon.current;
+            }
+          : undefined;
+      },
+      get remove() {
+        return async (c: Ctx): Promise<{ removed: boolean; reason?: string }> => {
+          rec(mon.providerId, 'project.remove');
+          mon.removed.push(mon.current?.id ?? '?');
+          if (mon.removeResult) return mon.removeResult;
+          if (mon.projectState === 'present') return { removed: false, reason: 'the provider still reports the project as live' };
+          c.state.save((s) => {
+            delete s.resources[`${mon.providerId}.projectId`];
+            delete s.resources[`${mon.providerId}.createdProjectId`];
+          });
+          return { removed: true };
+        };
+      },
+    },
+    get analytics() {
+      return mon.withAnalytics
+        ? {
+            token: async () => {
+              if (mon.tokenError) throw new Error(mon.tokenError);
+              if (!mon.token) throw new Error('FakeMonitor returned no ingestion token for this project');
+              return mon.token;
+            },
+            capture: async (_c: unknown, projectId: string, spec: { event: string; distinctId: string; properties?: Record<string, string> }) => {
+              if (mon.captureError) throw new Error(mon.captureError);
+              mon.captured.push({ projectId, ...spec });
+              return { status: 200 };
+            },
+            count: async () => {
+              if (mon.countError) throw Object.assign(new Error(mon.countError.message), { status: mon.countError.status });
+              return mon.counts.length > 1 ? mon.counts.shift()! : mon.counts[0] ?? 0;
+            },
+            projectState: async () => mon.projectState,
+          }
+        : undefined;
+    },
+  };
+  const monAdapter: Adapter = {
+    get id() {
+      return mon.providerId;
+    },
+    title: 'FakeMonitor',
+    axes: ['monitoring'],
+    automated: true,
+    auth: async () => (mon.authed ? { ok: true, via: 'fakemonitor API key' } : { ok: false, howToFix: 'add FAKEMONITOR_API_KEY to golive credentials' }),
+    capabilities: monCaps as Adapter['capabilities'],
+  };
+
   // ── DNS ─────────────────────────────────────────────────────────────────────────────────────────
   const dns = {
     authed: true,
@@ -764,8 +885,9 @@ export function fakeWorld() {
     db,
     pay,
     mail,
+    mon,
     dns,
-    adapters: [hostAdapter, dbAdapter, payAdapter, mailAdapter, dnsAdapter, guidedAdapter],
+    adapters: [hostAdapter, dbAdapter, payAdapter, mailAdapter, dnsAdapter, monAdapter, guidedAdapter],
   };
 }
 

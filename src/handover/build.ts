@@ -9,7 +9,7 @@
  */
 import { AXES, type Axis, type Ctx, type EnvTarget, type HandoffItem, type ProjectRef } from '../core/types.js';
 import { adapterById, adapterFor } from '../core/caps.js';
-import { buildInventory, createdProjectKey, projectStateKeys, type Inventory } from '../core/inventory.js';
+import { buildInventory, createdProjectKey, projectStateKeys, type Inventory, type InventoryRecorded } from '../core/inventory.js';
 import { errMsg, hostUrl, repoName } from '../links/util.js';
 import { GUIDED } from '../adapters/guided.js';
 
@@ -153,7 +153,7 @@ const AXIS_CHECKS: Record<Axis, string[]> = {
   payments: ['webhook-registered', 'webhook-unsigned', 'stripe-live-ready'],
   email: ['email-dns', 'email-verified'],
   dns: ['domain-live'],
-  monitoring: [],
+  monitoring: ['posthog-ingest'],
 };
 
 /** Where each provider's own cost facts live. golive reads no usage, invoice or quota data. */
@@ -164,6 +164,7 @@ const BILLING: Record<string, string> = {
   neon: 'the Billing page of the Neon console',
   stripe: 'your Stripe account settings → Billing, and the published per-transaction fees',
   resend: 'your Resend account → Billing',
+  posthog: 'your PostHog organization settings → Billing (usage is priced per ingested event)',
   cloudflare: 'your Cloudflare account → Billing',
   godaddy: 'your GoDaddy account → Subscriptions and renewals',
   porkbun: 'your Porkbun account → domain pricing and renewals',
@@ -176,7 +177,22 @@ const RECORDING_STEP = {
   database: ['project:db'],
   domain: ['email:domain'],
   dns: ['domain:dns', 'email:dns'],
+  analytics: ['analytics:project'],
 } satisfies Record<string, string[]>;
+
+/** The steps that recorded a recorded-inventory resource, by its kind. */
+function recordedSteps(kind: InventoryRecorded['kind']): string[] {
+  if (kind === 'database-project') return RECORDING_STEP.database;
+  if (kind === 'sending-domain') return RECORDING_STEP.domain;
+  return RECORDING_STEP.analytics;
+}
+
+/** How a recorded-inventory resource is named in a row, per kind. */
+function recordedKind(kind: InventoryRecorded['kind']): string {
+  if (kind === 'database-project') return 'database project';
+  if (kind === 'sending-domain') return 'sending domain';
+  return 'analytics project';
+}
 
 /**
  * Build the handover document. Read-only: the provider reads are the same cheap ones `doctor` and
@@ -383,7 +399,7 @@ function resourceRows(ctx: Ctx, inventory: Inventory, projects: Map<Axis, Projec
   }
 
   for (const r of inventory.recorded) {
-    const subject = r.kind === 'database-project' ? 'database project' : 'sending domain';
+    const subject = recordedKind(r.kind);
     rows.push({
       axis: r.axis,
       provider: r.provider,
@@ -395,8 +411,8 @@ function resourceRows(ctx: Ctx, inventory: Inventory, projects: Map<Axis, Projec
       proof: r.created
         ? `state's creation marker (${r.markers.join(', ')}) names this id as the ${subject} golive created (${r.key})`
         : `state records this ${subject} (${r.key}) without golive's creation marker, so golive does not claim it`,
-      removable: false, // no provider capability: removal is a manual handoff
-      provenance: { kind: 'recorded', at: recordedAt(ctx, r.kind === 'database-project' ? RECORDING_STEP.database : RECORDING_STEP.domain) },
+      removable: Boolean(r.created && r.removal),
+      provenance: { kind: 'recorded', at: recordedAt(ctx, recordedSteps(r.kind)) },
     });
   }
 
@@ -580,11 +596,14 @@ function retirementRows(ctx: Ctx, inventory: Inventory): HandoverRetirement[] {
     });
   }
   for (const r of inventory.recorded.filter((x) => x.created)) {
+    const label = r.kind === 'database-project' ? `${r.providerTitle} project ${r.id}` : r.kind === 'sending-domain' ? `${r.providerTitle} sending domain ${r.name}` : `${r.providerTitle} project ${r.name} (${r.id})`;
     rows.push({
-      resource: `${r.providerTitle} ${r.kind === 'database-project' ? `project ${r.id}` : `sending domain ${r.name}`}`,
-      how: `by hand in ${r.where}: this provider exposes no delete capability to golive`,
-      removable: false,
-      provenance: { kind: 'recorded', at: recordedAt(ctx, r.kind === 'database-project' ? RECORDING_STEP.database : RECORDING_STEP.domain) },
+      resource: label,
+      how: r.removal
+        ? 'golive teardown → apply --plan <id> --yes --confirm-destroy, which re-reads the provider to prove the removal'
+        : `by hand in ${r.where}: this provider exposes no delete capability to golive`,
+      removable: Boolean(r.removal),
+      provenance: { kind: 'recorded', at: recordedAt(ctx, recordedSteps(r.kind)) },
     });
   }
   return rows;

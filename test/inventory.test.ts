@@ -152,3 +152,49 @@ describe('inventory', () => {
     expect(plan.handoffs.map((h) => h.id)).toEqual(['teardown:db:supabase', 'teardown:email:resend']);
   });
 });
+
+// ── the analytics project golive created (monitoring) ───────────────────────────────────────────
+
+describe('inventory: the PostHog analytics project', () => {
+  const MON_CONFIG: Partial<ShipConfig> = { ...CONFIG, stack: { ...CONFIG.stack, monitoring: 'posthog' } };
+  const MON_STATE = (over: Record<string, string> = {}): ShipState => ({
+    ...STATE,
+    resources: { ...STATE.resources, 'posthog.projectId': 'prj_9', 'posthog.projectName': 'shop', 'posthog.createdProjectId': 'prj_9', ...over },
+  });
+
+  function mon(state: ShipState = MON_STATE(), configure: (w: FakeWorld) => void = () => undefined) {
+    const w = fakeWorld();
+    w.mon.providerId = 'posthog';
+    w.dns.owned = [...OWNED];
+    configure(w);
+    const ctx = testCtx({ cwd: '/work/shop', adapters: w.adapters, config: MON_CONFIG, state });
+    return { w, ctx, inventory: () => buildInventory(ctx) };
+  }
+
+  it('records the project golive created, with the creation marker and a removal handle', async () => {
+    const inv = await mon().inventory();
+    const r = inv.recorded.find((x) => x.kind === 'analytics-project')!;
+    expect(r).toMatchObject({ axis: 'monitoring', provider: 'posthog', providerTitle: 'PostHog', id: 'prj_9', name: 'shop', created: true, markers: ['posthog.createdProjectId'], needs: 'the PostHog dashboard', where: 'the PostHog dashboard' });
+    expect(r.removal).toBeDefined();
+    expect(r.removal!.adapter.id).toBe('posthog');
+    // The other recorded resources keep their place: the analytics entry is appended, never interleaved.
+    expect(inv.recorded.map((x) => x.kind)).toEqual(['database-project', 'sending-domain', 'analytics-project']);
+  });
+
+  it('records it as adopted — with no removal handle — when the marker names another project', async () => {
+    const inv = await mon(MON_STATE({ 'posthog.createdProjectId': 'prj_other' })).inventory();
+    const r = inv.recorded.find((x) => x.kind === 'analytics-project')!;
+    expect(r.created).toBe(false);
+    expect(r.removal).toBeUndefined();
+  });
+
+  it('offers no removal when the monitoring provider is not the one that recorded it', async () => {
+    const quiet = await mon(undefined, (w) => void (w.mon.providerId = 'fakemonitor')).inventory();
+    const r = quiet.recorded.find((x) => x.kind === 'analytics-project')!;
+    expect(r.created).toBe(true);
+    expect(r.removal).toBeUndefined();
+
+    const out = await mon(undefined, (w) => void (w.mon.authed = false)).inventory();
+    expect(out.recorded.find((x) => x.kind === 'analytics-project')!.removal).toBeUndefined();
+  });
+});

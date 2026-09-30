@@ -12,6 +12,7 @@ import { authE2eLink } from './auth-e2e.js';
 import { authRecoveryLink } from './auth-recovery.js';
 import { authIsolationLink } from './auth-isolation.js';
 import { emailDomainLink, emailKeysLink } from './email.js';
+import { analyticsLink } from './analytics.js';
 import { uploadLink } from './upload.js';
 import { deployLink } from './deploy.js';
 import { netlifyVisibilityLink } from './netlify-visibility.js';
@@ -24,8 +25,10 @@ import { releaseLink } from './release.js';
  * production deploy, and waits itself for the upload exclusion that keeps golive's own files off the
  * site), which orderSteps() then sorts topologically. The email links come before the
  * auth journey ones because `auth:smtp` takes the sending key the email journey issues (or the domain
- * to issue its own) and the journeys wait for the custom SMTP it writes. release is last: it reads
+ * to issue its own) and the journeys wait for the custom SMTP it writes. analytics comes with the
+ * other env-writing links, before upload/deploy: its env step fills the app's PostHog names, and the
+ * deploy link must be able to order a production redeploy after it. release is last: it reads
  * what the other links planned (the preview env writes, the host project) before it plans a preview
  * deploy.
  */
-export const ALL_LINKS: Link[] = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, emailDomainLink, emailKeysLink, authSmtpLink, authE2eLink, authIsolationLink, authRecoveryLink, uploadLink, deployLink, netlifyVisibilityLink, releaseLink];
+export const ALL_LINKS: Link[] = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, emailDomainLink, emailKeysLink, authSmtpLink, authE2eLink, authIsolationLink, authRecoveryLink, analyticsLink, uploadLink, deployLink, netlifyVisibilityLink, releaseLink];

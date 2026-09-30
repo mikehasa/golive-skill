@@ -2244,6 +2244,181 @@ describe('domain:dns writes only the records the human approved (#5)', () => {
   });
 });
 
+describe('analytics (monitoring)', () => {
+  const POSTHOG_ENV = ['NEXT_PUBLIC_POSTHOG_KEY', 'NEXT_PUBLIC_POSTHOG_HOST'];
+  const monStack = { ...FAKE_STACK, monitoring: 'fakemonitor' };
+  const TOKEN = 'phc_FAKEposthogPUBLICtokenValue0123456789';
+
+  it('is planned only when the monitoring axis names an automated adapter', async () => {
+    const off = await build(setup({ env: [...ENV, ...POSTHOG_ENV] }).ctx);
+    expect(ids(off).some((i) => i.startsWith('analytics:'))).toBe(false);
+    expect(hIds(off)).not.toContain('analytics:snippet');
+
+    // A guided monitoring provider stays guided: no step, and no warning about it.
+    const guided = await build(setup({ config: { stack: { ...FAKE_STACK, monitoring: 'sentry' } }, env: [...ENV, ...POSTHOG_ENV] }).ctx);
+    expect(ids(guided).some((i) => i.startsWith('analytics:'))).toBe(false);
+    expect(guided.warnings.join('\n')).not.toMatch(/monitoring/);
+  });
+
+  it('stays out of the plan — with a warning — when the automated adapter has no capture surface', async () => {
+    // The accounts link owns "not logged in"; this is the case it cannot know about: a usable adapter
+    // that exposes no capture/read-back surface, for which golive could verify nothing.
+    const { ctx } = setup({ config: { stack: monStack }, env: [...ENV, ...POSTHOG_ENV], arrange: (w) => void (w.mon.withAnalytics = false) });
+    const plan = await build(ctx);
+    expect(ids(plan).some((i) => i.startsWith('analytics:'))).toBe(false);
+    expect(plan.warnings.join('\n')).toMatch(/the adapter exposes no capture \+ read-back surface/);
+  });
+
+  it('adds nothing of its own when the provider is not usable (the accounts link names that)', async () => {
+    const { ctx } = setup({ config: { stack: monStack }, env: [...ENV, ...POSTHOG_ENV], arrange: (w) => void (w.mon.authed = false) });
+    const plan = await build(ctx);
+    expect(ids(plan).some((i) => i.startsWith('analytics:'))).toBe(false);
+    expect(plan.warnings.join('\n')).toMatch(/FakeMonitor access could not be verified/);
+    expect(plan.warnings.join('\n')).not.toMatch(/monitoring is set to/);
+    expect(plan.handoffs.find((h) => h.id === 'login:fakemonitor')).toBeDefined();
+  });
+
+  it('pins the linked project (zero writes) and depends each env step on it', async () => {
+    const { w, ctx } = setup({ config: { stack: monStack }, env: [...ENV, ...POSTHOG_ENV] });
+    const plan = await build(ctx);
+    const project = byId(plan, 'analytics:project');
+    expect(project.kind).toBe('provision');
+    expect(project.risk.writes).toBe(false);
+    expect(project.destination).toMatchObject({ axis: 'monitoring', provider: 'fakemonitor', action: 'pin', project: { id: 'prj_9', name: 'shop' } });
+    expect(project.preview[0]).toBe('monitoring: FakeMonitor project shop (prj_9) in organization Fake Org (org_1), from the project already linked to this repo (golive state); every FakeMonitor write in this plan goes there');
+    expect(project.preview.join('\n')).toContain('FakeMonitor access: fakemonitor API key');
+
+    for (const target of ['preview', 'production'] as const) {
+      const env = byId(plan, `analytics:env:${target}`);
+      expect(env.kind).toBe('wire');
+      expect(env.risk.writes).toBe(true);
+      expect(env.dependsOn).toEqual(['analytics:project', 'project:hosting']);
+      expect(env.preview.join('\n')).toContain(`add NEXT_PUBLIC_POSTHOG_KEY ← posthog.key from FakeMonitor project shop (public: the project token ships in the browser by design)`);
+      expect(env.preview.join('\n')).toContain('no server secret is written');
+      expect(env.preview.join('\n')).toContain('https://us.i.posthog.com');
+    }
+    // The app reads the names golive fills: no app-code handoff, and no token value anywhere.
+    expect(hIds(plan)).not.toContain('analytics:snippet');
+    expect(JSON.stringify(planView(plan))).not.toContain(w.mon.token!);
+    expect(byId(plan, 'analytics:env:production').intent).toMatch(/posthog\.key\|fakemonitor\|prj_9\|[0-9a-f]{8}/);
+  });
+
+  it('writes the public token as a plain, non-sensitive value and records only its fingerprint', async () => {
+    const { w, ctx } = setup({ config: { stack: monStack }, env: [...ENV, ...POSTHOG_ENV] });
+    const outcomes = await apply(ctx, await build(ctx));
+    expect(outcomes.every((o) => o.status === 'done')).toBe(true);
+
+    const prod = w.host.env.production;
+    expect(prod.get('NEXT_PUBLIC_POSTHOG_KEY')).toBe(TOKEN);
+    expect(prod.get('NEXT_PUBLIC_POSTHOG_KEY')).not.toBeInstanceOf(Secret);
+    expect(prod.get('NEXT_PUBLIC_POSTHOG_HOST')).toBe('https://us.i.posthog.com');
+    expect(w.host.env.preview.get('NEXT_PUBLIC_POSTHOG_KEY')).toBe(TOKEN);
+
+    // A public-by-design value must not be marked sensitive on the host, and only its fingerprint may
+    // reach state (the token ships in the browser bundle, but state never needs the value).
+    const sets = w.calls.filter((c) => c.method === 'env.set' && String(c.args[0]).includes('POSTHOG'));
+    expect(sets).toHaveLength(4);
+    for (const c of sets) expect((c.args[3] as { sensitive?: boolean }).sensitive).toBe(false);
+    const st = ctx.state.get();
+    expect(st.secrets['NEXT_PUBLIC_POSTHOG_KEY@production']?.fp).toBeDefined();
+    expect(JSON.stringify(st)).not.toContain(TOKEN);
+    expect(JSON.stringify(outcomes)).not.toContain(TOKEN);
+    expect(ctx.logs.join('\n')).not.toContain(TOKEN);
+    expectNoRawSecrets([JSON.stringify(outcomes), ...ctx.logs]);
+  });
+
+  it('creates a project named after the repo only when nothing is linked, recording the creation marker', async () => {
+    const { w, ctx } = setup({
+      config: { stack: monStack },
+      env: [...ENV, ...POSTHOG_ENV],
+      arrange: (x) => {
+        x.mon.current = null;
+        x.mon.candidates = [{ id: 'prj_other', name: 'other-app', scope: { kind: 'organization', id: 'org_1', name: 'Fake Org' } }];
+      },
+    });
+    const plan = await build(ctx);
+    const project = byId(plan, 'analytics:project');
+    expect(project.risk.writes).toBe(true);
+    expect(project.destination).toMatchObject({ action: 'create', project: { name: 'shop' } });
+    expect(project.preview.join('\n')).toMatch(/Create FakeMonitor project shop for monitoring in organization Fake Org \(org_1\)/);
+    expect(project.preview.join('\n')).toMatch(/existing FakeMonitor projects that could be used instead: other-app \(prj_other\)/);
+    expect(plan.warnings.join('\n')).toMatch(/already has 1 project\(s\) in this organization \(other-app \(prj_other\)\)/);
+
+    const outcomes = await apply(ctx, plan);
+    expect(outcomes.find((o) => o.id === 'analytics:project')).toMatchObject({ status: 'done' });
+    const st = ctx.state.get();
+    expect(st.resources['fakemonitor.projectId']).toBe('prj_new_1');
+    expect(st.resources['fakemonitor.createdProjectId']).toBe('prj_new_1');
+    expect(w.calls.find((c) => c.method === 'project.create')?.args).toEqual(['shop']);
+    // The env step read the token of the project this run created, not of the placeholder.
+    expect(w.host.env.production.get('NEXT_PUBLIC_POSTHOG_KEY')).toBe(TOKEN);
+  });
+
+  it('selects the project golive.yaml names and records no creation marker for it', async () => {
+    const { w, ctx } = setup({
+      config: { stack: monStack, projects: { monitoring: 'other-app' } },
+      env: [...ENV, ...POSTHOG_ENV],
+      arrange: (x) => {
+        x.mon.current = null;
+        x.mon.candidates = [{ id: 'prj_2', name: 'other-app', scope: { kind: 'organization', id: 'org_1', name: 'Fake Org' } }];
+      },
+    });
+    const plan = await build(ctx);
+    const project = byId(plan, 'analytics:project');
+    expect(project.preview[0]).toMatch(/^Use existing FakeMonitor project other-app \(prj_2\)/);
+    expect(project.destination).toMatchObject({ action: 'select', project: { id: 'prj_2', name: 'other-app' } });
+    await apply(ctx, plan);
+    expect(ctx.state.resource('fakemonitor.projectId')).toBe('prj_2');
+    // Adopted, not made: teardown must never treat it as golive's to delete.
+    expect(ctx.state.resource('fakemonitor.createdProjectId')).toBeUndefined();
+    expect(w.calls.some((c) => c.method === 'project.create')).toBe(false);
+  });
+
+  it('hands the app-code task over when the app reads no PostHog env name', async () => {
+    const { ctx } = setup({ config: { stack: monStack } });
+    const plan = await build(ctx);
+    const h = plan.handoffs.find((x) => x.id === 'analytics:snippet')!;
+    expect(h).toMatchObject({ blocking: false, verifiedBy: 'posthog-ingest' });
+    expect(h.action).toMatch(/POSTHOG_KEY and POSTHOG_HOST/);
+    expect(h.action).toMatch(/NEXT_PUBLIC_POSTHOG_KEY/);
+    expect(h.action).toMatch(/golive verify --only posthog-ingest/);
+    expect(ids(plan).filter((i) => i.startsWith('analytics:env'))).toEqual([]);
+    // The project work still happens: the handoff is about the app's code, not the resource.
+    expect(ids(plan)).toContain('analytics:project');
+  });
+
+  it('hands the env names to the human when the host cannot be written', async () => {
+    const { ctx } = setup({ config: { stack: { ...FAKE_STACK, hosting: 'fakeguided', monitoring: 'fakemonitor' } }, env: [...ENV, ...POSTHOG_ENV] });
+    const plan = await build(ctx);
+    const prod = plan.handoffs.find((x) => x.id === 'analytics:env:production')!;
+    expect(prod).toMatchObject({ blocking: true, verifiedBy: 'env-parity' });
+    expect(prod.action).toContain('NEXT_PUBLIC_POSTHOG_KEY, NEXT_PUBLIC_POSTHOG_HOST');
+    expect(prod.action).toMatch(/https:\/\/us\.i\.posthog\.com/);
+    expect(prod.action).toMatch(/public by design/);
+    expect(plan.handoffs.some((h) => h.id === 'analytics:snippet')).toBe(false);
+    expect(ids(plan)).toContain('analytics:project');
+  });
+
+  it('is idempotent: after apply only the zero-write pin remains', async () => {
+    const { ctx } = setup({ config: { stack: monStack }, env: [...ENV, ...POSTHOG_ENV] });
+    await apply(ctx, await build(ctx));
+    const next = await build(ctx);
+    expect(ids(next).filter((i) => i.startsWith('analytics:'))).toEqual(['analytics:project']);
+    expect(byId(next, 'analytics:project').risk.writes).toBe(false);
+  });
+
+  it('refuses to write a token that changed after approval', async () => {
+    const { w, ctx } = setup({ config: { stack: monStack }, env: [...ENV, ...POSTHOG_ENV] });
+    const plan = await build(ctx);
+    w.mon.token = 'phc_FAKEposthogROTATEDtokenValue987654321';
+    const outcomes = await apply(ctx, plan);
+    const env = outcomes.find((o) => o.id === 'analytics:env:production')!;
+    expect(env.status).toBe('failed');
+    expect(env.error).toMatch(/token changed since approval/);
+    expect(w.host.env.production.has('NEXT_PUBLIC_POSTHOG_KEY')).toBe(false);
+  });
+});
+
 describe('guided host + automated payments (#14)', () => {
   it('hands off the webhook registration and gives per-target, per-mode env guidance', async () => {
     const { ctx } = setup({ config: { stack: { hosting: 'fakeguided', payments: 'fakepay' } } });

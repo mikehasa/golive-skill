@@ -567,3 +567,65 @@ describe('handoff --write', () => {
     expect(existsSync(join(root, 'GOLIVE_HANDOVER.md'))).toBe(false);
   });
 });
+
+// ── the analytics project (monitoring) ──────────────────────────────────────────────────────────
+
+describe('handover: the PostHog analytics project', () => {
+  const MON_CONFIG: Partial<ShipConfig> = { stack: { ...CONFIG.stack, monitoring: 'posthog' } };
+  const MON_STATE: ShipState = {
+    ...STATE,
+    resources: { ...STATE.resources, 'posthog.projectId': 'prj_9', 'posthog.projectName': 'shop', 'posthog.createdProjectId': 'prj_9' },
+    steps: { ...STATE.steps, 'analytics:project': { status: 'done', at: '2026-08-04T10:00:00.000Z', planId: 'plan-1' } },
+  };
+
+  /** A fake world that answers as PostHog (the id the recorded spec and the inventory name). */
+  const posthogWorld = () => {
+    const w = fakeWorld();
+    arrange(w);
+    w.mon.providerId = 'posthog';
+    return w;
+  };
+  const mon = (checkIds: readonly string[] = [...CHECKS, 'posthog-ingest'], skipChecks: readonly string[] = []) =>
+    setup({ config: MON_CONFIG, state: MON_STATE, adapters: posthogWorld().adapters, checkIds, skipChecks });
+
+  it('names it as a created resource with its removal, and its own check in the runbook', async () => {
+    const withCheck = mon();
+    const doc = await withCheck.buildWith(releaseChecks(withCheck.ctx));
+    const row = doc.resources.find((r) => r.kind === 'analytics project')!;
+    expect(row).toMatchObject({ axis: 'monitoring', provider: 'posthog', providerTitle: 'PostHog', name: 'shop', id: 'prj_9', ownership: 'created', removable: true, provenance: { kind: 'recorded', at: '2026-08-04T10:00:00.000Z' } });
+    expect(row.proof).toMatch(/creation marker \(posthog\.createdProjectId\)/);
+
+    // With the axis configured, the check its own predicate says applies is the runbook command.
+    const monitoring = doc.runbook.find((r) => r.subject.startsWith('monitoring'))!;
+    expect(monitoring.subject).toBe('monitoring (FakeMonitor)');
+    expect(monitoring.commands).toEqual(['golive doctor', 'golive verify --only posthog-ingest']);
+
+    // A stack whose own predicate says the check does not run is told so, not sent to a skipping check.
+    const skipped = mon([...CHECKS, 'posthog-ingest'], ['posthog-ingest']);
+    const other = await skipped.build();
+    const skippedRunbook = other.runbook.find((r) => r.subject.startsWith('monitoring'))!;
+    expect(skippedRunbook.commands).toEqual(['golive doctor']);
+    expect(skippedRunbook.note).toMatch(/none of them runs on this stack/);
+
+    // Costs: PostHog's own billing page, read by nobody (golive reads no usage).
+    const cost = doc.costs.find((c) => c.provider === 'posthog')!;
+    expect(cost.where).toMatch(/PostHog organization settings → Billing/);
+    expect(cost.read).toMatch(/golive does not read plans, quotas, usage or invoices/);
+
+    // Retirement: an approved teardown removes it (the adapter exposes delete + read-back).
+    const retirement = doc.retirement.find((r) => r.resource.includes('prj_9'))!;
+    expect(retirement.removable).toBe(true);
+    expect(retirement.how).toMatch(/golive teardown → apply --plan <id> --yes --confirm-destroy/);
+  });
+
+  it('never claims an adopted analytics project, and hands its removal to the dashboard', async () => {
+    const adopted = await setup({
+      config: MON_CONFIG,
+      state: { ...STATE, resources: { ...STATE.resources, 'posthog.projectId': 'prj_9', 'posthog.projectName': 'shop' } },
+    }).build();
+    const row = adopted.resources.find((r) => r.kind === 'analytics project')!;
+    expect(row).toMatchObject({ ownership: 'adopted', removable: false });
+    expect(row.proof).toMatch(/without golive's creation marker/);
+    expect(adopted.retirement.find((r) => r.resource.includes('prj_9'))).toBeUndefined();
+  });
+});

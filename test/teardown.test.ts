@@ -951,3 +951,81 @@ describe('teardown: re-reading the provider after deleting an endpoint or a key'
     expect(ctx.state.resource('fakemail.keyId@preview')).toBeUndefined();
   });
 });
+
+// ── The analytics project golive created (monitoring) ───────────────────────────────────────────
+
+describe('teardown: the PostHog analytics project', () => {
+  const MON_CONFIG: Partial<ShipConfig> = { stack: { ...CONFIG.stack, monitoring: 'posthog' } };
+  const MON_STATE = (over: Record<string, string> = {}): ShipState =>
+    stateWith({ 'fakehost.projectId': 'prj_1', 'fakehost.createdProjectId': 'prj_1', 'posthog.projectId': 'prj_9', 'posthog.projectName': 'shop', 'posthog.createdProjectId': 'prj_9', ...over });
+
+  function mon(opts: { state?: ShipState; configure?: (w: FakeWorld) => void } = {}) {
+    return setup({
+      config: MON_CONFIG,
+      state: opts.state ?? MON_STATE(),
+      arrange: (w) => {
+        w.mon.providerId = 'posthog';
+        opts.configure?.(w);
+      },
+    });
+  }
+
+  it('plans a destroy step that the provider\'s own read confirms, and forgets the recorded project', async () => {
+    const { w, ctx, build } = mon({ configure: (x) => void (x.mon.projectState = 'gone') });
+    const plan = await build();
+    const step = byId(plan, 'teardown:monitoring:posthog');
+    expect(step.kind).toBe('destroy');
+    expect(step.risk).toEqual({ writes: true, destroy: true });
+    expect(step.preview[0]).toBe('delete the PostHog project shop (prj_9) — golive created it (marker posthog.createdProjectId); PostHog schedules a deletion, so the project stays listed as pending execution until it is purged');
+    expect(step.verifyWith).toEqual([]);
+    // The analytics project goes before the host project: smallest blast radius first.
+    expect(ids(plan).indexOf('teardown:monitoring:posthog')).toBeLessThan(ids(plan).indexOf('teardown:project:hosting'));
+    expect(plan.handoffs.map((h) => h.id)).not.toContain('teardown:monitoring:posthog');
+
+    const out = await apply(ctx, plan);
+    expect(out.find((o) => o.id === 'teardown:monitoring:posthog')).toMatchObject({ status: 'done' });
+    expect(w.mon.removed).toEqual(['prj_9']);
+    const check = out.find((o) => o.id === 'teardown:monitoring:posthog')!.checks[0]!;
+    expect(check).toMatchObject({ id: 'teardown:monitoring:posthog:removed', status: 'pass', severity: 'info' });
+    expect(check.evidence.join(' ')).toContain('no longer has');
+    expect(ctx.state.resource('posthog.projectId')).toBeUndefined();
+    expect(ctx.state.resource('posthog.createdProjectId')).toBeUndefined();
+  });
+
+  it('treats a provider-scheduled deletion as confirmation, saying so', async () => {
+    const { ctx, build } = mon({ configure: (x) => void (x.mon.projectState = 'pending') });
+    const out = await apply(ctx, await build());
+    const check = out.find((o) => o.id === 'teardown:monitoring:posthog')!.checks[0]!;
+    expect(check.status).toBe('pass');
+    expect(check.evidence.join(' ')).toMatch(/accepted the deletion and reports .* as pending deletion \(scheduled, not live\)/);
+  });
+
+  it('fails — and keeps the record — when the provider still reports the project after the delete', async () => {
+    const { ctx, build } = mon({ configure: (x) => void (x.mon.projectState = 'present') });
+    const out = await apply(ctx, await build());
+    const step = out.find((o) => o.id === 'teardown:monitoring:posthog')!;
+    expect(step.status).toBe('failed');
+    expect(step.error).toMatch(/still reports the project as live/);
+    expect(ctx.state.resource('posthog.projectId')).toBe('prj_9');
+  });
+
+  it('hands the project back instead of skipping it when the provider is not usable', async () => {
+    const { ctx, build } = mon({ configure: (x) => void (x.mon.authed = false) });
+    const plan = await build();
+    expect(ids(plan)).not.toContain('teardown:monitoring:posthog');
+    const h = plan.handoffs.find((x) => x.id === 'teardown:monitoring:posthog')!;
+    expect(h).toMatchObject({ blocking: false, manual: true });
+    expect(h.why).toMatch(/was created by golive, and deleting it needs the PostHog dashboard/);
+    expect(h.action).toMatch(/Delete the PostHog project shop \(prj_9\) in the PostHog dashboard/);
+    expect(await apply(ctx, plan).catch(() => null)).not.toBeNull();
+  });
+
+  it('never claims an adopted analytics project as golive\'s to delete', async () => {
+    const adopted = mon({ state: MON_STATE({ 'posthog.createdProjectId': 'prj_other' }) });
+    const plan = await adopted.build();
+    expect(ids(plan)).not.toContain('teardown:monitoring:posthog');
+    const h = plan.handoffs.find((x) => x.id === 'teardown:monitoring:posthog')!;
+    expect(h.why).toMatch(/no creation marker .* covers it, so golive cannot prove it created it: it was adopted/);
+    expect(h.action).toMatch(/it may belong to this account already and predate this app/);
+  });
+});

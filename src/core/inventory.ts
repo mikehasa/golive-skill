@@ -119,15 +119,29 @@ export interface InventoryProject {
 }
 
 /**
- * A database project or sending domain recorded in state. `created` is true only when the recorded
- * creation markers prove golive made the resource; `markers` names them, `needs` and `where` say
- * where a human finishes a removal by hand, and `extra` carries the provider's remaining caveat.
+ * A removal golive can perform right now, through the provider's own delete plus the read that
+ * confirms it. `confirm` answers `present` | `gone` | `pending`: `pending` is a deletion the provider
+ * accepted and only SCHEDULED (PostHog keeps the row visible with `is_pending_deletion`), which is a
+ * confirmed removal, not a resource that is still there. A recorded resource without one keeps its
+ * manual handoff: golive never reports a delete it cannot confirm.
+ */
+export interface RecordedRemoval {
+  adapter: Adapter;
+  remove(ctx: Ctx): Promise<{ removed: boolean; reason?: string }>;
+  confirm(ctx: Ctx): Promise<'present' | 'gone' | 'pending'>;
+}
+
+/**
+ * A database project, sending domain or analytics project recorded in state. `created` is true only
+ * when the recorded creation markers prove golive made the resource; `markers` names them, `needs`
+ * and `where` say where a human finishes a removal by hand, and `extra` carries the provider's
+ * remaining caveat. `removal` is present only when this run can remove it at the provider.
  */
 export interface InventoryRecorded {
   axis: Axis;
   provider: string;
   providerTitle: string;
-  kind: 'database-project' | 'sending-domain';
+  kind: 'database-project' | 'sending-domain' | 'analytics-project';
   key: string;
   id: string;
   name: string;
@@ -137,6 +151,7 @@ export interface InventoryRecorded {
   needs: string;
   where: string;
   extra?: string;
+  removal?: RecordedRemoval;
 }
 
 export interface Inventory {
@@ -174,7 +189,7 @@ export interface InventoryGap {
   recorded: boolean;
 }
 
-/** Database projects and the sending domain: the state keys golive records when it creates them. */
+/** Recorded database/analytics projects and the sending domain: the state keys golive records when it creates them. */
 interface RecordedSpec {
   axis: Axis;
   provider: string;
@@ -193,25 +208,60 @@ interface RecordedSpec {
   needs: string;
   where: string;
   extra?: string;
+  /**
+   * The removal this run can offer for the resource, when the provider configured for the axis is the
+   * one that recorded it and exposes a delete plus a read that confirms the removal. Absent (or
+   * answering undefined) = the resource keeps its manual handoff, never a silent gap.
+   */
+  removal?: (ctx: Ctx, id: string) => Promise<RecordedRemoval | undefined>;
 }
 
 const RECORDED: RecordedSpec[] = [
   { axis: 'db', provider: 'supabase', providerTitle: 'Supabase', kind: 'database-project', idKey: 'supabase.ref', createdBy: ['supabase.createdByGolive'], needs: 'the Supabase dashboard', where: 'the dashboard' },
   { axis: 'db', provider: 'neon', providerTitle: 'Neon', kind: 'database-project', idKey: 'neon.projectId', nameKey: 'neon.createdProjectName', createdBy: ['neon.createdProjectId'], needs: 'the Neon console', where: 'the Neon console', extra: '; Neon may keep a recovery window' },
   { axis: 'email', provider: 'resend', providerTitle: 'Resend', kind: 'sending-domain', idKey: 'resend.domainId', createdBy: ['resend.createdDomainId'], needs: 'the Resend dashboard', where: 'the Resend dashboard', extra: '; any keys golive issued are revoked in the steps of this plan when applicable' },
+  {
+    axis: 'monitoring',
+    provider: 'posthog',
+    providerTitle: 'PostHog',
+    kind: 'analytics-project',
+    idKey: 'posthog.projectId',
+    nameKey: 'posthog.projectName',
+    createdBy: ['posthog.createdProjectId'],
+    needs: 'the PostHog dashboard',
+    where: 'the PostHog dashboard',
+    extra: '; PostHog schedules a deletion, so the project stays listed as pending execution until it is purged',
+    removal: posthogRemoval,
+  },
 ];
 
 /**
+ * PostHog's removal handle: only when `golive.yaml` still names PostHog for monitoring, that adapter
+ * is usable, and it really exposes both halves (the delete and the read that confirms it). Its
+ * `projectState` read is the non-contract extension the adapter publishes beside its linker.
+ */
+async function posthogRemoval(ctx: Ctx, id: string): Promise<RecordedRemoval | undefined> {
+  const s = await axisStatus(ctx, 'monitoring');
+  if (s.kind !== 'ready' || s.adapter.id !== 'posthog') return undefined;
+  const adapter = s.adapter;
+  const remove = adapter.capabilities.project?.remove;
+  const confirm = (adapter.capabilities as { analytics?: { projectState?: (ctx: Ctx, id: string) => Promise<'present' | 'gone' | 'pending'> } }).analytics?.projectState;
+  if (!remove || !confirm) return undefined;
+  return { adapter, remove: (c) => remove(c), confirm: (c) => confirm(c, id) };
+}
+
+/**
  * Read the whole inventory: webhooks, DNS records, sending keys, the host project, then the recorded
- * database/sending resources. Read-only, in that fixed order, so the same account always reads the
- * same way. What could not be read or removed is reported in `gaps` instead of being dropped.
+ * database/sending/analytics resources. Read-only, in that fixed order, so the same account always
+ * reads the same way. What could not be read or removed is reported in `gaps` instead of being
+ * dropped.
  */
 export async function buildInventory(ctx: Ctx): Promise<Inventory> {
   const webhooks = await webhookInventory(ctx);
   const dns = await dnsInventory(ctx);
   const sendingKeys = await keyInventory(ctx);
   const host = await projectInventory(ctx);
-  return { webhooks, dnsRecords: dns.records, sendingKeys, project: host.project, recorded: recordedInventory(ctx), gaps: [...dns.gaps, ...host.gaps] };
+  return { webhooks, dnsRecords: dns.records, sendingKeys, project: host.project, recorded: await recordedInventory(ctx), gaps: [...dns.gaps, ...host.gaps] };
 }
 
 /** A provider's display title, from the registered adapters. Never a credential or an account read. */
@@ -507,9 +557,9 @@ function hostGap(s: AxisStatus, p: LinkedHostProject): InventoryGap {
   };
 }
 
-// ── Recorded database projects and sending domains ───────────────────────────────────────────────
+// ── Recorded database, analytics and sending resources ───────────────────────────────────────────
 
-function recordedInventory(ctx: Ctx): InventoryRecorded[] {
+async function recordedInventory(ctx: Ctx): Promise<InventoryRecorded[]> {
   const out: InventoryRecorded[] = [];
   for (const spec of RECORDED) {
     const id = ctx.state.resource(spec.idKey);
@@ -518,7 +568,10 @@ function recordedInventory(ctx: Ctx): InventoryRecorded[] {
     // `[].every()` is true, which would claim an adopted resource as golive's own.
     const created = spec.createdBy.length > 0 && spec.createdBy.every((k) => ctx.state.resource(k) === id);
     const name = spec.kind === 'sending-domain' ? (ctx.config.email?.domain ?? id) : ((spec.nameKey ? ctx.state.resource(spec.nameKey) : undefined) ?? id);
-    out.push({ axis: spec.axis, provider: spec.provider, providerTitle: spec.providerTitle, kind: spec.kind, key: spec.idKey, id, name, created, markers: [...spec.createdBy], needs: spec.needs, where: spec.where, ...(spec.extra ? { extra: spec.extra } : {}) });
+    // A removal is only offered for a resource golive can prove it created; an adopted one would be
+    // the account's own, and no teardown may reach it.
+    const removal = created ? await spec.removal?.(ctx, id) : undefined;
+    out.push({ axis: spec.axis, provider: spec.provider, providerTitle: spec.providerTitle, kind: spec.kind, key: spec.idKey, id, name, created, markers: [...spec.createdBy], needs: spec.needs, where: spec.where, ...(spec.extra ? { extra: spec.extra } : {}), ...(removal ? { removal } : {}) });
   }
   return out;
 }

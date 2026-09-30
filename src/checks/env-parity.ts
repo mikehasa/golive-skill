@@ -13,6 +13,7 @@ function sourceAxis(ctx: Ctx, key: OutputKey): Axis | null {
   if (key.startsWith('db.')) return 'db';
   if (key.startsWith('stripe.')) return 'payments';
   if (key.startsWith('resend.')) return 'email';
+  if (key.startsWith('posthog.')) return 'monitoring';
   return null;
 }
 

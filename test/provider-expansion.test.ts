@@ -133,3 +133,31 @@ describe('database connection evidence', () => {
     expect((await runCheck(testCtx({ config: { stack: { db: 'supabase' } } }), dbConnectionCheck)).status).toBe('skip');
   });
 });
+
+describe('PostHog non-secret configuration', () => {
+  it('preserves an explicit region', () => {
+    expect(parseConfig('version: 1\nposthog:\n  region: eu').posthog).toEqual({ region: 'eu' });
+    expect(parseConfig('version: 1\nstack:\n  monitoring: posthog').posthog).toBeUndefined();
+  });
+  it.each(['null', '[]', 'foo', '{region: us-east-1}', '{region: 42}', '{region: "eu"}\n  host: https://evil.example', '{apiKey: do-not-print-this}', '{organizationId: org-1}'])('rejects malformed settings and credentials (%s)', (input) => {
+    expect(() => parseConfig(`version: 1\nposthog: ${input}`)).toThrow();
+    try {
+      parseConfig(`version: 1\nposthog: ${input}`);
+    } catch (e) {
+      expect(String(e)).not.toContain('do-not-print-this');
+      expect(String(e)).toMatch(/posthog/);
+    }
+  });
+});
+
+describe('PostHog transport boundaries', () => {
+  it('allows the PostHog control plane and its own ingestion hosts, nothing near them', async () => {
+    const http = createHttp((async () => new Response('{}')) as typeof fetch);
+    for (const url of ['https://us.posthog.com/api/organizations/', 'https://eu.posthog.com/api/organizations/', 'https://us.i.posthog.com/i/v0/e/', 'https://eu.i.posthog.com/i/v0/e/']) {
+      expect((await http({ url })).status).toBe(200);
+    }
+    await expect(http({ url: 'https://evil.posthog.com/api/organizations/' })).rejects.toThrow(/not allowed/);
+    await expect(http({ url: 'https://us.posthog.com.evil.example/api/organizations/' })).rejects.toThrow(/not allowed/);
+    await expect(http({ url: 'https://posthog.com/api/organizations/' })).rejects.toThrow(/not allowed/);
+  });
+});
