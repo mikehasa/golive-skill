@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=pt-BR; source=README.md; source-commit=c5e265d; reviewed=false; updated=2026-09-30 -->
+<!-- golive-translation: lang=pt-BR; source=README.md; source-commit=17472ea; reviewed=false; updated=2026-09-30 -->
 
 # GoLive
 
