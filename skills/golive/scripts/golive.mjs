@@ -19492,9 +19492,8 @@ function snippetHandoff(adapter, project2) {
   return {
     id: "analytics:snippet",
     why: `the app reads no env name golive fills for ${adapter.title}, so nothing in it reports analytics events yet`,
-    action: `Initialize the ${adapter.title} SDK in the app with the env names golive writes (POSTHOG_KEY and POSTHOG_HOST, or this framework's client-prefixed spelling, e.g. NEXT_PUBLIC_POSTHOG_KEY / NEXT_PUBLIC_POSTHOG_HOST) and send an event; then run \`golive plan\`, apply the new plan and \`golive verify --only posthog-ingest\`. The project is ${project2.name || project2.id}${project2.id ? ` (${project2.id})` : ""}.`,
-    blocking: false,
-    verifiedBy: "posthog-ingest"
+    action: `Initialize the ${adapter.title} SDK in the app with the env names golive writes (POSTHOG_KEY and POSTHOG_HOST, or this framework's client-prefixed spelling, e.g. NEXT_PUBLIC_POSTHOG_KEY / NEXT_PUBLIC_POSTHOG_HOST) and send an event; then re-run \`golive plan\` so the env wiring is planned. This handoff ends when the app reads those names \u2014 no check can see the app's own code, and \`golive verify --only posthog-ingest\` proves ${adapter.title} ingests events, not that the app sends them. The project is ${project2.name || project2.id}${project2.id ? ` (${project2.id})` : ""}.`,
+    blocking: false
   };
 }
 function envHandoff(ctx, adapter, mapped, target) {

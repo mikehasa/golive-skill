@@ -2378,7 +2378,10 @@ describe('analytics (monitoring)', () => {
     const { ctx } = setup({ config: { stack: monStack } });
     const plan = await build(ctx);
     const h = plan.handoffs.find((x) => x.id === 'analytics:snippet')!;
-    expect(h).toMatchObject({ blocking: false, verifiedBy: 'posthog-ingest' });
+    // No check can see the app's own code, so nothing may claim to close this: it stays open
+    // (`done: false`) until the app reads the names golive fills and the handoff stops being planned.
+    expect(h.blocking).toBe(false);
+    expect(h.verifiedBy).toBeUndefined();
     expect(h.action).toMatch(/POSTHOG_KEY and POSTHOG_HOST/);
     expect(h.action).toMatch(/NEXT_PUBLIC_POSTHOG_KEY/);
     expect(h.action).toMatch(/golive verify --only posthog-ingest/);

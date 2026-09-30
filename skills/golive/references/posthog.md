@@ -45,8 +45,9 @@ golive automates (after plan approval):
   `golive-verify`, plus a per-run marker property) and polls PostHog's own HogQL count for that marker
   for about three minutes. **Pass only on the read-back**; the capture endpoint's 200 is an acceptance,
   not proof. "Not visible yet" is a **warn** (ingestion is asynchronous), a refused read-back (401/403 —
-  usually a missing `query:read` scope) or an unusable credential is a **fail**, and no linked project
-  is a **skip** naming `analytics:project`.
+  usually a missing `query:read` scope) is a **fail**, an unusable credential is a **skip** naming
+  `login:posthog` (the `accounts` check owns that verdict), and no linked project is a **skip** naming
+  `analytics:project`.
 - Teardown — a project carrying golive's creation marker is deleted through the API (`golive teardown`
   → `apply --plan <id> --yes --confirm-destroy`), and the provider's own read confirms it: PostHog
   **schedules** the deletion, so the confirming answer is `is_pending_deletion` (reported as "pending
@@ -58,7 +59,8 @@ Stays with the human:
 
 - **Initializing the SDK in the app** (and sending the events the product cares about). Until the code
   reads the env names golive fills, the plan carries the non-blocking `analytics:snippet` handoff with
-  that task; it closes when `posthog-ingest` passes.
+  that task. No check can see the app's own code, so nothing closes it — it ends when the code reads
+  those names, and the handoff then stops being planned.
 - **The plan and its limits**: a free PostHog account allows **one** project, and PostHog is priced per
   ingested event. golive maps a refused create to "reuse the existing project, delete one you no longer
   need, or upgrade" and never upgrades, pays or retries a create.
