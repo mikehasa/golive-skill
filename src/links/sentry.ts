@@ -3,36 +3,35 @@ import type { Adapter, Ctx, EnvStore, EnvTarget, HandoffItem, OutputKey, Project
 import type { EnvMapping } from '../core/envmap.js';
 import { fingerprint } from '../core/secret.js';
 import { repoIdentity } from '../core/repo.js';
-import { analyticsOf, posthogIngestHost, regionOf, type AnalyticsProvider } from '../adapters/posthog.js';
-import { monitoringOf } from '../adapters/sentry.js';
+import { SentryTeamChoiceError, monitoringOf, regionOf, sentryApiHost, type MonitoringProvider } from '../adapters/sentry.js';
 import { authOf, decideEnv, deps, envPreview, errMsg, intentOf, mappedEnv, memo, observeNames, projectIntent, ready, step, track, verifyEnvWritten, writeEnv, writesProduction } from './util.js';
 
 type Target = Exclude<EnvTarget, 'development'>;
 
-/** The semantic keys this link fills. Both are PUBLIC (the project token ships in the browser). */
-const KEY_NAMES: OutputKey[] = ['posthog.key', 'posthog.host'];
+/** The semantic key this link fills. It is PUBLIC: the DSN ships in the browser. */
+const KEY_NAMES: OutputKey[] = ['sentry.dsn'];
 /** Memo/plan identity for a project this plan creates: its id does not exist until the step runs. */
 const PENDING = 'pending';
 
 /**
- * Monitoring provider → host env: the analytics project the app reports to, and the app-facing env
- * names that carry its public project token and ingestion host.
+ * Monitoring provider → host env: the Sentry project the app reports errors to, and the app-facing
+ * env name that carries its public DSN.
  *
  * The project is a resource golive may create (that is what makes it a managed one: it gets a creation
  * marker, and teardown deletes only what that marker names), so this link plans on the `monitoring`
  * axis only when `stack.monitoring` names an automated adapter with a project surface AND a
- * capture/read-back surface — today PostHog. Adopting an already linked project always beats creating
- * one; a create is only planned when nothing is linked, configured or same-named.
+ * store/read-back surface — today Sentry. Adopting an already linked project always beats creating
+ * one; a create is only planned when nothing is linked, configured or same-named, and it names the
+ * organization, region and team it would use (never a guessed one).
  *
- * The project token is NOT a server secret: PostHog designs it to be embedded in a client bundle (see
+ * The DSN is NOT a server secret: Sentry designs it to be embedded in a client bundle (see
  * docs/PROVIDERS.md), so it is written as a plain, non-sensitive host variable, exactly the way the
- * Supabase anon/publishable key is — `bundle-secrets` and the exposure guard must not flag it, and a
- * critical exposure finding never blocks it. `posthog-ingest` proves the wiring from outside (a
- * synthetic capture plus the provider's own read-back); it cannot see the app's own code, so it never
- * closes the app-code handoff below — that one ends when the app reads the names golive fills.
+ * Supabase anon/publishable key is. `sentry-ingest` proves the wiring from outside (a synthetic event
+ * plus the provider's own event read); it cannot see the app's own code, so it never closes the
+ * app-code handoff below — that one ends when the app reads the name golive fills.
  */
-export const analyticsLink: Link = {
-  id: 'analytics',
+export const sentryLink: Link = {
+  id: 'sentry',
   async plan(ctx) {
     const configured = ctx.config.stack.monitoring;
     if (!configured) return null;
@@ -41,14 +40,10 @@ export const analyticsLink: Link = {
     // handoff), and an unusable login is named by the accounts link too: neither is repeated here.
     if (!r) return null;
     const adapter = r.adapter;
-    const provider = analyticsOf(adapter);
-    // A monitoring adapter with the other capture/read-back shape (Sentry's store/event read) is
-    // owned by its own link: nothing is said here. An adapter with no surface at all has nothing
-    // golive could verify, so nothing is planned and the reason is said out loud — once.
-    if (!provider) {
-      if (monitoringOf(adapter)) return null;
-      return { steps: [], handoffs: [], warnings: [`${adapter.title}: the adapter exposes no capture + read-back surface, so golive cannot wire or verify monitoring for it`] };
-    }
+    const provider = monitoringOf(adapter);
+    // A monitoring adapter with the other capture/read-back shape is owned by its own link; the
+    // analytics link warns for an adapter with no surface at all, so nothing is said twice here.
+    if (!provider) return null;
 
     const warnings: string[] = [];
     const handoffs: HandoffItem[] = [];
@@ -62,7 +57,7 @@ export const analyticsLink: Link = {
     const host = await ready(ctx, 'hosting', 'env');
     if (!mapped.length) {
       // The app reads none of the names golive would fill: the wiring waits for the app code, and this
-      // non-blocking handoff carries that task (it closes when `posthog-ingest` passes).
+      // non-blocking handoff carries that task (it closes when the app reads the name).
       handoffs.push(snippetHandoff(adapter, planned.project));
     } else if (!host) {
       for (const target of ctx.config.targets) handoffs.push(envHandoff(ctx, adapter, mapped, target));
@@ -80,7 +75,7 @@ export const analyticsLink: Link = {
 
 const scopeOf = (p: ProjectRef): string => (p.scope ? ` in ${p.scope.kind} ${p.scope.name ? `${p.scope.name} (${p.scope.id})` : p.scope.id}` : '');
 const sameScope = (a: ProjectRef['scope'], b: ProjectRef['scope']): boolean => a?.kind === b?.kind && a?.id === b?.id;
-const sameTarget = (a: ProjectCreateTarget, b: ProjectCreateTarget): boolean => sameScope(a.scope, b.scope) && a.region === b.region;
+const sameTarget = (a: ProjectCreateTarget, b: ProjectCreateTarget): boolean => sameScope(a.scope, b.scope) && a.region === b.region && a.team === b.team;
 const nameList = (refs: ProjectRef[]): string[] => [...new Set(refs.map((c) => `${c.name} (${c.id})`))].sort();
 
 interface Planned {
@@ -92,9 +87,10 @@ interface Planned {
 }
 
 /**
- * Which analytics project the app reports to. An already linked project is pinned (a zero-write step
- * naming the destination, so the approved plan id covers it); a configured or same-named one is
- * selected; only then does golive create one, named from the repository.
+ * Which Sentry project the app reports errors to. An already linked project is pinned (a zero-write
+ * step naming the destination, so the approved plan id covers it); a configured or same-named one is
+ * selected; only then does golive create one, named from the repository — and only when the team the
+ * create needs is unambiguous (one team, or `sentry.team` names one), else a handoff says so.
  */
 async function planProject(ctx: Ctx, adapter: Adapter, linker: ProjectLinker, warnings: string[]): Promise<Planned> {
   const account = await accountLine(ctx, adapter);
@@ -128,7 +124,17 @@ async function planProject(ctx: Ctx, adapter: Adapter, linker: ProjectLinker, wa
     return { project: resolved, created: false, steps: [selectStep(adapter, linker, resolved.id, resolved.name, account, resolved)], handoffs: [] };
   }
   if (linker.create) {
-    const target = linker.creationTarget ? await linker.creationTarget(ctx) : undefined;
+    let target: ProjectCreateTarget | undefined;
+    if (linker.creationTarget) {
+      try {
+        target = await linker.creationTarget(ctx);
+      } catch (e) {
+        // A create that cannot name its team is the human's choice, not golive's: hand it over with
+        // the teams it saw instead of failing the whole plan.
+        if (e instanceof SentryTeamChoiceError) return { project: null, created: false, steps: [], handoffs: [teamHandoff(adapter, e)] };
+        throw new Error(`reading the ${adapter.title} creation destination failed: ${errMsg(e)}`);
+      }
+    }
     const listed = nameList(candidates);
     if (listed.length) {
       warnings.push(
@@ -143,9 +149,9 @@ async function planProject(ctx: Ctx, adapter: Adapter, linker: ProjectLinker, wa
     steps: [],
     handoffs: [
       {
-        id: 'analytics:project',
+        id: 'sentry:project',
         why: `golive doesn't create ${adapter.title} projects on this account, and none is linked to this repo.`,
-        action: `Choose (or create) the ${adapter.title} project for this app in its dashboard, then set \`projects.monitoring\` in golive.yaml to its id or name and run \`golive plan\` again.`,
+        action: `Choose (or create) the ${adapter.title} project for this app in its dashboard, then set \`projects.monitoring\` in golive.yaml to its id, slug or name and run \`golive plan\` again.`,
         blocking: true,
       },
     ],
@@ -158,14 +164,14 @@ async function accountLine(ctx: Ctx, adapter: Adapter): Promise<string | undefin
   return via ? `${adapter.title} access: ${via}` : undefined;
 }
 
-function destination(adapter: Adapter, action: 'pin' | 'select' | 'create', project: { id?: string; name: string }, scope: ProjectRef['scope'], account?: string) {
-  return { axis: 'monitoring' as const, provider: adapter.id, providerTitle: adapter.title, action, project, ...(scope ? { scope } : {}), ...(account ? { access: account } : {}) };
+function destination(adapter: Adapter, action: 'pin' | 'select' | 'create', project: { id?: string; name: string }, scope: ProjectRef['scope'], account?: string, region?: string) {
+  return { axis: 'monitoring' as const, provider: adapter.id, providerTitle: adapter.title, action, project, ...(scope ? { scope } : {}), ...(region ? { region } : {}), ...(account ? { access: account } : {}) };
 }
 
 /** Zero-write step naming the destination of this plan's writes; re-reads it before pinning it in state. */
 function pinStep(adapter: Adapter, linker: ProjectLinker, planned: ProjectRef, source: string, account: string | undefined): Step {
   return step({
-    id: 'analytics:project',
+    id: 'sentry:project',
     title: `Use ${adapter.title} project ${planned.name} for monitoring`,
     kind: 'provision',
     risk: { writes: false },
@@ -187,7 +193,7 @@ function pinStep(adapter: Adapter, linker: ProjectLinker, planned: ProjectRef, s
 
 function selectStep(adapter: Adapter, linker: ProjectLinker, idOrName: string, label: string, account: string | undefined, planned?: ProjectRef): Step {
   return step({
-    id: 'analytics:project',
+    id: 'sentry:project',
     title: `Use existing ${adapter.title} project ${label}`,
     kind: 'provision',
     risk: { writes: true },
@@ -206,23 +212,30 @@ function selectStep(adapter: Adapter, linker: ProjectLinker, idOrName: string, l
   });
 }
 
+/** What a create destination reads as in a preview: organization, team and region, never a guess. */
+function createScope(target: ProjectCreateTarget | undefined): string {
+  if (!target) return '';
+  const where = ` in ${target.scope.kind} ${target.scope.name ? `${target.scope.name} (${target.scope.id})` : target.scope.id}`;
+  return `${where}${target.team ? ` → team ${target.team}` : ''}${target.region ? ` (${target.region})` : ''}`;
+}
+
 function createStep(adapter: Adapter, linker: ProjectLinker, name: string, listed: string[], account: string | undefined, target?: ProjectCreateTarget): Step {
   return step({
-    id: 'analytics:project',
+    id: 'sentry:project',
     title: `Create ${adapter.title} project ${name}`,
     kind: 'provision',
     risk: { writes: true },
     preview: [
-      `Create ${adapter.title} project ${name} for monitoring${target ? scopeOf({ id: '', name, scope: target.scope }) : ''} (no existing project matched this repo)`,
+      `Create ${adapter.title} project ${name} for monitoring${createScope(target)} (no existing project matched this repo)`,
       ...(listed.length ? [`existing ${adapter.title} projects that could be used instead: ${listed.slice(0, 10).join(', ')}${listed.length > 10 ? ', …' : ''} — ask the human; to use one, set \`projects.monitoring\` in golive.yaml and run \`plan\` again`] : []),
       ...(account ? [account] : []),
     ],
     intent: intentOf({ create: `${adapter.id}:${name}` }),
-    destination: destination(adapter, 'create', { name }, target?.scope, account),
+    destination: destination(adapter, 'create', { name }, target?.scope, account, target?.region),
     async run(sctx) {
       try {
         if (target && linker.creationTarget && !sameTarget(target, await linker.creationTarget(sctx))) {
-          throw new Error('the destination organization changed; run `plan` again and re-approve. Nothing was created.');
+          throw new Error('the destination organization, team or region changed; run `plan` again and re-approve. Nothing was created.');
         }
         const p = await linker.create!(sctx, name, target);
         if (target && !sameScope(p.scope, target.scope)) throw new Error('the provider returned an unexpected project destination; inspect the created resource before continuing.');
@@ -234,34 +247,47 @@ function createStep(adapter: Adapter, linker: ProjectLinker, name: string, liste
   });
 }
 
+/** The create the human must disambiguate: several teams, none chosen. Never guessed. */
+function teamHandoff(adapter: Adapter, e: SentryTeamChoiceError): HandoffItem {
+  const listed = e.teams.map((t) => `${t.name ?? t.slug} (${t.slug})`).join(', ');
+  return {
+    id: 'sentry:project',
+    why: `${adapter.title} cannot create the project without a team: ${e.message}`,
+    action: e.teams.length
+      ? `Set \`sentry.team: <slug>\` in golive.yaml to one of ${listed} and run \`golive plan\` again — or create the project in Sentry yourself and set \`projects.monitoring\` to it. golive never picks a team for you.`
+      : `Create a team in Sentry and set \`sentry.team\` in golive.yaml, then run \`golive plan\` again — or create the project in Sentry yourself and set \`projects.monitoring\` to it.`,
+    blocking: true,
+  };
+}
+
 // ── The app-facing env ──────────────────────────────────────────────────────────────────────────
 
-interface TokenIdentity {
-  /** The public token's fingerprint (secret-free: it is what a plan identity may carry). */
+interface DsnIdentity {
+  /** The public DSN's fingerprint (secret-free: it is what a plan identity may carry). */
   fingerprint: string;
-  /** `<project id>|<token fp>` — what a managed name's recorded source compares against. */
+  /** `<project id>|<dsn fp>` — what a managed name's recorded source compares against. */
   identity: string;
 }
 
 /**
- * Read the project's public token now, so its fingerprint can enter the plan (a rotated token then
+ * Read the project's public DSN now, so its fingerprint can enter the plan (a rotated DSN then
  * rewrites a managed name) without the value itself ever reaching a preview, an intent or state. A
- * project this plan creates has no id yet: its identity is `pending`, and the token is read at run
+ * project this plan creates has no id yet: its identity is `pending`, and the DSN is read at run
  * time, after the create step recorded the project in state.
  */
-async function tokenIdentity(ctx: Ctx, provider: AnalyticsProvider, project: ProjectRef): Promise<TokenIdentity> {
-  const cached = ctx.cache.get(`analytics.token:${project.id}`);
-  if (cached) return cached as TokenIdentity;
-  const token = await provider.token(ctx, project.id);
-  const out: TokenIdentity = { fingerprint: fingerprint(token), identity: `${project.id}|${fingerprint(token)}` };
-  ctx.cache.set(`analytics.token:${project.id}`, out);
+async function dsnIdentity(ctx: Ctx, provider: MonitoringProvider, project: ProjectRef): Promise<DsnIdentity> {
+  const cached = ctx.cache.get(`sentry.dsn:${project.id}`);
+  if (cached) return cached as DsnIdentity;
+  const dsn = await provider.dsn(ctx, project.id);
+  const out: DsnIdentity = { fingerprint: fingerprint(dsn), identity: `${project.id}|${fingerprint(dsn)}` };
+  ctx.cache.set(`sentry.dsn:${project.id}`, out);
   return out;
 }
 
 async function envStep(
   ctx: Ctx,
   adapter: Adapter,
-  provider: AnalyticsProvider,
+  provider: MonitoringProvider,
   linker: ProjectLinker,
   planned: Planned,
   hostAdapter: Adapter,
@@ -270,19 +296,18 @@ async function envStep(
   mapped: EnvMapping[],
 ): Promise<Step | null> {
   const project = planned.project!;
-  const host = posthogIngestHost(regionOf(ctx));
-  let approved: TokenIdentity;
+  let approved: DsnIdentity;
   if (planned.created) {
     approved = { fingerprint: PENDING, identity: PENDING };
   } else {
     try {
-      approved = await tokenIdentity(ctx, provider, project);
+      approved = await dsnIdentity(ctx, provider, project);
     } catch (e) {
-      throw new Error(`reading the ${adapter.title} project token for ${target} failed: ${errMsg(e)}`);
+      throw new Error(`reading the ${adapter.title} project DSN for ${target} failed: ${errMsg(e)}`);
     }
   }
   const sourceOf = (key: OutputKey): string =>
-    key === 'posthog.key' ? (planned.created ? `posthog.key|${adapter.id}|${PENDING}|${project.name}` : `posthog.key|${adapter.id}|${approved.identity}`) : `posthog.host|${adapter.id}|${host}`;
+    key === 'sentry.dsn' && planned.created ? `sentry.dsn|${adapter.id}|${PENDING}|${project.name}` : `sentry.dsn|${adapter.id}|${approved.identity}`;
   const byName = new Map(mapped.map((m) => [m.name, m.key] as const));
   const present = await observeNames(ctx, env, target, memo(ctx).pendingProjects.has('hosting'));
   const decision = decideEnv(ctx, target, [...byName.keys()], present, (n) => sourceOf(byName.get(n)!));
@@ -290,56 +315,56 @@ async function envStep(
 
   let written: string[] = [];
   return step({
-    id: `analytics:env:${target}`,
-    title: `Set ${adapter.title} analytics env for ${target} on ${hostAdapter.title}`,
+    id: `sentry:env:${target}`,
+    title: `Set ${adapter.title} monitoring env for ${target} on ${hostAdapter.title}`,
     kind: 'wire',
     risk: { writes: true },
-    dependsOn: deps(ctx, ['analytics:project', 'project:hosting']),
+    dependsOn: deps(ctx, ['sentry:project', 'project:hosting']),
     preview: [
-      ...envPreview(decision, (n) => `${byName.get(n)!} from ${adapter.title} project ${project.name || project.id}${planned.created ? ' (created by this plan)' : ''} (public: the project token ships in the browser by design)`),
-      `writes the ${adapter.title} project's public ingestion token and the ${regionOf(ctx)} ingestion host (${host}); no server secret is written`,
+      ...envPreview(decision, (n) => `sentry.dsn from ${adapter.title} project ${project.name || project.id}${planned.created ? ' (created by this plan)' : ''} (public: the DSN ships in the browser by design)`),
+      `writes the ${adapter.title} project's public DSN (client key); no server secret is written`,
     ],
-    intent: intentOf({ host: await projectIntent(ctx, hostAdapter), project: planned.created ? `${adapter.id}:create:${project.name}` : `${adapter.id}:${project.id}`, token: approved.fingerprint, write: decision.write.map((w) => `${w.name}=${sourceOf(byName.get(w.name)!)})`) }),
+    intent: intentOf({ host: await projectIntent(ctx, hostAdapter), project: planned.created ? `${adapter.id}:create:${project.name}` : `${adapter.id}:${project.id}`, dsn: approved.fingerprint, write: decision.write.map((w) => `${w.name}=${sourceOf(byName.get(w.name)!)})`) }),
     async run(runCtx) {
-      // Re-read the project and its token now: the values approved by fingerprint must still be the
-      // values written, and a project this plan created exists only since its own step ran.
+      // Re-read the project and its DSN now: the value approved by fingerprint must still be the
+      // value written, and a project this plan created exists only since its own step ran.
       const now = planned.created ? await linker.current(runCtx) : project;
       if (!now) throw new Error(`the ${adapter.title} project this plan created could not be read back; no env write was performed. Re-run \`golive plan\`.`);
-      const token = await provider.token(runCtx, now.id);
-      if (!planned.created && fingerprint(token) !== approved.fingerprint) {
-        throw new Error(`the ${adapter.title} project token changed since approval (fp:${approved.fingerprint} → fp:${fingerprint(token)}); no env write was performed. Run \`plan\` again and approve the new token.`);
+      const dsn = await provider.dsn(runCtx, now.id);
+      if (!planned.created && fingerprint(dsn) !== approved.fingerprint) {
+        throw new Error(`the ${adapter.title} project DSN changed since approval (fp:${approved.fingerprint} → fp:${fingerprint(dsn)}); no env write was performed. Run \`plan\` again and approve the new DSN.`);
       }
       const entries = decision.write.map((w) => {
         const key = byName.get(w.name)!;
-        const source = key === 'posthog.key' ? `posthog.key|${adapter.id}|${now.id}|${fingerprint(token)}` : sourceOf(key);
-        return { name: w.name, key, value: key === 'posthog.key' ? token : host, source };
+        const source = key === 'sentry.dsn' ? `sentry.dsn|${adapter.id}|${now.id}|${fingerprint(dsn)}` : sourceOf(key);
+        return { name: w.name, key, value: dsn, source };
       });
       const r = await writeEnv(runCtx, env, target, entries, decision.recheck);
       written = r.written;
       return { changes: r.changes };
     },
-    verifyInline: (vctx) => verifyEnvWritten(vctx, env, target, written, `analytics:env:${target}`, hostAdapter.title),
+    verifyInline: (vctx) => verifyEnvWritten(vctx, env, target, written, `sentry:env:${target}`, hostAdapter.title),
   });
 }
 
 function snippetHandoff(adapter: Adapter, project: ProjectRef): HandoffItem {
   return {
-    id: 'analytics:snippet',
-    why: `the app reads no env name golive fills for ${adapter.title}, so nothing in it reports analytics events yet`,
-    action: `Initialize the ${adapter.title} SDK in the app with the env names golive writes (POSTHOG_KEY and POSTHOG_HOST, or this framework's client-prefixed spelling, e.g. NEXT_PUBLIC_POSTHOG_KEY / NEXT_PUBLIC_POSTHOG_HOST) and send an event; then re-run \`golive plan\` so the env wiring is planned. This handoff ends when the app reads those names — no check can see the app's own code, and \`golive verify --only posthog-ingest\` proves ${adapter.title} ingests events, not that the app sends them. The project is ${project.name || project.id}${project.id ? ` (${project.id})` : ''}.`,
+    id: 'sentry:snippet',
+    why: `the app reads no env name golive fills for ${adapter.title}, so nothing in it reports errors yet`,
+    action: `Initialize the ${adapter.title} SDK in the app with the env name golive writes (SENTRY_DSN, or this framework's client-prefixed spelling, e.g. NEXT_PUBLIC_SENTRY_DSN) and send an error; then re-run \`golive plan\` so the env wiring is planned. This handoff ends when the app reads that name — no check can see the app's own code, and \`golive verify --only sentry-ingest\` proves ${adapter.title} ingests an event, not that the app sends one. The project is ${project.name || project.id}${project.id ? ` (${project.id})` : ''}.`,
     blocking: false,
   };
 }
 
 /**
  * The host env golive cannot write (a guided or unusable host): the names come from the plan, the
- * values from the PostHog dashboard, and the `env-parity` check is what closes this handoff.
+ * values from the Sentry dashboard, and the `env-parity` check is what closes this handoff.
  */
 function envHandoff(ctx: Ctx, adapter: Adapter, mapped: EnvMapping[], target: Target): HandoffItem {
   return {
-    id: `analytics:env:${target}`,
-    why: `${adapter.title}'s project token must reach the app, but golive cannot write this host's ${target} env.`,
-    action: `In the host's dashboard, add these env vars for ${target}: ${mapped.map((m) => m.name).join(', ')}. Copy the value from ${adapter.title} (Project settings → Project API key; the ingestion host is ${posthogIngestHost(regionOf(ctx))}), never through this chat. Both values are public by design — they ship in the browser bundle.`,
+    id: `sentry:env:${target}`,
+    why: `${adapter.title}'s DSN must reach the app, but golive cannot write this host's ${target} env.`,
+    action: `In the host's dashboard, add these env vars for ${target}: ${mapped.map((m) => m.name).join(', ')}. Copy the DSN from ${adapter.title} (${sentryApiHost(regionOf(ctx))} → the project → Project Settings → Client Keys (DSN)), never through this chat. The DSN is public by design — it ships in the browser bundle.`,
     blocking: true,
     verifiedBy: 'env-parity',
   };

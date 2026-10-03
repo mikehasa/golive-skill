@@ -22,8 +22,10 @@ const ALLOWED = new Set([
   'eu.posthog.com',
   'us.i.posthog.com',
   'eu.i.posthog.com',
+  'us.sentry.io',
+  'de.sentry.io',
 ]);
-const ALLOWED_SUFFIXES = ['.supabase.co'];
+const ALLOWED_SUFFIXES = ['.supabase.co', '.ingest.sentry.io', '.ingest.us.sentry.io', '.ingest.de.sentry.io'];
 const dynamicHosts = new Set<string>();
 
 export function allowHost(urlOrHost: string): void {

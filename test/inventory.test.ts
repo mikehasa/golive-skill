@@ -198,3 +198,48 @@ describe('inventory: the PostHog analytics project', () => {
     expect(out.recorded.find((x) => x.kind === 'analytics-project')!.removal).toBeUndefined();
   });
 });
+
+describe('inventory: the Sentry analytics project', () => {
+  const MON_CONFIG: Partial<ShipConfig> = { ...CONFIG, stack: { ...CONFIG.stack, monitoring: 'sentry' } };
+  const MON_STATE = (over: Record<string, string> = {}): ShipState => ({
+    ...STATE,
+    resources: { ...STATE.resources, 'sentry.projectId': '4505123456', 'sentry.projectName': 'shop', 'sentry.createdProjectId': '4505123456', ...over },
+  });
+
+  function mon(state: ShipState = MON_STATE(), configure: (w: FakeWorld) => void = () => undefined) {
+    const w = fakeWorld();
+    w.mon.providerId = 'sentry';
+    w.mon.withMonitoring = true;
+    w.dns.owned = [...OWNED];
+    configure(w);
+    const ctx = testCtx({ cwd: '/work/shop', adapters: w.adapters, config: MON_CONFIG, state });
+    return { w, ctx, inventory: () => buildInventory(ctx) };
+  }
+
+  it('records the project golive created, with the creation marker and a removal handle', async () => {
+    const inv = await mon().inventory();
+    const r = inv.recorded.find((x) => x.kind === 'analytics-project')!;
+    expect(r).toMatchObject({ axis: 'monitoring', provider: 'sentry', providerTitle: 'Sentry', id: '4505123456', name: 'shop', created: true, markers: ['sentry.createdProjectId'], needs: 'the Sentry dashboard', where: 'the Sentry dashboard' });
+    expect(r.removal).toBeDefined();
+    expect(r.removal!.adapter.id).toBe('sentry');
+    // The other recorded resources keep their place: the Sentry entry is appended, never interleaved.
+    expect(inv.recorded.map((x) => x.kind)).toEqual(['database-project', 'sending-domain', 'analytics-project']);
+  });
+
+  it('records it as adopted — with no removal handle — when the marker names another project', async () => {
+    const inv = await mon(MON_STATE({ 'sentry.createdProjectId': '4505000' })).inventory();
+    const r = inv.recorded.find((x) => x.kind === 'analytics-project')!;
+    expect(r.created).toBe(false);
+    expect(r.removal).toBeUndefined();
+  });
+
+  it('offers no removal when the monitoring provider is not the one that recorded it', async () => {
+    const quiet = await mon(undefined, (w) => void (w.mon.providerId = 'fakemonitor')).inventory();
+    const r = quiet.recorded.find((x) => x.kind === 'analytics-project')!;
+    expect(r.created).toBe(true);
+    expect(r.removal).toBeUndefined();
+
+    const out = await mon(undefined, (w) => void (w.mon.authed = false)).inventory();
+    expect(out.recorded.find((x) => x.kind === 'analytics-project')!.removal).toBeUndefined();
+  });
+});

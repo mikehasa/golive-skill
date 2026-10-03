@@ -5,6 +5,7 @@ import { buildPlan, planView } from '../src/core/plan.js';
 import { applyPlan, runCheck } from '../src/core/runner.js';
 import { Secret } from '../src/core/secret.js';
 import { dbConnectionCheck } from '../src/checks/db-connection.js';
+import { ADAPTERS, GUIDED } from '../src/adapters/index.js';
 import { ALL_LINKS } from '../src/links/all.js';
 import { testCtx } from './helpers.js';
 import { fakeWorld, FAKE_STACK, RAW } from './fakes.js';
@@ -159,5 +160,38 @@ describe('PostHog transport boundaries', () => {
     await expect(http({ url: 'https://evil.posthog.com/api/organizations/' })).rejects.toThrow(/not allowed/);
     await expect(http({ url: 'https://us.posthog.com.evil.example/api/organizations/' })).rejects.toThrow(/not allowed/);
     await expect(http({ url: 'https://posthog.com/api/organizations/' })).rejects.toThrow(/not allowed/);
+  });
+});
+
+describe('Sentry non-secret configuration', () => {
+  it('preserves an explicit region and team', () => {
+    expect(parseConfig('version: 1\nsentry:\n  region: eu\n  team: platform').sentry).toEqual({ region: 'eu', team: 'platform' });
+    expect(parseConfig('version: 1\nstack:\n  monitoring: sentry').sentry).toBeUndefined();
+  });
+  it.each(['null', '[]', 'foo', '{region: us-east-1}', '{region: 42}', '{region: "eu"}\n  host: https://evil.example', '{team: "a b/c"}', '{authToken: do-not-print-this}', '{dsn: https://key@o1.ingest.us.sentry.io/1}'])('rejects malformed settings and credentials (%s)', (input) => {
+    expect(() => parseConfig(`version: 1\nsentry: ${input}`)).toThrow();
+    try {
+      parseConfig(`version: 1\nsentry: ${input}`);
+    } catch (e) {
+      expect(String(e)).not.toContain('do-not-print-this');
+      expect(String(e)).toMatch(/sentry/);
+    }
+  });
+});
+
+describe('Sentry provider expansion', () => {
+  it('offers Sentry as an automated monitoring adapter, no longer as a guided entry', () => {
+    expect(ADAPTERS.find((a) => a.id === 'sentry')).toMatchObject({ automated: true, axes: ['monitoring'] });
+    expect(GUIDED.some((g) => g.id === 'sentry')).toBe(false);
+  });
+  it('allows the Sentry region hosts and its DSN ingest hosts, nothing near them', async () => {
+    const http = createHttp((async () => new Response('{}')) as typeof fetch);
+    for (const url of ['https://us.sentry.io/api/0/organizations/', 'https://de.sentry.io/api/0/organizations/', 'https://o4505.ingest.us.sentry.io/api/4505123456/store/', 'https://o4505.ingest.de.sentry.io/api/4505123456/store/', 'https://o4505.ingest.sentry.io/api/4505123456/store/']) {
+      expect((await http({ url })).status).toBe(200);
+    }
+    await expect(http({ url: 'https://evil.sentry.io/api/0/organizations/' })).rejects.toThrow(/not allowed/);
+    await expect(http({ url: 'https://us.sentry.io.evil.example/api/0/organizations/' })).rejects.toThrow(/not allowed/);
+    await expect(http({ url: 'https://sentry.io/api/0/organizations/' })).rejects.toThrow(/not allowed/);
+    await expect(http({ url: 'https://o4505.ingest.evil.example/api/1/store/' })).rejects.toThrow(/not allowed/);
   });
 });

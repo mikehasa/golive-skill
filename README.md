@@ -411,7 +411,9 @@ live-tested milestones**, not a finished category or a completed checklist for y
   rate limits and bot protection. Scoped RLS/advisor and credential-pattern checks exist today.
 - [ ] 🗺️ **Monitoring and alerts:** error tracking, logs, uptime and actionable alerts.
   Provider suggestions are guided today; verified setup is planned. On-demand drift checks exist
-  (`golive status`, below) — continuous monitoring and alerting do not.
+  (`golive status`, below) — continuous monitoring and alerting do not. Sentry is implemented as an
+  automated monitoring provider — adapter, host env wiring and the `sentry-ingest` check,
+  mock-covered with no live run yet.
 - [ ] 🚧 **Product analytics:** event validation and consent/data settings, beyond today's guided
   provider suggestions. PostHog analytics is wired through an approved plan — the app's analytics
   project is adopted or selected (a create is planned when nothing matches), and the `posthog-ingest`

@@ -42,6 +42,11 @@ const RULES: Rule[] = [
   // with the public project token would be exactly the mixup this comment exists to prevent.
   { key: 'posthog.key', re: /^POSTHOG_(PROJECT_(API_)?)?(KEY|TOKEN)$/, secret: false },
   { key: 'posthog.host', re: /^POSTHOG_(API_)?HOST$/, secret: false },
+  // Sentry's DSN ships in the browser bundle by design (it is what the SDK reports events with), so
+  // the rule is not a server secret. SENTRY_AUTH_TOKEN is deliberately NOT matched: that is golive's
+  // own operator credential, and filling an app-side name with a browser-visible DSN would be exactly
+  // the mixup this comment exists to prevent.
+  { key: 'sentry.dsn', re: /^SENTRY_DSN$/, secret: false },
   { key: 'app.url', re: /^(SITE_URL|APP_URL|BASE_URL|PUBLIC_URL|URL|NEXTAUTH_URL|BETTER_AUTH_URL|AUTH_URL)$/, secret: false },
 ];
 

@@ -153,7 +153,7 @@ const AXIS_CHECKS: Record<Axis, string[]> = {
   payments: ['webhook-registered', 'webhook-unsigned', 'stripe-live-ready', 'stripe-live-payment'],
   email: ['email-dns', 'email-verified'],
   dns: ['domain-live'],
-  monitoring: ['posthog-ingest'],
+  monitoring: ['posthog-ingest', 'sentry-ingest'],
 };
 
 /** Where each provider's own cost facts live. golive reads no usage, invoice or quota data. */
@@ -165,6 +165,7 @@ const BILLING: Record<string, string> = {
   stripe: 'your Stripe account settings → Billing, and the published per-transaction fees',
   resend: 'your Resend account → Billing',
   posthog: 'your PostHog organization settings → Billing (usage is priced per ingested event)',
+  sentry: 'your Sentry organization settings → Billing (usage is priced per event)',
   cloudflare: 'your Cloudflare account → Billing',
   godaddy: 'your GoDaddy account → Subscriptions and renewals',
   porkbun: 'your Porkbun account → domain pricing and renewals',
@@ -177,7 +178,9 @@ const RECORDING_STEP = {
   database: ['project:db'],
   domain: ['email:domain'],
   dns: ['domain:dns', 'email:dns'],
-  analytics: ['analytics:project'],
+  // Both monitoring links record the project under their own step id; a recorded project names the
+  // one that ran, so the row's timestamp is read from whichever exists.
+  analytics: ['analytics:project', 'sentry:project'],
 } satisfies Record<string, string[]>;
 
 /** The steps that recorded a recorded-inventory resource, by its kind. */

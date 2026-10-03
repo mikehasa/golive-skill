@@ -461,6 +461,9 @@ aus) · **🗺️ Geplant**
 - [ ] 🗺️ **Monitoring und Alarme:** Fehler-Tracking, Logs, Uptime und umsetzbare Alarme.
   Provider-Vorschläge sind heute geführt; eine verifizierte Einrichtung ist geplant. Drift-Prüfungen
   auf Abruf gibt es (`golive status`, unten) — kontinuierliches Monitoring und Alerting nicht.
+  Sentry ist als automatisierter Monitoring-Anbieter umgesetzt — Adapter, Schreiben der
+  Host-Umgebungsvariablen und der Check `sentry-ingest` —, bisher nur mit Mock-Abdeckung und ohne
+  Live-Lauf.
 - [ ] 🚧 **Produkt-Analytics:** Event-Validierung sowie Consent- und Dateneinstellungen, über die
   heutigen geführten Provider-Vorschläge hinaus. PostHog-Analytics wird über einen freigegebenen Plan
   verdrahtet — das Analytics-Projekt der App wird übernommen oder ausgewählt (wenn nichts passt, wird

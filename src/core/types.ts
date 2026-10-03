@@ -195,6 +195,12 @@ export interface ProjectCreateTarget {
   scope: ProjectScope;
   /** Provider region selection, when creating a resource requires one. */
   region?: string;
+  /**
+   * Team/group inside `scope` a provider needs to create into (Sentry's teams), as the provider's
+   * own slug. A provider that creates without naming one leaves it unset; it is part of what an
+   * approved create is bound to, never re-picked at apply time.
+   */
+  team?: string;
 }
 export interface ProjectDestination {
   axis: Axis;
@@ -364,6 +370,7 @@ export type OutputKey =
   | 'resend.apiKey'
   | 'posthog.key'
   | 'posthog.host'
+  | 'sentry.dsn'
   | 'app.url';
 
 export interface OutputsProvider {
@@ -847,6 +854,14 @@ export interface ShipConfig {
    * project itself is selected by `projects.monitoring`, like every other axis.
    */
   posthog?: { region?: 'us' | 'eu' };
+  /**
+   * Sentry (monitoring) selectors. `region` picks the API host: us (default) or eu (Sentry's
+   * `de.sentry.io`, its documented EU region domain). `team` is the team a project create would use
+   * when the organization has several; without it golive refuses an ambiguous create rather than
+   * picking one. The project and the organization are named by `projects.monitoring` and the
+   * token's own single visible organization, like every other axis.
+   */
+  sentry?: { region?: 'us' | 'eu'; team?: string };
   auth?: {
     redirectPaths?: string[];
     /** Also allow preview-deployment URL patterns on the (production) auth project. Default false. */

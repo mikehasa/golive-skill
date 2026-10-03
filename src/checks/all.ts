@@ -15,6 +15,7 @@ import { authRecoveryCheck } from './auth-recovery.js';
 import { authIsolationCheck } from './auth-isolation.js';
 import { emailDnsCheck, emailVerifiedCheck } from './email.js';
 import { posthogIngestCheck } from './posthog-ingest.js';
+import { sentryIngestCheck } from './sentry-ingest.js';
 import { domainLiveCheck } from './domain.js';
 import { netlifyPublicAccessCheck } from './netlify-public-access.js';
 import { siteHeadersCheck } from './site-headers.js';
@@ -47,6 +48,7 @@ export const ALL_CHECKS: Check[] = [
   emailDnsCheck,
   emailVerifiedCheck,
   posthogIngestCheck,
+  sentryIngestCheck,
   previewDeployCheck,
   previewBundleCheck,
   productionReleaseCheck,

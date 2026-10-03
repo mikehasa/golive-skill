@@ -14,10 +14,10 @@
  * in, another provider is configured, or it has no removal capability) becomes a manual, non-blocking
  * handoff instead of silently missing from the plan — including the zones and the host project the
  * inventory could not even read (`inventory.gaps`). Supabase, Neon and the Resend sending domain
- * have no delete capability at all, so they always become manual handoffs; the PostHog analytics
- * project does have one (`RecordedRemoval`), so it becomes a destroy step that is confirmed by the
- * provider's own read — and one state records without a creation marker is handed back as adopted,
- * with wording that never claims golive made it.
+ * have no delete capability at all, so they always become manual handoffs; the PostHog and Sentry
+ * monitoring projects do have one (`RecordedRemoval`), so they become destroy steps that are
+ * confirmed by the provider's own read — and one state records without a creation marker is handed
+ * back as adopted, with wording that never claims golive made it.
  *
  * Teardown is itself the approved write, so the baseline of a resource it provably removed goes with
  * it: the `dns:<zone>|<TYPE>|<name>` baseline, the webhook endpoint id and the sending key id are
@@ -426,7 +426,8 @@ function gapHandoffs(gaps: InventoryGap[]): HandoffItem[] {
 
 // ── Recorded projects and domains ───────────────────────────────────────────────────────────────
 // A recorded resource golive can prove it created AND can remove right now (the provider exposes a
-// delete plus a read that confirms it — today the PostHog analytics project) becomes a destroy step.
+// delete plus a read that confirms it — today the PostHog and Sentry monitoring projects) becomes a
+// destroy step.
 // Everything else golive created but cannot delete at this provider is handed back by hand, and a
 // resource state records without a creation marker is handed back as adopted, with wording that never
 // claims golive made it — silently dropping it would hide that state still records it.
@@ -483,8 +484,9 @@ function recordedStep(r: InventoryRecorded, removal: RecordedRemoval): Step {
       throw new Error(`could not delete the ${label}: ${redact(reason)}`);
     },
     // A delete is only reported as done once the provider's own read confirms it — here with three
-    // states, because PostHog schedules a deletion instead of applying it at once: `pending` is the
-    // provider saying it accepted and queued the removal, which is confirmation, not a maybe.
+    // states, because PostHog and Sentry schedule a deletion instead of applying it at once:
+    // `pending` is the provider saying it accepted and queued the removal, which is confirmation,
+    // not a maybe.
     async verifyInline(vctx) {
       if (!deleted) return [];
       const checkId = `${id}:removed`;

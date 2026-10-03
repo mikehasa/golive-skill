@@ -63,8 +63,8 @@ function isRegisteredSecret(value) {
   for (const v of registry.keys()) if (value.includes(v)) return true;
   return false;
 }
-function redact(text2) {
-  let out = text2;
+function redact(text3) {
+  let out = text3;
   const values = [...registry.keys()].sort((a, b) => b.length - a.length);
   for (const v of values) {
     if (out.includes(v)) out = out.split(v).join(`[redacted ${registry.get(v)} fp:${fingerprint(v)}]`);
@@ -87,8 +87,8 @@ function containsSecret(v) {
   return false;
 }
 function secretJson(name3, body2) {
-  const text2 = JSON.stringify(revealDeep(body2));
-  return containsSecret(body2) ? new Secret(name3, text2) : text2;
+  const text3 = JSON.stringify(revealDeep(body2));
+  return containsSecret(body2) ? new Secret(name3, text3) : text3;
 }
 function vaultPut(key, s) {
   vault.set(key, s);
@@ -177,19 +177,19 @@ function createHttp(fetchImpl = fetch) {
       const timer = setTimeout(() => ctrl.abort(), req.timeoutMs ?? 3e4);
       try {
         const res = await fetchImpl(url, { method, headers, body: body2, signal: ctrl.signal, redirect: "manual" });
-        const text2 = await res.text();
+        const text3 = await res.text();
         if ((res.status === 429 || res.status >= 500 && idempotent) && attempt < 2) {
           await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
           continue;
         }
         let json2 = void 0;
         try {
-          json2 = text2 ? JSON.parse(text2) : void 0;
+          json2 = text3 ? JSON.parse(text3) : void 0;
         } catch {
         }
         const outHeaders = {};
         res.headers.forEach((v, k) => outHeaders[k] = v);
-        return { status: res.status, headers: outHeaders, json: json2, text: text2 };
+        return { status: res.status, headers: outHeaders, json: json2, text: text3 };
       } catch (e) {
         lastErr = e;
         if (!idempotent) break;
@@ -221,9 +221,11 @@ var init_http = __esm({
       "us.posthog.com",
       "eu.posthog.com",
       "us.i.posthog.com",
-      "eu.i.posthog.com"
+      "eu.i.posthog.com",
+      "us.sentry.io",
+      "de.sentry.io"
     ]);
-    ALLOWED_SUFFIXES = [".supabase.co"];
+    ALLOWED_SUFFIXES = [".supabase.co", ".ingest.sentry.io", ".ingest.us.sentry.io", ".ingest.de.sentry.io"];
     dynamicHosts = /* @__PURE__ */ new Set();
     HttpError = class extends Error {
       constructor(message, status, body2) {
@@ -697,7 +699,7 @@ var require_anchors = __commonJS({
 var require_applyReviver = __commonJS({
   "node_modules/.pnpm/yaml@2.9.1/node_modules/yaml/dist/doc/applyReviver.js"(exports) {
     "use strict";
-    function applyReviver(reviver, obj3, key, val) {
+    function applyReviver(reviver, obj4, key, val) {
       if (val && typeof val === "object") {
         if (Array.isArray(val)) {
           for (let i = 0, len = val.length; i < len; ++i) {
@@ -737,7 +739,7 @@ var require_applyReviver = __commonJS({
           }
         }
       }
-      return reviver.call(obj3, key, val);
+      return reviver.call(obj4, key, val);
     }
     exports.applyReviver = applyReviver;
   }
@@ -1204,14 +1206,14 @@ var require_foldFlowLines = __commonJS({
     var FOLD_FLOW = "flow";
     var FOLD_BLOCK = "block";
     var FOLD_QUOTED = "quoted";
-    function foldFlowLines(text2, indent, mode = "flow", { indentAtStart, lineWidth = 80, minContentWidth = 20, onFold, onOverflow } = {}) {
+    function foldFlowLines(text3, indent, mode = "flow", { indentAtStart, lineWidth = 80, minContentWidth = 20, onFold, onOverflow } = {}) {
       if (!lineWidth || lineWidth < 0)
-        return text2;
+        return text3;
       if (lineWidth < minContentWidth)
         minContentWidth = 0;
       const endStep = Math.max(1 + minContentWidth, 1 + lineWidth - indent.length);
-      if (text2.length <= endStep)
-        return text2;
+      if (text3.length <= endStep)
+        return text3;
       const folds = [];
       const escapedFolds = {};
       let end = lineWidth - indent.length;
@@ -1228,14 +1230,14 @@ var require_foldFlowLines = __commonJS({
       let escStart = -1;
       let escEnd = -1;
       if (mode === FOLD_BLOCK) {
-        i = consumeMoreIndentedLines(text2, i, indent.length);
+        i = consumeMoreIndentedLines(text3, i, indent.length);
         if (i !== -1)
           end = i + endStep;
       }
-      for (let ch; ch = text2[i += 1]; ) {
+      for (let ch; ch = text3[i += 1]; ) {
         if (mode === FOLD_QUOTED && ch === "\\") {
           escStart = i;
-          switch (text2[i + 1]) {
+          switch (text3[i + 1]) {
             case "x":
               i += 3;
               break;
@@ -1252,12 +1254,12 @@ var require_foldFlowLines = __commonJS({
         }
         if (ch === "\n") {
           if (mode === FOLD_BLOCK)
-            i = consumeMoreIndentedLines(text2, i, indent.length);
+            i = consumeMoreIndentedLines(text3, i, indent.length);
           end = i + indent.length + endStep;
           split = void 0;
         } else {
           if (ch === " " && prev && prev !== " " && prev !== "\n" && prev !== "	") {
-            const next = text2[i + 1];
+            const next = text3[i + 1];
             if (next && next !== " " && next !== "\n" && next !== "	")
               split = i;
           }
@@ -1269,12 +1271,12 @@ var require_foldFlowLines = __commonJS({
             } else if (mode === FOLD_QUOTED) {
               while (prev === " " || prev === "	") {
                 prev = ch;
-                ch = text2[i += 1];
+                ch = text3[i += 1];
                 overflow = true;
               }
               const j = i > escEnd + 1 ? i - 2 : escStart - 1;
               if (escapedFolds[j])
-                return text2;
+                return text3;
               folds.push(j);
               escapedFolds[j] = true;
               end = j + endStep;
@@ -1289,39 +1291,39 @@ var require_foldFlowLines = __commonJS({
       if (overflow && onOverflow)
         onOverflow();
       if (folds.length === 0)
-        return text2;
+        return text3;
       if (onFold)
         onFold();
-      let res = text2.slice(0, folds[0]);
+      let res = text3.slice(0, folds[0]);
       for (let i2 = 0; i2 < folds.length; ++i2) {
         const fold = folds[i2];
-        const end2 = folds[i2 + 1] || text2.length;
+        const end2 = folds[i2 + 1] || text3.length;
         if (fold === 0)
           res = `
-${indent}${text2.slice(0, end2)}`;
+${indent}${text3.slice(0, end2)}`;
         else {
           if (mode === FOLD_QUOTED && escapedFolds[fold])
-            res += `${text2[fold]}\\`;
+            res += `${text3[fold]}\\`;
           res += `
-${indent}${text2.slice(fold + 1, end2)}`;
+${indent}${text3.slice(fold + 1, end2)}`;
         }
       }
       return res;
     }
-    function consumeMoreIndentedLines(text2, i, indent) {
+    function consumeMoreIndentedLines(text3, i, indent) {
       let end = i;
       let start = i + 1;
-      let ch = text2[start];
+      let ch = text3[start];
       while (ch === " " || ch === "	") {
         if (i < start + indent) {
-          ch = text2[++i];
+          ch = text3[++i];
         } else {
           do {
-            ch = text2[++i];
+            ch = text3[++i];
           } while (ch && ch !== "\n");
           end = i;
           start = i + 1;
-          ch = text2[start];
+          ch = text3[start];
         }
       }
       return end;
@@ -1673,10 +1675,10 @@ var require_stringify = __commonJS({
           return match.find((t) => t.format === item.format) ?? match[0];
       }
       let tagObj = void 0;
-      let obj3;
+      let obj4;
       if (identity.isScalar(item)) {
-        obj3 = item.value;
-        let match = tags2.filter((t) => t.identify?.(obj3));
+        obj4 = item.value;
+        let match = tags2.filter((t) => t.identify?.(obj4));
         if (match.length > 1) {
           const testMatch = match.filter((t) => t.test);
           if (testMatch.length > 0)
@@ -1684,11 +1686,11 @@ var require_stringify = __commonJS({
         }
         tagObj = match.find((t) => t.format === item.format) ?? match.find((t) => !t.format);
       } else {
-        obj3 = item;
-        tagObj = tags2.find((t) => t.nodeClass && obj3 instanceof t.nodeClass);
+        obj4 = item;
+        tagObj = tags2.find((t) => t.nodeClass && obj4 instanceof t.nodeClass);
       }
       if (!tagObj) {
-        const name3 = obj3?.constructor?.name ?? (obj3 === null ? "null" : typeof obj3);
+        const name3 = obj4?.constructor?.name ?? (obj4 === null ? "null" : typeof obj4);
         throw new Error(`Tag not resolved for ${name3} value`);
       }
       return tagObj;
@@ -2244,23 +2246,23 @@ var require_YAMLMap = __commonJS({
        * A generic collection parsing method that can be extended
        * to other node classes that inherit from YAMLMap
        */
-      static from(schema, obj3, ctx) {
+      static from(schema, obj4, ctx) {
         const { keepUndefined, replacer } = ctx;
         const map = new this(schema);
         const add = (key, value) => {
           if (typeof replacer === "function")
-            value = replacer.call(obj3, key, value);
+            value = replacer.call(obj4, key, value);
           else if (Array.isArray(replacer) && !replacer.includes(key))
             return;
           if (value !== void 0 || keepUndefined)
             map.items.push(Pair.createPair(key, value, ctx));
         };
-        if (obj3 instanceof Map) {
-          for (const [key, value] of obj3)
+        if (obj4 instanceof Map) {
+          for (const [key, value] of obj4)
             add(key, value);
-        } else if (obj3 && typeof obj3 === "object") {
-          for (const key of Object.keys(obj3))
-            add(key, obj3[key]);
+        } else if (obj4 && typeof obj4 === "object") {
+          for (const key of Object.keys(obj4))
+            add(key, obj4[key]);
         }
         if (typeof schema.sortMapEntries === "function") {
           map.items.sort(schema.sortMapEntries);
@@ -2370,7 +2372,7 @@ var require_map = __commonJS({
           onError("Expected a mapping for this tag");
         return map2;
       },
-      createNode: (schema, obj3, ctx) => YAMLMap.YAMLMap.from(schema, obj3, ctx)
+      createNode: (schema, obj4, ctx) => YAMLMap.YAMLMap.from(schema, obj4, ctx)
     };
     exports.map = map;
   }
@@ -2466,15 +2468,15 @@ var require_YAMLSeq = __commonJS({
           onComment
         });
       }
-      static from(schema, obj3, ctx) {
+      static from(schema, obj4, ctx) {
         const { replacer } = ctx;
         const seq = new this(schema);
-        if (obj3 && Symbol.iterator in Object(obj3)) {
+        if (obj4 && Symbol.iterator in Object(obj4)) {
           let i = 0;
-          for (let it of obj3) {
+          for (let it of obj4) {
             if (typeof replacer === "function") {
-              const key = obj3 instanceof Set ? it : String(i++);
-              it = replacer.call(obj3, key, it);
+              const key = obj4 instanceof Set ? it : String(i++);
+              it = replacer.call(obj4, key, it);
             }
             seq.items.push(createNode.createNode(it, void 0, ctx));
           }
@@ -2508,7 +2510,7 @@ var require_seq = __commonJS({
           onError("Expected a sequence for this tag");
         return seq2;
       },
-      createNode: (schema, obj3, ctx) => YAMLSeq.YAMLSeq.from(schema, obj3, ctx)
+      createNode: (schema, obj4, ctx) => YAMLSeq.YAMLSeq.from(schema, obj4, ctx)
     };
     exports.seq = seq;
   }
@@ -7587,8 +7589,8 @@ function loadConfig(cwd) {
   if (!existsSync(p)) return null;
   return parseConfig(readFileSync4(p, "utf8"));
 }
-function parseConfig(text2) {
-  const raw2 = import_yaml.default.parse(text2);
+function parseConfig(text3) {
+  const raw2 = import_yaml.default.parse(text3);
   if (!raw2 || typeof raw2 !== "object") throw new ConfigError(`${CONFIG_FILE} is empty or not a mapping`);
   if (raw2.version !== 1) throw new ConfigError(`${CONFIG_FILE}: version must be 1`);
   const stack = {};
@@ -7676,15 +7678,34 @@ function parseConfig(text2) {
     }
     cfg2.posthog = raw2.posthog;
   }
-  const auth9 = raw2.auth;
-  if (auth9 !== void 0) {
-    if (!auth9 || typeof auth9 !== "object" || Array.isArray(auth9)) throw new ConfigError(`${CONFIG_FILE}: auth must be a mapping of non-secret settings`);
-    for (const [key, value] of Object.entries(auth9)) {
+  if (raw2.sentry !== void 0) {
+    if (!raw2.sentry || typeof raw2.sentry !== "object" || Array.isArray(raw2.sentry)) {
+      throw new ConfigError(`${CONFIG_FILE}: sentry must be a mapping of non-secret selectors`);
+    }
+    for (const [key, value] of Object.entries(raw2.sentry)) {
+      if (key === "region") {
+        if (value !== "us" && value !== "eu") throw new ConfigError(`${CONFIG_FILE}: sentry.${key} must be "us" (default) or "eu"`);
+        continue;
+      }
+      if (key === "team") {
+        if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$/.test(value)) {
+          throw new ConfigError(`${CONFIG_FILE}: sentry.team must be a team slug or name (letters, digits, space, dash, dot, underscore), never a credential`);
+        }
+        continue;
+      }
+      throw new ConfigError(`${CONFIG_FILE}: unknown sentry setting; expected region ("us" or "eu") or team \u2014 no credentials`);
+    }
+    cfg2.sentry = raw2.sentry;
+  }
+  const auth10 = raw2.auth;
+  if (auth10 !== void 0) {
+    if (!auth10 || typeof auth10 !== "object" || Array.isArray(auth10)) throw new ConfigError(`${CONFIG_FILE}: auth must be a mapping of non-secret settings`);
+    for (const [key, value] of Object.entries(auth10)) {
       if (!Object.hasOwn(AUTH_SETTINGS, key)) throw new ConfigError(`${CONFIG_FILE}: unknown auth setting; expected ${Object.keys(AUTH_SETTINGS).join(", ")} (no credentials)`);
       const problem = AUTH_SETTINGS[key](value);
       if (problem) throw new ConfigError(`${CONFIG_FILE}: auth.${key} ${problem}`);
     }
-    cfg2.auth = auth9;
+    cfg2.auth = auth10;
   }
   const release2 = raw2.release;
   if (release2 !== void 0) {
@@ -7781,8 +7802,8 @@ function setupCredentials(path = credentialsPath()) {
     if (!opened.isFile() || opened.nlink !== 1) throw new Error("Credentials setup requires a regular file with no hard links; nothing was written.");
     if (process.platform !== "win32") fchmodSync(fd, 384);
     const after = fstatSync4(fd);
-    const current4 = lstatSync4(target);
-    if (current4.isSymbolicLink() || current4.dev !== after.dev || current4.ino !== after.ino) throw new Error("The credentials path changed during setup; retry after checking the path.");
+    const current5 = lstatSync4(target);
+    if (current5.isSymbolicLink() || current5.dev !== after.dev || current5.ino !== after.ino) throw new Error("The credentials path changed during setup; retry after checking the path.");
     return { path: target, exists: true, created, private: process.platform === "win32" ? null : (after.mode & 511) === 384 };
   } finally {
     closeSync4(fd);
@@ -7806,9 +7827,9 @@ function ensureDirectory(path) {
   const parent = dirname5(path);
   if (parent !== path) ensureDirectory(parent);
 }
-function parseCredentials(text2) {
+function parseCredentials(text3) {
   const out = /* @__PURE__ */ new Map();
-  for (const raw2 of text2.split(/\r?\n/)) {
+  for (const raw2 of text3.split(/\r?\n/)) {
     const line = raw2.trim();
     if (!line || line.startsWith("#")) continue;
     const m = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
@@ -7850,8 +7871,8 @@ function removeCredential(name3, path = credentialsPath()) {
   }
   if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1) throw new Error(UNSAFE_TARGET);
   ensureDirectory(dirname5(target));
-  const { stats, text: text2 } = readStored(target, before);
-  const lines = text2.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+  const { stats, text: text3 } = readStored(target, before);
+  const lines = text3.match(/[^\n]*\n|[^\n]+$/g) ?? [];
   const kept = lines.filter((line) => assignedName(line) !== name3);
   if (kept.length === lines.length) {
     cache = void 0;
@@ -7899,8 +7920,8 @@ function replaceAtomically(target, opened, content3) {
     if (!info.isFile() || info.nlink !== 1) throw new Error(UNSAFE_TARGET);
     writeFileSync5(temp, content3, { encoding: "utf8" });
     fsyncSync(temp);
-    const current4 = lstatSync4(target);
-    if (current4.isSymbolicLink() || !current4.isFile() || current4.dev !== opened.dev || current4.ino !== opened.ino || current4.size !== opened.size || current4.mtimeMs !== opened.mtimeMs) throw new Error(CHANGED_TARGET);
+    const current5 = lstatSync4(target);
+    if (current5.isSymbolicLink() || !current5.isFile() || current5.dev !== opened.dev || current5.ino !== opened.ino || current5.size !== opened.size || current5.mtimeMs !== opened.mtimeMs) throw new Error(CHANGED_TARGET);
     renameSync4(tempPath, target);
     committed = true;
   } catch (error) {
@@ -7916,8 +7937,8 @@ function replaceAtomically(target, opened, content3) {
 }
 function removeStaged(path, info) {
   try {
-    const current4 = lstatSync4(path);
-    if (!current4.isFile() || current4.dev !== info.dev || current4.ino !== info.ino) return;
+    const current5 = lstatSync4(path);
+    if (!current5.isFile() || current5.dev !== info.dev || current5.ino !== info.ino) return;
     unlinkSync2(path);
   } catch {
   }
@@ -8000,8 +8021,8 @@ function storedFile(path, secret) {
     const valid = (s) => s.isFile() && s.nlink === 1 && s.size <= 4096 && (!process.getuid || s.uid === process.getuid()) && (s.mode & (secret ? 63 : 18)) === 0;
     if (before.isSymbolicLink() || !valid(before)) throw failure("Supabase CLI storage is not an owner-private regular file.");
     fd = openSync5(path, constants5.O_RDONLY | constants5.O_NOFOLLOW | constants5.O_NONBLOCK);
-    const current4 = fstatSync5(fd);
-    if (!valid(current4) || current4.ino !== before.ino || current4.dev !== before.dev) throw failure("Supabase CLI storage changed while being read.");
+    const current5 = fstatSync5(fd);
+    if (!valid(current5) || current5.ino !== before.ino || current5.dev !== before.dev) throw failure("Supabase CLI storage changed while being read.");
     return readFileSync7(fd, "utf8");
   } catch (e) {
     if (e?.code === "ENOENT") return void 0;
@@ -8257,8 +8278,8 @@ function codeOf(json2) {
 }
 function detailOf(json2) {
   const o = asObject(json2);
-  const text2 = [str(o.error_code), str(o.msg), str(o.message), str(o.error_description), str(o.error)].filter(Boolean).join(" ");
-  return redact(text2).slice(0, 200);
+  const text3 = [str(o.error_code), str(o.msg), str(o.message), str(o.error_description), str(o.error)].filter(Boolean).join(" ");
+  return redact(text3).slice(0, 200);
 }
 function view(status, u) {
   const id2 = str(u.id);
@@ -8267,12 +8288,12 @@ function view(status, u) {
 }
 function publicHeaders(key, token2) {
   const value = token2 ?? key;
-  const bearer3 = value instanceof Secret ? new Secret(value.name, `Bearer ${value.reveal()}`) : `Bearer ${value}`;
-  return { apikey: key, Authorization: bearer3, Accept: "application/json" };
+  const bearer4 = value instanceof Secret ? new Secret(value.name, `Bearer ${value.reveal()}`) : `Bearer ${value}`;
+  return { apikey: key, Authorization: bearer4, Accept: "application/json" };
 }
 function adminHeaders(key) {
-  const bearer3 = key instanceof Secret ? new Secret(key.name, `Bearer ${key.reveal()}`) : `Bearer ${key}`;
-  return { apikey: key, Authorization: bearer3, Accept: "application/json" };
+  const bearer4 = key instanceof Secret ? new Secret(key.name, `Bearer ${key.reveal()}`) : `Bearer ${key}`;
+  return { apikey: key, Authorization: bearer4, Accept: "application/json" };
 }
 function requirePublic(keys3) {
   if (!keys3.publishable) {
@@ -8625,8 +8646,8 @@ async function cliOrgs(ctx) {
       try {
         const raw2 = JSON.parse(r.stdout.trim() || "[]");
         for (const o of Array.isArray(raw2) ? raw2 : []) {
-          const slug2 = typeof o.slug === "string" ? o.slug : typeof o.id === "string" ? o.id : void 0;
-          if (slug2) out.push(slug2);
+          const slug3 = typeof o.slug === "string" ? o.slug : typeof o.id === "string" ? o.id : void 0;
+          if (slug3) out.push(slug3);
         }
       } catch {
       }
@@ -8774,9 +8795,9 @@ async function orgSlugs(ctx, tok) {
 }
 async function freeOrgs(ctx, tok, slugs) {
   const free = [];
-  for (const slug2 of slugs) {
-    const o = await api(ctx, tok, "GET", `/organizations/${encodeURIComponent(slug2)}`, `Reading Supabase organization ${slug2}`);
-    if (o?.plan === "free") free.push(slug2);
+  for (const slug3 of slugs) {
+    const o = await api(ctx, tok, "GET", `/organizations/${encodeURIComponent(slug3)}`, `Reading Supabase organization ${slug3}`);
+    if (o?.plan === "free") free.push(slug3);
   }
   return free;
 }
@@ -8921,12 +8942,12 @@ function pooledUrl(entries, password, opts = {}) {
   const primary = entries.filter((e2) => e2.database_type === "PRIMARY");
   const e = primary.find((x) => x.db_host?.includes("pooler.supabase.com")) ?? primary[0];
   if (!e) return void 0;
-  const enc3 = encodeURIComponent(password);
+  const enc4 = encodeURIComponent(password);
   let url;
   if (typeof e.connection_string === "string" && e.connection_string.includes(":[YOUR-PASSWORD]@")) {
-    url = e.connection_string.replace(":[YOUR-PASSWORD]@", `:${enc3}@`);
+    url = e.connection_string.replace(":[YOUR-PASSWORD]@", `:${enc4}@`);
   } else if (e.db_user && e.db_host && e.db_name) {
-    url = `postgresql://${e.db_user}:${enc3}@${e.db_host}:6543/${e.db_name}`;
+    url = `postgresql://${e.db_user}:${enc4}@${e.db_host}:6543/${e.db_name}`;
   }
   if (!url) return void 0;
   if (e.db_host?.includes("pooler.supabase.com")) url = url.replace(/:5432\//, ":6543/");
@@ -8936,12 +8957,12 @@ function pooledUrl(entries, password, opts = {}) {
 function sessionUrl(entries, password) {
   const e = entries.filter((x) => x.database_type === "PRIMARY").find((x) => x.db_host?.includes("pooler.supabase.com"));
   if (!e) return void 0;
-  const enc3 = encodeURIComponent(password);
+  const enc4 = encodeURIComponent(password);
   let url;
   if (typeof e.connection_string === "string" && e.connection_string.includes(":[YOUR-PASSWORD]@")) {
-    url = e.connection_string.replace(":[YOUR-PASSWORD]@", `:${enc3}@`);
+    url = e.connection_string.replace(":[YOUR-PASSWORD]@", `:${enc4}@`);
   } else if (e.db_user && e.db_host && e.db_name) {
-    url = `postgresql://${e.db_user}:${enc3}@${e.db_host}:5432/${e.db_name}`;
+    url = `postgresql://${e.db_user}:${enc4}@${e.db_host}:5432/${e.db_name}`;
   }
   if (!url) return void 0;
   url = url.replace(/:6543\//, ":5432/");
@@ -9077,8 +9098,8 @@ function toTableInfo(row) {
   };
 }
 function rowsOf(raw2) {
-  const rows2 = Array.isArray(raw2) ? raw2 : raw2 && typeof raw2 === "object" && Array.isArray(raw2.rows) ? raw2.rows : [];
-  return rows2.filter((r) => !!r && typeof r === "object");
+  const rows3 = Array.isArray(raw2) ? raw2 : raw2 && typeof raw2 === "object" && Array.isArray(raw2.rows) ? raw2.rows : [];
+  return rows3.filter((r) => !!r && typeof r === "object");
 }
 async function tables(ctx) {
   const ref3 = await requireRef(ctx);
@@ -9142,16 +9163,16 @@ function smtpOf(reported) {
     ...senderName ? { senderName } : {}
   };
 }
-function fieldValue(obj3, name3) {
+function fieldValue(obj4, name3) {
   const [head, tail] = name3.split(".");
-  if (!obj3 || typeof obj3 !== "object") return void 0;
-  const value = obj3[head];
+  if (!obj4 || typeof obj4 !== "object") return void 0;
+  const value = obj4[head];
   if (!tail) return value;
   return value && typeof value === "object" ? value[tail] : void 0;
 }
-function setField(obj3, name3, value) {
+function setField(obj4, name3, value) {
   const [head, tail] = name3.split(".");
-  const rec = obj3;
+  const rec = obj4;
   if (!tail) {
     rec[head] = value;
     return;
@@ -9212,18 +9233,18 @@ async function supabaseRestProbe(ctx, ref3, table, schema, publishableKey2) {
   if (key.startsWith("eyJ")) headers.Authorization = typeof publishableKey2 === "string" ? `Bearer ${key}` : new Secret(publishableKey2.name, `Bearer ${key}`);
   if (schema && schema !== "public") headers["Accept-Profile"] = schema;
   const res = await ctx.http({ url: `https://${ref3}.supabase.co/rest/v1/${encodeURIComponent(table)}?select=*&limit=1`, headers });
-  const rows2 = res.status === 200 && Array.isArray(res.json) ? res.json.length : 0;
+  const rows3 = res.status === 200 && Array.isArray(res.json) ? res.json.length : 0;
   const code = res.json && typeof res.json === "object" && !Array.isArray(res.json) ? res.json.code : void 0;
-  return { status: res.status, rows: rows2, ...typeof code === "string" ? { code } : {} };
+  return { status: res.status, rows: rows3, ...typeof code === "string" ? { code } : {} };
 }
 async function supabaseAuthedProbe(ctx, ref3, table, schema, publishableKey2, accessToken) {
   assertRef(ref3);
   const headers = { apikey: publishableKey2, Authorization: new Secret(accessToken.name, `Bearer ${accessToken.reveal()}`), Accept: "application/json" };
   if (schema && schema !== "public") headers["Accept-Profile"] = schema;
   const res = await ctx.http({ url: `https://${ref3}.supabase.co/rest/v1/${encodeURIComponent(table)}?select=*&limit=1`, headers });
-  const rows2 = res.status === 200 && Array.isArray(res.json) ? res.json.length : 0;
+  const rows3 = res.status === 200 && Array.isArray(res.json) ? res.json.length : 0;
   const code = res.json && typeof res.json === "object" && !Array.isArray(res.json) ? res.json.code : void 0;
-  return { status: res.status, rows: rows2, ...typeof code === "string" ? { code } : {} };
+  return { status: res.status, rows: rows3, ...typeof code === "string" ? { code } : {} };
 }
 function detect(d) {
   return !!d.providers.db?.includes("supabase") || !!d.providers.auth?.includes("supabase") || Object.keys(d.configs).some((k) => k.startsWith("supabase/")) || d.envRefs.some((e) => e.name.includes("SUPABASE"));
@@ -9749,14 +9770,14 @@ var init_stripe = __esm({
       identify: (ctx, mode) => paymentIdentity(pinnedCredentials(ctx, mode), mode),
       async bind(ctx, approved, options) {
         const bound = pinnedCredentials(ctx, approved.mode);
-        const current4 = await paymentIdentity(bound, approved.mode);
-        if (current4.accountId !== approved.accountId || current4.operatorFingerprint !== approved.operatorFingerprint) {
+        const current5 = await paymentIdentity(bound, approved.mode);
+        if (current5.accountId !== approved.accountId || current5.operatorFingerprint !== approved.operatorFingerprint) {
           throw new Error(`Stripe ${approved.mode}-mode account or operator key changed since approval; nothing was written. Run plan again and approve the exact account.`);
         }
         if (options?.appKey) {
           const app = lookupAppKey(bound, approved.mode).key;
           if (!app) throw new Error(`The approved Stripe ${approved.mode}-mode app key is unavailable; no env write was performed. Run plan again.`);
-          if (operatorFingerprint(app) !== current4.operatorFingerprint) {
+          if (operatorFingerprint(app) !== current5.operatorFingerprint) {
             const appContext = { ...bound, envToken: (name3) => name3 === MODE_KEY_ENV[approved.mode] ? app : bound.envToken(name3) };
             const appIdentity = await paymentIdentity(appContext, approved.mode);
             if (appIdentity.accountId !== approved.accountId) throw new Error(`The Stripe ${approved.mode}-mode app key belongs to another account; no env write was performed. Use an app key from the approved account and run plan again.`);
@@ -9780,7 +9801,7 @@ var init_stripe = __esm({
 
 // src/cli.ts
 import { writeFileSync as writeFileSync9, mkdirSync as mkdirSync7 } from "node:fs";
-import { join as join22, resolve as resolve10 } from "node:path";
+import { join as join22, resolve as resolve11 } from "node:path";
 import { dirname as dirname9, basename as basename10 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
@@ -10016,16 +10037,16 @@ function compareVersions(a, b) {
   }
   return 0;
 }
-function safeParents(path, create6 = false) {
+function safeParents(path, create7 = false) {
   if (!isAbsolute(path)) throw new Error("Cache path must be absolute.");
   const parent = dirname2(path);
   if (parent === path) return;
-  safeParents(parent, create6);
+  safeParents(parent, create7);
   let s;
   try {
     s = lstatSync2(path);
   } catch (e) {
-    if (!create6 || e.code !== "ENOENT") throw e;
+    if (!create7 || e.code !== "ENOENT") throw e;
     mkdirSync(path, { mode: 448 });
     s = lstatSync2(path);
   }
@@ -10104,12 +10125,12 @@ async function download(fetcher, timeoutMs) {
     controller.abort();
   }
 }
-async function checkForUpdate(current4, options = {}) {
+async function checkForUpdate(current5, options = {}) {
   const owner = options.ownership;
   const base2 = {
     ok: true,
     status: "unavailable",
-    current: current4,
+    current: current5,
     cached: false,
     automaticCheck: !options.disabled,
     automaticInstall: owner?.manager === "owned" && owner.autoUpdate === true && !owner.pin,
@@ -10129,7 +10150,7 @@ async function checkForUpdate(current4, options = {}) {
     if (!cached && cachePath) writeCache(cachePath, { url: UPDATE_METADATA_URL, checkedAt, manifest });
     return {
       ...base2,
-      status: owner?.pin ? "pinned" : compareVersions(latest.version, current4.version) > 0 ? "available" : "current",
+      status: owner?.pin ? "pinned" : compareVersions(latest.version, current5.version) > 0 ? "available" : "current",
       latest,
       checkedAt,
       cached: !!cached,
@@ -10167,16 +10188,16 @@ function stat(path) {
 }
 function safePath(path, allowMissing = false) {
   const absolute = resolve2(path);
-  let current4 = parse(absolute).root;
-  for (const part of relative(current4, absolute).split(sep).filter(Boolean)) {
-    current4 = join3(current4, part);
-    const info = stat(current4);
+  let current5 = parse(absolute).root;
+  for (const part of relative(current5, absolute).split(sep).filter(Boolean)) {
+    current5 = join3(current5, part);
+    const info = stat(current5);
     if (!info) {
       if (allowMissing) continue;
       fail("Installation path is missing.");
     }
     if (info.isSymbolicLink()) fail("Refusing a symlink in an installation or source path.");
-    if (current4 !== absolute && !info.isDirectory()) fail("Installation parent is not a directory.");
+    if (current5 !== absolute && !info.isDirectory()) fail("Installation parent is not a directory.");
   }
 }
 function readSafe(path, maximum = MAX_FILE) {
@@ -10255,24 +10276,24 @@ function verifyBundle(source) {
   if (canonical(found.sort()) !== canonical([...Object.keys(manifest.files), "release.json"].sort())) fail("Bundle file set is incomplete or mixed.");
   return manifest;
 }
-function layout(destination3) {
-  return { store: join3(dirname3(destination3), `.${PRODUCT}-owned`), destination: resolve2(destination3) };
+function layout(destination4) {
+  return { store: join3(dirname3(destination4), `.${PRODUCT}-owned`), destination: resolve2(destination4) };
 }
-function active(destination3) {
-  const { store } = layout(destination3);
-  safePath(dirname3(destination3), true);
+function active(destination4) {
+  const { store } = layout(destination4);
+  safePath(dirname3(destination4), true);
   safePath(store, true);
-  const info = stat(destination3);
+  const info = stat(destination4);
   if (!info) return null;
   if (!info.isSymbolicLink()) return { manager: "external" };
-  const link = readlinkSync(destination3);
-  const target = resolve2(dirname3(destination3), link);
+  const link = readlinkSync(destination4);
+  const target = resolve2(dirname3(destination4), link);
   const rel = relative(store, target).split(sep).join("/");
   if (!/^versions\/[a-f0-9-]{36}\/bundle$/.test(rel)) return { manager: "external" };
   safePath(target);
   const container = dirname3(target);
   const receipt = json(join3(container, "receipt.json"));
-  if (receipt.schema !== 1 || receipt.manager !== "owned" || receipt.channel !== "own-installer" || receipt.location !== resolve2(destination3) || receipt.source !== REPOSITORY || typeof receipt.autoUpdate !== "boolean" || !(receipt.pin === null || isRef(receipt.pin)) || !(receipt.previous === null || /^[a-f0-9-]{36}$/.test(receipt.previous))) fail("Owned installation metadata is inconsistent.");
+  if (receipt.schema !== 1 || receipt.manager !== "owned" || receipt.channel !== "own-installer" || receipt.location !== resolve2(destination4) || receipt.source !== REPOSITORY || typeof receipt.autoUpdate !== "boolean" || !(receipt.pin === null || isRef(receipt.pin)) || !(receipt.previous === null || /^[a-f0-9-]{36}$/.test(receipt.previous))) fail("Owned installation metadata is inconsistent.");
   const manifest = verifyBundle(target);
   if (receipt.version !== manifest.version || receipt.digest !== manifest.bundleDigest || receipt.ref !== manifest.source.ref) fail("Installed release and ownership metadata disagree.");
   return { manager: "owned", target, container, id: rel.split("/")[1], receipt, manifest };
@@ -10283,22 +10304,22 @@ function ownedLocationForBundle(bundle) {
   if (!stat(path)) return null;
   const receipt = json(path);
   if (typeof receipt.location !== "string" || !isAbsolute2(receipt.location)) fail("Invalid owned installation location.");
-  const current4 = active(receipt.location);
-  if (current4?.manager !== "owned" || current4.target !== resolve2(bundle)) fail("This is not the active owned release; use its current skill path.");
+  const current5 = active(receipt.location);
+  if (current5?.manager !== "owned" || current5.target !== resolve2(bundle)) fail("This is not the active owned release; use its current skill path.");
   return receipt.location;
 }
 function statusForBundle(bundleRoot) {
   const location = ownedLocationForBundle(bundleRoot);
   return location ? installationStatus(location) : { manager: "external", location: resolve2(bundleRoot), updateCommand: managerAdvice(bundleRoot), autoUpdate: false, pin: null };
 }
-function managerAdvice(destination3, global = false) {
-  const normalized = destination3.split(sep).join("/");
+function managerAdvice(destination4, global = false) {
+  const normalized = destination4.split(sep).join("/");
   if (/\/(?:plugins|\.codex\/plugins)\//.test(normalized)) return "Use the plugin manager to update this installation.";
   return `This copy is externally managed. For Skills CLI use: npx skills update ${PRODUCT} ${global ? "-g" : "-p"}. For a plugin use its manager; for a manual copy replace the complete verified bundle yourself.`;
 }
-function installationStatus(destination3, { global = false, candidates: candidates4 = [] } = {}) {
-  const value = active(destination3);
-  return { installed: Boolean(value), manager: value?.manager ?? null, location: resolve2(destination3), ...value?.manager === "owned" ? { version: value.manifest.version, ref: value.receipt.ref, pin: value.receipt.pin, source: value.receipt.source, autoUpdate: value.receipt.autoUpdate, previous: value.receipt.previous !== null } : { updateCommand: managerAdvice(destination3, global) }, duplicates: [...new Set(candidates4.map((path) => resolve2(path)))].filter((path) => path !== resolve2(destination3) && stat(path)).map((location) => ({ location, action: "left unchanged" })) };
+function installationStatus(destination4, { global = false, candidates: candidates5 = [] } = {}) {
+  const value = active(destination4);
+  return { installed: Boolean(value), manager: value?.manager ?? null, location: resolve2(destination4), ...value?.manager === "owned" ? { version: value.manifest.version, ref: value.receipt.ref, pin: value.receipt.pin, source: value.receipt.source, autoUpdate: value.receipt.autoUpdate, previous: value.receipt.previous !== null } : { updateCommand: managerAdvice(destination4, global) }, duplicates: [...new Set(candidates5.map((path) => resolve2(path)))].filter((path) => path !== resolve2(destination4) && stat(path)).map((location) => ({ location, action: "left unchanged" })) };
 }
 
 // src/core/exec.ts
@@ -10315,7 +10336,7 @@ var exec = async (cmd, args, opts = {}) => {
   for (const a of [cmd, ...args]) {
     if (isRegisteredSecret(a)) throw new ExecError(`refusing to pass a secret in argv to ${cmd}; use stdin`);
   }
-  return new Promise((resolve11, reject) => {
+  return new Promise((resolve12, reject) => {
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
       env: { ...process.env, ...opts.env },
@@ -10338,7 +10359,7 @@ var exec = async (cmd, args, opts = {}) => {
     });
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
-      resolve11({ code: code ?? 1, stdout, stderr });
+      resolve12({ code: code ?? 1, stdout, stderr });
     });
     const input = opts.stdin instanceof Secret ? opts.stdin.reveal() : opts.stdin;
     if (input !== void 0) child.stdin.write(input);
@@ -10352,8 +10373,8 @@ init_http();
 // src/core/output.ts
 init_secret();
 function emit(result2, opts) {
-  const text2 = opts.json ? JSON.stringify(result2, null, 2) : pretty(result2);
-  process.stdout.write(redact(text2) + "\n");
+  const text3 = opts.json ? JSON.stringify(result2, null, 2) : pretty(result2);
+  process.stdout.write(redact(text3) + "\n");
 }
 var logger = {
   info: (m) => process.stderr.write(redact(`\xB7 ${m}`) + "\n"),
@@ -10449,6 +10470,11 @@ var RULES = [
   // with the public project token would be exactly the mixup this comment exists to prevent.
   { key: "posthog.key", re: /^POSTHOG_(PROJECT_(API_)?)?(KEY|TOKEN)$/, secret: false },
   { key: "posthog.host", re: /^POSTHOG_(API_)?HOST$/, secret: false },
+  // Sentry's DSN ships in the browser bundle by design (it is what the SDK reports events with), so
+  // the rule is not a server secret. SENTRY_AUTH_TOKEN is deliberately NOT matched: that is golive's
+  // own operator credential, and filling an app-side name with a browser-visible DSN would be exactly
+  // the mixup this comment exists to prevent.
+  { key: "sentry.dsn", re: /^SENTRY_DSN$/, secret: false },
   { key: "app.url", re: /^(SITE_URL|APP_URL|BASE_URL|PUBLIC_URL|URL|NEXTAUTH_URL|BETTER_AUTH_URL|AUTH_URL)$/, secret: false }
 ];
 var IGNORE = /^(NODE_ENV|VERCEL(_.*)?|CI|PORT|HOST|TZ|npm_.*|NEXT_RUNTIME|NEXT_PHASE|MODE|DEV|PROD|SSR|BASE_URL_PATH|CF_PAGES.*)$/;
@@ -11354,7 +11380,7 @@ async function availableKeys(ctx, outputs4, target, requestedKeys) {
     return null;
   }
 }
-var OUTPUT_KEYS = ["supabase.url", "supabase.publishableKey", "supabase.secretKey", "db.url", "db.directUrl", "stripe.secretKey", "stripe.publishableKey", "stripe.webhookSecret", "resend.apiKey", "posthog.key", "posthog.host", "app.url"];
+var OUTPUT_KEYS = ["supabase.url", "supabase.publishableKey", "supabase.secretKey", "db.url", "db.directUrl", "stripe.secretKey", "stripe.publishableKey", "stripe.webhookSecret", "resend.apiKey", "posthog.key", "posthog.host", "sentry.dsn", "app.url"];
 function exposure(ctx) {
   const seen2 = /* @__PURE__ */ new Set();
   const findings = [];
@@ -11370,10 +11396,10 @@ function exposure(ctx) {
   const mapped = mappedEnv(ctx);
   const known = /* @__PURE__ */ new Set([...ctx.detect.envRefs.map((r) => r.name), ...mapped.map((m) => m.name)]);
   for (const f of findings) {
-    const text2 = [f.title, ...f.evidence].join(" ");
-    const tokens = new Set(text2.split(/[^A-Za-z0-9_]+/).filter(Boolean));
+    const text3 = [f.title, ...f.evidence].join(" ");
+    const tokens = new Set(text3.split(/[^A-Za-z0-9_]+/).filter(Boolean));
     const names = [...known].filter((n) => tokens.has(n));
-    const keys3 = OUTPUT_KEYS.filter((k) => text2.includes(k));
+    const keys3 = OUTPUT_KEYS.filter((k) => text3.includes(k));
     for (const m of mapped) if (keys3.includes(m.key)) names.push(m.name);
     if (!names.length && !keys3.length) out.all = true;
     names.forEach((n) => out.names.add(n));
@@ -11633,16 +11659,38 @@ var RECORDED = [
     where: "the PostHog dashboard",
     extra: "; PostHog schedules a deletion, so the project stays listed as pending execution until it is purged",
     removal: posthogRemoval
+  },
+  {
+    axis: "monitoring",
+    provider: "sentry",
+    providerTitle: "Sentry",
+    kind: "analytics-project",
+    idKey: "sentry.projectId",
+    nameKey: "sentry.projectName",
+    createdBy: ["sentry.createdProjectId"],
+    needs: "the Sentry dashboard",
+    where: "the Sentry dashboard",
+    extra: "; Sentry deletes asynchronously, so the provider's own read (pending deletion or gone) is what confirms the removal",
+    removal: sentryRemoval
   }
 ];
 async function posthogRemoval(ctx, id2) {
   const s = await axisStatus(ctx, "monitoring");
   if (s.kind !== "ready" || s.adapter.id !== "posthog") return void 0;
   const adapter = s.adapter;
-  const remove3 = adapter.capabilities.project?.remove;
+  const remove4 = adapter.capabilities.project?.remove;
   const confirm = adapter.capabilities.analytics?.projectState;
-  if (!remove3 || !confirm) return void 0;
-  return { adapter, remove: (c) => remove3(c), confirm: (c) => confirm(c, id2) };
+  if (!remove4 || !confirm) return void 0;
+  return { adapter, remove: (c) => remove4(c), confirm: (c) => confirm(c, id2) };
+}
+async function sentryRemoval(ctx, id2) {
+  const s = await axisStatus(ctx, "monitoring");
+  if (s.kind !== "ready" || s.adapter.id !== "sentry") return void 0;
+  const adapter = s.adapter;
+  const remove4 = adapter.capabilities.project?.remove;
+  const confirm = adapter.capabilities.monitoring?.projectState;
+  if (!remove4 || !confirm) return void 0;
+  return { adapter, remove: (c) => remove4(c), confirm: (c) => confirm(c, id2) };
 }
 async function buildInventory(ctx) {
   const webhooks2 = await webhookInventory(ctx);
@@ -11668,8 +11716,8 @@ async function webhookInventory(ctx) {
       const id2 = ctx.state.resource(stateKey);
       if (!id2) continue;
       const caps = ready2 && ready2.adapter.id === provider ? ready2.adapter.capabilities.webhooks : void 0;
-      const remove3 = caps?.remove;
-      out.push({ provider, providerTitle: titleOf(ctx, provider), key: stateKey, mode, id: id2, ...ready2 && remove3 && caps ? { removal: { adapter: ready2.adapter, remove: remove3, list: caps.list } } : {} });
+      const remove4 = caps?.remove;
+      out.push({ provider, providerTitle: titleOf(ctx, provider), key: stateKey, mode, id: id2, ...ready2 && remove4 && caps ? { removal: { adapter: ready2.adapter, remove: remove4, list: caps.list } } : {} });
     }
   }
   return out;
@@ -11682,14 +11730,14 @@ async function dnsInventory(ctx) {
   const s = await axisStatus(ctx, "dns");
   const zone = s.kind === "ready" ? s.adapter.capabilities.dns : void 0;
   const listOwned = zone?.listOwned;
-  const remove3 = zone?.remove;
-  if (s.kind !== "ready" || !zone || !listOwned || !remove3) return { records: [], gaps: [dnsGap(known, baselines, s)] };
+  const remove4 = zone?.remove;
+  if (s.kind !== "ready" || !zone || !listOwned || !remove4) return { records: [], gaps: [dnsGap(known, baselines, s)] };
   const gaps = foreign.length ? foreignDnsGaps(ctx, foreign, baselines) : [];
-  const candidates4 = [];
+  const candidates5 = [];
   for (const domain of read2) {
-    for (const record2 of await listOwned(ctx, domain)) candidates4.push({ domain, record: record2 });
+    for (const record2 of await listOwned(ctx, domain)) candidates5.push({ domain, record: record2 });
   }
-  candidates4.sort((a, b) => {
+  candidates5.sort((a, b) => {
     const ka = recordKey(a.record);
     const kb = recordKey(b.record);
     if (ka !== kb) return ka < kb ? -1 : 1;
@@ -11697,11 +11745,11 @@ async function dnsInventory(ctx) {
   });
   const out = [];
   const seen2 = /* @__PURE__ */ new Set();
-  for (const c of candidates4) {
+  for (const c of candidates5) {
     const unique = `${c.domain}|${recordKey(c.record)}`;
     if (seen2.has(unique)) continue;
     seen2.add(unique);
-    out.push({ provider: s.adapter.id, providerTitle: s.adapter.title, domain: c.domain, record: c.record, adapter: s.adapter, listOwned, remove: remove3 });
+    out.push({ provider: s.adapter.id, providerTitle: s.adapter.title, domain: c.domain, record: c.record, adapter: s.adapter, listOwned, remove: remove4 });
   }
   return { records: out, gaps };
 }
@@ -11791,9 +11839,9 @@ async function projectInventory(ctx) {
   const s = await axisStatus(ctx, "hosting");
   const linked = linkedHostProjects(ctx);
   const ready2 = s.kind === "ready" ? s : null;
-  const remove3 = ready2?.adapter.capabilities.project?.remove;
-  const mine = ready2 && remove3 ? linked.find((l) => l.provider === ready2.adapter.id) : void 0;
-  if (ready2 && remove3 && mine) {
+  const remove4 = ready2?.adapter.capabilities.project?.remove;
+  const mine = ready2 && remove4 ? linked.find((l) => l.provider === ready2.adapter.id) : void 0;
+  if (ready2 && remove4 && mine) {
     const read2 = ready2.adapter.capabilities.project?.exists;
     return {
       project: {
@@ -11803,7 +11851,7 @@ async function projectInventory(ctx) {
         id: mine.id,
         ...mine.name ? { name: mine.name } : {},
         created: mine.created,
-        remove: remove3,
+        remove: remove4,
         ...read2 ? { exists: (x) => read2(x, mine.id) } : {}
       },
       gaps: linked.filter((l) => l !== mine).map((l) => hostGap(s, l))
@@ -11879,14 +11927,14 @@ async function buildTeardownPlan(ctx) {
   const webhooks2 = webhookTeardown(inventory2.webhooks);
   const keys3 = keyTeardown(inventory2.sendingKeys);
   const recorded = recordedTeardown(inventory2.recorded);
-  const project2 = projectTeardown(inventory2.project);
-  const steps = [...webhooks2.steps, ...dnsSteps(inventory2.dnsRecords), ...keys3.steps, ...recorded.steps, ...project2.steps];
+  const project3 = projectTeardown(inventory2.project);
+  const steps = [...webhooks2.steps, ...dnsSteps(inventory2.dnsRecords), ...keys3.steps, ...recorded.steps, ...project3.steps];
   const stepIds = /* @__PURE__ */ new Set();
   for (const s of steps) {
     if (stepIds.has(s.id)) throw new Error(`teardown: two resources map to step ${s.id}, so golive cannot plan an unambiguous deletion. Resolve the duplicate and re-run.`);
     stepIds.add(s.id);
   }
-  const handoffs = [...recorded.handoffs, ...webhooks2.handoffs, ...keys3.handoffs, ...project2.handoffs, ...gapHandoffs(inventory2.gaps)];
+  const handoffs = [...recorded.handoffs, ...webhooks2.handoffs, ...keys3.handoffs, ...project3.handoffs, ...gapHandoffs(inventory2.gaps)];
   const ordered = orderSteps(steps);
   return { id: planId(ordered, handoffs, ctx.release), release: structuredClone(ctx.release), steps: ordered, handoffs, unmappedEnv: [], warnings: [] };
 }
@@ -11909,7 +11957,7 @@ function webhookTeardown(webhooks2) {
   return { steps, handoffs };
 }
 function webhookStep(w, removal) {
-  const { adapter, remove: remove3, list: list4 } = removal;
+  const { adapter, remove: remove4, list: list4 } = removal;
   const { mode, id: id2, key } = w;
   const stepId = `teardown:webhook:${adapter.id}:${mode}`;
   let left = false;
@@ -11921,7 +11969,7 @@ function webhookStep(w, removal) {
     preview: [`delete the ${adapter.title} ${mode}-mode webhook endpoint golive created (${id2})`],
     intent: intentOf({ provider: adapter.id, mode, endpoint: id2 }),
     async run(sctx) {
-      const r = await remove3(sctx, id2, mode);
+      const r = await remove4(sctx, id2, mode);
       if (r.deleted) return { changes: [`deleted webhook ${id2}`] };
       if (r.reason === "endpoint not found") return { changes: [`already gone: ${id2}`] };
       if (r.reason === "not created by golive") {
@@ -11991,7 +12039,7 @@ function dnsSteps(records3) {
 }
 var sameRecord = (a, b) => a.type === b.type && a.content === b.content && a.name.toLowerCase() === b.name.toLowerCase();
 function dnsStep2(r, id2) {
-  const { adapter, domain, record: record2, listOwned, remove: remove3 } = r;
+  const { adapter, domain, record: record2, listOwned, remove: remove4 } = r;
   return step({
     id: id2,
     title: `Delete the ${adapter.title} record golive created (${record2.type} ${record2.name})`,
@@ -12000,7 +12048,7 @@ function dnsStep2(r, id2) {
     preview: [`delete the ${adapter.title} record golive created: ${formatRecord(record2)}`],
     intent: intentOf({ provider: adapter.id, domain, type: record2.type, name: record2.name, content: record2.content }),
     async run(sctx) {
-      const outcome = await remove3(sctx, domain, record2);
+      const outcome = await remove4(sctx, domain, record2);
       return { changes: [outcome === "removed" ? `deleted: ${formatRecord(record2)}` : `already gone: ${formatRecord(record2)}`] };
     },
     // A delete is only reported as done once the provider's own owned-record list no longer has it.
@@ -12104,21 +12152,21 @@ function forgetKeyRecord(ctx, key) {
     delete s.resources[key];
   });
 }
-function projectTeardown(project2) {
-  if (!project2) return { steps: [], handoffs: [] };
-  if (!project2.created) {
+function projectTeardown(project3) {
+  if (!project3) return { steps: [], handoffs: [] };
+  if (!project3.created) {
     return {
       steps: [],
       handoffs: [{
         id: "teardown:project:hosting",
-        why: `the ${project2.providerTitle} project ${project2.id} was adopted (not created by golive), so golive will not delete it`,
-        action: `If the project should go away, delete it in the ${project2.providerTitle} dashboard; keep it if the app continues elsewhere.`,
+        why: `the ${project3.providerTitle} project ${project3.id} was adopted (not created by golive), so golive will not delete it`,
+        action: `If the project should go away, delete it in the ${project3.providerTitle} dashboard; keep it if the app continues elsewhere.`,
         blocking: false,
         manual: true
       }]
     };
   }
-  return { steps: [projectStep(project2)], handoffs: [] };
+  return { steps: [projectStep(project3)], handoffs: [] };
 }
 function projectStep(p) {
   const id2 = "teardown:project:hosting";
@@ -12217,7 +12265,7 @@ function recordedThing(r) {
   return `the ${r.providerTitle} project ${r.name} (${r.id})`;
 }
 function recordedStep(r, removal) {
-  const { adapter, remove: remove3, confirm } = removal;
+  const { adapter, remove: remove4, confirm } = removal;
   const id2 = `teardown:${r.axis}:${r.provider}`;
   const label3 = recordedSubject(r);
   let deleted = false;
@@ -12229,7 +12277,7 @@ function recordedStep(r, removal) {
     preview: [`delete the ${label3} \u2014 golive created it (marker ${r.markers.join(", ")})${r.extra ?? ""}`],
     intent: intentOf({ provider: adapter.id, kind: r.kind, resource: r.id }),
     async run(sctx) {
-      const outcome = await remove3(sctx);
+      const outcome = await remove4(sctx);
       deleted = outcome.removed;
       if (outcome.removed) {
         forgetRecorded(sctx, r);
@@ -12240,8 +12288,9 @@ function recordedStep(r, removal) {
       throw new Error(`could not delete the ${label3}: ${redact(reason)}`);
     },
     // A delete is only reported as done once the provider's own read confirms it — here with three
-    // states, because PostHog schedules a deletion instead of applying it at once: `pending` is the
-    // provider saying it accepted and queued the removal, which is confirmation, not a maybe.
+    // states, because PostHog and Sentry schedule a deletion instead of applying it at once:
+    // `pending` is the provider saying it accepted and queued the removal, which is confirmation,
+    // not a maybe.
     async verifyInline(vctx) {
       if (!deleted) return [];
       const checkId = `${id2}:removed`;
@@ -12358,19 +12407,19 @@ var domainLink = {
     const status = await attach.status(ctx, domain).catch(() => "pending");
     if (status === "ok") return null;
     const records3 = await attach.requiredRecords(ctx, domain).catch(() => null);
-    const project2 = await projectIntent(ctx, host.adapter);
-    const steps = track(ctx, [attachStep(ctx, host.adapter, attach, domain, project2)]);
+    const project3 = await projectIntent(ctx, host.adapter);
+    const steps = track(ctx, [attachStep(ctx, host.adapter, attach, domain, project3)]);
     const handoffs = [];
     const warnings = [];
     const dns = await dnsFor(ctx, domain);
-    if (dns.kind === "ready") steps.push(...track(ctx, [dnsStep3(ctx, host.adapter, attach, domain, dns.adapter, dns.zone, records3, project2)]));
+    if (dns.kind === "ready") steps.push(...track(ctx, [dnsStep3(ctx, host.adapter, attach, domain, dns.adapter, dns.zone, records3, project3)]));
     else if (dns.kind === "handoff") handoffs.push(dnsHandoff2(host.adapter, domain, dns.where, records3));
     else if (dns.kind === "error") warnings.push(`${domain}: ${dns.message}`);
-    if (attach.verify) steps.push(...track(ctx, [verifyStep2(ctx, host.adapter, attach.verify.bind(attach), attach, domain, project2)]));
+    if (attach.verify) steps.push(...track(ctx, [verifyStep2(ctx, host.adapter, attach.verify.bind(attach), attach, domain, project3)]));
     return { steps, handoffs, warnings };
   }
 };
-function attachStep(ctx, adapter, attach, domain, project2) {
+function attachStep(ctx, adapter, attach, domain, project3) {
   const prev = ctx.state.get().steps["domain:attach"];
   return step({
     id: "domain:attach",
@@ -12379,7 +12428,7 @@ function attachStep(ctx, adapter, attach, domain, project2) {
     risk: { writes: true },
     dependsOn: deps(ctx, ["project:hosting"]),
     preview: [`attach ${domain} to the ${adapter.title} project (no-op if already attached)`],
-    intent: intentOf({ project: project2, domain, previous: prev?.at }),
+    intent: intentOf({ project: project3, domain, previous: prev?.at }),
     async run(sctx) {
       await attach.add(sctx, domain);
       return { changes: [`attached ${domain} to ${adapter.title}`] };
@@ -12406,7 +12455,7 @@ function satisfies2(have, want) {
   if (h === w) return true;
   return want.type === "TXT" && w.startsWith("v=spf1") && h.startsWith("v=spf1") && spfTerms(w).every((t) => spfTerms(h).includes(t));
 }
-function dnsStep3(ctx, adapter, attach, domain, dnsAdapter, zone, planned, project2) {
+function dnsStep3(ctx, adapter, attach, domain, dnsAdapter, zone, planned, project3) {
   let wrote = [];
   return step({
     id: "domain:dns",
@@ -12415,7 +12464,7 @@ function dnsStep3(ctx, adapter, attach, domain, dnsAdapter, zone, planned, proje
     risk: { writes: true, dns: true },
     dependsOn: deps(ctx, ["domain:attach"]),
     preview: planned?.length ? planned.map((r) => `upsert at ${dnsAdapter.title}: ${formatRecord(r)} (not proxied)`) : [`upsert at ${dnsAdapter.title} the records ${adapter.title} requires for ${domain} (known after attaching)`],
-    intent: intentOf({ project: project2, zone: `${dnsAdapter.id}:${domain}`, records: planned?.length ? planned.map(recordKey2) : ["(after attach)"] }),
+    intent: intentOf({ project: project3, zone: `${dnsAdapter.id}:${domain}`, records: planned?.length ? planned.map(recordKey2) : ["(after attach)"] }),
     async run(sctx) {
       const records3 = await attach.requiredRecords(sctx, domain);
       if (planned?.length && !sameRecords(planned, records3)) {
@@ -12452,7 +12501,7 @@ function dnsStep3(ctx, adapter, attach, domain, dnsAdapter, zone, planned, proje
     }
   });
 }
-function verifyStep2(ctx, adapter, verify2, attach, domain, project2) {
+function verifyStep2(ctx, adapter, verify2, attach, domain, project3) {
   const prev = ctx.state.get().steps["domain:verify"];
   return step({
     id: "domain:verify",
@@ -12464,7 +12513,7 @@ function verifyStep2(ctx, adapter, verify2, attach, domain, project2) {
       `ask ${adapter.title} to verify ownership of ${domain} (if another ${adapter.title} account used this domain, a passing check moves it to this project; DNS still propagating is not a failure)`,
       ...prev ? [`previous request: ${prev.at}`] : []
     ],
-    intent: intentOf({ project: project2, domain }),
+    intent: intentOf({ project: project3, domain }),
     async run(sctx) {
       const changes = [];
       try {
@@ -13157,20 +13206,20 @@ async function dbItems(ctx, at, c) {
       checkId: dbCheckId(s.adapter)
     });
   }
-  const current4 = await once(ctx, `db:current:${provider}`, async () => {
+  const current5 = await once(ctx, `db:current:${provider}`, async () => {
     try {
       return { ok: true, ref: await linker.current(ctx) };
     } catch (e) {
       return { ok: false, error: e };
     }
   });
-  if (current4.ok && current4.ref && current4.ref.id !== recordedId) {
+  if (current5.ok && current5.ref && current5.ref.id !== recordedId) {
     c.items.push({
       id: "db:current",
       class: "db-selectors",
       subject,
       expected: label(`this repo uses ${recordedId}`, baseline),
-      observed: seen(`the repo now resolves to ${current4.ref.name ?? current4.ref.id} (${current4.ref.id})`, at),
+      observed: seen(`the repo now resolves to ${current5.ref.name ?? current5.ref.id} (${current5.ref.id})`, at),
       baseline,
       severity: "medium",
       action: "verify",
@@ -13454,16 +13503,16 @@ async function hostItems(ctx, at, c) {
       reason: unreadable2(host, "project read")
     });
   } else {
-    const current4 = await once(ctx, `project:current:${provider}`, async () => {
+    const current5 = await once(ctx, `project:current:${provider}`, async () => {
       try {
         return { ok: true, ref: await linker.current(ctx) };
       } catch (e) {
         return { ok: false, error: e };
       }
     });
-    if (!current4.ok && isUnreadable(current4.error)) {
-      unread(c, { id: "project:hosting", class: "host-project", subject, expected: `this repo is linked to ${recordedId}`, baseline, reason: `reading the linked project failed: ${errMsg2(current4.error)}` });
-    } else if (current4.ok && current4.ref && current4.ref.id === recordedId) {
+    if (!current5.ok && isUnreadable(current5.error)) {
+      unread(c, { id: "project:hosting", class: "host-project", subject, expected: `this repo is linked to ${recordedId}`, baseline, reason: `reading the linked project failed: ${errMsg2(current5.error)}` });
+    } else if (current5.ok && current5.ref && current5.ref.id === recordedId) {
       c.verified.push(`${subject}: still the project this repo links (${recordedId})`);
     } else {
       let exists = null;
@@ -13478,7 +13527,7 @@ async function hostItems(ctx, at, c) {
         });
         exists = r.ok;
       }
-      const linked = current4.ok ? current4.ref ? `${current4.ref.name ?? current4.ref.id} (${current4.ref.id})` : "nothing" : errMsg2(current4.error);
+      const linked = current5.ok ? current5.ref ? `${current5.ref.name ?? current5.ref.id} (${current5.ref.id})` : "nothing" : errMsg2(current5.error);
       c.items.push({
         id: "project:hosting",
         class: "host-project",
@@ -13917,31 +13966,31 @@ function checkAcl(path) {
     if (!parsed || parsed[1] !== "deny") throw new SafeFailure("unsafe-path");
   }
 }
-function directories(path, create6) {
+function directories(path, create7) {
   const owner = uid();
   const paths = [];
-  for (let current4 = dirname7(path); ; current4 = dirname7(current4)) {
-    paths.unshift(current4);
-    if (dirname7(current4) === current4) break;
+  for (let current5 = dirname7(path); ; current5 = dirname7(current5)) {
+    paths.unshift(current5);
+    if (dirname7(current5) === current5) break;
   }
   const out = /* @__PURE__ */ new Map();
-  for (const current4 of paths) {
-    let info = statOrMissing(current4);
-    if (!info && create6) {
+  for (const current5 of paths) {
+    let info = statOrMissing(current5);
+    if (!info && create7) {
       try {
-        mkdirSync5(current4, { mode: 448 });
+        mkdirSync5(current5, { mode: 448 });
       } catch (error) {
         if (error.code !== "EEXIST") throw error;
       }
-      info = lstatSync6(current4);
+      info = lstatSync6(current5);
     }
     if (!info) break;
     if (info.isSymbolicLink() || !info.isDirectory() || info.uid !== owner && info.uid !== 0) throw new SafeFailure("unsafe-path");
     const sharedSticky = info.uid === 0 && (info.mode & 512) !== 0;
     if ((info.mode & 18) !== 0 && !sharedSticky) throw new SafeFailure("unsafe-path");
-    if (current4 === dirname7(path) && info.uid !== owner) throw new SafeFailure("unsafe-path");
-    checkAcl(current4);
-    out.set(current4, info);
+    if (current5 === dirname7(path) && info.uid !== owner) throw new SafeFailure("unsafe-path");
+    checkAcl(current5);
+    out.set(current5, info);
   }
   return out;
 }
@@ -13971,12 +14020,12 @@ function snapshot(path) {
       if (!got) break;
     }
     const bytes = buffer.subarray(0, size);
-    const text2 = bytes.toString("utf8");
-    const content3 = text2 ? new Secret("credential-file", text2) : null;
-    if (!Buffer.from(text2, "utf8").equals(bytes)) throw new SafeFailure("unsafe-path");
+    const text3 = bytes.toString("utf8");
+    const content3 = text3 ? new Secret("credential-file", text3) : null;
+    if (!Buffer.from(text3, "utf8").equals(bytes)) throw new SafeFailure("unsafe-path");
     const after = fstatSync6(fd);
-    const current4 = lstatSync6(path);
-    if (!sameFile(opened, after) || !sameFile(after, current4)) throw new SafeFailure("concurrent-change");
+    const current5 = lstatSync6(path);
+    if (!sameFile(opened, after) || !sameFile(after, current5)) throw new SafeFailure("concurrent-change");
     return { directories: parents, file: after, content: content3 };
   } finally {
     closeSync6(fd);
@@ -13993,8 +14042,8 @@ function hasAssignment(content3, name3) {
 }
 function changed(before, now) {
   for (const [path, old] of before.directories) {
-    const current4 = now.directories.get(path);
-    if (!current4 || current4.dev !== old.dev || current4.ino !== old.ino || current4.uid !== old.uid || current4.mode !== old.mode) return true;
+    const current5 = now.directories.get(path);
+    if (!current5 || current5.dev !== old.dev || current5.ino !== old.ino || current5.uid !== old.uid || current5.mode !== old.mode) return true;
   }
   return Boolean(before.file) !== Boolean(now.file) || Boolean(before.file && now.file && !sameFile(before.file, now.file)) || raw(before) !== raw(now);
 }
@@ -14016,9 +14065,9 @@ function updated(before, name3, value) {
 }
 function removeOwned(path, info) {
   try {
-    const current4 = statOrMissing(path);
-    if (!current4) return true;
-    if (!info || !current4.isFile() || current4.dev !== info.dev || current4.ino !== info.ino) return false;
+    const current5 = statOrMissing(path);
+    if (!current5) return true;
+    if (!info || !current5.isFile() || current5.dev !== info.dev || current5.ino !== info.ino) return false;
     unlinkSync3(path);
     return true;
   } catch {
@@ -14042,8 +14091,8 @@ function saveAtomically(path, before, name3, value) {
   let failure2;
   try {
     lockInfo = fstatSync6(lock);
-    const current4 = snapshot(path);
-    if (changed(before, current4)) throw new SafeFailure("concurrent-change");
+    const current5 = snapshot(path);
+    if (changed(before, current5)) throw new SafeFailure("concurrent-change");
     const content3 = updated(before, name3, value);
     const tempPath = join10(dirname7(path), `.${basename5(path)}-${randomBytes3(12).toString("hex")}.tmp`);
     const fd = openSync6(tempPath, constants6.O_CREAT | constants6.O_EXCL | constants6.O_WRONLY | constants6.O_NOFOLLOW, 384);
@@ -14150,15 +14199,15 @@ async function resolveSession(ctx) {
   return { kind: "none", cliInstalled };
 }
 function readLinkFile(ctx) {
-  const candidates4 = [];
+  const candidates5 = [];
   try {
-    candidates4.push(readFileSync9(join11(ctx.cwd, ".vercel", "project.json"), "utf8"));
+    candidates5.push(readFileSync9(join11(ctx.cwd, ".vercel", "project.json"), "utf8"));
   } catch {
   }
   const fromDetect = ctx.detect.configs[".vercel/project.json"];
-  if (fromDetect) candidates4.push(fromDetect);
-  for (const text2 of candidates4) {
-    const j = parseJson(text2);
+  if (fromDetect) candidates5.push(fromDetect);
+  for (const text3 of candidates5) {
+    const j = parseJson(text3);
     if (j && (j.projectId || j.orgId)) return { projectId: j.projectId, orgId: j.orgId, projectName: j.projectName };
   }
   return null;
@@ -14216,12 +14265,12 @@ async function viaToken(ctx, token2, method, path, body2, opts) {
 function serialise(body2) {
   return secretJson("vercel-api-body", body2);
 }
-function parseCliError(text2) {
-  const json2 = text2.match(/\{[\s\S]*\}/);
+function parseCliError(text3) {
+  const json2 = text3.match(/\{[\s\S]*\}/);
   const j = json2 ? parseJson(json2[0]) : null;
-  const status = j?.status ?? Number(text2.match(/\b([45]\d\d)\b/)?.[1] ?? NaN);
-  const code = j?.error?.code ?? j?.code ?? (/not[_ ]found/i.test(text2) ? "not_found" : void 0);
-  const message = redact((j?.error?.message ?? j?.message ?? text2.trim().split("\n").slice(-3).join(" ")).replace(/\s+/g, " ").trim().slice(0, 300));
+  const status = j?.status ?? Number(text3.match(/\b([45]\d\d)\b/)?.[1] ?? NaN);
+  const code = j?.error?.code ?? j?.code ?? (/not[_ ]found/i.test(text3) ? "not_found" : void 0);
+  const message = redact((j?.error?.message ?? j?.message ?? text3.trim().split("\n").slice(-3).join(" ")).replace(/\s+/g, " ").trim().slice(0, 300));
   return { status: Number.isFinite(status) ? status : code === "not_found" ? 404 : void 0, code, message };
 }
 function apiError(method, path, status, code, message) {
@@ -14240,9 +14289,9 @@ function hintFor(status) {
 function isNotFound(e) {
   return e instanceof VercelError && (e.status === 404 || e.code === "not_found");
 }
-function parseJson(text2) {
+function parseJson(text3) {
   try {
-    return JSON.parse(text2);
+    return JSON.parse(text3);
   } catch {
     return null;
   }
@@ -14279,8 +14328,8 @@ function writeLinkFile(ctx, p) {
     ctx.log.info(`vercel: ${file} not written (Vercel did not report the owning account); deploys still pin the project`);
     return;
   }
-  const current4 = readProjectLink(ctx);
-  if (current4?.projectId === p.id && current4.orgId === p.accountId) return;
+  const current5 = readProjectLink(ctx);
+  if (current5?.projectId === p.id && current5.orgId === p.accountId) return;
   try {
     mkdirSync6(join12(ctx.cwd, ".vercel"), { recursive: true });
     writeFileSync7(join12(ctx.cwd, ".vercel", "project.json"), JSON.stringify({ projectId: p.id, orgId: p.accountId, projectName: p.name }, null, 2) + "\n");
@@ -14640,7 +14689,7 @@ async function publicDnsPointsElsewhere(ctx, domain, want) {
 init_secret();
 async function listEnv(ctx, projectId2) {
   const res = await vercelApi(ctx, "GET", `/v10/projects/${encodeURIComponent(projectId2)}/env`);
-  const rows2 = (res.envs ?? []).map((e) => ({
+  const rows3 = (res.envs ?? []).map((e) => ({
     id: String(e.id ?? ""),
     key: String(e.key ?? ""),
     target: Array.isArray(e.target) ? e.target : typeof e.target === "string" ? [e.target] : [],
@@ -14650,7 +14699,7 @@ async function listEnv(ctx, projectId2) {
     customEnvironmentIds: Array.isArray(e.customEnvironmentIds) ? e.customEnvironmentIds : []
   }));
   const hidden = Number(res.hiddenProductionEnvCount ?? 0);
-  return { rows: rows2, hiddenProduction: Number.isFinite(hidden) && hidden > 0 ? Math.floor(hidden) : 0 };
+  return { rows: rows3, hiddenProduction: Number.isFinite(hidden) && hidden > 0 ? Math.floor(hidden) : 0 };
 }
 function hiddenProductionError(n, doing) {
   return new VercelError(
@@ -14670,9 +14719,9 @@ function writeBlocker(listing, name3, wanted) {
   if (wanted.includes("production") && listing.hiddenProduction > 0) {
     return hiddenProductionError(listing.hiddenProduction, `tell whether ${name3} already exists in production (it would be overwritten)`);
   }
-  const rows2 = listing.rows.filter((r) => r.key === name3 && isTargetWide(r));
+  const rows3 = listing.rows.filter((r) => r.key === name3 && isTargetWide(r));
   for (const t of wanted) {
-    const row = rows2.find((r) => r.target.includes(t));
+    const row = rows3.find((r) => r.target.includes(t));
     if (!row) continue;
     if (row.configurationId) {
       return new VercelError(
@@ -14694,9 +14743,9 @@ function writeBlocker(listing, name3, wanted) {
 }
 var vercelEnv = {
   async listNames(ctx, target) {
-    const { rows: rows2, hiddenProduction } = await listEnv(ctx, await requireProjectId(ctx));
+    const { rows: rows3, hiddenProduction } = await listEnv(ctx, await requireProjectId(ctx));
     if (target === "production" && hiddenProduction > 0) throw hiddenProductionError(hiddenProduction, "tell which production variables exist");
-    const names = rows2.filter((r) => r.target.includes(target) && (target !== "preview" || !r.gitBranch)).map((r) => r.key);
+    const names = rows3.filter((r) => r.target.includes(target) && (target !== "preview" || !r.gitBranch)).map((r) => r.key);
     return [...new Set(names)].sort();
   },
   async set(ctx, name3, value, targets, opts) {
@@ -14708,11 +14757,11 @@ var vercelEnv = {
     const wanted = [...new Set(targets)];
     const blocked2 = writeBlocker(listing, name3, wanted);
     if (blocked2) throw blocked2;
-    const rows2 = listing.rows.filter((r) => r.key === name3 && isTargetWide(r));
+    const rows3 = listing.rows.filter((r) => r.key === name3 && isTargetWide(r));
     const done = /* @__PURE__ */ new Set();
     for (const t of wanted) {
       if (done.has(t)) continue;
-      const row = rows2.find((r) => r.target.includes(t));
+      const row = rows3.find((r) => r.target.includes(t));
       if (!row) {
         await createRow(ctx, projectId2, name3, v, t, desiredType(v, opts?.sensitive, t));
         ctx.log.info(`vercel env: created ${name3} for ${t}`);
@@ -14806,16 +14855,16 @@ var vercelUrl = {
   async previewPatterns(ctx) {
     const p = await vercelProject.current(ctx);
     if (!p) return [];
-    const slug2 = await scopeSlug(ctx);
-    if (!slug2) return [];
-    return [`https://${p.name}-*-${slug2}.vercel.app/**`, `https://${p.name}-git-*-${slug2}.vercel.app/**`];
+    const slug3 = await scopeSlug(ctx);
+    if (!slug3) return [];
+    return [`https://${p.name}-*-${slug3}.vercel.app/**`, `https://${p.name}-git-*-${slug3}.vercel.app/**`];
   }
 };
 function pickProductionAlias(name3, aliases) {
   const hosts = [...new Set(aliases.map((a) => a.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "").toLowerCase()).filter(Boolean))];
   if (!hosts.length) return null;
-  const exact3 = `${name3.toLowerCase()}.vercel.app`;
-  if (hosts.includes(exact3)) return exact3;
+  const exact4 = `${name3.toLowerCase()}.vercel.app`;
+  if (hosts.includes(exact4)) return exact4;
   const shortest = (xs) => [...xs].sort((a, b) => a.length - b.length || a.localeCompare(b))[0];
   return shortest(hosts.filter((h) => !h.endsWith(".vercel.app"))) ?? shortest(hosts.filter((h) => !h.includes("-git-"))) ?? shortest(hosts);
 }
@@ -14981,11 +15030,11 @@ function loginHelp() {
 function sendingOnlyHelp() {
   return `RESEND_API_KEY is a sending-only key; golive needs a Full access key to create domains and keys. ${CLI_LOGIN} Or create a Full access key at https://resend.com/api-keys and replace the sending-only one: ${tokenHowTo(TOKEN)}`;
 }
-function restError(what, status, body2, text2) {
+function restError(what, status, body2, text3) {
   const b = body2 && typeof body2 === "object" ? body2 : {};
   const code = b.name ?? "";
-  const detail = b.message ?? text2.slice(0, 300);
-  return new HttpError(redact(`Resend ${what} failed (HTTP ${status}${code ? ` ${code}` : ""}): ${detail}${hintFor2(code, status, detail)}`), status, redact(text2));
+  const detail = b.message ?? text3.slice(0, 300);
+  return new HttpError(redact(`Resend ${what} failed (HTTP ${status}${code ? ` ${code}` : ""}): ${detail}${hintFor2(code, status, detail)}`), status, redact(text3));
 }
 function hintFor2(code, status, detail) {
   if (code === "restricted_api_key") return ` \u2014 ${sendingOnlyHelp()}`;
@@ -15334,7 +15383,7 @@ function mergeSpf(existing, wanted, name3) {
   const have = terms(existing);
   const seen2 = /* @__PURE__ */ new Map();
   for (const t of have) if (!seen2.has(mech(t))) seen2.set(mech(t), t);
-  const current4 = ["v=spf1", ...have].join(" ");
+  const current5 = ["v=spf1", ...have].join(" ");
   const added = [];
   for (const t of terms(wanted)) {
     if (ALL.test(t) || MODIFIER.test(t)) continue;
@@ -15342,7 +15391,7 @@ function mergeSpf(existing, wanted, name3) {
     if (prior !== void 0) {
       if (passes(t) && !passes(prior)) {
         throw new Error(
-          `SPF at ${name3} already has "${prior}", which matches this sender first with a non-pass result, so SPF for it can never pass. Change that term to "${t.replace(/^\+/, "")}" in the existing record "${current4}" in your DNS dashboard, then re-run.`
+          `SPF at ${name3} already has "${prior}", which matches this sender first with a non-pass result, so SPF for it can never pass. Change that term to "${t.replace(/^\+/, "")}" in the existing record "${current5}" in your DNS dashboard, then re-run.`
         );
       }
       continue;
@@ -15350,7 +15399,7 @@ function mergeSpf(existing, wanted, name3) {
     seen2.set(mech(t), t);
     added.push(t);
   }
-  if (!added.length) return { content: current4, added };
+  if (!added.length) return { content: current5, added };
   let at = have.findIndex((t) => ALL.test(t));
   if (at < 0) at = have.findIndex((t) => MODIFIER.test(t));
   if (at < 0) at = have.length;
@@ -15358,7 +15407,7 @@ function mergeSpf(existing, wanted, name3) {
   const lookups = countSpfLookups(content3);
   if (lookups > SPF_LOOKUP_LIMIT) {
     throw new Error(
-      `SPF at ${name3} would need ${lookups} DNS lookups after adding ${added.join(" ")} (limit ${SPF_LOOKUP_LIMIT}; over it SPF fails). Remove unused include:/a/mx mechanisms from the existing record "${current4}" (or flatten it) in your DNS dashboard, then re-run.`
+      `SPF at ${name3} would need ${lookups} DNS lookups after adding ${added.join(" ")} (limit ${SPF_LOOKUP_LIMIT}; over it SPF fails). Remove unused include:/a/mx mechanisms from the existing record "${current5}" (or flatten it) in your DNS dashboard, then re-run.`
     );
   }
   return { content: content3, added };
@@ -15787,9 +15836,9 @@ function parseVersion(out) {
 }
 function usableSession(out) {
   const parsed = safeJson(out);
-  const rows2 = parsed && typeof parsed === "object" && Array.isArray(parsed.data) ? parsed.data : null;
-  if (!rows2) return null;
-  const prod = rows2.find((r) => r && typeof r === "object" && r.env === "prod");
+  const rows3 = parsed && typeof parsed === "object" && Array.isArray(parsed.data) ? parsed.data : null;
+  if (!rows3) return null;
+  const prod = rows3.find((r) => r && typeof r === "object" && r.env === "prod");
   if (!prod || prod.expired !== false) return null;
   const expires = typeof prod.expires_at === "string" ? Date.parse(prod.expires_at) : NaN;
   if (Number.isFinite(expires) && expires - Date.now() < EXPIRY_MARGIN_MS && prod.refreshable !== true) return null;
@@ -15817,9 +15866,9 @@ async function cliRequest(ctx, cli3, method, path, body2) {
   const match = typeof message === "string" ? /HTTP error (\d{3})/.exec(message) : null;
   return { status: match ? Number(match[1]) : 0 };
 }
-function safeJson(text2) {
+function safeJson(text3) {
   try {
-    return JSON.parse(text2);
+    return JSON.parse(text3);
   } catch {
     return void 0;
   }
@@ -16039,10 +16088,10 @@ async function create3(ctx, zone, want) {
 }
 async function update(ctx, zone, before, want) {
   if (!owned(ctx, zone, before)) conflict();
-  const current4 = await records(ctx, zone);
-  rejectDelegatedRecords(zone, current4, fullName(before, zone));
-  const fresh = current4.find((r) => r.recordId === before.recordId);
-  if (!fresh || snapshot2(fresh) !== snapshot2(before) || current4.some((r) => r.recordId !== before.recordId && r.name === before.name && (r.type === "CNAME" || want.type === "CNAME" || r.type === want.type && ADDRESS2.has(want.type)))) conflict();
+  const current5 = await records(ctx, zone);
+  rejectDelegatedRecords(zone, current5, fullName(before, zone));
+  const fresh = current5.find((r) => r.recordId === before.recordId);
+  if (!fresh || snapshot2(fresh) !== snapshot2(before) || current5.some((r) => r.recordId !== before.recordId && r.name === before.name && (r.type === "CNAME" || want.type === "CNAME" || r.type === want.type && ADDRESS2.has(want.type)))) conflict();
   const replaced = parseRecord(await api3(ctx, "PUT", `${pathFor(zone)}/${encodeURIComponent(before.recordId)}`, want));
   if (replaced.recordId !== before.recordId || !same(replaced, want)) throw malformed();
   remember4(ctx, zone, replaced);
@@ -16255,12 +16304,12 @@ async function findZone2(ctx, domain) {
   return null;
 }
 async function withinAuthority(ctx, target, zone) {
-  let current4 = target.replace(/^\*\./, "");
-  while (current4 !== zone) {
-    const answer = await resolve4(ctx, current4, "NS");
-    if (answer.status !== 0 && answer.status !== 3) throw new Error(`Cannot confirm DNS delegation for ${current4}; retry before changing records.`);
-    if (answer.answers.some((r) => r.type === "NS" && r.name === current4)) return false;
-    current4 = current4.split(".").slice(1).join(".");
+  let current5 = target.replace(/^\*\./, "");
+  while (current5 !== zone) {
+    const answer = await resolve4(ctx, current5, "NS");
+    if (answer.status !== 0 && answer.status !== 3) throw new Error(`Cannot confirm DNS delegation for ${current5}; retry before changing records.`);
+    if (answer.answers.some((r) => r.type === "NS" && r.name === current5)) return false;
+    current5 = current5.split(".").slice(1).join(".");
   }
   return true;
 }
@@ -16558,8 +16607,8 @@ async function posthogCount(ctx, region, projectId2, filter) {
     what: `read the event count for project ${projectId2}`,
     idempotent: true
   });
-  const rows2 = json2?.results;
-  const count = Array.isArray(rows2) && Array.isArray(rows2[0]) ? Number(rows2[0][0]) : NaN;
+  const rows3 = json2?.results;
+  const count = Array.isArray(rows3) && Array.isArray(rows3[0]) ? Number(rows3[0][0]) : NaN;
   if (!Number.isFinite(count) || count < 0) throw new PosthogApiError("PostHog returned an unexpected event count; nothing was inferred.", 0, "");
   return count;
 }
@@ -16813,6 +16862,447 @@ var posthogAdapter = {
   capabilities: { project, analytics }
 };
 
+// src/adapters/sentry.ts
+init_secret();
+
+// src/adapters/sentry-api.ts
+init_credentials();
+init_http();
+init_secret();
+var SENTRY_TOKEN = "SENTRY_AUTH_TOKEN";
+var API_HOSTS2 = { us: "https://us.sentry.io", eu: "https://de.sentry.io" };
+var sentryApiHost = (region) => API_HOSTS2[region];
+function regionOf2(ctx) {
+  return ctx.config.sentry?.region === "eu" ? "eu" : "us";
+}
+var scopesHelp2 = (region) => `In Sentry (${sentryApiHost(region)} \u2192 Settings \u2192 Account \u2192 API \u2192 Auth Tokens, or an internal integration), check the token's scopes: org:read (list organizations), team:read (list the organization's teams), project:read and project:write (list, read and create projects, and read their DSN/client keys), event:read (read an event back) and \u2014 for teardown's delete of a project golive created \u2014 project:admin.`;
+function sentryHelp(region) {
+  return `Create an auth token at ${sentryApiHost(region)}/settings/account/api/auth-tokens/ (an internal integration's token works too) with the scopes golive uses: org:read, team:read, project:read, project:write, event:read, and project:admin when golive should be able to delete a project it created. ${tokenHowTo(SENTRY_TOKEN)}`;
+}
+var SentryApiError = class extends HttpError {
+  constructor(message, status, body2, code) {
+    super(message, status, body2);
+    this.code = code;
+  }
+  code;
+};
+function detailOf3(b) {
+  if (typeof b.detail === "string") return b.detail;
+  if (typeof b.error === "string") return b.error;
+  if (typeof b.message === "string") return b.message;
+  return "";
+}
+function sentryError(res, what, region) {
+  const b = res.json && typeof res.json === "object" && !Array.isArray(res.json) ? res.json : {};
+  const code = typeof b.code === "string" ? b.code : "";
+  const detail = detailOf3(b) || res.text.slice(0, 300);
+  const kind = code ? ` (${code})` : "";
+  const redirect = res.status === 301 || res.status === 302 || res.status === 303 || res.status === 307 || res.status === 308;
+  const location = res.headers?.location;
+  let hint;
+  if (res.status === 401) {
+    hint = ` The Sentry credential in ${SENTRY_TOKEN} was rejected (invalid, expired or revoked). ${sentryHelp(region)}`;
+  } else if (res.status === 403) {
+    hint = ` The credential lacks a scope this operation needs. ${scopesHelp2(region)}`;
+  } else if (res.status === 404) {
+    hint = ' Sentry answered "not found" for this path: the organization, project or key scope may have changed since the plan was approved. Re-run `golive plan` and re-approve.';
+  } else if (res.status === 429) {
+    hint = " Sentry is rate-limiting requests; wait a moment and re-run.";
+  } else if (redirect) {
+    hint = ` The API host redirected this request${location ? ` (${location})` : ""}, which usually means the organization lives in the other Sentry region: set \`sentry.region\` in golive.yaml to "eu" (or "us") and re-run.`;
+  } else if (res.status === 0) {
+    hint = ` Could not reach ${sentryApiHost(region)}; check your network and re-run.`;
+  } else {
+    hint = "";
+  }
+  return new SentryApiError(redact(`Sentry ${what} failed (HTTP ${res.status}${kind}): ${detail}${hint}`), res.status, redact(res.text.slice(0, 1e3)), code || void 0);
+}
+async function sentryCall(ctx, region, call2) {
+  const token2 = ctx.envToken(SENTRY_TOKEN);
+  if (!token2) throw new SentryApiError(`No Sentry credential is available. ${sentryHelp(region)}`, 0, "");
+  if (!call2.path.startsWith("/") || call2.path.startsWith("//") || call2.path.includes("://")) {
+    throw new SentryApiError("Invalid Sentry API path.", 0, "");
+  }
+  const res = await ctx.http({
+    method: call2.method ?? "GET",
+    url: `${sentryApiHost(region)}${call2.path}`,
+    headers: { Authorization: bearer3(token2) },
+    ...call2.body === void 0 ? {} : { body: call2.body },
+    ...call2.idempotent ? { idempotent: true } : {}
+  });
+  if (res.status < 200 || res.status >= 300) throw sentryError(res, call2.what, region);
+  return res.json;
+}
+function bearer3(key) {
+  return new Secret(SENTRY_TOKEN, `Bearer ${key.reveal()}`);
+}
+var DSN_HOST = /^o[0-9]{1,20}\.ingest\.(us\.|de\.)?sentry\.io$/;
+function parseDsn(dsn) {
+  if (dsn.length > 500) throw new SentryApiError("Sentry returned an invalid DSN; nothing was inferred.", 0, "");
+  let u;
+  try {
+    u = new URL(dsn);
+  } catch {
+    throw new SentryApiError("Sentry returned an invalid DSN; nothing was inferred.", 0, "");
+  }
+  const publicKey = u.username;
+  const projectId2 = u.pathname.replace(/^\/+/, "").replace(/\/+$/, "");
+  if (u.protocol !== "https:" || u.password || !/^[A-Za-z0-9]{16,64}$/.test(publicKey) || !/^[0-9]{1,20}$/.test(projectId2) || u.search || u.hash || !DSN_HOST.test(u.hostname)) {
+    throw new SentryApiError("Sentry returned a DSN outside its documented ingest hosts; nothing was sent to it.", 0, "");
+  }
+  return { publicKey, host: u.hostname, projectId: projectId2 };
+}
+async function sentryStore(ctx, region, dsn, spec) {
+  const res = await ctx.http({
+    method: "POST",
+    url: `https://${dsn.host}/api/${encodeURIComponent(dsn.projectId)}/store/`,
+    headers: {
+      "X-Sentry-Auth": `Sentry sentry_version=7, sentry_client=golive/${ctx.release.version}, sentry_key=${dsn.publicKey}`
+    },
+    body: {
+      event_id: spec.eventId,
+      message: spec.message,
+      level: "error",
+      platform: "javascript",
+      tags: spec.tags ?? {}
+    },
+    timeoutMs: 3e4
+  });
+  if (res.status < 200 || res.status >= 300) throw sentryError(res, "send a test event", region);
+  const id2 = res.json && typeof res.json.id === "string" && /^[0-9a-f]{32}$/.test(res.json.id) ? res.json.id : void 0;
+  return { status: res.status, ...id2 ? { eventId: id2 } : {} };
+}
+async function sentryEventJson(ctx, region, orgSlug, projectId2, eventId) {
+  try {
+    return await sentryCall(ctx, region, {
+      path: `/api/0/projects/${encodeURIComponent(orgSlug)}/${encodeURIComponent(projectId2)}/events/${encodeURIComponent(eventId)}/`,
+      what: `read event ${eventId}`,
+      idempotent: true
+    });
+  } catch (e) {
+    if (e instanceof SentryApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+// src/adapters/sentry.ts
+var errMsg6 = (e) => redact(e instanceof Error ? e.message : String(e));
+var PROJECT_ID_KEY2 = "sentry.projectId";
+var PROJECT_SLUG_KEY = "sentry.projectSlug";
+var PROJECT_NAME_KEY2 = "sentry.projectName";
+var ORGANIZATION_ID_KEY2 = "sentry.organizationId";
+var ORGANIZATION_SLUG_KEY = "sentry.organizationSlug";
+var CREATED_PROJECT_KEY2 = "sentry.createdProjectId";
+var sentryTiming = { pollMs: 1e4, windowMs: 18e4 };
+var SentryError = class extends Error {
+};
+var SentryTeamChoiceError = class extends SentryError {
+  constructor(message, teams) {
+    super(message);
+    this.teams = teams;
+  }
+  teams;
+};
+var enc2 = encodeURIComponent;
+function obj2(v, what) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) throw new SentryError(`Sentry returned an unexpected ${what}; nothing was inferred.`);
+  return v;
+}
+function text2(v, what) {
+  if (typeof v !== "string" || !v || v.length > 200 || /[\r\n\x00-\x1f]/.test(v) || isRegisteredSecret(v)) throw new SentryError(`Sentry returned an invalid ${what}.`);
+  return v;
+}
+function numericId(v, what) {
+  const s = typeof v === "number" ? String(v) : v;
+  if (typeof s !== "string" || !/^[0-9]{1,20}$/.test(s)) throw new SentryError(`Sentry returned an invalid ${what} id.`);
+  return s;
+}
+function slug2(v, what) {
+  if (typeof v !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(v)) throw new SentryError(`Sentry returned an invalid ${what} slug.`);
+  return v;
+}
+function rows2(v, what) {
+  if (!Array.isArray(v)) throw new SentryError(`Sentry returned an unexpected ${what} list; nothing was inferred.`);
+  return v.map((x) => obj2(x, what));
+}
+function organizationOf2(v) {
+  const o = obj2(v, "organization");
+  return {
+    id: numericId(o.id, "organization"),
+    slug: slug2(o.slug, "organization"),
+    ...typeof o.name === "string" && o.name ? { name: text2(o.name, "organization name") } : {}
+  };
+}
+function teamOf(v) {
+  const t = obj2(v, "team");
+  return { slug: slug2(t.slug, "team"), ...t.id !== void 0 ? { id: numericId(t.id, "team") } : {}, ...typeof t.name === "string" && t.name ? { name: text2(t.name, "team name") } : {} };
+}
+function projectOf2(v) {
+  const p = obj2(v, "project");
+  return {
+    id: numericId(p.id, "project"),
+    slug: slug2(p.slug, "project"),
+    name: text2(p.name, "project name"),
+    status: typeof p.status === "string" ? p.status : "",
+    ...p.team !== void 0 && p.team !== null ? { team: teamOf(p.team) } : {}
+  };
+}
+function refOf3(p, org) {
+  return { id: p.id, name: p.name, scope: { kind: "organization", id: org.id, ...org.name ? { name: org.name } : {} } };
+}
+var sameTarget2 = (a, b) => a.scope.kind === b.scope.kind && a.scope.id === b.scope.id && a.region === b.region && a.team === b.team;
+var scheduledForDeletion = (status) => status === "pending_deletion" || status === "deletion_in_progress";
+async function organizations2(ctx, region) {
+  return rows2(await sentryCall(ctx, region, { path: "/api/0/organizations/", what: "list organizations" }), "organization").map(organizationOf2);
+}
+async function organizationFor2(ctx, region) {
+  const recorded = ctx.state.resource(ORGANIZATION_SLUG_KEY);
+  const all = await organizations2(ctx, region);
+  if (recorded) {
+    const known = all.find((o) => o.slug === recorded);
+    if (known) return known;
+    throw new SentryError(`The recorded Sentry organization ${recorded} is no longer visible to the ${SENTRY_TOKEN} token; re-plan after checking the token's organization scope.`);
+  }
+  if (all.length === 1) return all[0];
+  if (!all.length) throw new SentryError(`The ${SENTRY_TOKEN} token can see no Sentry organization. ${sentryHelp(region)}`);
+  throw new SentryError(
+    `The ${SENTRY_TOKEN} token can see ${all.length} Sentry organizations (${all.map((o) => o.name ?? o.slug).join(", ")}). golive needs a token scoped to exactly one organization: create an auth token (or internal integration) for the organization that owns this app, then re-run.`
+  );
+}
+async function teamsOf(ctx, region, org) {
+  const list4 = rows2(await sentryCall(ctx, region, { path: `/api/0/organizations/${enc2(org.slug)}/teams/`, what: `list the teams of organization ${org.name ?? org.slug}` }), "team").map(teamOf);
+  return list4.sort((a, b) => a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0);
+}
+async function teamFor(ctx, region, org) {
+  const teams = await teamsOf(ctx, region, org);
+  const configured = ctx.config.sentry?.team;
+  const listed = teams.map((t) => t.slug);
+  if (configured) {
+    const match = teams.find((t) => t.slug.toLowerCase() === configured.toLowerCase() || (t.name ?? "").toLowerCase() === configured.toLowerCase());
+    if (!match) {
+      throw new SentryTeamChoiceError(
+        `golive.yaml sentry.team is "${configured}", but organization ${org.name ?? org.slug} has ${listed.length ? `no such team (it has ${listed.join(", ")})` : "no teams"}.`,
+        teams
+      );
+    }
+    return match;
+  }
+  if (teams.length === 1) return teams[0];
+  if (!teams.length) {
+    throw new SentryTeamChoiceError(`Sentry organization ${org.name ?? org.slug} has no team to create the project in.`, teams);
+  }
+  throw new SentryTeamChoiceError(`Sentry organization ${org.name ?? org.slug} has ${teams.length} teams (${listed.join(", ")}), so golive will not guess which one the project belongs to.`, teams);
+}
+async function allProjects2(ctx, region, org) {
+  const list4 = rows2(await sentryCall(ctx, region, { path: `/api/0/organizations/${enc2(org.slug)}/projects/`, what: "list projects" }), "project").map(projectOf2);
+  return list4.filter((p) => {
+    if (!scheduledForDeletion(p.status)) return true;
+    ctx.log.info(`sentry: project ${p.name} (${p.slug}) is ${p.status}; leaving it out`);
+    return false;
+  });
+}
+async function projectById2(ctx, region, org, idOrSlug) {
+  try {
+    return projectOf2(await sentryCall(ctx, region, { path: `/api/0/projects/${enc2(org.slug)}/${enc2(idOrSlug)}/`, what: `read project ${idOrSlug}` }));
+  } catch (e) {
+    if (e instanceof SentryApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+async function exact2(ctx, region, org, idOrSlug) {
+  const p = await projectById2(ctx, region, org, idOrSlug);
+  if (!p) throw new SentryError(`Sentry no longer has project ${idOrSlug} in organization ${org.name ?? org.slug}; re-plan.`);
+  return p;
+}
+async function sentryProjectState(ctx, idOrSlug) {
+  const region = regionOf2(ctx);
+  return stateOf2(ctx, region, await organizationFor2(ctx, region), idOrSlug);
+}
+async function stateOf2(ctx, region, org, idOrSlug) {
+  const p = await projectById2(ctx, region, org, idOrSlug);
+  if (!p) return "gone";
+  return scheduledForDeletion(p.status) ? "pending" : "present";
+}
+async function resolve8(ctx, selected) {
+  const region = regionOf2(ctx);
+  const org = await organizationFor2(ctx, region);
+  const list4 = await allProjects2(ctx, region, org);
+  const byId = list4.filter((p) => p.id === selected);
+  const needle = selected.toLowerCase();
+  const matches3 = byId.length ? byId : list4.filter((p) => p.slug.toLowerCase() === needle || p.name.toLowerCase() === needle);
+  if (matches3.length !== 1) {
+    const found = matches3.length ? `${matches3.length} project${matches3.length === 1 ? "" : "s"}` : "no project";
+    throw new SentryError(
+      `Sentry has ${found} matching "${selected}" in organization ${org.name ?? org.slug}; set projects.monitoring to one exact project id, slug or name (an ambiguous or missing selection is never guessed).`
+    );
+  }
+  return refOf3(await exact2(ctx, region, org, matches3[0].id), org);
+}
+async function current3(ctx) {
+  const chosen = ctx.config.projects?.monitoring ?? ctx.state.resource(PROJECT_ID_KEY2);
+  return chosen ? resolve8(ctx, chosen) : null;
+}
+async function candidates3(ctx) {
+  const region = regionOf2(ctx);
+  const org = await organizationFor2(ctx, region);
+  return (await allProjects2(ctx, region, org)).map((p) => refOf3(p, org));
+}
+async function creationTarget4(ctx) {
+  const region = regionOf2(ctx);
+  const org = await organizationFor2(ctx, region);
+  const team = await teamFor(ctx, region, org);
+  return { scope: { kind: "organization", id: org.id, ...org.name ? { name: org.name } : {} }, region, team: team.slug };
+}
+function remember6(ctx, p, org, opts = {}) {
+  ctx.state.save((s) => {
+    s.resources[PROJECT_ID_KEY2] = p.id;
+    s.resources[PROJECT_SLUG_KEY] = p.slug;
+    s.resources[PROJECT_NAME_KEY2] = p.name;
+    s.resources[ORGANIZATION_ID_KEY2] = org.id;
+    s.resources[ORGANIZATION_SLUG_KEY] = org.slug;
+    if (opts.created) s.resources[CREATED_PROJECT_KEY2] = p.id;
+    else if (s.resources[CREATED_PROJECT_KEY2] !== p.id) delete s.resources[CREATED_PROJECT_KEY2];
+  });
+}
+async function create5(ctx, name3, approved) {
+  const region = regionOf2(ctx);
+  const target = await creationTarget4(ctx);
+  if (!approved || !sameTarget2(target, approved)) throw new SentryError("Sentry project creation destination changed after approval; re-plan. Nothing was created.");
+  if (!name3 || name3.length > 200 || /[\r\n\x00-\x1f]/.test(name3)) throw new SentryError("Invalid Sentry project name.");
+  const org = await organizationFor2(ctx, region);
+  const prior = ctx.state.resource(CREATED_PROJECT_KEY2);
+  if (prior && ctx.state.resource(PROJECT_NAME_KEY2) === name3) {
+    const p = await projectById2(ctx, region, org, prior);
+    if (p && !scheduledForDeletion(p.status)) {
+      if (p.name !== name3) throw new SentryError("The recorded Sentry project no longer carries this name; inspect it before re-planning.");
+      return refOf3(p, org);
+    }
+  }
+  if ((await allProjects2(ctx, region, org)).some((p) => p.name.toLowerCase() === name3.toLowerCase())) {
+    throw new SentryError(`A Sentry project named ${name3} already exists in this organization. Re-plan and approve adopting it; no duplicate was created.`);
+  }
+  const made = projectOf2(
+    await sentryCall(ctx, region, {
+      method: "POST",
+      path: `/api/0/teams/${enc2(org.slug)}/${enc2(target.team)}/projects/`,
+      body: { name: name3 },
+      what: `create project ${name3}`
+    })
+  );
+  const confirmed = await exact2(ctx, region, org, made.id);
+  if (confirmed.name !== name3) {
+    throw new SentryError("Sentry created-project destination could not be confirmed. Inspect the organization and re-plan; nothing was linked.");
+  }
+  if (target.team && confirmed.team && confirmed.team.slug !== target.team) {
+    throw new SentryError(`Sentry created the project in team ${confirmed.team.slug}, not the approved ${target.team}; inspect it and re-plan before linking anything.`);
+  }
+  const ref3 = refOf3(confirmed, org);
+  remember6(ctx, confirmed, org, { created: true });
+  ctx.log.info(`created Sentry project ${confirmed.name} (${confirmed.slug}) in organization ${org.name ?? org.slug}`);
+  return ref3;
+}
+async function remove3(ctx) {
+  const region = regionOf2(ctx);
+  const id2 = ctx.state.resource(PROJECT_ID_KEY2);
+  if (!id2) return { removed: false, reason: "no Sentry project is linked in state" };
+  if (ctx.state.resource(CREATED_PROJECT_KEY2) !== id2) return { removed: false, reason: "the Sentry project was adopted or selected, not created by golive" };
+  const org = await organizationFor2(ctx, region);
+  try {
+    await sentryCall(ctx, region, { method: "DELETE", path: `/api/0/projects/${enc2(org.slug)}/${enc2(id2)}/`, what: `delete project ${id2}` });
+  } catch (e) {
+    if (!(e instanceof SentryApiError) || e.status !== 404) throw e;
+  }
+  const state = await stateOf2(ctx, region, org, id2);
+  if (state === "present") return { removed: false, reason: "Sentry still reports the project as live" };
+  ctx.state.save((s) => {
+    delete s.resources[PROJECT_ID_KEY2];
+    delete s.resources[PROJECT_SLUG_KEY];
+    delete s.resources[PROJECT_NAME_KEY2];
+    delete s.resources[CREATED_PROJECT_KEY2];
+  });
+  ctx.log.info(`sentry: deleted project ${id2}${state === "pending" ? " (the provider scheduled the deletion)" : ""}`);
+  return { removed: true };
+}
+function monitoringOf(adapter) {
+  return adapter.capabilities.monitoring;
+}
+async function readDsn(ctx, projectIdValue) {
+  const region = regionOf2(ctx);
+  const org = await organizationFor2(ctx, region);
+  const id2 = numericId(projectIdValue, "project");
+  const p = await exact2(ctx, region, org, id2);
+  const keys3 = rows2(await sentryCall(ctx, region, { path: `/api/0/projects/${enc2(org.slug)}/${enc2(p.id)}/keys/`, what: `read the client keys of project ${p.name}` }), "client key");
+  const usable = keys3.map((k) => {
+    const dsn = k.dsn && typeof k.dsn === "object" && !Array.isArray(k.dsn) ? k.dsn.public : void 0;
+    return { active: k.isActive !== false, dsn: typeof dsn === "string" ? dsn : "" };
+  }).filter((k) => k.active && k.dsn);
+  const raw2 = usable.length ? usable[0].dsn : "";
+  if (!raw2) {
+    throw new SentryError(`Sentry returned no active client key/DSN for project ${id2}. Read the project's DSN in Sentry (Project Settings \u2192 Client Keys (DSN)) before wiring the app.`);
+  }
+  const parsed = parseDsn(raw2);
+  if (parsed.projectId !== p.id) throw new SentryError("Sentry returned a DSN for a different project; nothing was wired.");
+  return raw2;
+}
+var monitoring = {
+  dsn: readDsn,
+  // The Store request carries the PUBLIC DSN key in its payload, exactly as the app's SDK sends it,
+  // so the caller names the project and the adapter reads the DSN it stands for.
+  capture: async (ctx, projectIdValue, spec) => sentryStore(ctx, regionOf2(ctx), parseDsn(await readDsn(ctx, projectIdValue)), spec),
+  readEvent: async (ctx, projectIdValue, eventId, marker2) => {
+    const region = regionOf2(ctx);
+    const org = await organizationFor2(ctx, region);
+    const json2 = await sentryEventJson(ctx, region, org.slug, numericId(projectIdValue, "project"), eventId);
+    if (json2 === null) return "pending";
+    return JSON.stringify(json2).includes(marker2) ? "seen" : "seen-without-marker";
+  },
+  projectState: (ctx, projectIdValue) => sentryProjectState(ctx, projectIdValue)
+};
+var project2 = {
+  current: current3,
+  candidates: candidates3,
+  resolve: resolve8,
+  creationTarget: creationTarget4,
+  select: async (ctx, idOrName) => {
+    const p = await resolve8(ctx, idOrName);
+    const region = regionOf2(ctx);
+    const org = await organizationFor2(ctx, region);
+    remember6(ctx, await exact2(ctx, region, org, p.id), org);
+    return p;
+  },
+  create: create5,
+  remove: remove3
+};
+async function auth9(ctx) {
+  const region = regionOf2(ctx);
+  if (!ctx.envToken(SENTRY_TOKEN)) return { ok: false, howToFix: sentryHelp(region) };
+  try {
+    const orgs = await organizations2(ctx, region);
+    if (!orgs.length) {
+      return { ok: false, howToFix: `The ${SENTRY_TOKEN} token is valid but can see no Sentry organization: its scopes may exclude everything this account has. ${sentryHelp(region)}` };
+    }
+    if (orgs.length > 1) {
+      return {
+        ok: false,
+        howToFix: `${SENTRY_TOKEN} is valid, but golive needs a token scoped to exactly one Sentry organization (it can see ${orgs.length}: ${orgs.map((o) => o.name ?? o.slug).join(", ")}). Create an auth token (or internal integration) for one organization, then re-run plan. ${sentryHelp(region)}`
+      };
+    }
+    return { ok: true, via: `${SENTRY_TOKEN} env (${region}, ${orgs[0].name ?? orgs[0].slug})` };
+  } catch (e) {
+    const msg = errMsg6(e);
+    return { ok: false, howToFix: /scope|permission|org:read/i.test(msg) ? `${msg} Check the token's scopes: org:read, team:read, project:read, project:write and event:read.` : msg };
+  }
+}
+var sentryAdapter = {
+  id: "sentry",
+  title: "Sentry",
+  axes: ["monitoring"],
+  automated: true,
+  detect: (d) => (d.providers.monitoring ?? []).includes("sentry"),
+  auth: auth9,
+  capabilities: { project: project2, monitoring }
+};
+
 // src/adapters/netlify-api.ts
 init_credentials();
 init_secret();
@@ -16842,9 +17332,9 @@ function readNetlifyCliToken(expectedUserId, path = netlifyConfigPath()) {
     if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1 || before.size > 1024 * 1024) throw new Error();
     if (process.platform !== "win32" && ((before.mode & 63) !== 0 || process.getuid && before.uid !== process.getuid())) throw new Error();
     fd = openSync7(path, constants7.O_RDONLY | constants7.O_NOFOLLOW | constants7.O_NONBLOCK);
-    const current4 = fstatSync7(fd);
-    if (current4.ino !== before.ino || current4.dev !== before.dev || current4.nlink !== 1 || current4.size > 1024 * 1024) throw new Error();
-    if (!current4.isFile() || process.platform !== "win32" && ((current4.mode & 63) !== 0 || process.getuid && current4.uid !== process.getuid())) throw new Error();
+    const current5 = fstatSync7(fd);
+    if (current5.ino !== before.ino || current5.dev !== before.dev || current5.nlink !== 1 || current5.size > 1024 * 1024) throw new Error();
+    if (!current5.isFile() || process.platform !== "win32" && ((current5.mode & 63) !== 0 || process.getuid && current5.uid !== process.getuid())) throw new Error();
     const data = JSON.parse(readFileSync11(fd, "utf8"));
     if (typeof data.userId !== "string" || data.userId !== expectedUserId || !Object.hasOwn(data.users ?? {}, data.userId)) throw new Error();
     const value = data.users?.[data.userId]?.auth?.token;
@@ -16885,9 +17375,9 @@ function label2(value) {
   if (typeof value !== "string" || !value.trim() || value.length > 160 || /[\r\n\x00-\x1f]/.test(value) || isRegisteredSecret(value)) throw new NetlifyError("Netlify returned an invalid resource label.");
   return redact(value);
 }
-function parseJson2(text2) {
+function parseJson2(text3) {
   try {
-    return JSON.parse(text2);
+    return JSON.parse(text3);
   } catch {
     throw new NetlifyError("Netlify CLI did not return valid JSON; update the official CLI and retry.");
   }
@@ -17049,9 +17539,9 @@ async function listSites(ctx, name3, selectedAccount) {
     const query = new URLSearchParams({ page: String(page), per_page: "100", ...name3 ? { name: name3 } : {} });
     const raw2 = await netlifyRead(ctx, selectedAccount ? "listSitesForAccount" : "listSites", `${selectedAccount ? "/" + encodeURIComponent(selectedAccount.slug) : ""}/sites?${query}`, params);
     if (!Array.isArray(raw2)) throw new NetlifyError("Netlify returned an invalid site list.");
-    const rows2 = raw2.map(siteInfo);
-    if (selectedAccount && rows2.some((p) => p.accountId !== selectedAccount.id)) throw new NetlifyError("Netlify site list contained a different team; re-plan.");
-    result2.push(...rows2);
+    const rows3 = raw2.map(siteInfo);
+    if (selectedAccount && rows3.some((p) => p.accountId !== selectedAccount.id)) throw new NetlifyError("Netlify site list contained a different team; re-plan.");
+    result2.push(...rows3);
     if (raw2.length < 100) return result2;
   }
   throw new NetlifyError("Netlify site listing exceeded its bounded pagination limit; select an exact site ID.");
@@ -17060,9 +17550,9 @@ async function resolveSite(ctx, idOrName) {
   identifier(idOrName);
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrName)) return getSite(ctx, idOrName);
   const owner = configuredAccount(ctx);
-  const rows2 = (await listSites(ctx, idOrName, owner ? await accountInfo(ctx, owner) : void 0)).filter((p) => p.name === idOrName);
-  if (rows2.length !== 1) throw new NetlifyError("Netlify project name is missing or ambiguous across teams. Select the exact site ID and re-plan.");
-  return getSite(ctx, rows2[0].id);
+  const rows3 = (await listSites(ctx, idOrName, owner ? await accountInfo(ctx, owner) : void 0)).filter((p) => p.name === idOrName);
+  if (rows3.length !== 1) throw new NetlifyError("Netlify project name is missing or ambiguous across teams. Select the exact site ID and re-plan.");
+  return getSite(ctx, rows3[0].id);
 }
 function localSite(ctx) {
   try {
@@ -17077,7 +17567,7 @@ async function requireSite(ctx) {
   if (!selected) throw new NetlifyError("No Netlify project is selected. Approve the exact project plan before wiring or deploying.");
   return resolveSite(ctx, selected);
 }
-function remember6(ctx, p) {
+function remember7(ctx, p) {
   ctx.state.save((s) => {
     s.resources["netlify.siteId"] = p.id;
     s.resources["netlify.siteName"] = p.name;
@@ -17089,7 +17579,7 @@ function remember6(ctx, p) {
 function rememberCreated2(ctx, id2) {
   ctx.state.save((s) => void (s.resources["netlify.createdProjectId"] = id2));
 }
-async function creationTarget4(ctx) {
+async function creationTarget5(ctx) {
   const chosen = configuredAccount(ctx);
   let a;
   if (chosen) a = await requireFreeAccount(ctx, chosen, true);
@@ -17103,7 +17593,7 @@ async function creationTarget4(ctx) {
   return { scope: { kind: "team", id: a.id, name: a.name } };
 }
 var netlifyProject = {
-  creationTarget: creationTarget4,
+  creationTarget: creationTarget5,
   async current(ctx) {
     const selected = ctx.config.projects?.hosting ?? ctx.state.resource("netlify.siteId") ?? localSite(ctx);
     return selected ? ref(await resolveSite(ctx, selected)) : null;
@@ -17130,18 +17620,18 @@ var netlifyProject = {
     }
   },
   async select(ctx, idOrName) {
-    return remember6(ctx, await resolveSite(ctx, idOrName));
+    return remember7(ctx, await resolveSite(ctx, idOrName));
   },
   async create(ctx, name3, approvedTarget) {
     if (!/^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/.test(name3)) throw new NetlifyError("Use a Netlify site name with 2\u201363 lowercase letters, digits and internal hyphens.");
     if (!approvedTarget || approvedTarget.scope.kind !== "team") throw new NetlifyError("Netlify project creation needs the exact approved team destination; re-plan.");
-    const fresh = await creationTarget4(ctx);
+    const fresh = await creationTarget5(ctx);
     if (fresh.scope.id !== approvedTarget.scope.id) throw new NetlifyError("Netlify creation destination changed; re-plan before creating anything.");
     const a = await requireFreeAccount(ctx, fresh.scope.id, true);
     if ((await listSites(ctx, name3, a)).some((p2) => p2.name === name3)) throw new NetlifyError("A Netlify site with this name already exists in the selected team. Re-plan to explicitly select it; it was not adopted or changed.");
     const p = siteInfo(await netlifyHttp(ctx, "POST", `/${encodeURIComponent(a.slug)}/sites?configure_dns=false`, { name: name3 }));
     if (p.name !== name3 || p.accountId !== a.id || p.accountSlug !== a.slug) throw new NetlifyError("Netlify created a site with an unexpected destination. Stop and inspect that account; no environment variables or deployment were changed.");
-    const created = remember6(ctx, p);
+    const created = remember7(ctx, p);
     rememberCreated2(ctx, p.id);
     return created;
   },
@@ -17423,7 +17913,7 @@ var neonTiming = { pollMs: 2e3, timeoutMs: 5 * 6e4 };
 var ID = /^[a-z0-9][a-z0-9-]{0,59}$/;
 var STATE_PROJECT = "neon.projectId";
 var OUTPUTS = ["db.url", "db.directUrl"];
-function obj2(v) {
+function obj3(v) {
   if (!v || typeof v !== "object" || Array.isArray(v)) throw new NeonError("Neon returned an unexpected object; nothing was inferred.");
   return v;
 }
@@ -17437,9 +17927,9 @@ function id(v) {
   return s;
 }
 function list3(v, key) {
-  const a = obj2(v)[key];
+  const a = obj3(v)[key];
   if (!Array.isArray(a)) throw new NeonError(`Neon returned an unexpected ${key} list.`);
-  return a.map(obj2);
+  return a.map(obj3);
 }
 function cfg(ctx) {
   return ctx.config.neon ?? {};
@@ -17448,14 +17938,14 @@ function orgOverride(ctx) {
   const v = cfg(ctx).organizationId ?? ctx.env("NEON_ORG_ID");
   return v === void 0 ? void 0 : id(v);
 }
-var enc2 = encodeURIComponent;
+var enc3 = encodeURIComponent;
 function ref2(p) {
   const org = id(p.org_id ?? p.owner_id);
   if (p.org_id !== void 0 && p.owner_id !== void 0 && p.org_id !== p.owner_id) throw new NeonError("Neon project ownership fields disagree; re-plan after checking the account.");
   return { id: id(p.id), name: str3(p.name), scope: { kind: "organization", id: org } };
 }
 async function organization(ctx, orgId2) {
-  const o = obj2(await neonApi(ctx, `/organizations/${id(orgId2)}`));
+  const o = obj3(await neonApi(ctx, `/organizations/${id(orgId2)}`));
   if (o.id !== orgId2 || typeof o.plan !== "string") throw new NeonError("Could not verify Neon organization identity and billing plan.");
   return o;
 }
@@ -17479,7 +17969,7 @@ async function projects(ctx, orgId2) {
   let cursor;
   for (let page = 0; page < 100; page++) {
     const query = new URLSearchParams({ org_id: orgId2, limit: "400", ...cursor ? { cursor } : {} });
-    const data = obj2(await neonApi(ctx, `/projects?${query}`));
+    const data = obj3(await neonApi(ctx, `/projects?${query}`));
     if (data.unavailable_project_ids !== void 0 && (!Array.isArray(data.unavailable_project_ids) || data.unavailable_project_ids.length > 0)) throw new NeonError("Neon project inventory is incomplete; refusing creation or adoption.");
     const batch = list3(data, "projects").map(ref2);
     if (batch.some((p) => p.scope.id !== orgId2)) throw new NeonError("Neon project list included a different organization.");
@@ -17488,33 +17978,33 @@ async function projects(ctx, orgId2) {
       found.push(p);
     }
     if (data.pagination === void 0) return found;
-    cursor = str3(obj2(data.pagination).cursor);
+    cursor = str3(obj3(data.pagination).cursor);
     if (!batch.length) return found;
     if (seen2.has(cursor)) throw new NeonError("Neon project pagination did not advance.");
     seen2.add(cursor);
   }
   throw new NeonError("Neon project inventory exceeded the pagination safety limit.");
 }
-async function exact2(ctx, projectId2) {
-  const p = obj2(obj2(await neonApi(ctx, `/projects/${id(projectId2)}`)).project);
+async function exact3(ctx, projectId2) {
+  const p = obj3(obj3(await neonApi(ctx, `/projects/${id(projectId2)}`)).project);
   const pRef = ref2(p);
   if (pRef.id !== projectId2 || orgOverride(ctx) && pRef.scope.id !== orgOverride(ctx)) throw new NeonError("Neon returned a project outside the selected project/organization.");
   return p;
 }
-async function resolve8(ctx, selected) {
+async function resolve9(ctx, selected) {
   const explicitOrg = orgOverride(ctx);
-  if (!explicitOrg) return ref2(await exact2(ctx, selected));
+  if (!explicitOrg) return ref2(await exact3(ctx, selected));
   const all = await projects(ctx, explicitOrg);
   const byId = all.filter((p) => p.id === selected);
   const matches3 = byId.length ? byId : all.filter((p) => p.name === selected);
   if (matches3.length !== 1) throw new NeonError("Select one exact accessible Neon project ID; this selection is missing or ambiguous.");
-  return ref2(await exact2(ctx, matches3[0].id));
+  return ref2(await exact3(ctx, matches3[0].id));
 }
-async function current3(ctx) {
+async function current4(ctx) {
   const chosen = ctx.config.projects?.db ?? ctx.state.resource(STATE_PROJECT);
-  return chosen ? resolve8(ctx, chosen) : null;
+  return chosen ? resolve9(ctx, chosen) : null;
 }
-async function candidates3(ctx) {
+async function candidates4(ctx) {
   const o = await freeOrg2(ctx);
   const all = await projects(ctx, id(o.id));
   const name3 = basename8(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63) || "app";
@@ -17525,13 +18015,13 @@ async function candidates3(ctx) {
   }
   return all;
 }
-function remember7(ctx, p) {
+function remember8(ctx, p) {
   ctx.state.save((s) => {
     s.resources[STATE_PROJECT] = p.id;
     s.resources["neon.organizationId"] = p.scope.id;
   });
 }
-async function creationTarget5(ctx) {
+async function creationTarget6(ctx) {
   if (cfg(ctx).branchId || cfg(ctx).database || cfg(ctx).role) throw new NeonError("Creating a Neon project uses fixed main/neondb/neondb_owner defaults. Remove branch/database/role selectors or select an existing project.");
   const o = await freeOrg2(ctx);
   const region = cfg(ctx).region ?? "aws-us-east-2";
@@ -17545,7 +18035,7 @@ async function waitOperations(ctx, projectId2, operationIds) {
   const deadline = Date.now() + neonTiming.timeoutMs;
   for (const operationId of operationIds) {
     for (; ; ) {
-      const op = obj2(obj2(await neonApi(ctx, `/projects/${projectId2}/operations/${enc2(operationId)}`)).operation);
+      const op = obj3(obj3(await neonApi(ctx, `/projects/${projectId2}/operations/${enc3(operationId)}`)).operation);
       if (op.id !== operationId || op.project_id !== projectId2) throw new NeonError("Neon operation identity mismatch.");
       if (op.status === "finished") break;
       if (!["scheduling", "running", "cancelling"].includes(String(op.status))) throw new NeonError("Neon provisioning operation failed or returned an unknown state; inspect this project before resuming.");
@@ -17554,14 +18044,14 @@ async function waitOperations(ctx, projectId2, operationIds) {
     }
   }
 }
-async function create5(ctx, name3, approved) {
+async function create6(ctx, name3, approved) {
   if (!approved) throw new NeonError("Neon creation requires an approved organization and region.");
-  const now = await creationTarget5(ctx);
+  const now = await creationTarget6(ctx);
   if (!targetSame(now, approved)) throw new NeonError("Neon creation destination changed after approval; re-plan.");
   if (!name3 || name3.length > 256) throw new NeonError("Invalid Neon project name.");
   const prior = ctx.state.resource("neon.createdProjectId");
   if (prior && ctx.state.resource("neon.createdProjectName") === name3) {
-    const p = await exact2(ctx, prior);
+    const p = await exact3(ctx, prior);
     const r = ref2(p);
     if (r.scope.id !== approved.scope.id || p.region_id !== approved.region) throw new NeonError("Saved Neon creation destination differs from approval.");
     await waitOperations(ctx, r.id, JSON.parse(ctx.state.resource("neon.operationIds") ?? "[]"));
@@ -17570,11 +18060,11 @@ async function create5(ctx, name3, approved) {
   if ((await projects(ctx, approved.scope.id)).some((p) => p.name.toLowerCase() === name3.toLowerCase())) throw new NeonError("A Neon project with this name already exists. Re-plan and explicitly approve adoption; no duplicate was created.");
   const database = "neondb";
   const role = "neondb_owner";
-  const data = obj2(await neonApi(ctx, "/projects", "POST", { project: { name: name3, org_id: approved.scope.id, region_id: approved.region, branch: { name: "main", database_name: database, role_name: role }, default_endpoint_settings: { autoscaling_limit_min_cu: 0.25, autoscaling_limit_max_cu: 0.25 }, store_passwords: true } }));
-  const created = ref2(obj2(data.project));
-  const confirmed = await exact2(ctx, created.id);
+  const data = obj3(await neonApi(ctx, "/projects", "POST", { project: { name: name3, org_id: approved.scope.id, region_id: approved.region, branch: { name: "main", database_name: database, role_name: role }, default_endpoint_settings: { autoscaling_limit_min_cu: 0.25, autoscaling_limit_max_cu: 0.25 }, store_passwords: true } }));
+  const created = ref2(obj3(data.project));
+  const confirmed = await exact3(ctx, created.id);
   if (created.scope.id !== approved.scope.id || ref2(confirmed).scope.id !== approved.scope.id || confirmed.region_id !== approved.region || confirmed.name !== name3) throw new NeonError("Neon created-project destination could not be confirmed. Inspect the organization and re-plan; nothing was linked.");
-  const branch = obj2(data.branch);
+  const branch = obj3(data.branch);
   if (branch.project_id !== created.id) throw new NeonError("Neon creation response did not identify the new project branch.");
   const branchId = id(branch.id);
   const ops = list3(data, "operations");
@@ -17586,29 +18076,29 @@ async function create5(ctx, name3, approved) {
   return ref2(confirmed);
 }
 async function selection(ctx) {
-  const project2 = await current3(ctx);
-  if (!project2) throw new NeonError("Select or create a Neon project first.");
-  const owned3 = ctx.state.resource("neon.createdProjectId") === project2.id;
+  const project3 = await current4(ctx);
+  if (!project3) throw new NeonError("Select or create a Neon project first.");
+  const owned3 = ctx.state.resource("neon.createdProjectId") === project3.id;
   const branchId = cfg(ctx).branchId ?? (owned3 ? ctx.state.resource("neon.branchId") : void 0);
   const database = cfg(ctx).database ?? (owned3 ? ctx.state.resource("neon.database") : void 0);
   const role = cfg(ctx).role ?? (owned3 ? ctx.state.resource("neon.role") : void 0);
   if (!branchId || !database || !role) throw new NeonError("For an existing Neon project set neon.branchId, neon.database and neon.role explicitly; golive never guesses the default or production branch.");
-  const branch = obj2(obj2(await neonApi(ctx, `/projects/${project2.id}/branches/${id(branchId)}`)).branch);
-  if (branch.project_id !== project2.id || branch.id !== branchId || branch.current_state !== "ready") throw new NeonError("The selected Neon branch is not ready or belongs to a different project.");
-  const databases = list3(await neonApi(ctx, `/projects/${project2.id}/branches/${branchId}/databases`), "databases");
-  const roles = list3(await neonApi(ctx, `/projects/${project2.id}/branches/${branchId}/roles`), "roles");
+  const branch = obj3(obj3(await neonApi(ctx, `/projects/${project3.id}/branches/${id(branchId)}`)).branch);
+  if (branch.project_id !== project3.id || branch.id !== branchId || branch.current_state !== "ready") throw new NeonError("The selected Neon branch is not ready or belongs to a different project.");
+  const databases = list3(await neonApi(ctx, `/projects/${project3.id}/branches/${branchId}/databases`), "databases");
+  const roles = list3(await neonApi(ctx, `/projects/${project3.id}/branches/${branchId}/roles`), "roles");
   if (!databases.some((d) => d.branch_id === branchId && d.name === database) || !roles.some((r) => r.branch_id === branchId && r.name === role && r.authentication_method !== "no_login" && r.authentication_method !== "oauth")) throw new NeonError("The selected Neon database or password-authenticated role is not present on this branch.");
-  const endpoints = list3(await neonApi(ctx, `/projects/${project2.id}/endpoints`), "endpoints");
-  const matches3 = endpoints.filter((e) => e.project_id === project2.id && e.branch_id === branchId && e.type === "read_write" && e.disabled === false);
+  const endpoints = list3(await neonApi(ctx, `/projects/${project3.id}/endpoints`), "endpoints");
+  const matches3 = endpoints.filter((e) => e.project_id === project3.id && e.branch_id === branchId && e.type === "read_write" && e.disabled === false);
   if (matches3.length !== 1) throw new NeonError("Could not confirm one enabled read-write Neon compute for the selected branch. No compute was created.");
   const endpoint = matches3[0];
   const host = str3(endpoint.host);
   if (!/^ep-[a-z0-9-]+\.[a-z0-9.-]+\.neon\.tech$/.test(host)) throw new NeonError("Neon returned an unexpected compute hostname.");
-  return { project: project2, branchId, database, role, endpointId: id(endpoint.id), host };
+  return { project: project3, branchId, database, role, endpointId: id(endpoint.id), host };
 }
 async function connection(ctx, s, pooled) {
   const query = new URLSearchParams({ branch_id: s.branchId, endpoint_id: s.endpointId, database_name: s.database, role_name: s.role, pooled: String(pooled) });
-  const value = obj2(await neonApi(ctx, `/projects/${s.project.id}/connection_uri?${query}`)).uri;
+  const value = obj3(await neonApi(ctx, `/projects/${s.project.id}/connection_uri?${query}`)).uri;
   if (!(value instanceof Secret)) throw new NeonError("Neon did not return a usable connection URI. Passwords may not be stored; golive will not reset them.");
   let uri;
   try {
@@ -17667,8 +18157,8 @@ async function verifyNeonConnection(ctx) {
   }
   if (result2.status !== 200) throw new NeonError(`Neon SQL connectivity failed (HTTP ${result2.status}); provider details omitted.`);
   const results = list3(result2.json, "results");
-  const rows2 = results[0]?.rows;
-  if (results.length !== 1 || results[0]?.command !== "SELECT" || results[0]?.rowCount !== 1 || !Array.isArray(rows2) || rows2.length !== 1 || !Array.isArray(rows2[0]) || rows2[0].length !== 3 || rows2[0][0] !== s.database || rows2[0][1] !== s.role || rows2[0][2] !== "1") throw new NeonError("Neon SQL response did not prove the selected database and role.");
+  const rows3 = results[0]?.rows;
+  if (results.length !== 1 || results[0]?.command !== "SELECT" || results[0]?.rowCount !== 1 || !Array.isArray(rows3) || rows3.length !== 1 || !Array.isArray(rows3[0]) || rows3[0].length !== 3 || rows3[0][0] !== s.database || rows3[0][1] !== s.role || rows3[0][2] !== "1") throw new NeonError("Neon SQL response did not prove the selected database and role.");
   return { projectId: s.project.id, branchId: s.branchId, database: s.database, role: s.role };
 }
 var neonAdapter = {
@@ -17679,7 +18169,7 @@ var neonAdapter = {
   detect: (d) => d.providers.db?.includes("neon") ?? false,
   auth: async (ctx) => {
     try {
-      const a = obj2(await neonApi(ctx, "/auth"));
+      const a = obj3(await neonApi(ctx, "/auth"));
       const account2 = id(a.account_id);
       if (!["keycloak", "session_cookie", "api_key_user", "api_key_org", "oauth"].includes(String(a.auth_method))) throw new NeonError("Unknown Neon authentication method.");
       return { ok: true, via: `${ctx.envToken("NEON_API_KEY") ? "NEON_API_KEY" : "Neon CLI login"} (account ${account2}; destination is approved separately)` };
@@ -17688,11 +18178,11 @@ var neonAdapter = {
     }
   },
   capabilities: {
-    project: { current: current3, candidates: candidates3, resolve: resolve8, creationTarget: creationTarget5, select: async (ctx, chosen) => {
-      const p = await resolve8(ctx, chosen);
-      remember7(ctx, p);
+    project: { current: current4, candidates: candidates4, resolve: resolve9, creationTarget: creationTarget6, select: async (ctx, chosen) => {
+      const p = await resolve9(ctx, chosen);
+      remember8(ctx, p);
       return p;
-    }, create: create5 },
+    }, create: create6 },
     outputs: { outputs: outputs3, provides: async (_ctx, _target, keys3) => OUTPUTS.filter((k) => !keys3 || keys3.includes(k)), identity: connectionIdentity },
     dbConnection: { probe: verifyNeonConnection }
   }
@@ -17729,13 +18219,11 @@ var GUIDED = [
   { id: "ses", title: "Amazon SES", axes: ["email"] },
   // dns
   { id: "namecheap", title: "Namecheap", axes: ["dns"] },
-  { id: "vercel-dns", title: "Vercel DNS", axes: ["dns"] },
-  // monitoring
-  { id: "sentry", title: "Sentry", axes: ["monitoring"] }
+  { id: "vercel-dns", title: "Vercel DNS", axes: ["dns"] }
 ];
 
 // src/adapters/index.ts
-var ADAPTERS = [cloudflareAdapter, godaddyAdapter, neonAdapter, netlifyAdapter, porkbunAdapter, posthogAdapter, resendAdapter, stripeAdapter, supabaseAdapter, vercelAdapter];
+var ADAPTERS = [cloudflareAdapter, godaddyAdapter, neonAdapter, netlifyAdapter, porkbunAdapter, posthogAdapter, resendAdapter, sentryAdapter, stripeAdapter, supabaseAdapter, vercelAdapter];
 
 // src/links/accounts.ts
 init_types();
@@ -17829,16 +18317,16 @@ var projectsLink = {
   }
 };
 async function planAxis(ctx, axis, adapter, linker) {
-  let current4 = await linker.current(ctx).catch((e) => {
+  let current5 = await linker.current(ctx).catch((e) => {
     throw new Error(`reading the ${adapter.title} project linked to this repo failed: ${errMsg2(e)}`);
   });
   const account2 = await accountLine(ctx, adapter);
   const chosen = ctx.config.projects?.[axis];
-  if (current4) {
-    if (linker.resolve) current4 = await linker.resolve(ctx, current4.id);
-    const fromConfig = chosen !== void 0 && (chosen === current4.id || chosen === current4.name);
-    const warning = chosen !== void 0 && !fromConfig ? `golive.yaml projects.${axis} is "${chosen}", but this repo is already linked to ${adapter.title} project ${current4.name} (${current4.id}); golive uses the linked one. To switch, relink the repo to "${chosen}" (or remove the link), then run \`plan\` again.` : void 0;
-    return { step: pinStep(axis, adapter, linker, current4, fromConfig ? `golive.yaml projects.${axis}` : `the project already linked to this repo (golive state or ${adapter.title}'s local link file)`, account2), warning };
+  if (current5) {
+    if (linker.resolve) current5 = await linker.resolve(ctx, current5.id);
+    const fromConfig = chosen !== void 0 && (chosen === current5.id || chosen === current5.name);
+    const warning = chosen !== void 0 && !fromConfig ? `golive.yaml projects.${axis} is "${chosen}", but this repo is already linked to ${adapter.title} project ${current5.name} (${current5.id}); golive uses the linked one. To switch, relink the repo to "${chosen}" (or remove the link), then run \`plan\` again.` : void 0;
+    return { step: pinStep(axis, adapter, linker, current5, fromConfig ? `golive.yaml projects.${axis}` : `the project already linked to this repo (golive state or ${adapter.title}'s local link file)`, account2), warning };
   }
   if (chosen) {
     const resolved = linker.resolve ? await linker.resolve(ctx, chosen) : void 0;
@@ -17846,15 +18334,15 @@ async function planAxis(ctx, axis, adapter, linker) {
   }
   const identity = await repoIdentity(ctx);
   const name3 = identity.name;
-  const candidates4 = await linker.candidates(ctx).catch((e) => {
+  const candidates5 = await linker.candidates(ctx).catch((e) => {
     throw new Error(`listing ${adapter.title} project candidates failed: ${errMsg2(e)}`);
   });
-  const same2 = candidates4.find((c) => c.name.toLowerCase() === name3);
+  const same2 = candidates5.find((c) => c.name.toLowerCase() === name3);
   if (same2) {
     const resolved = linker.resolve ? await linker.resolve(ctx, same2.id) : same2;
     return { step: selectStep(ctx, axis, adapter, linker, resolved.id, resolved.name, account2, resolved) };
   }
-  const names = [...new Set(candidates4.map((c) => c.name))].sort();
+  const names = [...new Set(candidates5.map((c) => c.name))].sort();
   const listed = names.length ? `${names.slice(0, MAX_LISTED).join(", ")}${names.length > MAX_LISTED ? ", \u2026" : ""}` : "";
   if (linker.create) {
     const target = linker.creationTarget ? await linker.creationTarget(ctx) : void 0;
@@ -17880,7 +18368,7 @@ var scopeOf = (p) => {
   return s ? ` in ${s}` : "";
 };
 var sameScope = (a, b) => a?.kind === b?.kind && a?.id === b?.id;
-var sameTarget2 = (a, b) => sameScope(a.scope, b.scope) && a.region === b.region;
+var sameTarget3 = (a, b) => sameScope(a.scope, b.scope) && a.region === b.region;
 var localLinkLines = (linker) => linker.localLinkFile ? [`also keeps ${linker.localLinkFile} in sync (a local file in this repo, no provider write) so the provider's CLI and other tools detect this project`] : [];
 function pinStep(axis, adapter, linker, planned, source, account2) {
   return step({
@@ -17943,7 +18431,7 @@ function createStep(ctx, axis, adapter, linker, name3, listed, account2, target,
     destination: { axis, provider: adapter.id, providerTitle: adapter.title, action: "create", project: { name: name3 }, ...target ? { scope: target.scope, ...target.region ? { region: target.region } : {} } : {}, ...account2 ? { access: account2 } : {} },
     async run(sctx) {
       try {
-        if (target && linker.creationTarget && !sameTarget2(target, await linker.creationTarget(sctx))) {
+        if (target && linker.creationTarget && !sameTarget3(target, await linker.creationTarget(sctx))) {
           throw new Error("the destination account/team/organization or region changed; run `plan` again and re-approve. Nothing was created.");
         }
         const p = await linker.create(sctx, name3, target);
@@ -19048,14 +19536,14 @@ var authRecoveryLink = {
       intent: intentOf({ project: await projectIntent(ctx, au.adapter), user: seeded, email: address, previous: ctx.state.get().steps["auth:recovery"]?.at }),
       verifyWith: ["auth-recovery"],
       async run(sctx) {
-        const current4 = sctx.state.resource(TEST_USER_ID);
+        const current5 = sctx.state.resource(TEST_USER_ID);
         const email = sctx.state.resource(TEST_USER_EMAIL) ?? address;
-        if (!current4) {
+        if (!current5) {
           throw new Error("No test account is recorded in .golive/state.json, so there is nothing for the recovery rotation to set a password on. Run `plan` + `apply` with auth.e2e: true first.");
         }
-        const before = await authUsers.adminUser(sctx, current4);
+        const before = await authUsers.adminUser(sctx, current5);
         if (!before) {
-          throw new Error(`The test account ${current4} recorded in .golive/state.json is gone from ${au.adapter.title}. Remove "${TEST_USER_ID}" from .golive/state.json to seed a new account, or restore the user in the provider dashboard.`);
+          throw new Error(`The test account ${current5} recorded in .golive/state.json is gone from ${au.adapter.title}. Remove "${TEST_USER_ID}" from .golive/state.json to seed a new account, or restore the user in the provider dashboard.`);
         }
         if (!before.emailConfirmed) {
           throw new Error(`${email} is not confirmed yet, so a recovery link cannot set its password. Click the confirmation link in that inbox (the auth:confirm-email handoff), then re-run \`apply\`.`);
@@ -19076,24 +19564,24 @@ var authRecoveryLink = {
         }
         const minted = await mintLink(sctx, email);
         if (!minted) {
-          throw new Error(`${au.adapter.title} has no account for ${email}, so no recovery link could be minted for the recorded test account ${current4}. Check the address in .golive/state.json and the provider's user list.`);
+          throw new Error(`${au.adapter.title} has no account for ${email}, so no recovery link could be minted for the recorded test account ${current5}. Check the address in .golive/state.json and the provider's user list.`);
         }
-        if (minted.userId !== current4) {
-          throw new Error(`The recovery link ${au.adapter.title} minted for ${email} belongs to user ${minted.userId}, not the recorded test account ${current4}: stop and inspect the project before rotating anything.`);
+        if (minted.userId !== current5) {
+          throw new Error(`The recovery link ${au.adapter.title} minted for ${email} belongs to user ${minted.userId}, not the recorded test account ${current5}: stop and inspect the project before rotating anything.`);
         }
         const pass2 = testPassword();
         const verified = await authUsers.recoverySession(sctx, minted.token);
         if (!verified.session) {
           throw new Error(`The recovery link for ${email} was refused (${verified.code}), so the password was not rotated. Check that the project allows recovery (\`auth.signup: true\`) and re-run \`apply\`.`);
         }
-        if (verified.session.userId !== current4) {
-          throw new Error(`The recovery session belongs to user ${verified.session.userId}, not the recorded test account ${current4}: stop and inspect the project before rotating anything.`);
+        if (verified.session.userId !== current5) {
+          throw new Error(`The recovery session belongs to user ${verified.session.userId}, not the recorded test account ${current5}: stop and inspect the project before rotating anything.`);
         }
         await authUsers.updateOwnPassword(sctx, verified.session.accessToken, pass2);
-        const replaced = vaultGet(testUserPassKey(current4));
-        if (replaced) vaultPut(recoveryOldPassKey(current4), replaced);
-        vaultPut(testUserPassKey(current4), pass2);
-        vaultPut(recoveryTokenKey(current4), minted.token);
+        const replaced = vaultGet(testUserPassKey(current5));
+        if (replaced) vaultPut(recoveryOldPassKey(current5), replaced);
+        vaultPut(testUserPassKey(current5), pass2);
+        vaultPut(recoveryTokenKey(current5), minted.token);
         const changes = [
           `asked ${au.adapter.title} to send a recovery email for ${email} (HTTP ${asked.status})`,
           `set a new password on the same account through the recovery link (user ${minted.userId}); fp:${pass2.fingerprint}, kept in this run's memory only`
@@ -19101,7 +19589,7 @@ var authRecoveryLink = {
         changes.push(
           replaced ? `the replaced password is refused from now on (fp:${replaced.fingerprint}); the auth-recovery check re-proves that against the provider` : "this run held no previous password for the account (auth:test-user did not run in it), so the replaced password is not in this run's memory"
         );
-        const after = await authUsers.adminUser(sctx, current4);
+        const after = await authUsers.adminUser(sctx, current5);
         if (after) changes.push(`${email} still reads back confirmed (email_confirmed_at set)`);
         return { changes };
       }
@@ -19277,6 +19765,7 @@ var analyticsLink = {
     const adapter = r.adapter;
     const provider = analyticsOf(adapter);
     if (!provider) {
+      if (monitoringOf(adapter)) return null;
       return { steps: [], handoffs: [], warnings: [`${adapter.title}: the adapter exposes no capture + read-back surface, so golive cannot wire or verify monitoring for it`] };
     }
     const warnings = [];
@@ -19301,40 +19790,40 @@ var analyticsLink = {
 };
 var scopeOf2 = (p) => p.scope ? ` in ${p.scope.kind} ${p.scope.name ? `${p.scope.name} (${p.scope.id})` : p.scope.id}` : "";
 var sameScope2 = (a, b) => a?.kind === b?.kind && a?.id === b?.id;
-var sameTarget3 = (a, b) => sameScope2(a.scope, b.scope) && a.region === b.region;
+var sameTarget4 = (a, b) => sameScope2(a.scope, b.scope) && a.region === b.region;
 var nameList = (refs) => [...new Set(refs.map((c) => `${c.name} (${c.id})`))].sort();
 async function planProject(ctx, adapter, linker, warnings) {
   const account2 = await accountLine2(ctx, adapter);
   const chosen = ctx.config.projects?.monitoring;
-  let current4 = await linker.current(ctx).catch((e) => {
+  let current5 = await linker.current(ctx).catch((e) => {
     throw new Error(`reading the ${adapter.title} project linked to this repo failed: ${errMsg2(e)}`);
   });
-  if (current4) {
-    if (linker.resolve) current4 = await linker.resolve(ctx, current4.id);
-    const fromConfig = chosen !== void 0 && (chosen === current4.id || chosen === current4.name);
+  if (current5) {
+    if (linker.resolve) current5 = await linker.resolve(ctx, current5.id);
+    const fromConfig = chosen !== void 0 && (chosen === current5.id || chosen === current5.name);
     if (chosen !== void 0 && !fromConfig) {
       warnings.push(
-        `golive.yaml projects.monitoring is "${chosen}", but this repo is already linked to ${adapter.title} project ${current4.name} (${current4.id}); golive uses the linked one. To switch, remove the recorded project (or the golive.yaml entry), then run \`plan\` again.`
+        `golive.yaml projects.monitoring is "${chosen}", but this repo is already linked to ${adapter.title} project ${current5.name} (${current5.id}); golive uses the linked one. To switch, remove the recorded project (or the golive.yaml entry), then run \`plan\` again.`
       );
     }
-    return { project: current4, created: false, steps: [pinStep2(adapter, linker, current4, fromConfig ? "golive.yaml projects.monitoring" : "the project already linked to this repo (golive state)", account2)], handoffs: [] };
+    return { project: current5, created: false, steps: [pinStep2(adapter, linker, current5, fromConfig ? "golive.yaml projects.monitoring" : "the project already linked to this repo (golive state)", account2)], handoffs: [] };
   }
   if (chosen) {
     const resolved = linker.resolve ? await linker.resolve(ctx, chosen) : void 0;
     return { project: resolved ?? { id: chosen, name: chosen }, created: false, steps: [selectStep2(adapter, linker, resolved?.id ?? chosen, resolved?.name ?? chosen, account2, resolved)], handoffs: [] };
   }
   const identity = await repoIdentity(ctx);
-  const candidates4 = await linker.candidates(ctx).catch((e) => {
+  const candidates5 = await linker.candidates(ctx).catch((e) => {
     throw new Error(`listing ${adapter.title} project candidates failed: ${errMsg2(e)}`);
   });
-  const same2 = candidates4.find((c) => c.name.toLowerCase() === identity.name.toLowerCase());
+  const same2 = candidates5.find((c) => c.name.toLowerCase() === identity.name.toLowerCase());
   if (same2) {
     const resolved = linker.resolve ? await linker.resolve(ctx, same2.id) : same2;
     return { project: resolved, created: false, steps: [selectStep2(adapter, linker, resolved.id, resolved.name, account2, resolved)], handoffs: [] };
   }
   if (linker.create) {
     const target = linker.creationTarget ? await linker.creationTarget(ctx) : void 0;
-    const listed = nameList(candidates4);
+    const listed = nameList(candidates5);
     if (listed.length) {
       warnings.push(
         `${adapter.title} already has ${listed.length} project(s) in this organization (${listed.slice(0, 10).join(", ")}${listed.length > 10 ? ", \u2026" : ""}). golive plans to create one more; when the plan refuses a new project, set projects.monitoring to the one to use and run \`plan\` again.`
@@ -19360,8 +19849,8 @@ async function accountLine2(ctx, adapter) {
   const via = (await authOf(ctx, adapter)).via;
   return via ? `${adapter.title} access: ${via}` : void 0;
 }
-function destination2(adapter, action, project2, scope, account2) {
-  return { axis: "monitoring", provider: adapter.id, providerTitle: adapter.title, action, project: project2, ...scope ? { scope } : {}, ...account2 ? { access: account2 } : {} };
+function destination2(adapter, action, project3, scope, account2) {
+  return { axis: "monitoring", provider: adapter.id, providerTitle: adapter.title, action, project: project3, ...scope ? { scope } : {}, ...account2 ? { access: account2 } : {} };
 }
 function pinStep2(adapter, linker, planned, source, account2) {
   return step({
@@ -19419,7 +19908,7 @@ function createStep2(adapter, linker, name3, listed, account2, target) {
     destination: destination2(adapter, "create", { name: name3 }, target?.scope, account2),
     async run(sctx) {
       try {
-        if (target && linker.creationTarget && !sameTarget3(target, await linker.creationTarget(sctx))) {
+        if (target && linker.creationTarget && !sameTarget4(target, await linker.creationTarget(sctx))) {
           throw new Error("the destination organization changed; run `plan` again and re-approve. Nothing was created.");
         }
         const p = await linker.create(sctx, name3, target);
@@ -19431,28 +19920,28 @@ function createStep2(adapter, linker, name3, listed, account2, target) {
     }
   });
 }
-async function tokenIdentity(ctx, provider, project2) {
-  const cached = ctx.cache.get(`analytics.token:${project2.id}`);
+async function tokenIdentity(ctx, provider, project3) {
+  const cached = ctx.cache.get(`analytics.token:${project3.id}`);
   if (cached) return cached;
-  const token2 = await provider.token(ctx, project2.id);
-  const out = { fingerprint: fingerprint(token2), identity: `${project2.id}|${fingerprint(token2)}` };
-  ctx.cache.set(`analytics.token:${project2.id}`, out);
+  const token2 = await provider.token(ctx, project3.id);
+  const out = { fingerprint: fingerprint(token2), identity: `${project3.id}|${fingerprint(token2)}` };
+  ctx.cache.set(`analytics.token:${project3.id}`, out);
   return out;
 }
 async function envStep(ctx, adapter, provider, linker, planned, hostAdapter, env, target, mapped) {
-  const project2 = planned.project;
+  const project3 = planned.project;
   const host = posthogIngestHost(regionOf(ctx));
   let approved;
   if (planned.created) {
     approved = { fingerprint: PENDING, identity: PENDING };
   } else {
     try {
-      approved = await tokenIdentity(ctx, provider, project2);
+      approved = await tokenIdentity(ctx, provider, project3);
     } catch (e) {
       throw new Error(`reading the ${adapter.title} project token for ${target} failed: ${errMsg2(e)}`);
     }
   }
-  const sourceOf = (key) => key === "posthog.key" ? planned.created ? `posthog.key|${adapter.id}|${PENDING}|${project2.name}` : `posthog.key|${adapter.id}|${approved.identity}` : `posthog.host|${adapter.id}|${host}`;
+  const sourceOf = (key) => key === "posthog.key" ? planned.created ? `posthog.key|${adapter.id}|${PENDING}|${project3.name}` : `posthog.key|${adapter.id}|${approved.identity}` : `posthog.host|${adapter.id}|${host}`;
   const byName = new Map(mapped.map((m) => [m.name, m.key]));
   const present = await observeNames(ctx, env, target, memo(ctx).pendingProjects.has("hosting"));
   const decision = decideEnv(ctx, target, [...byName.keys()], present, (n) => sourceOf(byName.get(n)));
@@ -19465,12 +19954,12 @@ async function envStep(ctx, adapter, provider, linker, planned, hostAdapter, env
     risk: { writes: true },
     dependsOn: deps(ctx, ["analytics:project", "project:hosting"]),
     preview: [
-      ...envPreview(decision, (n) => `${byName.get(n)} from ${adapter.title} project ${project2.name || project2.id}${planned.created ? " (created by this plan)" : ""} (public: the project token ships in the browser by design)`),
+      ...envPreview(decision, (n) => `${byName.get(n)} from ${adapter.title} project ${project3.name || project3.id}${planned.created ? " (created by this plan)" : ""} (public: the project token ships in the browser by design)`),
       `writes the ${adapter.title} project's public ingestion token and the ${regionOf(ctx)} ingestion host (${host}); no server secret is written`
     ],
-    intent: intentOf({ host: await projectIntent(ctx, hostAdapter), project: planned.created ? `${adapter.id}:create:${project2.name}` : `${adapter.id}:${project2.id}`, token: approved.fingerprint, write: decision.write.map((w) => `${w.name}=${sourceOf(byName.get(w.name))})`) }),
+    intent: intentOf({ host: await projectIntent(ctx, hostAdapter), project: planned.created ? `${adapter.id}:create:${project3.name}` : `${adapter.id}:${project3.id}`, token: approved.fingerprint, write: decision.write.map((w) => `${w.name}=${sourceOf(byName.get(w.name))})`) }),
     async run(runCtx) {
-      const now = planned.created ? await linker.current(runCtx) : project2;
+      const now = planned.created ? await linker.current(runCtx) : project3;
       if (!now) throw new Error(`the ${adapter.title} project this plan created could not be read back; no env write was performed. Re-run \`golive plan\`.`);
       const token2 = await provider.token(runCtx, now.id);
       if (!planned.created && fingerprint(token2) !== approved.fingerprint) {
@@ -19488,11 +19977,11 @@ async function envStep(ctx, adapter, provider, linker, planned, hostAdapter, env
     verifyInline: (vctx) => verifyEnvWritten(vctx, env, target, written, `analytics:env:${target}`, hostAdapter.title)
   });
 }
-function snippetHandoff(adapter, project2) {
+function snippetHandoff(adapter, project3) {
   return {
     id: "analytics:snippet",
     why: `the app reads no env name golive fills for ${adapter.title}, so nothing in it reports analytics events yet`,
-    action: `Initialize the ${adapter.title} SDK in the app with the env names golive writes (POSTHOG_KEY and POSTHOG_HOST, or this framework's client-prefixed spelling, e.g. NEXT_PUBLIC_POSTHOG_KEY / NEXT_PUBLIC_POSTHOG_HOST) and send an event; then re-run \`golive plan\` so the env wiring is planned. This handoff ends when the app reads those names \u2014 no check can see the app's own code, and \`golive verify --only posthog-ingest\` proves ${adapter.title} ingests events, not that the app sends them. The project is ${project2.name || project2.id}${project2.id ? ` (${project2.id})` : ""}.`,
+    action: `Initialize the ${adapter.title} SDK in the app with the env names golive writes (POSTHOG_KEY and POSTHOG_HOST, or this framework's client-prefixed spelling, e.g. NEXT_PUBLIC_POSTHOG_KEY / NEXT_PUBLIC_POSTHOG_HOST) and send an event; then re-run \`golive plan\` so the env wiring is planned. This handoff ends when the app reads those names \u2014 no check can see the app's own code, and \`golive verify --only posthog-ingest\` proves ${adapter.title} ingests events, not that the app sends them. The project is ${project3.name || project3.id}${project3.id ? ` (${project3.id})` : ""}.`,
     blocking: false
   };
 }
@@ -19501,6 +19990,269 @@ function envHandoff(ctx, adapter, mapped, target) {
     id: `analytics:env:${target}`,
     why: `${adapter.title}'s project token must reach the app, but golive cannot write this host's ${target} env.`,
     action: `In the host's dashboard, add these env vars for ${target}: ${mapped.map((m) => m.name).join(", ")}. Copy the value from ${adapter.title} (Project settings \u2192 Project API key; the ingestion host is ${posthogIngestHost(regionOf(ctx))}), never through this chat. Both values are public by design \u2014 they ship in the browser bundle.`,
+    blocking: true,
+    verifiedBy: "env-parity"
+  };
+}
+
+// src/links/sentry.ts
+init_secret();
+init_repo();
+var KEY_NAMES2 = ["sentry.dsn"];
+var PENDING2 = "pending";
+var sentryLink = {
+  id: "sentry",
+  async plan(ctx) {
+    const configured = ctx.config.stack.monitoring;
+    if (!configured) return null;
+    const r = await ready(ctx, "monitoring", "project");
+    if (!r) return null;
+    const adapter = r.adapter;
+    const provider = monitoringOf(adapter);
+    if (!provider) return null;
+    const warnings = [];
+    const handoffs = [];
+    const planned = await planProject2(ctx, adapter, r.cap, warnings);
+    if (!planned.project) return { steps: [], handoffs: planned.handoffs, warnings };
+    const steps = track(ctx, planned.steps);
+    const mapped = mappedEnv(ctx).filter((m) => KEY_NAMES2.includes(m.key));
+    const host = await ready(ctx, "hosting", "env");
+    if (!mapped.length) {
+      handoffs.push(snippetHandoff2(adapter, planned.project));
+    } else if (!host) {
+      for (const target of ctx.config.targets) handoffs.push(envHandoff2(ctx, adapter, mapped, target));
+    } else {
+      for (const target of ctx.config.targets) {
+        const s = await envStep2(ctx, adapter, provider, r.cap, planned, host.adapter, host.cap, target, mapped);
+        if (s) steps.push(s);
+      }
+    }
+    return { steps: track(ctx, steps, { needsRedeploy: writesProduction }), handoffs, warnings };
+  }
+};
+var scopeOf3 = (p) => p.scope ? ` in ${p.scope.kind} ${p.scope.name ? `${p.scope.name} (${p.scope.id})` : p.scope.id}` : "";
+var sameScope3 = (a, b) => a?.kind === b?.kind && a?.id === b?.id;
+var sameTarget5 = (a, b) => sameScope3(a.scope, b.scope) && a.region === b.region && a.team === b.team;
+var nameList2 = (refs) => [...new Set(refs.map((c) => `${c.name} (${c.id})`))].sort();
+async function planProject2(ctx, adapter, linker, warnings) {
+  const account2 = await accountLine3(ctx, adapter);
+  const chosen = ctx.config.projects?.monitoring;
+  let current5 = await linker.current(ctx).catch((e) => {
+    throw new Error(`reading the ${adapter.title} project linked to this repo failed: ${errMsg2(e)}`);
+  });
+  if (current5) {
+    if (linker.resolve) current5 = await linker.resolve(ctx, current5.id);
+    const fromConfig = chosen !== void 0 && (chosen === current5.id || chosen === current5.name);
+    if (chosen !== void 0 && !fromConfig) {
+      warnings.push(
+        `golive.yaml projects.monitoring is "${chosen}", but this repo is already linked to ${adapter.title} project ${current5.name} (${current5.id}); golive uses the linked one. To switch, remove the recorded project (or the golive.yaml entry), then run \`plan\` again.`
+      );
+    }
+    return { project: current5, created: false, steps: [pinStep3(adapter, linker, current5, fromConfig ? "golive.yaml projects.monitoring" : "the project already linked to this repo (golive state)", account2)], handoffs: [] };
+  }
+  if (chosen) {
+    const resolved = linker.resolve ? await linker.resolve(ctx, chosen) : void 0;
+    return { project: resolved ?? { id: chosen, name: chosen }, created: false, steps: [selectStep3(adapter, linker, resolved?.id ?? chosen, resolved?.name ?? chosen, account2, resolved)], handoffs: [] };
+  }
+  const identity = await repoIdentity(ctx);
+  const candidates5 = await linker.candidates(ctx).catch((e) => {
+    throw new Error(`listing ${adapter.title} project candidates failed: ${errMsg2(e)}`);
+  });
+  const same2 = candidates5.find((c) => c.name.toLowerCase() === identity.name.toLowerCase());
+  if (same2) {
+    const resolved = linker.resolve ? await linker.resolve(ctx, same2.id) : same2;
+    return { project: resolved, created: false, steps: [selectStep3(adapter, linker, resolved.id, resolved.name, account2, resolved)], handoffs: [] };
+  }
+  if (linker.create) {
+    let target;
+    if (linker.creationTarget) {
+      try {
+        target = await linker.creationTarget(ctx);
+      } catch (e) {
+        if (e instanceof SentryTeamChoiceError) return { project: null, created: false, steps: [], handoffs: [teamHandoff(adapter, e)] };
+        throw new Error(`reading the ${adapter.title} creation destination failed: ${errMsg2(e)}`);
+      }
+    }
+    const listed = nameList2(candidates5);
+    if (listed.length) {
+      warnings.push(
+        `${adapter.title} already has ${listed.length} project(s) in this organization (${listed.slice(0, 10).join(", ")}${listed.length > 10 ? ", \u2026" : ""}). golive plans to create one more; when the plan refuses a new project, set projects.monitoring to the one to use and run \`plan\` again.`
+      );
+    }
+    return { project: { id: "", name: identity.name }, created: true, steps: [createStep3(adapter, linker, identity.name, listed, account2, target)], handoffs: [] };
+  }
+  return {
+    project: null,
+    created: false,
+    steps: [],
+    handoffs: [
+      {
+        id: "sentry:project",
+        why: `golive doesn't create ${adapter.title} projects on this account, and none is linked to this repo.`,
+        action: `Choose (or create) the ${adapter.title} project for this app in its dashboard, then set \`projects.monitoring\` in golive.yaml to its id, slug or name and run \`golive plan\` again.`,
+        blocking: true
+      }
+    ]
+  };
+}
+async function accountLine3(ctx, adapter) {
+  const via = (await authOf(ctx, adapter)).via;
+  return via ? `${adapter.title} access: ${via}` : void 0;
+}
+function destination3(adapter, action, project3, scope, account2, region) {
+  return { axis: "monitoring", provider: adapter.id, providerTitle: adapter.title, action, project: project3, ...scope ? { scope } : {}, ...region ? { region } : {}, ...account2 ? { access: account2 } : {} };
+}
+function pinStep3(adapter, linker, planned, source, account2) {
+  return step({
+    id: "sentry:project",
+    title: `Use ${adapter.title} project ${planned.name} for monitoring`,
+    kind: "provision",
+    risk: { writes: false },
+    preview: [`monitoring: ${adapter.title} project ${planned.name} (${planned.id})${scopeOf3(planned)}, from ${source}; every ${adapter.title} write in this plan goes there`, ...account2 ? [account2] : []],
+    intent: intentOf({ pin: `${adapter.id}:${planned.id}` }),
+    destination: destination3(adapter, "pin", { id: planned.id, name: planned.name }, planned.scope, account2),
+    async run(sctx) {
+      let now = await linker.current(sctx);
+      if (now && linker.resolve) now = await linker.resolve(sctx, now.id);
+      if (!now || now.id !== planned.id || !sameScope3(now.scope, planned.scope)) {
+        throw new Error(`the ${adapter.title} monitoring project changed since the plan was approved (planned ${planned.name} (${planned.id}), now ${now ? `${now.name} (${now.id})` : "none"}); nothing was written. Run \`plan\` again and re-approve.`);
+      }
+      const p = await linker.select(sctx, planned.id);
+      if (p.id !== planned.id || planned.scope && !sameScope3(p.scope, planned.scope)) throw new Error(`the ${adapter.title} project destination changed; run \`plan\` again and re-approve before any remote writes.`);
+      return { changes: [`using ${adapter.title} project ${p.name} (${p.id}) for monitoring (pinned in golive state)`] };
+    }
+  });
+}
+function selectStep3(adapter, linker, idOrName, label3, account2, planned) {
+  return step({
+    id: "sentry:project",
+    title: `Use existing ${adapter.title} project ${label3}`,
+    kind: "provision",
+    risk: { writes: true },
+    preview: [`Use existing ${adapter.title} project ${label3}${planned ? ` (${planned.id})${scopeOf3(planned)}` : ""} for monitoring (links it in golive state; nothing is changed at ${adapter.title})`, ...account2 ? [account2] : []],
+    intent: intentOf({ select: `${adapter.id}:${idOrName}` }),
+    destination: destination3(adapter, "select", { ...planned ? { id: planned.id } : {}, name: label3 }, planned?.scope, account2),
+    async run(sctx) {
+      if (planned && linker.resolve) {
+        const now = await linker.resolve(sctx, planned.id);
+        if (now.id !== planned.id || !sameScope3(now.scope, planned.scope)) throw new Error(`the ${adapter.title} project destination changed; run \`plan\` again and re-approve.`);
+      }
+      const p = await linker.select(sctx, idOrName);
+      if (planned && (p.id !== planned.id || planned.scope && !sameScope3(p.scope, planned.scope))) throw new Error(`the ${adapter.title} project destination changed; run \`plan\` again and re-approve before any remote writes.`);
+      return { changes: [`linked ${adapter.title} project ${p.name} (${p.id}) for monitoring`] };
+    }
+  });
+}
+function createScope(target) {
+  if (!target) return "";
+  const where = ` in ${target.scope.kind} ${target.scope.name ? `${target.scope.name} (${target.scope.id})` : target.scope.id}`;
+  return `${where}${target.team ? ` \u2192 team ${target.team}` : ""}${target.region ? ` (${target.region})` : ""}`;
+}
+function createStep3(adapter, linker, name3, listed, account2, target) {
+  return step({
+    id: "sentry:project",
+    title: `Create ${adapter.title} project ${name3}`,
+    kind: "provision",
+    risk: { writes: true },
+    preview: [
+      `Create ${adapter.title} project ${name3} for monitoring${createScope(target)} (no existing project matched this repo)`,
+      ...listed.length ? [`existing ${adapter.title} projects that could be used instead: ${listed.slice(0, 10).join(", ")}${listed.length > 10 ? ", \u2026" : ""} \u2014 ask the human; to use one, set \`projects.monitoring\` in golive.yaml and run \`plan\` again`] : [],
+      ...account2 ? [account2] : []
+    ],
+    intent: intentOf({ create: `${adapter.id}:${name3}` }),
+    destination: destination3(adapter, "create", { name: name3 }, target?.scope, account2, target?.region),
+    async run(sctx) {
+      try {
+        if (target && linker.creationTarget && !sameTarget5(target, await linker.creationTarget(sctx))) {
+          throw new Error("the destination organization, team or region changed; run `plan` again and re-approve. Nothing was created.");
+        }
+        const p = await linker.create(sctx, name3, target);
+        if (target && !sameScope3(p.scope, target.scope)) throw new Error("the provider returned an unexpected project destination; inspect the created resource before continuing.");
+        return { changes: [`created ${adapter.title} project ${p.name} (${p.id}) for monitoring`] };
+      } catch (e) {
+        throw new Error(`creating ${adapter.title} project ${name3} failed: ${errMsg2(e)}`);
+      }
+    }
+  });
+}
+function teamHandoff(adapter, e) {
+  const listed = e.teams.map((t) => `${t.name ?? t.slug} (${t.slug})`).join(", ");
+  return {
+    id: "sentry:project",
+    why: `${adapter.title} cannot create the project without a team: ${e.message}`,
+    action: e.teams.length ? `Set \`sentry.team: <slug>\` in golive.yaml to one of ${listed} and run \`golive plan\` again \u2014 or create the project in Sentry yourself and set \`projects.monitoring\` to it. golive never picks a team for you.` : `Create a team in Sentry and set \`sentry.team\` in golive.yaml, then run \`golive plan\` again \u2014 or create the project in Sentry yourself and set \`projects.monitoring\` to it.`,
+    blocking: true
+  };
+}
+async function dsnIdentity(ctx, provider, project3) {
+  const cached = ctx.cache.get(`sentry.dsn:${project3.id}`);
+  if (cached) return cached;
+  const dsn = await provider.dsn(ctx, project3.id);
+  const out = { fingerprint: fingerprint(dsn), identity: `${project3.id}|${fingerprint(dsn)}` };
+  ctx.cache.set(`sentry.dsn:${project3.id}`, out);
+  return out;
+}
+async function envStep2(ctx, adapter, provider, linker, planned, hostAdapter, env, target, mapped) {
+  const project3 = planned.project;
+  let approved;
+  if (planned.created) {
+    approved = { fingerprint: PENDING2, identity: PENDING2 };
+  } else {
+    try {
+      approved = await dsnIdentity(ctx, provider, project3);
+    } catch (e) {
+      throw new Error(`reading the ${adapter.title} project DSN for ${target} failed: ${errMsg2(e)}`);
+    }
+  }
+  const sourceOf = (key) => key === "sentry.dsn" && planned.created ? `sentry.dsn|${adapter.id}|${PENDING2}|${project3.name}` : `sentry.dsn|${adapter.id}|${approved.identity}`;
+  const byName = new Map(mapped.map((m) => [m.name, m.key]));
+  const present = await observeNames(ctx, env, target, memo(ctx).pendingProjects.has("hosting"));
+  const decision = decideEnv(ctx, target, [...byName.keys()], present, (n) => sourceOf(byName.get(n)));
+  if (!decision.write.length) return null;
+  let written = [];
+  return step({
+    id: `sentry:env:${target}`,
+    title: `Set ${adapter.title} monitoring env for ${target} on ${hostAdapter.title}`,
+    kind: "wire",
+    risk: { writes: true },
+    dependsOn: deps(ctx, ["sentry:project", "project:hosting"]),
+    preview: [
+      ...envPreview(decision, (n) => `sentry.dsn from ${adapter.title} project ${project3.name || project3.id}${planned.created ? " (created by this plan)" : ""} (public: the DSN ships in the browser by design)`),
+      `writes the ${adapter.title} project's public DSN (client key); no server secret is written`
+    ],
+    intent: intentOf({ host: await projectIntent(ctx, hostAdapter), project: planned.created ? `${adapter.id}:create:${project3.name}` : `${adapter.id}:${project3.id}`, dsn: approved.fingerprint, write: decision.write.map((w) => `${w.name}=${sourceOf(byName.get(w.name))})`) }),
+    async run(runCtx) {
+      const now = planned.created ? await linker.current(runCtx) : project3;
+      if (!now) throw new Error(`the ${adapter.title} project this plan created could not be read back; no env write was performed. Re-run \`golive plan\`.`);
+      const dsn = await provider.dsn(runCtx, now.id);
+      if (!planned.created && fingerprint(dsn) !== approved.fingerprint) {
+        throw new Error(`the ${adapter.title} project DSN changed since approval (fp:${approved.fingerprint} \u2192 fp:${fingerprint(dsn)}); no env write was performed. Run \`plan\` again and approve the new DSN.`);
+      }
+      const entries = decision.write.map((w) => {
+        const key = byName.get(w.name);
+        const source = key === "sentry.dsn" ? `sentry.dsn|${adapter.id}|${now.id}|${fingerprint(dsn)}` : sourceOf(key);
+        return { name: w.name, key, value: dsn, source };
+      });
+      const r = await writeEnv(runCtx, env, target, entries, decision.recheck);
+      written = r.written;
+      return { changes: r.changes };
+    },
+    verifyInline: (vctx) => verifyEnvWritten(vctx, env, target, written, `sentry:env:${target}`, hostAdapter.title)
+  });
+}
+function snippetHandoff2(adapter, project3) {
+  return {
+    id: "sentry:snippet",
+    why: `the app reads no env name golive fills for ${adapter.title}, so nothing in it reports errors yet`,
+    action: `Initialize the ${adapter.title} SDK in the app with the env name golive writes (SENTRY_DSN, or this framework's client-prefixed spelling, e.g. NEXT_PUBLIC_SENTRY_DSN) and send an error; then re-run \`golive plan\` so the env wiring is planned. This handoff ends when the app reads that name \u2014 no check can see the app's own code, and \`golive verify --only sentry-ingest\` proves ${adapter.title} ingests an event, not that the app sends one. The project is ${project3.name || project3.id}${project3.id ? ` (${project3.id})` : ""}.`,
+    blocking: false
+  };
+}
+function envHandoff2(ctx, adapter, mapped, target) {
+  return {
+    id: `sentry:env:${target}`,
+    why: `${adapter.title}'s DSN must reach the app, but golive cannot write this host's ${target} env.`,
+    action: `In the host's dashboard, add these env vars for ${target}: ${mapped.map((m) => m.name).join(", ")}. Copy the DSN from ${adapter.title} (${sentryApiHost(regionOf2(ctx))} \u2192 the project \u2192 Project Settings \u2192 Client Keys (DSN)), never through this chat. The DSN is public by design \u2014 it ships in the browser bundle.`,
     blocking: true,
     verifiedBy: "env-parity"
   };
@@ -19520,11 +20272,11 @@ var LEGACY_REPORT_FILE = "SHIP_REPORT.md";
 var STATE_DIR_FILES = ["state.json", "report.json", "handover.json"];
 var GOLIVE_IGNORE_MARKER = "# golive: keep its own files (state, config, reports, run docs) out of this upload";
 var GOLIVE_IGNORE_LINES = [".golive/", CONFIG_FILE, REPORT_FILE, HANDOVER_FILE, LEGACY_REPORT_FILE, "docs/GOLIVE-*"];
-function hasGoliveIgnoreBlock(text2) {
-  return text2.split("\n").some((line) => line.trim() === GOLIVE_IGNORE_MARKER);
+function hasGoliveIgnoreBlock(text3) {
+  return text3.split("\n").some((line) => line.trim() === GOLIVE_IGNORE_MARKER);
 }
-function withGoliveIgnoreBlock(text2) {
-  const base2 = text2.replace(/\s*$/, "");
+function withGoliveIgnoreBlock(text3) {
+  const base2 = text3.replace(/\s*$/, "");
   return `${base2 ? `${base2}
 
 ` : ""}${[GOLIVE_IGNORE_MARKER, ...GOLIVE_IGNORE_LINES].join("\n")}
@@ -19578,8 +20330,8 @@ var uploadLink = {
       };
     }
     const ignoreFile = join17(ctx.cwd, rules.ignoreFile);
-    const current4 = read(ignoreFile);
-    if (current4 !== null && hasGoliveIgnoreBlock(current4)) return null;
+    const current5 = read(ignoreFile);
+    if (current5 !== null && hasGoliveIgnoreBlock(current5)) return null;
     const files = goliveRepoFiles(ctx.cwd);
     if (!files.length) return null;
     return {
@@ -19598,12 +20350,12 @@ var uploadLink = {
           intent: intentOf({ file: rules.ignoreFile, lines: [...GOLIVE_IGNORE_LINES] }),
           async run(sctx) {
             const path = join17(sctx.cwd, rules.ignoreFile);
-            const text2 = read(path) ?? "";
-            if (hasGoliveIgnoreBlock(text2)) {
+            const text3 = read(path) ?? "";
+            if (hasGoliveIgnoreBlock(text3)) {
               return { changes: [`${rules.ignoreFile} already keeps golive's own files out of the ${h.adapter.title} upload`] };
             }
             try {
-              writeFileSync8(path, withGoliveIgnoreBlock(text2));
+              writeFileSync8(path, withGoliveIgnoreBlock(text3));
             } catch (e) {
               throw new Error(
                 `could not write ${rules.ignoreFile} (${errMsg2(e)}): add golive's block to it yourself (${GOLIVE_IGNORE_MARKER}) and run \`apply\` again \u2014 golive does not deploy while its own files would be uploaded`
@@ -19730,17 +20482,17 @@ var NETLIFY_PUBLIC_ACCESS_CHECK = "netlify-public-access";
 function netlifyPublicAccessApplies(ctx) {
   return ctx.config.stack.hosting === "netlify" && ctx.config.targets.includes("production");
 }
-function netlifyVisibilityAction(project2) {
-  return `Open ${project2.settingsUrl} and confirm project ID ${project2.id}. In Project configuration > General > Visitor access > Project visibility, inspect only this project's setting. If Netlify visitor protection is blocking the intended public homepage, keep Private and choose Applies to: Previews only (or use Make public when it explicitly preserves private previews). Save only after approving this exact visibility change. Do not select a setting that exposes previews or change team defaults. If the team enforces private access, stop for the owner; do not weaken application authentication. Then run golive verify again; no redeploy is needed. This check verifies anonymous homepage access, not backend or application behavior.`;
+function netlifyVisibilityAction(project3) {
+  return `Open ${project3.settingsUrl} and confirm project ID ${project3.id}. In Project configuration > General > Visitor access > Project visibility, inspect only this project's setting. If Netlify visitor protection is blocking the intended public homepage, keep Private and choose Applies to: Previews only (or use Make public when it explicitly preserves private previews). Save only after approving this exact visibility change. Do not select a setting that exposes previews or change team defaults. If the team enforces private access, stop for the owner; do not weaken application authentication. Then run golive verify again; no redeploy is needed. This check verifies anonymous homepage access, not backend or application behavior.`;
 }
 async function inspectNetlifyPublicAccess(ctx) {
   if (!netlifyPublicAccessApplies(ctx)) return { outcome: skip("only applies to Netlify production") };
   const confirmed = await confirmedProductionUrl(ctx);
   if (!confirmed.ok) return { outcome: confirmed.outcome };
-  let project2;
+  let project3;
   try {
     const site = await requireSite(ctx);
-    project2 = { id: site.id, settingsUrl: `https://app.netlify.com/projects/${encodeURIComponent(site.name)}/configuration/general/#project-visibility` };
+    project3 = { id: site.id, settingsUrl: `https://app.netlify.com/projects/${encodeURIComponent(site.name)}/configuration/general/#project-visibility` };
   } catch {
     return { outcome: skip("cannot confirm the exact Netlify project for the production access check") };
   }
@@ -19765,8 +20517,8 @@ async function inspectNetlifyPublicAccess(ctx) {
   }
   if (response.status === 401 || response.status === 403 || netlifyGate) {
     return {
-      blockedProject: project2,
-      outcome: result("fail", "high", [netlifyGate ? "Production redirects anonymous visitors to Netlify access control; the redirect was not followed." : `Production returned HTTP ${response.status} to an anonymous request; inspect project visibility and application authentication.`], netlifyVisibilityAction(project2))
+      blockedProject: project3,
+      outcome: result("fail", "high", [netlifyGate ? "Production redirects anonymous visitors to Netlify access control; the redirect was not followed." : `Production returned HTTP ${response.status} to an anonymous request; inspect project visibility and application authentication.`], netlifyVisibilityAction(project3))
     };
   }
   if (response.status >= 300 && response.status < 400) {
@@ -19791,15 +20543,15 @@ var netlifyVisibilityLink = {
     if (!netlifyPublicAccessApplies(ctx)) return null;
     const observed = await inspectNetlifyPublicAccess(ctx);
     if (!observed.blockedProject) return null;
-    const project2 = observed.blockedProject;
+    const project3 = observed.blockedProject;
     return {
       steps: [],
       handoffs: [{
         // Handoff IDs are included in the approved plan hash: bind this request to the exact site.
-        id: `netlify:public-access:${project2.id}`,
+        id: `netlify:public-access:${project3.id}`,
         why: "The published Netlify production homepage blocks anonymous access. Deployment succeeded; public access is still unverified.",
-        action: netlifyVisibilityAction(project2),
-        url: project2.settingsUrl,
+        action: netlifyVisibilityAction(project3),
+        url: project3.settingsUrl,
         blocking: true,
         verifiedBy: NETLIFY_PUBLIC_ACCESS_CHECK
       }]
@@ -19898,9 +20650,9 @@ async function fetchBundle(ctx, base2) {
   }
   return { files, notes, htmlStatus: res.status, complete };
 }
-function boundedText(text2, maximum) {
-  const encoded = Buffer.from(text2, "utf8");
-  if (encoded.length <= maximum) return { text: text2, bytes: encoded.length, truncated: false };
+function boundedText(text3, maximum) {
+  const encoded = Buffer.from(text3, "utf8");
+  if (encoded.length <= maximum) return { text: text3, bytes: encoded.length, truncated: false };
   let prefix = encoded.subarray(0, maximum).toString("utf8");
   while (Buffer.byteLength(prefix, "utf8") > maximum) prefix = prefix.slice(0, -1);
   return { text: prefix, bytes: maximum, truncated: true };
@@ -20015,14 +20767,14 @@ async function readPreview(ctx) {
   const pre = await prereq(ctx, "hosting");
   if (pre) return { ok: false, outcome: pre };
   const linker = cap(ctx, "hosting", "project");
-  const current4 = linker ? await linker.current(ctx).catch(() => null) : null;
+  const current5 = linker ? await linker.current(ctx).catch(() => null) : null;
   let got;
   try {
     got = await url.get(ctx, TARGET);
   } catch (e) {
     return { ok: false, outcome: result("warn", "medium", [`could not read the ${provider} preview deployment: ${errMsg(e)}`], "Check the hosting login with `golive doctor`, then re-run verify.") };
   }
-  return { ok: true, read: { recorded, url: got ? trimSlash2(got) : null, ...current4 ? { project: `${current4.name} (${current4.id})` } : {} } };
+  return { ok: true, read: { recorded, url: got ? trimSlash2(got) : null, ...current5 ? { project: `${current5.name} (${current5.id})` } : {} } };
 }
 function recordedProductionUrl(ctx) {
   const prod = readRecordedDeploy(ctx, "production");
@@ -20036,7 +20788,7 @@ var previewDeployCheck = {
   async run(ctx) {
     const r = await readPreview(ctx);
     if (!r.ok) return r.outcome;
-    const { recorded, url, project: project2 } = r.read;
+    const { recorded, url, project: project3 } = r.read;
     const where = `${recorded.provider} deployment ${recorded.id}`;
     const recordedAt2 = `recorded by golive ${recorded.at} (${deployedIdKey(TARGET)})`;
     const prod = recordedProductionUrl(ctx);
@@ -20069,7 +20821,7 @@ var previewDeployCheck = {
     }
     if (url === recorded.url) {
       return pass([
-        `${where} is what ${recorded.provider} reports for the preview target${project2 ? ` of the project this repo links (${project2})` : ""}`,
+        `${where} is what ${recorded.provider} reports for the preview target${project3 ? ` of the project this repo links (${project3})` : ""}`,
         `that read confirms the deployment exists, is ready and belongs to this project, and that it is not the project's production deployment`,
         recordedAt2,
         "whether anyone else can reach the preview is not read here: a private preview is normal, and the production deployment is unchanged"
@@ -20450,8 +21202,8 @@ function builtForDeployment(ctx, deployment) {
 }
 async function projectLabel(ctx, adapter) {
   const linker = adapter.capabilities.project;
-  const current4 = linker ? await linker.current(ctx).catch(() => null) : null;
-  if (current4) return `${adapter.title} project ${current4.name} (${current4.id})`;
+  const current5 = linker ? await linker.current(ctx).catch(() => null) : null;
+  if (current5) return `${adapter.title} project ${current5.name} (${current5.id})`;
   return memo(ctx).pendingProjects.has("hosting") ? `${adapter.title} project this plan creates or selects (see project:hosting)` : `${adapter.title} project is not linked yet (this plan's project:hosting step decides it)`;
 }
 async function treeLine(ctx) {
@@ -20511,7 +21263,7 @@ function livePreviewNames(ctx, planned) {
 }
 
 // src/links/all.ts
-var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, emailDomainLink, emailKeysLink, authSmtpLink, authE2eLink, authIsolationLink, authRecoveryLink, analyticsLink, uploadLink, deployLink, netlifyVisibilityLink, releaseLink];
+var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, emailDomainLink, emailKeysLink, authSmtpLink, authE2eLink, authIsolationLink, authRecoveryLink, analyticsLink, sentryLink, uploadLink, deployLink, netlifyVisibilityLink, releaseLink];
 
 // src/links/index.ts
 var LINKS = ALL_LINKS;
@@ -20564,7 +21316,7 @@ function sourceAxis(ctx, key) {
   if (key.startsWith("db.")) return "db";
   if (key.startsWith("stripe.")) return "payments";
   if (key.startsWith("resend.")) return "email";
-  if (key.startsWith("posthog.")) return "monitoring";
+  if (key.startsWith("posthog.") || key.startsWith("sentry.")) return "monitoring";
   return null;
 }
 function isHiddenEnv(e) {
@@ -20681,8 +21433,8 @@ var INTERNAL_SCHEMAS = /^(auth|storage|extensions|realtime|vault|pgsodium|pgsodi
 async function projectRef(ctx) {
   const fromState = ctx.state.resource("supabase.ref");
   if (fromState) return fromState;
-  const project2 = cap(ctx, "db", "project");
-  const cur = project2 ? await project2.current(ctx).catch(() => null) : null;
+  const project3 = cap(ctx, "db", "project");
+  const cur = project3 ? await project3.current(ctx).catch(() => null) : null;
   return cur?.id ?? null;
 }
 async function publishableKey(ctx, ref3) {
@@ -20828,7 +21580,7 @@ async function registeredUrl(ctx) {
   const base2 = await baseUrl(ctx);
   return path && base2 ? join18(base2, path) : null;
 }
-var looksLikeHtml = (text2) => /^\s*(<!doctype html|<html)/i.test(text2);
+var looksLikeHtml = (text3) => /^\s*(<!doctype html|<html)/i.test(text3);
 var webhookUnsignedCheck = {
   id: "webhook-unsigned",
   title: "Webhook rejects unsigned requests",
@@ -21068,15 +21820,15 @@ var authRedirectsCheck = {
   severity: "high",
   applies: (ctx) => Boolean(ctx.config.stack.auth),
   async run(ctx) {
-    const auth9 = cap(ctx, "auth", "authConfig");
-    if (!auth9) return skip(`auth provider ${ctx.config.stack.auth} has no auth-config capability (guided)`);
+    const auth10 = cap(ctx, "auth", "authConfig");
+    if (!auth10) return skip(`auth provider ${ctx.config.stack.auth} has no auth-config capability (guided)`);
     const pre = await prereq(ctx, "auth");
     if (pre) return pre;
     const prod = await baseUrl(ctx);
     if (!prod) return blocked("deploy:production", "no production URL yet");
     let cfg2;
     try {
-      cfg2 = await auth9.get(ctx);
+      cfg2 = await auth10.get(ctx);
     } catch (e) {
       return result("fail", "high", [`could not read auth settings: ${errMsg(e)}`], "Re-run verify; if it persists, check the auth provider with `golive doctor`.");
     }
@@ -21121,13 +21873,13 @@ var authPolicyCheck = {
   applies: (ctx) => Boolean(ctx.config.stack.auth),
   async run(ctx) {
     const provider = ctx.config.stack.auth;
-    const auth9 = cap(ctx, "auth", "authConfig");
-    if (!auth9) return skip(`auth provider ${provider} has no auth-config capability (guided)`);
+    const auth10 = cap(ctx, "auth", "authConfig");
+    if (!auth10) return skip(`auth provider ${provider} has no auth-config capability (guided)`);
     const pre = await prereq(ctx, "auth");
     if (pre) return pre;
     let cfg2;
     try {
-      cfg2 = await auth9.get(ctx);
+      cfg2 = await auth10.get(ctx);
     } catch (e) {
       return result("fail", "high", [`could not read ${provider} auth settings: ${errMsg(e)}`], "Re-run verify; if it persists, check the auth provider with `golive doctor`.");
     }
@@ -21258,8 +22010,8 @@ var authSignupCheck = {
     const title = adapterFor(ctx, "auth")?.title ?? provider;
     const email = ctx.config.auth.testEmail;
     if (!email) return skip("auth.testEmail is not set in golive.yaml, so golive has no inbox address for the test account");
-    const auth9 = cap(ctx, "auth", "authUsers");
-    if (!auth9) return skip(`auth provider ${provider} has no auth-users surface (guided): the signup journey stays a manual dashboard task`);
+    const auth10 = cap(ctx, "auth", "authUsers");
+    if (!auth10) return skip(`auth provider ${provider} has no auth-users surface (guided): the signup journey stays a manual dashboard task`);
     const pre = await prereq(ctx, "auth");
     if (pre) return pre;
     const seeded = ctx.state.resource(TEST_USER_ID);
@@ -21269,7 +22021,7 @@ var authSignupCheck = {
     const probePass = testPassword();
     let signup2;
     try {
-      signup2 = await auth9.signup(ctx, probe2, probePass);
+      signup2 = await auth10.signup(ctx, probe2, probePass);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`signing up a probe account failed: ${errMsg(e)}`], `Check that ${provider} auth is reachable and that the project accepts new users (\`auth.signup: true\`), then re-run verify.`);
@@ -21294,7 +22046,7 @@ var authSignupCheck = {
     evidence.push(`signed up probe account ${probe2}: confirmation email sent (HTTP ${signup2.status})`);
     let refused;
     try {
-      refused = await auth9.login(ctx, probe2, probePass);
+      refused = await auth10.login(ctx, probe2, probePass);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`the password login for the probe account failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable and re-run verify.`);
@@ -21322,7 +22074,7 @@ var authSignupCheck = {
     const seededEmail = ctx.state.resource(TEST_USER_EMAIL) ?? email;
     let view2;
     try {
-      view2 = await auth9.adminUser(ctx, seeded);
+      view2 = await auth10.adminUser(ctx, seeded);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`could not read the test account ${seeded}: ${errMsg(e)}`, ...evidence], "Re-run verify; if it persists, check the provider login and read the user in its dashboard.");
@@ -21351,7 +22103,7 @@ var authSignupCheck = {
     }
     let login2;
     try {
-      login2 = await auth9.login(ctx, seededEmail, seededPass);
+      login2 = await auth10.login(ctx, seededEmail, seededPass);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`the password login for the confirmed test account failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -21386,8 +22138,8 @@ var authSessionCheck = {
     }
     const provider = ctx.config.stack.auth;
     const title = adapterFor(ctx, "auth")?.title ?? provider;
-    const auth9 = cap(ctx, "auth", "authUsers");
-    if (!auth9) return skip(`auth provider ${provider} has no auth-users surface (guided): the signup journey stays a manual dashboard task`);
+    const auth10 = cap(ctx, "auth", "authUsers");
+    if (!auth10) return skip(`auth provider ${provider} has no auth-users surface (guided): the signup journey stays a manual dashboard task`);
     const pre = await prereq(ctx, "auth");
     if (pre) return pre;
     const seeded = ctx.state.resource(TEST_USER_ID);
@@ -21396,13 +22148,13 @@ var authSessionCheck = {
     if (!password) {
       return skip("blocked by: no password for the test account in this run (only the run that seeds or rotates it keeps one, in memory); re-run `plan` + `apply` to rotate it and prove login");
     }
-    const dest = await auth9.destination(ctx);
+    const dest = await auth10.destination(ctx);
     if (!dest) return blocked("project:db", "no Supabase project is selected for this app");
     const address = ctx.state.resource(TEST_USER_EMAIL) ?? ctx.config.auth?.testEmail;
     if (!address) return skip("the test account's address is not recorded, so golive cannot sign in as it");
     let outcome;
     try {
-      outcome = await auth9.login(ctx, address, password);
+      outcome = await auth10.login(ctx, address, password);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`signing in as the test account ${address} failed: ${errMsg(e)}`], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -21424,7 +22176,7 @@ var authSessionCheck = {
     const issues = [];
     let view2;
     try {
-      view2 = await auth9.user(ctx, session2.accessToken);
+      view2 = await auth10.user(ctx, session2.accessToken);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`could not read the signed-in user: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -21441,7 +22193,7 @@ var authSessionCheck = {
     evidence.push(`GET /auth/v1/user with that token returned the same user (${view2.id})`);
     let anon;
     try {
-      anon = await auth9.user(ctx);
+      anon = await auth10.user(ctx);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`could not read the anonymous answer from the auth API: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -21606,8 +22358,8 @@ var authRecoveryCheck = {
     }
     const provider = ctx.config.stack.auth;
     const title = adapterFor(ctx, "auth")?.title ?? provider;
-    const auth9 = cap(ctx, "auth", "authUsers");
-    if (!auth9) return skip(`auth provider ${provider} has no auth-users surface (guided): the password-recovery journey stays a manual dashboard task`);
+    const auth10 = cap(ctx, "auth", "authUsers");
+    if (!auth10) return skip(`auth provider ${provider} has no auth-users surface (guided): the password-recovery journey stays a manual dashboard task`);
     const pre = await prereq(ctx, "auth");
     if (pre) return pre;
     const seeded = ctx.state.resource(TEST_USER_ID);
@@ -21626,7 +22378,7 @@ var authRecoveryCheck = {
     const evidence = [];
     let asked;
     try {
-      asked = await auth9.requestRecovery(ctx, address);
+      asked = await auth10.requestRecovery(ctx, address);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`the recovery request for ${address} failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -21652,7 +22404,7 @@ var authRecoveryCheck = {
       evidence.push(`the test address ${address} is not a plus-addressable one, so golive could not form an address with no account to compare the answer against`);
     } else {
       try {
-        unknown = await auth9.requestRecovery(ctx, unknownAddr);
+        unknown = await auth10.requestRecovery(ctx, unknownAddr);
       } catch (e) {
         if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
         return result("fail", "high", [`the recovery request for an address with no account failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -21684,7 +22436,7 @@ var authRecoveryCheck = {
     }
     let replay;
     try {
-      replay = await auth9.recoverySession(ctx, token2);
+      replay = await auth10.recoverySession(ctx, token2);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`replaying the recovery token failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -21700,7 +22452,7 @@ var authRecoveryCheck = {
     evidence.push(`the recovery token this run used is refused on replay (HTTP ${replay.status}${replay.code ? ` ${replay.code}` : ""})`);
     let fresh;
     try {
-      fresh = await auth9.login(ctx, address, newPass);
+      fresh = await auth10.login(ctx, address, newPass);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`signing in with the password set through recovery failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -21717,7 +22469,7 @@ var authRecoveryCheck = {
     evidence.push(`the password set through the recovery path signs in (user ${fresh.session.userId})`);
     let stale;
     try {
-      stale = await auth9.login(ctx, address, oldPass);
+      stale = await auth10.login(ctx, address, oldPass);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`signing in with the replaced password failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -21792,8 +22544,8 @@ var authIsolationCheck = {
       const missing2 = [!identityPath ? "auth.identityPath" : "", !isolationPath ? "auth.isolationPath" : ""].filter(Boolean).join(" and ");
       return skip(`auth.isolation is on in golive.yaml but no app route is declared (${missing2}): golive has nothing to read through, so isolation is not exercised (the auth:isolation-routes handoff names what the app must expose)`);
     }
-    const auth9 = cap(ctx, "auth", "authUsers");
-    if (!auth9) return skip(`auth provider ${provider} has no auth-users surface (guided): account isolation stays a manual app test`);
+    const auth10 = cap(ctx, "auth", "authUsers");
+    if (!auth10) return skip(`auth provider ${provider} has no auth-users surface (guided): account isolation stays a manual app test`);
     const pre = await prereq(ctx, "auth");
     if (pre) return pre;
     const first = ctx.state.resource(TEST_USER_ID);
@@ -21825,7 +22577,7 @@ var authIsolationCheck = {
     for (const [who, email, password, recorded] of wanted) {
       let outcome;
       try {
-        outcome = await auth9.login(ctx, email, password);
+        outcome = await auth10.login(ctx, email, password);
       } catch (e) {
         if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
         return result("fail", "high", [`signing in as ${who} ${email} failed: ${errMsg(e)}`], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -22015,23 +22767,23 @@ var posthogIngestCheck = {
     if (notLoggedIn) return notLoggedIn;
     const linker = adapter.capabilities.project;
     if (!linker) return skip(`the ${adapter.title} adapter has no project surface, so golive cannot name the project to check`);
-    let project2;
+    let project3;
     try {
-      project2 = await linker.current(ctx);
+      project3 = await linker.current(ctx);
     } catch (e) {
       return result("fail", "medium", [`could not read the ${adapter.title} project this app reports to: ${errMsg(e)}`], "Re-run verify; if it persists, check the PostHog access with `golive doctor` and re-plan.");
     }
-    if (!project2) return blocked("analytics:project", `no ${adapter.title} project is linked or selected for this app yet; run \`golive plan\` and apply it`);
+    if (!project3) return blocked("analytics:project", `no ${adapter.title} project is linked or selected for this app yet; run \`golive plan\` and apply it`);
     const marker2 = randomBytes7(4).toString("hex");
     const filter = { event: EVENT, property: { key: "golive_marker", value: marker2 }, minutes: posthogTiming.queryMinutes };
     let accepted;
     try {
-      accepted = (await analytics2.capture(ctx, project2.id, { event: EVENT, distinctId: DISTINCT_ID, properties: { golive_marker: marker2, golive_check: "posthog-ingest" } })).status;
+      accepted = (await analytics2.capture(ctx, project3.id, { event: EVENT, distinctId: DISTINCT_ID, properties: { golive_marker: marker2, golive_check: "posthog-ingest" } })).status;
     } catch (e) {
-      return result("fail", "medium", [`sending one "${EVENT}" event to ${adapter.title} project ${project2.name} (${project2.id}) failed: ${errMsg(e)}`], "Fix the ingestion host/network or the project token, then re-run `golive verify --only posthog-ingest`.");
+      return result("fail", "medium", [`sending one "${EVENT}" event to ${adapter.title} project ${project3.name} (${project3.id}) failed: ${errMsg(e)}`], "Fix the ingestion host/network or the project token, then re-run `golive verify --only posthog-ingest`.");
     }
     const evidence = [
-      `sent one "${EVENT}" event (distinct id ${DISTINCT_ID}, marker ${marker2}) to ${adapter.title} project ${project2.name} (${project2.id}); the ingestion endpoint answered HTTP ${accepted}`,
+      `sent one "${EVENT}" event (distinct id ${DISTINCT_ID}, marker ${marker2}) to ${adapter.title} project ${project3.name} (${project3.id}); the ingestion endpoint answered HTTP ${accepted}`,
       "the 2xx means accepted, not ingested: only the provider's own read-back proves it"
     ];
     const started = Date.now();
@@ -22040,7 +22792,7 @@ var posthogIngestCheck = {
     for (; ; ) {
       let count = null;
       try {
-        count = await analytics2.count(ctx, project2.id, filter);
+        count = await analytics2.count(ctx, project3.id, filter);
       } catch (e) {
         const code = e.status;
         if (code === 401 || code === 403) {
@@ -22060,10 +22812,95 @@ var posthogIngestCheck = {
             ...evidence,
             count !== null ? `PostHog had not recorded the marker ${marker2} yet after ${seconds}s (the read-back counts ingested events and can lag minutes)` : `the read-back could not be read within ${seconds}s: ${readError ?? "no answer"}`
           ],
-          `Ingestion is asynchronous, so this is not a failure yet: re-run \`golive verify --only posthog-ingest\` in a minute. If it stays invisible, check the project the app reports to (${project2.id}) and that the app initializes the ${adapter.title} SDK.`
+          `Ingestion is asynchronous, so this is not a failure yet: re-run \`golive verify --only posthog-ingest\` in a minute. If it stays invisible, check the project the app reports to (${project3.id}) and that the app initializes the ${adapter.title} SDK.`
         );
       }
       await sleep2(Math.max(0, Math.min(posthogTiming.pollMs, deadline - Date.now())));
+    }
+  }
+};
+
+// src/checks/sentry-ingest.ts
+import { randomBytes as randomBytes8 } from "node:crypto";
+var EVENT2 = "golive_ingest_check";
+var MARKER_TAG = "golive_marker";
+var sleep3 = (ms) => new Promise((r) => setTimeout(r, ms));
+var sentryIngestCheck = {
+  id: "sentry-ingest",
+  title: "Sentry ingests an event golive sent",
+  severity: "medium",
+  applies: (ctx) => ctx.config.stack.monitoring === "sentry",
+  async run(ctx) {
+    const adapter = adapterFor(ctx, "monitoring");
+    if (!adapter || !adapter.automated) return skip(`monitoring provider ${ctx.config.stack.monitoring} has no automated adapter (guided)`);
+    const monitoring2 = monitoringOf(adapter);
+    if (!monitoring2) return skip(`the ${adapter.title} adapter exposes no store + read-back surface, so golive cannot prove ingest for it`);
+    const notLoggedIn = await prereq(ctx, "monitoring");
+    if (notLoggedIn) return notLoggedIn;
+    const linker = adapter.capabilities.project;
+    if (!linker) return skip(`the ${adapter.title} adapter has no project surface, so golive cannot name the project to check`);
+    let project3;
+    try {
+      project3 = await linker.current(ctx);
+    } catch (e) {
+      return result("fail", "medium", [`could not read the ${adapter.title} project this app reports to: ${errMsg(e)}`], `Re-run verify; if it persists, check the ${adapter.title} access with \`golive doctor\` and re-plan.`);
+    }
+    if (!project3) return blocked("sentry:project", `no ${adapter.title} project is linked or selected for this app yet; run \`golive plan\` and apply it`);
+    const marker2 = randomBytes8(4).toString("hex");
+    const sentId = randomBytes8(16).toString("hex");
+    let accepted;
+    try {
+      accepted = await monitoring2.capture(ctx, project3.id, {
+        eventId: sentId,
+        message: `${EVENT2} ${marker2}`,
+        tags: { [MARKER_TAG]: marker2, golive_check: "sentry-ingest" }
+      });
+    } catch (e) {
+      return result("fail", "medium", [`sending one "${EVENT2}" event to ${adapter.title} project ${project3.name} (${project3.id}) failed: ${errMsg(e)}`], "Fix the DSN/network or the project, then re-run `golive verify --only sentry-ingest`.");
+    }
+    const eventId = accepted.eventId ?? sentId;
+    const evidence = [
+      `sent one "${EVENT2}" event (event id ${eventId}, marker ${marker2}) to ${adapter.title} project ${project3.name} (${project3.id}); the store endpoint answered HTTP ${accepted.status}`,
+      "the 2xx means accepted, not ingested: only Sentry's own event read proves it",
+      ...accepted.eventId ? [] : ["the store endpoint returned no event id; the read-back asks for the id golive sent"]
+    ];
+    const started = Date.now();
+    const deadline = started + sentryTiming.windowMs;
+    let readError;
+    let seenWithoutMarker = false;
+    for (; ; ) {
+      let state = null;
+      try {
+        state = await monitoring2.readEvent(ctx, project3.id, eventId, marker2);
+      } catch (e) {
+        const code = e.status;
+        if (code === 401 || code === 403) {
+          return result(
+            "warn",
+            "medium",
+            [...evidence, `the read-back was refused: ${errMsg(e)}`],
+            `Grant the ${adapter.title} token the event:read scope (and org:read/project:read), then re-run \`golive verify --only sentry-ingest\`; until then golive cannot prove the event arrived even though the store endpoint accepted it.`
+          );
+        }
+        readError = errMsg(e);
+      }
+      const seconds = Math.round((Date.now() - started) / 1e3);
+      if (state === "seen") {
+        return pass([...evidence, `Sentry returned event ${eventId} with marker ${marker2} after ${seconds}s`]);
+      }
+      if (state === "seen-without-marker") seenWithoutMarker = true;
+      if (Date.now() >= deadline) {
+        return result(
+          "warn",
+          "medium",
+          [
+            ...evidence,
+            state === null ? `the read-back could not be read within ${seconds}s: ${readError ?? "no answer"}` : seenWithoutMarker ? `Sentry returned event ${eventId} after ${seconds}s, but without the run marker ${marker2} in it` : `Sentry had not returned the event (marker ${marker2}) yet after ${seconds}s (error ingestion and issue indexing can lag)`
+          ],
+          `Ingestion is asynchronous, so this is not a failure yet: re-run \`golive verify --only sentry-ingest\` in a minute. If it stays invisible, check the project the app reports to (${project3.id}) and that the app initializes the ${adapter.title} SDK with the DSN env name golive writes.`
+        );
+      }
+      await sleep3(Math.max(0, Math.min(sentryTiming.pollMs, deadline - Date.now())));
     }
   }
 };
@@ -22342,6 +23179,7 @@ var ALL_CHECKS = [
   emailDnsCheck,
   emailVerifiedCheck,
   posthogIngestCheck,
+  sentryIngestCheck,
   previewDeployCheck,
   previewBundleCheck,
   productionReleaseCheck
@@ -22362,7 +23200,7 @@ function linkList() {
 }
 
 // src/detect/index.ts
-import { resolve as resolve9 } from "node:path";
+import { resolve as resolve10 } from "node:path";
 
 // src/detect/fs.ts
 import { lstat, readdir, readFile } from "node:fs/promises";
@@ -22449,25 +23287,25 @@ var Repo = class {
     if (isRealEnvFile(rel)) throw new Error(`detect refused to open ${rel}: real env files hold secret values`);
     const hit = this.cache.get(rel);
     if (hit !== void 0) return hit;
-    let text2 = null;
+    let text3 = null;
     try {
       const abs = join19(this.root, rel);
       const st = await lstat(abs);
       if (st.isFile() && st.size <= MAX_FILE_BYTES2) {
         this.opts.onRead?.(rel);
-        text2 = await readFile(abs, "utf8");
+        text3 = await readFile(abs, "utf8");
       }
     } catch {
-      text2 = null;
+      text3 = null;
     }
-    this.cache.set(rel, text2);
-    return text2;
+    this.cache.set(rel, text3);
+    return text3;
   }
   async json(rel) {
-    const text2 = await this.read(rel);
-    if (text2 === null) return null;
+    const text3 = await this.read(rel);
+    if (text3 === null) return null;
     try {
-      return JSON.parse(text2);
+      return JSON.parse(text3);
     } catch {
       return null;
     }
@@ -22546,50 +23384,50 @@ function parseNamedImports(list4) {
     return { imported: imported.trim(), local: (local ?? imported).trim() };
   });
 }
-function scanSource(file, text2) {
+function scanSource(file, text3) {
   const occ = [];
   const add = (name3, exposed) => {
     occ.push({ name: name3, file, exposed });
   };
   const inEdgeFn = file.startsWith("supabase/functions/");
   for (const { re, group, kind } of PATTERNS2) {
-    for (const m of text2.matchAll(re)) {
+    for (const m of text3.matchAll(re)) {
       const name3 = m[group];
       if (kind === "meta" && META_BUILTINS.has(name3)) continue;
       if (kind === "deno" && inEdgeFn && name3.startsWith("SUPABASE_")) continue;
       add(name3, kind !== "deno" && clientPrefix(name3) !== null);
     }
   }
-  for (const m of text2.matchAll(/\{([^{}]*)\}\s*=\s*process\.env\b/g)) {
+  for (const m of text3.matchAll(/\{([^{}]*)\}\s*=\s*process\.env\b/g)) {
     for (const part of m[1].split(",")) {
       const key = part.split(/[:=]/)[0].trim();
       if (isName(key)) add(key, clientPrefix(key) !== null);
     }
   }
-  scanSvelteKit(text2, add);
-  scanAstroEnv(text2, add);
-  scanNuxtRuntimeConfig(text2, add);
-  const dynamic = /process\.env\[\s*[a-zA-Z_$]/.test(text2);
+  scanSvelteKit(text3, add);
+  scanAstroEnv(text3, add);
+  scanNuxtRuntimeConfig(text3, add);
+  const dynamic = /process\.env\[\s*[a-zA-Z_$]/.test(text3);
   return { occ, dynamic };
 }
-function scanSvelteKit(text2, add) {
-  for (const m of text2.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]\$env\/static\/(private|public)['"]/g)) {
+function scanSvelteKit(text3, add) {
+  for (const m of text3.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]\$env\/static\/(private|public)['"]/g)) {
     for (const { imported } of parseNamedImports(m[1])) if (isName(imported)) add(imported, m[2] === "public");
   }
-  for (const m of text2.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]\$env\/dynamic\/(private|public)['"]/g)) {
+  for (const m of text3.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]\$env\/dynamic\/(private|public)['"]/g)) {
     const binding = parseNamedImports(m[1]).find((i) => i.imported === "env")?.local;
     if (!binding || !/^[A-Za-z_$][\w$]*$/.test(binding)) continue;
-    for (const r of text2.matchAll(new RegExp(`\\b${binding.replace(/\$/g, "\\$")}\\.(${NAME})\\b`, "g"))) add(r[1], m[2] === "public");
+    for (const r of text3.matchAll(new RegExp(`\\b${binding.replace(/\$/g, "\\$")}\\.(${NAME})\\b`, "g"))) add(r[1], m[2] === "public");
   }
 }
-function scanAstroEnv(text2, add) {
-  for (const m of text2.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]astro:env\/(client|server)['"]/g)) {
+function scanAstroEnv(text3, add) {
+  for (const m of text3.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]astro:env\/(client|server)['"]/g)) {
     for (const { imported } of parseNamedImports(m[1])) if (isName(imported)) add(imported, m[2] === "client");
   }
-  for (const m of text2.matchAll(new RegExp(`\\bgetSecret\\(\\s*${Q}(${NAME})\\1\\s*\\)`, "g"))) add(m[2], false);
+  for (const m of text3.matchAll(new RegExp(`\\bgetSecret\\(\\s*${Q}(${NAME})\\1\\s*\\)`, "g"))) add(m[2], false);
 }
-function scanNuxtRuntimeConfig(text2, add) {
-  for (const m of text2.matchAll(/useRuntimeConfig\(\s*\)\s*\.\s*(public\s*\.\s*)?([A-Za-z_][A-Za-z0-9_]*)/g)) {
+function scanNuxtRuntimeConfig(text3, add) {
+  for (const m of text3.matchAll(/useRuntimeConfig\(\s*\)\s*\.\s*(public\s*\.\s*)?([A-Za-z_][A-Za-z0-9_]*)/g)) {
     const pub = Boolean(m[1]);
     const key = m[2];
     if (!pub && (key === "public" || key === "app")) continue;
@@ -22600,13 +23438,13 @@ function nuxtEnvName(key, pub) {
   const snake = key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/-/g, "_").toUpperCase();
   return `NUXT_${pub ? "PUBLIC_" : ""}${snake}`;
 }
-function nuxtConfigNames(text2) {
-  const m = /runtimeConfig\s*:\s*\{/.exec(text2);
+function nuxtConfigNames(text3) {
+  const m = /runtimeConfig\s*:\s*\{/.exec(text3);
   if (!m) return [];
   const out = [];
-  for (const { key, objectAt } of objectKeys(text2, m.index + m[0].length - 1)) {
+  for (const { key, objectAt } of objectKeys(text3, m.index + m[0].length - 1)) {
     if (key === "public" && objectAt !== null) {
-      for (const pk of objectKeys(text2, objectAt)) out.push({ name: nuxtEnvName(pk.key, true), exposed: true });
+      for (const pk of objectKeys(text3, objectAt)) out.push({ name: nuxtEnvName(pk.key, true), exposed: true });
     } else if (key !== "app") {
       out.push({ name: nuxtEnvName(key, false), exposed: false });
     }
@@ -22689,35 +23527,35 @@ function configExposure(sources) {
   const out = { names: [], prefixes: [], all: [], unresolved: [] };
   const files = [...sources.keys()].filter((f) => NEXT_CONFIG.test(f) || VITE_LIKE_CONFIG.test(f) || SVELTE_CONFIG.test(f) || WEBPACK_CONFIG.test(f)).sort();
   for (const file of files) {
-    const text2 = sources.get(file);
-    const ctx = { file, text: text2, loadEnvAll: loadEnvBindings(text2), out, seen: /* @__PURE__ */ new Set() };
+    const text3 = sources.get(file);
+    const ctx = { file, text: text3, loadEnvAll: loadEnvBindings(text3), out, seen: /* @__PURE__ */ new Set() };
     const blocks = [];
     const exprs = [];
     const addExpr = (kind, via, at) => {
-      const expr = readExpr(text2, at);
+      const expr = readExpr(text3, at);
       if (expr) exprs.push({ kind, at, via, expr });
     };
     if (NEXT_CONFIG.test(file)) {
-      for (const m of text2.matchAll(/(?<![.\w$])env\s*:\s*\{/g)) blocks.push({ kind: "env", open: m.index + m[0].length - 1, via: "env" });
-      for (const m of text2.matchAll(/(?<![.\w$])env\s*:\s*(?![\s{])/g)) addExpr("env", "env", m.index + m[0].length);
-      for (const m of text2.matchAll(/(?<=[{,]\s*)env(?=\s*[,}])/g)) addExpr("env", "env", m.index);
+      for (const m of text3.matchAll(/(?<![.\w$])env\s*:\s*\{/g)) blocks.push({ kind: "env", open: m.index + m[0].length - 1, via: "env" });
+      for (const m of text3.matchAll(/(?<![.\w$])env\s*:\s*(?![\s{])/g)) addExpr("env", "env", m.index + m[0].length);
+      for (const m of text3.matchAll(/(?<=[{,]\s*)env(?=\s*[,}])/g)) addExpr("env", "env", m.index);
     }
     if (!SVELTE_CONFIG.test(file)) {
-      for (const m of text2.matchAll(/(?<![.\w$])define\s*:\s*\{/g)) blocks.push({ kind: "define", open: m.index + m[0].length - 1, via: "define" });
-      for (const m of text2.matchAll(/(?<![.\w$])define\s*:\s*(?![\s{])/g)) addExpr("define", "define", m.index + m[0].length);
-      for (const m of text2.matchAll(/(?<=[{,]\s*)define(?=\s*[,}])/g)) addExpr("define", "define", m.index);
-      for (const m of text2.matchAll(/\bDefinePlugin\s*\(\s*\{/g)) blocks.push({ kind: "define", open: m.index + m[0].length - 1, via: "DefinePlugin" });
-      for (const m of text2.matchAll(/\bDefinePlugin\s*\(\s*(?![\s{)])/g)) addExpr("define", "DefinePlugin", m.index + m[0].length);
+      for (const m of text3.matchAll(/(?<![.\w$])define\s*:\s*\{/g)) blocks.push({ kind: "define", open: m.index + m[0].length - 1, via: "define" });
+      for (const m of text3.matchAll(/(?<![.\w$])define\s*:\s*(?![\s{])/g)) addExpr("define", "define", m.index + m[0].length);
+      for (const m of text3.matchAll(/(?<=[{,]\s*)define(?=\s*[,}])/g)) addExpr("define", "define", m.index);
+      for (const m of text3.matchAll(/\bDefinePlugin\s*\(\s*\{/g)) blocks.push({ kind: "define", open: m.index + m[0].length - 1, via: "DefinePlugin" });
+      for (const m of text3.matchAll(/\bDefinePlugin\s*\(\s*(?![\s{)])/g)) addExpr("define", "DefinePlugin", m.index + m[0].length);
     }
     for (const b of blocks) scanInlineBlock(ctx, b);
     for (const e of exprs) scanExpr(ctx, e, 0);
     if (VITE_LIKE_CONFIG.test(file)) {
-      for (const m of text2.matchAll(/\benvPrefix\s*:\s*(\[[^\]]*\]|(['"`])[^'"`]*\2)/g)) {
+      for (const m of text3.matchAll(/\benvPrefix\s*:\s*(\[[^\]]*\]|(['"`])[^'"`]*\2)/g)) {
         for (const s of m[1].matchAll(/(['"`])([^'"`]*)\1/g)) addPrefix(s[2], file, "envPrefix", out);
       }
     }
     if (SVELTE_CONFIG.test(file)) {
-      for (const m of text2.matchAll(/\bpublicPrefix\s*:\s*(['"`])([^'"`]*)\1/g)) addPrefix(m[2], file, "kit.env.publicPrefix", out);
+      for (const m of text3.matchAll(/\bpublicPrefix\s*:\s*(['"`])([^'"`]*)\1/g)) addPrefix(m[2], file, "kit.env.publicPrefix", out);
     }
   }
   return out;
@@ -22726,10 +23564,10 @@ function addPrefix(prefix, file, via, out) {
   if (prefix === "") out.all.push({ file, via: `${via} is '' (every env var is public)` });
   else out.prefixes.push({ prefix, file, via });
 }
-function loadEnvBindings(text2) {
+function loadEnvBindings(text3) {
   const out = /* @__PURE__ */ new Set();
-  for (const m of text2.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*loadEnv\s*\(/g)) {
-    const args = callArgs(text2, m.index + m[0].length - 1);
+  for (const m of text3.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*loadEnv\s*\(/g)) {
+    const args = callArgs(text3, m.index + m[0].length - 1);
     if (args.length >= 3 && !/^(['"`])VITE_\1$/.test(args[2])) out.add(m[1]);
   }
   return out;
@@ -22812,9 +23650,9 @@ function readExpr(src, start) {
   }
   return src.slice(start, i).trim();
 }
-function findDecl(text2, id2, at) {
+function findDecl(text3, id2, at) {
   let best = null;
-  for (const m of text2.matchAll(new RegExp(`(?:const|let|var)\\s+${escId(id2)}\\s*(?::[^=;]+?)?=(?![=>])\\s*`, "g"))) {
+  for (const m of text3.matchAll(new RegExp(`(?:const|let|var)\\s+${escId(id2)}\\s*(?::[^=;]+?)?=(?![=>])\\s*`, "g"))) {
     const init = m.index + m[0].length;
     if (m.index < at || best === null) best = init;
     if (m.index >= at) break;
@@ -22822,7 +23660,7 @@ function findDecl(text2, id2, at) {
   return best;
 }
 function scanExpr(ctx, e, depth) {
-  const { file, text: text2, out } = ctx;
+  const { file, text: text3, out } = ctx;
   const expr = e.expr.replace(/\s+(?:as\s+const|satisfies\s+[\w$.<>, ]+)$/, "");
   if (LITERAL_VALUE.test(expr)) return;
   const cause = wholeEnvCause(ctx, e.kind, expr);
@@ -22831,16 +23669,16 @@ function scanExpr(ctx, e, depth) {
     return;
   }
   if (IDENT.test(expr) && depth < 4) {
-    const init = findDecl(text2, expr, e.at);
+    const init = findDecl(text3, expr, e.at);
     if (init !== null) {
       const via = `${e.via} (${expr})`;
-      if (text2[init] === "{") {
+      if (text3[init] === "{") {
         if (!ctx.seen.has(init)) {
           ctx.seen.add(init);
           scanInlineBlock(ctx, { kind: e.kind, open: init, via });
         }
       } else {
-        const initExpr = readExpr(text2, init);
+        const initExpr = readExpr(text3, init);
         if (!/^loadEnv\s*\(/.test(initExpr)) scanExpr(ctx, { kind: e.kind, at: init, via, expr: initExpr }, depth + 1);
       }
       scanMutations(ctx, e.kind, expr, via);
@@ -22851,10 +23689,10 @@ function scanExpr(ctx, e, depth) {
   out.unresolved.push(`${file} ${e.via} is set from an expression golive cannot read; make sure it holds no server secrets`);
 }
 function scanMutations(ctx, kind, id2, via) {
-  const { file, text: text2, out } = ctx;
+  const { file, text: text3, out } = ctx;
   const re = new RegExp(`(?<![\\w$.])${escId(id2)}\\s*(?:\\[[^\\]\\n]*\\]|\\.[\\w$]+)\\s*=(?![=>])|\\bObject\\.assign\\s*\\(\\s*${escId(id2)}\\b`, "g");
-  for (const m of text2.matchAll(re)) {
-    const stmt = readExpr(text2, m.index);
+  for (const m of text3.matchAll(re)) {
+    const stmt = readExpr(text3, m.index);
     const cause = wholeEnvCause(ctx, kind, stmt);
     if (cause) {
       out.all.push({ file, via: `${via} ${cause}` });
@@ -22868,14 +23706,14 @@ function scanMutations(ctx, kind, id2, via) {
   }
 }
 function scanInlineBlock(ctx, b) {
-  const { file, text: text2, out } = ctx;
+  const { file, text: text3, out } = ctx;
   const addName = (name3, how) => {
     out.names.push({ name: name3, file, via: `${b.via} ${how}` });
   };
   const valueReads = (v) => {
     for (const n of envReads(ctx, v)) addName(n, "value");
   };
-  for (const e of objectEntries(text2, b.open)) {
+  for (const e of objectEntries(text3, b.open)) {
     if (WHOLE_ENV.test(e.value) || wholeBinding(ctx, e.value)) {
       const what = e.spread ? `spreads the whole env` : `${e.key ?? ""}: inlines the whole env object`;
       out.all.push({ file, via: `${b.via} ${what}`.replace(/\s+/g, " ") });
@@ -22892,7 +23730,7 @@ function scanInlineBlock(ctx, b) {
       if (isName(key)) addName(key, "key");
     } else if (key === "process.env" || key === "import.meta.env") {
       if (e.objectAt !== null) {
-        for (const k of objectEntries(text2, e.objectAt)) if (k.key && isName(k.key)) addName(k.key, `${key}.${k.key}`);
+        for (const k of objectEntries(text3, e.objectAt)) if (k.key && isName(k.key)) addName(k.key, `${key}.${k.key}`);
       } else if (!/^(?:\{\s*\}|(['"`])\{\s*\}\1|JSON\.stringify\(\s*\{\s*\}\s*\))$/.test(e.value)) {
         out.unresolved.push(`${file} ${b.via} sets '${key}' from an expression golive cannot read; make sure it holds no server secrets`);
       }
@@ -22918,19 +23756,19 @@ var DB_HINTS = [
 async function readEnvExamples(repo) {
   const out = { names: /* @__PURE__ */ new Map(), dbHints: /* @__PURE__ */ new Set(), files: [] };
   for (const file of EXAMPLE_ENV_FILES) {
-    const text2 = await repo.read(file);
-    if (text2 === null) continue;
+    const text3 = await repo.read(file);
+    if (text3 === null) continue;
     out.files.push(file);
-    for (const { name: name3, value } of parseDotenv(text2)) {
+    for (const { name: name3, value } of parseDotenv(text3)) {
       out.names.set(name3, [...out.names.get(name3) ?? [], file]);
       for (const [re, id2] of DB_HINTS) if (re.test(value)) out.dbHints.add(id2);
     }
   }
   return out;
 }
-function parseDotenv(text2) {
+function parseDotenv(text3) {
   const out = [];
-  const lines = text2.split(/\r?\n/);
+  const lines = text3.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(lines[i]);
     if (!m) continue;
@@ -22949,8 +23787,8 @@ function parseDotenv(text2) {
 function collectEnvRefs(sources, examples, notes, findings = []) {
   const occ = [];
   const dynamicFiles = [];
-  for (const [file, text2] of sources) {
-    const r = scanSource(file, text2);
+  for (const [file, text3] of sources) {
+    const r = scanSource(file, text3);
     occ.push(...r.occ);
     if (r.dynamic) dynamicFiles.push(file);
   }
@@ -23203,17 +24041,17 @@ async function ruleMatches(repo, r, deps2, sources) {
   if (matches2(deps2, r.deps)) return true;
   for (const f of r.files ?? []) if (await repo.exists(f)) return true;
   if (r.source && (!r.sourceNeedsDep || matches2(deps2, r.sourceNeedsDep))) {
-    for (const text2 of sources.values()) if (r.source.test(text2)) return true;
+    for (const text3 of sources.values()) if (r.source.test(text3)) return true;
   }
   return false;
 }
 async function urlImportedPackages(repo, sources) {
   const out = /* @__PURE__ */ new Set();
   const re = /(?:npm:|jsr:|https:\/\/esm\.sh\/|https:\/\/cdn\.skypack\.dev\/)(@[a-z0-9][\w.-]*\/[a-z0-9][\w.-]*|[a-z0-9][\w.-]*)/gi;
-  const scan = (text2) => {
-    for (const m of text2.matchAll(re)) out.add(m[1].toLowerCase());
+  const scan = (text3) => {
+    for (const m of text3.matchAll(re)) out.add(m[1].toLowerCase());
   };
-  for (const [file, text2] of sources) if (file.startsWith("supabase/functions/") || /from\s+['"](?:npm:|jsr:|https:)/.test(text2)) scan(text2);
+  for (const [file, text3] of sources) if (file.startsWith("supabase/functions/") || /from\s+['"](?:npm:|jsr:|https:)/.test(text3)) scan(text3);
   for (const fn of await repo.dirs("supabase/functions")) {
     for (const f of ["deno.json", "deno.jsonc", "import_map.json"]) {
       const t = await repo.read(`supabase/functions/${fn}/${f}`);
@@ -23342,8 +24180,8 @@ var STRIPE_EVENT_RESOURCES = [
 ];
 var STRIPE_EVENT_LITERAL = new RegExp(`(['"\`])((?:${STRIPE_EVENT_RESOURCES.join("|")})(?:\\.[a-z_]+){1,3})\\1`, "g");
 var STRIPE_EVENT_ACTION = /(?:^|_)(?:created|updated|deleted|completed|succeeded|failed|paid|canceled|cancelled|expired|expiring|finalized|voided|uncollectible|upcoming|sent|overdue|due|required|processing|requires_action|requires_input|captured|refunded|trial_will_end|paused|resumed|applied|attached|detached|reversed|available|released|closed|withdrawn|reinstated|opened|aborted|activated|deactivated|verified|redacted|funded|reported|ready|reached|rejected|approved|declined|submitted|won|lost|returned|posted|initiated|scheduled|disconnected|refreshed|reactivated|authorized|removed|added|changed|ended|renewed|signed|accepted|restored|disabled|enabled|triggered|resolved|reopened|pending|converted|succeeded|updated)$/;
-function stripeEventTypes(text2) {
-  const code = text2.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:'"`\\])\/\/[^\n]*/g, "$1");
+function stripeEventTypes(text3) {
+  const code = text3.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:'"`\\])\/\/[^\n]*/g, "$1");
   const out = /* @__PURE__ */ new Set();
   for (const m of code.matchAll(STRIPE_EVENT_LITERAL)) {
     const type = m[2];
@@ -23354,18 +24192,18 @@ function stripeEventTypes(text2) {
   }
   return [...out].sort();
 }
-function isStripeWebhookFile(text2) {
-  return /stripe/i.test(text2) && (STRIPE_VERIFY.test(text2) || /stripe-signature/i.test(text2) || STRIPE_EVENTS.test(text2));
+function isStripeWebhookFile(text3) {
+  return /stripe/i.test(text3) && (STRIPE_VERIFY.test(text3) || /stripe-signature/i.test(text3) || STRIPE_EVENTS.test(text3));
 }
-function stripeVerification(file, text2) {
-  if (!STRIPE_VERIFY.test(text2)) return { ok: false, reason: "no stripe.webhooks.constructEvent call" };
-  if (/constructEvent(?:Async)?\s*\(\s*JSON\.stringify/.test(text2)) return { ok: false, reason: "re-serialized JSON body passed to constructEvent (signature can never match)" };
-  if (!RAW_BODY.test(text2)) return { ok: false, reason: "raw request body not used (read it with request.text())" };
-  if (/^(?:src\/)?pages\/api\//.test(file) && !/bodyParser\s*:\s*false/.test(text2)) {
+function stripeVerification(file, text3) {
+  if (!STRIPE_VERIFY.test(text3)) return { ok: false, reason: "no stripe.webhooks.constructEvent call" };
+  if (/constructEvent(?:Async)?\s*\(\s*JSON\.stringify/.test(text3)) return { ok: false, reason: "re-serialized JSON body passed to constructEvent (signature can never match)" };
+  if (!RAW_BODY.test(text3)) return { ok: false, reason: "raw request body not used (read it with request.text())" };
+  if (/^(?:src\/)?pages\/api\//.test(file) && !/bodyParser\s*:\s*false/.test(text3)) {
     return { ok: false, reason: "Pages Router route without `export const config = { api: { bodyParser: false } }`" };
   }
-  const edge = file.startsWith("supabase/functions/") || /\bDeno\./.test(text2) || /runtime\s*=\s*['"]edge['"]/.test(text2);
-  if (edge && !/\.(?:constructEventAsync|parseEventNotificationAsync)\s*\(/.test(text2)) {
+  const edge = file.startsWith("supabase/functions/") || /\bDeno\./.test(text3) || /runtime\s*=\s*['"]edge['"]/.test(text3);
+  if (edge && !/\.(?:constructEventAsync|parseEventNotificationAsync)\s*\(/.test(text3)) {
     return { ok: false, reason: "edge/Deno runtime needs constructEventAsync (the sync form throws there)" };
   }
   return { ok: true };
@@ -23386,20 +24224,20 @@ function flatRoutePath(name3) {
   const segs = name3.replace(/\[\.\]/g, "\0").split(".").filter((s) => s !== "_index" && !s.startsWith("_")).map((s) => s.replace(/_$/, "").replace(/^\((.*)\)$/, "$1").replace(/^\$$/, "*").replace(/^\$/, ":").replace(/\u0000/g, "."));
   return join20(segs);
 }
-function reactRouterConfigRoutes(text2) {
+function reactRouterConfigRoutes(text3) {
   const ranges = [];
   const calls = [];
-  for (const m of text2.matchAll(/\bprefix\(\s*(['"`])([^'"`]*)\1\s*,\s*\[/g)) {
+  for (const m of text3.matchAll(/\bprefix\(\s*(['"`])([^'"`]*)\1\s*,\s*\[/g)) {
     const open = m.index + m[0].length - 1;
-    ranges.push({ start: open, end: matchBracket(text2, open), path: m[2] });
+    ranges.push({ start: open, end: matchBracket(text3, open), path: m[2] });
   }
-  for (const m of text2.matchAll(/\broute\(\s*(['"`])([^'"`]*)\1\s*,\s*(['"`])([^'"`]+)\3/g)) {
+  for (const m of text3.matchAll(/\broute\(\s*(['"`])([^'"`]*)\1\s*,\s*(['"`])([^'"`]+)\3/g)) {
     const after = m.index + m[0].length;
     calls.push({ at: m.index, path: m[2], file: m[4] });
-    const kids = /^\s*,\s*\[/.exec(text2.slice(after));
+    const kids = /^\s*,\s*\[/.exec(text3.slice(after));
     if (kids) {
       const open = after + kids[0].length - 1;
-      ranges.push({ start: open, end: matchBracket(text2, open), path: m[2] });
+      ranges.push({ start: open, end: matchBracket(text3, open), path: m[2] });
     }
   }
   const out = /* @__PURE__ */ new Map();
@@ -23410,30 +24248,30 @@ function reactRouterConfigRoutes(text2) {
   }
   return out;
 }
-function matchBracket(text2, open) {
+function matchBracket(text3, open) {
   let depth = 0;
-  for (let i = open; i < text2.length; i++) {
-    if (text2[i] === "[") depth++;
-    else if (text2[i] === "]" && --depth === 0) return i;
+  for (let i = open; i < text3.length; i++) {
+    if (text3[i] === "[") depth++;
+    else if (text3[i] === "]" && --depth === 0) return i;
   }
-  return text2.length;
+  return text3.length;
 }
-function serverRoutePath(text2) {
-  const paths = [...text2.matchAll(/\b(?:app|router|server|api|route[rs]?|r)\s*\.\s*post\s*\(\s*(['"`])(\/[^'"`]*)\1/g)].map((m) => m[2]);
+function serverRoutePath(text3) {
+  const paths = [...text3.matchAll(/\b(?:app|router|server|api|route[rs]?|r)\s*\.\s*post\s*\(\s*(['"`])(\/[^'"`]*)\1/g)].map((m) => m[2]);
   return paths.find((p) => /webhook|stripe/i.test(p)) ?? paths[0] ?? null;
 }
-function routePath(file, text2, fw, rrRoutes) {
+function routePath(file, text3, fw, rrRoutes) {
   const fn = /^supabase\/functions\/([^/]+)\/index\.[jt]sx?$/.exec(file);
   if (fn) return `/functions/v1/${fn[1]}`;
   const netlify = /^netlify\/functions\/([^/]+?)(?:\/index)?\.[cm]?[jt]s$/.exec(file);
   if (netlify) return `/.netlify/functions/${netlify[1]}`;
-  const byFramework = frameworkRoutePath(file, text2, fw, rrRoutes);
+  const byFramework = frameworkRoutePath(file, text3, fw, rrRoutes);
   if (byFramework) return byFramework;
   const api5 = /^api\/(.+)\.[cm]?[jt]s$/.exec(file);
   if (api5 && fw.framework !== "next") return join20(["api", ...api5[1].split("/")]).replace(/\/index$/, "");
-  return serverRoutePath(text2);
+  return serverRoutePath(text3);
 }
-function frameworkRoutePath(file, text2, fw, rrRoutes) {
+function frameworkRoutePath(file, text3, fw, rrRoutes) {
   switch (fw.framework) {
     case "next": {
       const app = /^(?:src\/)?app\/(?:(.*)\/)?route\.[cm]?[jt]sx?$/.exec(file);
@@ -23453,7 +24291,7 @@ function frameworkRoutePath(file, text2, fw, rrRoutes) {
       const configured = rrRoutes.get(file);
       if (configured) return configured;
       const m = /^app\/routes\/([^/]+?)(?:\/route)?\.[jt]sx?$/.exec(file);
-      return m && /export\s+(?:async\s+)?(?:function|const)\s+action\b/.test(text2) ? flatRoutePath(m[1]) : null;
+      return m && /export\s+(?:async\s+)?(?:function|const)\s+action\b/.test(text3) ? flatRoutePath(m[1]) : null;
     }
     case "astro": {
       const m = /^src\/pages\/(.+)\.[jt]s$/.exec(file);
@@ -23471,15 +24309,15 @@ function frameworkRoutePath(file, text2, fw, rrRoutes) {
 }
 function verifyJwtDisabled(toml) {
   const out = /* @__PURE__ */ new Set();
-  let current4 = null;
+  let current5 = null;
   for (const line of toml.split(/\r?\n/)) {
     const section = /^\s*\[\s*([^\]]+?)\s*\]\s*(?:#.*)?$/.exec(line);
     if (section) {
       const fn = /^functions\.(?:"([^"]+)"|'([^']+)'|([\w-]+))$/.exec(section[1]);
-      current4 = fn ? fn[1] ?? fn[2] ?? fn[3] : null;
+      current5 = fn ? fn[1] ?? fn[2] ?? fn[3] : null;
       continue;
     }
-    if (current4 && /^\s*verify_jwt\s*=\s*false\b/.test(line)) out.add(current4);
+    if (current5 && /^\s*verify_jwt\s*=\s*false\b/.test(line)) out.add(current5);
   }
   return out;
 }
@@ -23488,12 +24326,12 @@ async function findWebhooks(repo, sources, fw, notes) {
   const rrRoutes = routesTs && (fw.framework === "react-router" || fw.framework === "remix") ? reactRouterConfigRoutes(routesTs) : /* @__PURE__ */ new Map();
   const noJwt = verifyJwtDisabled(await repo.read("supabase/config.toml") ?? "");
   const out = [];
-  for (const [file, text2] of sources) {
-    if (!isStripeWebhookFile(text2)) continue;
-    const path = routePath(file, text2, fw, rrRoutes);
+  for (const [file, text3] of sources) {
+    if (!isStripeWebhookFile(text3)) continue;
+    const path = routePath(file, text3, fw, rrRoutes);
     if (!path) continue;
-    const v = stripeVerification(file, text2);
-    out.push({ provider: "stripe", path, file, verifiesSignature: v.ok, events: stripeEventTypes(text2) });
+    const v = stripeVerification(file, text3);
+    out.push({ provider: "stripe", path, file, verifiesSignature: v.ok, events: stripeEventTypes(text3) });
     if (!out[out.length - 1].events.length) {
       notes.push(`Stripe webhook ${path} (${file}) handles no event type golive could find as a string literal: pass --events a,b to init so the endpoint subscribes to what the handler needs.`);
     }
@@ -23512,7 +24350,7 @@ async function detect3(cwd) {
   return detectRepo(cwd);
 }
 async function detectRepo(cwd, opts = {}) {
-  const root = resolve9(cwd);
+  const root = resolve10(cwd);
   const repo = new Repo(root, opts);
   const notes = [];
   const findings = [];
@@ -23624,7 +24462,7 @@ var AXIS_CHECKS = {
   payments: ["webhook-registered", "webhook-unsigned", "stripe-live-ready", "stripe-live-payment"],
   email: ["email-dns", "email-verified"],
   dns: ["domain-live"],
-  monitoring: ["posthog-ingest"]
+  monitoring: ["posthog-ingest", "sentry-ingest"]
 };
 var BILLING = {
   vercel: "the Usage and Billing pages of your Vercel dashboard",
@@ -23634,6 +24472,7 @@ var BILLING = {
   stripe: "your Stripe account settings \u2192 Billing, and the published per-transaction fees",
   resend: "your Resend account \u2192 Billing",
   posthog: "your PostHog organization settings \u2192 Billing (usage is priced per ingested event)",
+  sentry: "your Sentry organization settings \u2192 Billing (usage is priced per event)",
   cloudflare: "your Cloudflare account \u2192 Billing",
   godaddy: "your GoDaddy account \u2192 Subscriptions and renewals",
   porkbun: "your Porkbun account \u2192 domain pricing and renewals"
@@ -23644,7 +24483,9 @@ var RECORDING_STEP = {
   database: ["project:db"],
   domain: ["email:domain"],
   dns: ["domain:dns", "email:dns"],
-  analytics: ["analytics:project"]
+  // Both monitoring links record the project under their own step id; a recorded project names the
+  // one that ran, so the row's timestamp is read from whichever exists.
+  analytics: ["analytics:project", "sentry:project"]
 };
 function recordedSteps(kind) {
   if (kind === "database-project") return RECORDING_STEP.database;
@@ -23716,16 +24557,16 @@ async function currentProjects(ctx) {
 }
 var NO_ACCOUNT = "not reported by the provider";
 async function accountRows(ctx, projects2) {
-  const rows2 = [];
+  const rows3 = [];
   for (const axis of AXES) {
     const id2 = ctx.config.stack[axis];
     if (!id2) continue;
     const adapter = adapterById(id2, ctx.adapters);
     const providerTitle = adapter?.title ?? GUIDED.find((g) => g.id === id2)?.title ?? id2;
-    const project2 = projects2.get(axis);
-    const account2 = project2?.scope?.name ?? project2?.scope?.id ?? NO_ACCOUNT;
+    const project3 = projects2.get(axis);
+    const account2 = project3?.scope?.name ?? project3?.scope?.id ?? NO_ACCOUNT;
     if (!adapter || !adapter.automated) {
-      rows2.push({
+      rows3.push({
         axis,
         provider: id2,
         providerTitle,
@@ -23746,9 +24587,9 @@ async function accountRows(ctx, projects2) {
       login2 = `golive could not check the ${providerTitle} login (${errMsg2(e)}); run \`doctor\` after fixing access`;
       provenance = { kind: "unknown" };
     }
-    rows2.push({ axis, provider: id2, providerTitle, ...via ? { via } : {}, account: account2, login: login2, provenance });
+    rows3.push({ axis, provider: id2, providerTitle, ...via ? { via } : {}, account: account2, login: login2, provenance });
   }
-  return rows2;
+  return rows3;
 }
 async function liveUrls(ctx) {
   const out = {};
@@ -23759,9 +24600,9 @@ async function liveUrls(ctx) {
   return out;
 }
 function resourceRows(ctx, inventory2, projects2, urls) {
-  const rows2 = [];
+  const rows3 = [];
   for (const r of inventory2.dnsRecords) {
-    rows2.push({
+    rows3.push({
       axis: "dns",
       provider: r.provider,
       providerTitle: r.providerTitle,
@@ -23775,7 +24616,7 @@ function resourceRows(ctx, inventory2, projects2, urls) {
     });
   }
   for (const w of inventory2.webhooks) {
-    rows2.push({
+    rows3.push({
       axis: "payments",
       provider: w.provider,
       providerTitle: w.providerTitle,
@@ -23789,7 +24630,7 @@ function resourceRows(ctx, inventory2, projects2, urls) {
     });
   }
   for (const k of inventory2.sendingKeys) {
-    rows2.push({
+    rows3.push({
       axis: "email",
       provider: k.provider,
       providerTitle: k.providerTitle,
@@ -23807,15 +24648,15 @@ function resourceRows(ctx, inventory2, projects2, urls) {
     const keys3 = projectStateKeys(host.id);
     const id2 = ctx.state.resource(keys3.id);
     if (id2) {
-      const current4 = projects2.get("hosting");
+      const current5 = projects2.get("hosting");
       const created = ctx.state.resource(createdProjectKey(host.id)) === id2;
-      const live = current4?.id === id2;
-      rows2.push({
+      const live = current5?.id === id2;
+      rows3.push({
         axis: "hosting",
         provider: host.id,
         providerTitle: host.title,
         kind: "host project",
-        name: ctx.state.resource(keys3.name) ?? current4?.name ?? id2,
+        name: ctx.state.resource(keys3.name) ?? current5?.name ?? id2,
         id: id2,
         // A URL is only reported when the host itself confirmed this exact project in this run.
         ...live && urls.production ? { url: urls.production } : {},
@@ -23828,7 +24669,7 @@ function resourceRows(ctx, inventory2, projects2, urls) {
   }
   for (const r of inventory2.recorded) {
     const subject = recordedKind(r.kind);
-    rows2.push({
+    rows3.push({
       axis: r.axis,
       provider: r.provider,
       providerTitle: r.providerTitle,
@@ -23841,7 +24682,7 @@ function resourceRows(ctx, inventory2, projects2, urls) {
       provenance: { kind: "recorded", at: recordedAt(ctx, recordedSteps(r.kind)) }
     });
   }
-  return rows2;
+  return rows3;
 }
 function recordedAt(ctx, stepIds) {
   const steps = ctx.state.get().steps;
@@ -23922,32 +24763,32 @@ function manualRows(ctx, handoffs) {
 function runbookRows(ctx, checks) {
   const registered = new Set(checks.map((c) => c.id));
   const runs = new Set(checks.filter((c) => c.applies).map((c) => c.id));
-  const rows2 = [];
+  const rows3 = [];
   for (const { axis, providerTitle } of axesUsed(ctx)) {
     const offered = AXIS_CHECKS[axis].filter((id2) => registered.has(id2));
     const ids = offered.filter((id2) => runs.has(id2));
-    rows2.push({
+    rows3.push({
       subject: `${axis} (${providerTitle})`,
       commands: ["golive doctor", ...ids.length ? [`golive verify --only ${ids.join(",")}`] : []],
       note: ids.length ? `re-reads ${ids.join(", ")}; evidence names ids, URLs and counts, never values.` : offered.length ? "golive registers checks for this axis, but none of them runs on this stack: confirm it by hand or in the provider dashboard." : "golive has no registered check for this axis: confirm it by hand or in the provider dashboard."
     });
   }
-  rows2.push({
+  rows3.push({
     subject: "whole app",
     commands: ["golive doctor", "golive plan", "golive apply --plan <planId> --yes", "golive verify"],
     note: "re-observe, re-approve, then apply: a changed destination needs a new plan and fresh confirmation."
   });
-  rows2.push({
+  rows3.push({
     subject: "this document",
     commands: ["golive handoff --write --force"],
     note: "regenerates GOLIVE_HANDOVER.md and .golive/handover.json from current state and provider reads."
   });
-  return rows2;
+  return rows3;
 }
 function retirementRows(ctx, inventory2) {
-  const rows2 = [];
+  const rows3 = [];
   for (const r of inventory2.dnsRecords) {
-    rows2.push({
+    rows3.push({
       resource: `${r.providerTitle} ${r.record.type} ${r.record.name} (golive-created)`,
       how: "golive teardown \u2192 apply --plan <id> --yes --confirm-destroy --confirm-dns, which re-reads the zone to prove the record is gone",
       removable: true,
@@ -23955,7 +24796,7 @@ function retirementRows(ctx, inventory2) {
     });
   }
   for (const w of inventory2.webhooks) {
-    rows2.push({
+    rows3.push({
       resource: `${w.providerTitle} ${w.mode}-mode webhook endpoint ${w.id}`,
       how: w.removal ? `golive teardown \u2192 apply --plan <id> --yes --confirm-destroy${w.mode === "live" ? " --confirm-live" : ""}` : `by hand in the ${w.providerTitle} dashboard: golive cannot remove it right now`,
       removable: Boolean(w.removal),
@@ -23963,7 +24804,7 @@ function retirementRows(ctx, inventory2) {
     });
   }
   for (const k of inventory2.sendingKeys) {
-    rows2.push({
+    rows3.push({
       resource: `${k.providerTitle} sending key ${k.id} (${k.target})`,
       how: k.revocation ? "golive teardown \u2192 apply --plan <id> --yes --confirm-destroy" : `by hand in the ${k.providerTitle} dashboard: golive cannot revoke it right now`,
       removable: Boolean(k.revocation),
@@ -23971,7 +24812,7 @@ function retirementRows(ctx, inventory2) {
     });
   }
   if (inventory2.project) {
-    rows2.push({
+    rows3.push({
       resource: `${inventory2.project.providerTitle} project ${inventory2.project.name ?? inventory2.project.id} (${inventory2.project.id})`,
       how: inventory2.project.created ? "golive teardown \u2192 apply --plan <id> --yes --confirm-destroy" : `by hand in the ${inventory2.project.providerTitle} dashboard: golive adopted this project and will not delete it`,
       removable: inventory2.project.created,
@@ -23979,7 +24820,7 @@ function retirementRows(ctx, inventory2) {
     });
   }
   for (const g of inventory2.gaps) {
-    rows2.push({
+    rows3.push({
       resource: g.subject,
       how: `${g.why}; ${g.fix}`,
       removable: false,
@@ -23988,14 +24829,14 @@ function retirementRows(ctx, inventory2) {
   }
   for (const r of inventory2.recorded.filter((x) => x.created)) {
     const label3 = r.kind === "database-project" ? `${r.providerTitle} project ${r.id}` : r.kind === "sending-domain" ? `${r.providerTitle} sending domain ${r.name}` : `${r.providerTitle} project ${r.name} (${r.id})`;
-    rows2.push({
+    rows3.push({
       resource: label3,
       how: r.removal ? "golive teardown \u2192 apply --plan <id> --yes --confirm-destroy, which re-reads the provider to prove the removal" : `by hand in ${r.where}: this provider exposes no delete capability to golive`,
       removable: Boolean(r.removal),
       provenance: { kind: "recorded", at: recordedAt(ctx, recordedSteps(r.kind)) }
     });
   }
-  return rows2;
+  return rows3;
 }
 function provenanceRows(at, resources) {
   return [
@@ -24060,7 +24901,7 @@ function tag(p) {
   }
 }
 var tagKind = (kind) => tag(kind === "recorded" ? { kind: "recorded" } : { kind });
-var cell = (text2) => (text2 ?? "\u2014").replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
+var cell = (text3) => (text3 ?? "\u2014").replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
 function renderHandover(doc) {
   const lines = [];
   lines.push("# Ownership and handover", "");
@@ -24077,7 +24918,7 @@ function renderHandover(doc) {
   lines.push("## Accounts and login route", "");
   if (doc.accounts.length) {
     lines.push("| Axis | Provider | How golive reaches it | Account / team | If the login expires |", "| --- | --- | --- | --- | --- |");
-    for (const a of doc.accounts) lines.push(accountLine3(a));
+    for (const a of doc.accounts) lines.push(accountLine4(a));
   } else lines.push("_No providers are configured yet._");
   lines.push("");
   lines.push("## Resources created", "");
@@ -24129,7 +24970,7 @@ function renderHandover(doc) {
   lines.push(`${HANDOVER_MARKER}. This file contains no secrets: it is built from recorded metadata, ids, URLs and fingerprints only. Secret-free metadata can still identify private resources, so review it before sharing it.`, "");
   return redact(lines.join("\n") + "\n");
 }
-function accountLine3(a) {
+function accountLine4(a) {
   const via = a.via ?? (a.provenance.kind === "verified" ? "connected (the provider named no route)" : "not read");
   return `| ${cell(a.axis)} | ${cell(a.providerTitle)} | ${cell(via)} ${tag(a.provenance)} | ${cell(a.account)} | ${cell(a.login)} |`;
 }
@@ -24206,7 +25047,7 @@ Commands (add --json for machine output; --cwd <dir> to target another repo):
 async function main(argv) {
   const { cmd, flags } = parseArgs(argv);
   const json2 = flags.json === true;
-  const cwd = resolve10(typeof flags.cwd === "string" ? flags.cwd : process.cwd());
+  const cwd = resolve11(typeof flags.cwd === "string" ? flags.cwd : process.cwd());
   const release2 = loadRuntimeRelease(import.meta.url);
   if (cmd === "help" || flags.help) {
     process.stdout.write(HELP);
@@ -24218,7 +25059,7 @@ async function main(argv) {
   }
   if (cmd === "update-check") {
     const modulePath = fileURLToPath2(import.meta.url);
-    const bundleRoot = basename10(modulePath) === "cli.ts" ? resolve10(dirname9(modulePath), "../skills/golive") : resolve10(dirname9(modulePath), "..");
+    const bundleRoot = basename10(modulePath) === "cli.ts" ? resolve11(dirname9(modulePath), "../skills/golive") : resolve11(dirname9(modulePath), "..");
     const ownership = statusForBundle(bundleRoot);
     emit(await checkForUpdate(release2, { ownership, disabled: flags.offline === true || process.env.GOLIVE_UPDATE_CHECK === "0", ...flags["no-cache"] === true ? { cachePath: false } : {} }), { json: json2 });
     return 0;
@@ -24270,21 +25111,21 @@ async function main(argv) {
   if (config.domain) allowHost(config.domain), allowHost(`www.${config.domain}`);
   switch (cmd) {
     case "doctor": {
-      const rows2 = [];
+      const rows3 = [];
       for (const axis of AXES) {
         const id2 = config.stack[axis];
         if (!id2) continue;
         const a = adapterById2(id2);
         if (!a) {
-          rows2.push({ axis, provider: id2, automated: false, ok: false, howToFix: `unknown provider "${id2}" \u2014 best-effort guidance via official CLI/MCP/API or dashboard; approve external writes first. This doctor cannot verify its login; check coverage varies and skipped checks remain unverified.` });
+          rows3.push({ axis, provider: id2, automated: false, ok: false, howToFix: `unknown provider "${id2}" \u2014 best-effort guidance via official CLI/MCP/API or dashboard; approve external writes first. This doctor cannot verify its login; check coverage varies and skipped checks remain unverified.` });
           continue;
         }
         const s = await a.auth(ctx).catch((e) => ({ ok: false, howToFix: e.message }));
-        rows2.push({ axis, provider: id2, automated: a.automated, ...s });
+        rows3.push({ axis, provider: id2, automated: a.automated, ...s });
       }
       const credentials2 = credentialsStatus();
-      const ok = rows2.every((r) => r.ok) && credentials2.private !== false;
-      emit({ ok, providers: rows2, credentials: credentials2 }, { json: json2 });
+      const ok = rows3.every((r) => r.ok) && credentials2.private !== false;
+      emit({ ok, providers: rows3, credentials: credentials2 }, { json: json2 });
       return ok ? 0 : 2;
     }
     case "plan": {

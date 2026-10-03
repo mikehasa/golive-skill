@@ -22,6 +22,8 @@ import { authSignupCheck } from '../src/checks/auth-signup.js';
 import { emailDnsCheck, emailVerifiedCheck } from '../src/checks/email.js';
 import { posthogIngestCheck } from '../src/checks/posthog-ingest.js';
 import { posthogTiming } from '../src/adapters/posthog.js';
+import { sentryIngestCheck } from '../src/checks/sentry-ingest.js';
+import { sentryTiming } from '../src/adapters/sentry.js';
 import { dnsBaselineKey } from '../src/core/dns-baseline.js';
 import { domainLiveCheck } from '../src/checks/domain.js';
 import { siteHeadersCheck } from '../src/checks/site-headers.js';
@@ -59,7 +61,7 @@ describe('ALL_CHECKS', () => {
     const ids = ALL_CHECKS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.sort()).toEqual(
-      ['accounts', 'auth-isolation', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'posthog-ingest', 'preview-bundle', 'preview-deploy', 'production-release', 'rls-probe', 'site-headers', 'site-metadata', 'stripe-live-payment', 'stripe-live-ready', 'upload-exposure', 'webhook-registered', 'webhook-unsigned'].sort(),
+      ['accounts', 'auth-isolation', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'posthog-ingest', 'preview-bundle', 'preview-deploy', 'production-release', 'rls-probe', 'sentry-ingest', 'site-headers', 'site-metadata', 'stripe-live-payment', 'stripe-live-ready', 'upload-exposure', 'webhook-registered', 'webhook-unsigned'].sort(),
     );
   });
 });
@@ -2266,5 +2268,175 @@ describe('posthog-ingest', () => {
     const m = monitor({ count: async () => 2 });
     const r = await run(posthogIngestCheck, ctxFor(m));
     expect(JSON.stringify(r)).not.toContain('phc_FAKEpublicTOKENvalue0123456789');
+  });
+});
+
+// ── sentry-ingest ───────────────────────────────────────────────────────────────────────────────
+
+describe('sentry-ingest', () => {
+  const LINKED = { id: '4505123456', name: 'shop', scope: { kind: 'organization' as const, id: '4505', name: 'Acme' } };
+  const DSN = 'https://FAKEsentryPUBLICkey0123456789abcdef@o4505.ingest.us.sentry.io/4505123456';
+
+  /** A monitoring adapter with the store/read-back surface a check may reach. */
+  function monitor(over: {
+    auth?: AuthStatus;
+    current?: () => Promise<typeof LINKED | null>;
+    store?: () => Promise<{ status: number; eventId?: string }>;
+    read?: (eventId: string, marker: string) => Promise<'pending' | 'seen' | 'seen-without-marker'>;
+  } = {}) {
+    const stored: Array<{ projectId: string; eventId: string; message: string; tags?: Record<string, string> }> = [];
+    const adapter = fakeAdapter({
+      id: 'sentry',
+      axes: ['monitoring'],
+      auth: over.auth ?? { ok: true, via: 'SENTRY_AUTH_TOKEN env (us, Acme)' },
+      capabilities: {
+        project: { current: over.current ?? (async () => LINKED), candidates: async () => [], select: async () => LINKED },
+        monitoring: {
+          dsn: async () => DSN,
+          capture: async (_c, projectId, spec) => {
+            stored.push({ projectId, ...spec });
+            return over.store ? over.store() : { status: 200, eventId: spec.eventId };
+          },
+          readEvent: async (_c, _projectId, eventId, marker) => (over.read ? over.read(eventId, marker) : 'seen'),
+        },
+      },
+    });
+    return { adapter, stored };
+  }
+
+  const ctxFor = (m: ReturnType<typeof monitor>) => testCtx({ config: { stack: { monitoring: 'sentry' } }, adapters: [m.adapter] });
+
+  beforeEach(() => {
+    // The real window is minutes; tests only need the loop's shape (a bounded poll) and its wording.
+    sentryTiming.pollMs = 0;
+    sentryTiming.windowMs = 40;
+  });
+  afterEach(() => {
+    sentryTiming.pollMs = 10_000;
+    sentryTiming.windowMs = 180_000;
+  });
+
+  it('applies only when the monitoring axis is Sentry', () => {
+    expect(sentryIngestCheck.applies(testCtx({ config: { stack: { monitoring: 'sentry' } } }))).toBe(true);
+    expect(sentryIngestCheck.applies(testCtx({ config: { stack: { monitoring: 'posthog' } } }))).toBe(false);
+    expect(sentryIngestCheck.applies(testCtx())).toBe(false);
+  });
+
+  it('passes only on the provider\'s own event read, naming the seconds and the marker', async () => {
+    const m = monitor();
+    const r = await run(sentryIngestCheck, ctxFor(m));
+    expect(r.status).toBe('pass');
+    expect(r.evidence.join('\n')).toMatch(/sent one "golive_ingest_check" event/);
+    expect(r.evidence.join('\n')).toMatch(/event id [0-9a-f]{32}, marker [0-9a-f]{8}/);
+    expect(r.evidence.join('\n')).toMatch(/store endpoint answered HTTP 200/);
+    expect(r.evidence.join('\n')).toMatch(/the 2xx means accepted, not ingested/);
+    expect(r.evidence.join('\n')).toMatch(/Sentry returned event [0-9a-f]{32} with marker [0-9a-f]{8} after \d+s/);
+    // The synthetic event is exactly the one golive documents, sent to the linked project.
+    expect(m.stored).toHaveLength(1);
+    expect(m.stored[0]).toMatchObject({ projectId: '4505123456' });
+    expect(m.stored[0]!.message).toMatch(/^golive_ingest_check [0-9a-f]{8}$/);
+    expect(m.stored[0]!.tags!.golive_marker).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it('warns (never passes) when the event is not visible within the window, naming the app-code task', async () => {
+    const m = monitor({ read: async () => 'pending' });
+    const r = await run(sentryIngestCheck, ctxFor(m));
+    expect(r.status).toBe('warn');
+    expect(r.severity).toBe('medium');
+    expect(r.evidence.join('\n')).toMatch(/had not returned the event \(marker [0-9a-f]{8}\) yet after \d+s/);
+    expect(r.fix).toMatch(/not a failure yet/);
+    expect(r.fix).toMatch(/re-run `golive verify --only sentry-ingest`/);
+    expect(r.fix).toMatch(/initializes the Sentry SDK/);
+  });
+
+  it('warns (never fails) when the read-back cannot be read, naming the scope fix', async () => {
+    const m = monitor({ read: async () => { throw Object.assign(new Error('Sentry read event failed (HTTP 403): missing event:read'), { status: 403 }); } });
+    const r = await run(sentryIngestCheck, ctxFor(m));
+    expect(r.status).toBe('warn');
+    expect(r.evidence.join('\n')).toMatch(/the read-back was refused/);
+    expect(r.fix).toMatch(/event:read scope/);
+  });
+
+  it('warns when the read-back never answered for a non-auth reason, and when the event lacks the marker', async () => {
+    const dead = monitor({ read: async () => { throw new Error('socket hang up'); } });
+    const a = await run(sentryIngestCheck, ctxFor(dead));
+    expect(a.status).toBe('warn');
+    expect(a.evidence.join('\n')).toMatch(/the read-back could not be read within \d+s: socket hang up/);
+
+    const odd = monitor({ read: async () => 'seen-without-marker' });
+    const b = await run(sentryIngestCheck, ctxFor(odd));
+    expect(b.status).toBe('warn');
+    expect(b.evidence.join('\n')).toMatch(/returned event [0-9a-f]{32} .* without the run marker [0-9a-f]{8}/);
+  });
+
+  it('skips when the credential is unusable, like every other non-accounts check', async () => {
+    const m = monitor({ auth: { ok: false, howToFix: 'Create an auth token at us.sentry.io/settings/account/api/auth-tokens/' } });
+    const r = await run(sentryIngestCheck, ctxFor(m));
+    expect(r.status).toBe('skip');
+    expect(r.evidence[0]).toMatch(/^blocked by: login:sentry/);
+  });
+
+  it('fails when the linked project cannot be read (auth or a provider refusal)', async () => {
+    const m = monitor({ current: async () => { throw new Error('Sentry list projects failed (HTTP 401): the token was rejected'); } });
+    const r = await run(sentryIngestCheck, ctxFor(m));
+    expect(r.status).toBe('fail');
+    expect(r.evidence.join('\n')).toMatch(/could not read the Sentry project this app reports to/);
+    expect(r.evidence.join('\n')).toMatch(/HTTP 401/);
+    expect(r.fix).toMatch(/golive doctor/);
+  });
+
+  it('fails when the store endpoint refuses the event', async () => {
+    const m = monitor({ store: async () => { throw new Error('Sentry send a test event failed (HTTP 403): the DSN was rejected'); } });
+    const r = await run(sentryIngestCheck, ctxFor(m));
+    expect(r.status).toBe('fail');
+    expect(r.evidence.join('\n')).toMatch(/sending one "golive_ingest_check" event to Sentry project shop \(4505123456\) failed/);
+    expect(r.fix).toMatch(/golive verify --only sentry-ingest/);
+  });
+
+  it('skips when no project is linked, naming the step that provides one', async () => {
+    const m = monitor({ current: async () => null });
+    const r = await run(sentryIngestCheck, ctxFor(m));
+    expect(r.status).toBe('skip');
+    expect(r.evidence[0]).toMatch(/^blocked by: sentry:project/);
+  });
+
+  it('skips a guided monitoring provider and an adapter without the surface', async () => {
+    const guided = fakeAdapter({ id: 'sentry', axes: ['monitoring'], automated: false });
+    expect((await sentryIngestCheck.run(testCtx({ config: { stack: { monitoring: 'sentry' } }, adapters: [guided] }))).status).toBe('skip');
+
+    const bare = fakeAdapter({ id: 'sentry', axes: ['monitoring'], capabilities: { project: { current: async () => LINKED, candidates: async () => [], select: async () => LINKED } } });
+    const r = await sentryIngestCheck.run(testCtx({ config: { stack: { monitoring: 'sentry' } }, adapters: [bare] }));
+    expect(r.status).toBe('skip');
+    expect(r.evidence[0]).toMatch(/no store \+ read-back surface/);
+  });
+
+  it('maps SENTRY_DSN as public and never fills SENTRY_AUTH_TOKEN', () => {
+    const mapped = mapEnv([
+      { name: 'SENTRY_DSN', files: ['src/lib.ts'], clientExposed: false },
+      { name: 'NEXT_PUBLIC_SENTRY_DSN', files: ['src/client.ts'], clientExposed: true },
+    ]);
+    expect(mapped.findings).toEqual([]);
+    expect(mapped.mapped).toEqual([
+      { name: 'SENTRY_DSN', key: 'sentry.dsn', clientExposed: false },
+      { name: 'NEXT_PUBLIC_SENTRY_DSN', key: 'sentry.dsn', clientExposed: true },
+    ]);
+    // SENTRY_AUTH_TOKEN is golive's own operator credential, never a value golive fills for the app.
+    const auth = mapEnv([{ name: 'SENTRY_AUTH_TOKEN', files: ['src/server.ts'], clientExposed: false }]);
+    expect(auth.mapped).toEqual([]);
+    expect(auth.unmapped).toEqual(['SENTRY_AUTH_TOKEN']);
+  });
+
+  it('never blocks writing the public DSN, even under a critical exposure finding', () => {
+    const ctx = testCtx({
+      detect: { findings: [{ id: 'inlined', severity: 'critical', title: 'a server secret is inlined into the bundle', evidence: ['next.config env'], fix: 'remove it' }], envRefs: [{ name: 'NEXT_PUBLIC_SENTRY_DSN', files: ['next.config.ts'], clientExposed: true }] },
+    });
+    expect(secretBlocked(ctx, 'NEXT_PUBLIC_SENTRY_DSN', 'sentry.dsn')).toBe(false);
+  });
+
+  it('never puts the DSN or the auth token into its evidence', async () => {
+    const m = monitor();
+    const r = await run(sentryIngestCheck, ctxFor(m));
+    expect(JSON.stringify(r)).not.toContain(DSN);
+    expect(JSON.stringify(r)).not.toContain('FAKEsentry');
   });
 });

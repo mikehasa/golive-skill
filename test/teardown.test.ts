@@ -1029,3 +1029,82 @@ describe('teardown: the PostHog analytics project', () => {
     expect(h.action).toMatch(/it may belong to this account already and predate this app/);
   });
 });
+
+// ── The Sentry project golive created (monitoring) ──────────────────────────────────────────────
+
+describe('teardown: the Sentry analytics project', () => {
+  const MON_CONFIG: Partial<ShipConfig> = { stack: { ...CONFIG.stack, monitoring: 'sentry' } };
+  const MON_STATE = (over: Record<string, string> = {}): ShipState =>
+    stateWith({ 'fakehost.projectId': 'prj_1', 'fakehost.createdProjectId': 'prj_1', 'sentry.projectId': '4505123456', 'sentry.projectName': 'shop', 'sentry.createdProjectId': '4505123456', ...over });
+
+  function mon(opts: { state?: ShipState; configure?: (w: FakeWorld) => void } = {}) {
+    return setup({
+      config: MON_CONFIG,
+      state: opts.state ?? MON_STATE(),
+      arrange: (w) => {
+        w.mon.providerId = 'sentry';
+        w.mon.withMonitoring = true;
+        opts.configure?.(w);
+      },
+    });
+  }
+
+  it('plans a destroy step that the provider\'s own read confirms, and forgets the recorded project', async () => {
+    const { w, ctx, build } = mon({ configure: (x) => void (x.mon.projectState = 'gone') });
+    const plan = await build();
+    const step = byId(plan, 'teardown:monitoring:sentry');
+    expect(step.kind).toBe('destroy');
+    expect(step.risk).toEqual({ writes: true, destroy: true });
+    expect(step.preview[0]).toBe('delete the Sentry project shop (4505123456) — golive created it (marker sentry.createdProjectId); Sentry deletes asynchronously, so the provider\'s own read (pending deletion or gone) is what confirms the removal');
+    expect(step.verifyWith).toEqual([]);
+    // The Sentry project goes before the host project: smallest blast radius first.
+    expect(ids(plan).indexOf('teardown:monitoring:sentry')).toBeLessThan(ids(plan).indexOf('teardown:project:hosting'));
+    expect(plan.handoffs.map((h) => h.id)).not.toContain('teardown:monitoring:sentry');
+
+    const out = await apply(ctx, plan);
+    expect(out.find((o) => o.id === 'teardown:monitoring:sentry')).toMatchObject({ status: 'done' });
+    expect(w.mon.removed).toEqual(['prj_9']);
+    const check = out.find((o) => o.id === 'teardown:monitoring:sentry')!.checks[0]!;
+    expect(check).toMatchObject({ id: 'teardown:monitoring:sentry:removed', status: 'pass', severity: 'info' });
+    expect(check.evidence.join(' ')).toContain('no longer has');
+    expect(ctx.state.resource('sentry.projectId')).toBeUndefined();
+    expect(ctx.state.resource('sentry.createdProjectId')).toBeUndefined();
+  });
+
+  it('treats a provider-scheduled deletion as confirmation, saying so', async () => {
+    const { ctx, build } = mon({ configure: (x) => void (x.mon.projectState = 'pending') });
+    const out = await apply(ctx, await build());
+    const check = out.find((o) => o.id === 'teardown:monitoring:sentry')!.checks[0]!;
+    expect(check.status).toBe('pass');
+    expect(check.evidence.join(' ')).toMatch(/accepted the deletion and reports .* as pending deletion \(scheduled, not live\)/);
+  });
+
+  it('fails — and keeps the record — when the provider still reports the project after the delete', async () => {
+    const { ctx, build } = mon({ configure: (x) => void (x.mon.projectState = 'present') });
+    const out = await apply(ctx, await build());
+    const step = out.find((o) => o.id === 'teardown:monitoring:sentry')!;
+    expect(step.status).toBe('failed');
+    expect(step.error).toMatch(/still reports the project as live/);
+    expect(ctx.state.resource('sentry.projectId')).toBe('4505123456');
+  });
+
+  it('hands the project back instead of skipping it when the provider is not usable', async () => {
+    const { ctx, build } = mon({ configure: (x) => void (x.mon.authed = false) });
+    const plan = await build();
+    expect(ids(plan)).not.toContain('teardown:monitoring:sentry');
+    const h = plan.handoffs.find((x) => x.id === 'teardown:monitoring:sentry')!;
+    expect(h).toMatchObject({ blocking: false, manual: true });
+    expect(h.why).toMatch(/was created by golive, and deleting it needs the Sentry dashboard/);
+    expect(h.action).toMatch(/Delete the Sentry project shop \(4505123456\) in the Sentry dashboard/);
+    expect(await apply(ctx, plan).catch(() => null)).not.toBeNull();
+  });
+
+  it('never claims an adopted Sentry project as golive\'s to delete', async () => {
+    const adopted = mon({ state: MON_STATE({ 'sentry.createdProjectId': '4505000' }) });
+    const plan = await adopted.build();
+    expect(ids(plan)).not.toContain('teardown:monitoring:sentry');
+    const h = plan.handoffs.find((x) => x.id === 'teardown:monitoring:sentry')!;
+    expect(h.why).toMatch(/no creation marker .* covers it, so golive cannot prove it created it: it was adopted/);
+    expect(h.action).toMatch(/it may belong to this account already and predate this app/);
+  });
+});

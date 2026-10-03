@@ -468,7 +468,9 @@ de verificación completada para tu app.
 - [ ] 🗺️ **Monitorización y alertas:** seguimiento de errores, logs, disponibilidad y alertas
   accionables. Hoy las sugerencias de proveedores son guiadas; la configuración verificada está
   planificada. Existen comprobaciones de deriva bajo demanda (`golive status`, más abajo) — la
-  monitorización continua y las alertas no.
+  monitorización continua y las alertas no. Sentry está implementado como proveedor de monitorización
+  automatizado — adaptador, escritura de las variables de entorno del host y la comprobación
+  `sentry-ingest` —, cubierto solo con mocks y sin ejecución real todavía.
 - [ ] 🚧 **Analítica de producto:** validación de eventos y ajustes de consentimiento y datos, más
   allá de las sugerencias guiadas de proveedores que hay hoy. La analítica de PostHog se cablea a
   través de un plan aprobado — el proyecto de analítica de la app se adopta o se selecciona (si no hay

@@ -629,3 +629,66 @@ describe('handover: the PostHog analytics project', () => {
     expect(adopted.retirement.find((r) => r.resource.includes('prj_9'))).toBeUndefined();
   });
 });
+
+// ── the Sentry analytics project (monitoring) ───────────────────────────────────────────────────
+
+describe('handover: the Sentry analytics project', () => {
+  const MON_CONFIG: Partial<ShipConfig> = { stack: { ...CONFIG.stack, monitoring: 'sentry' } };
+  const MON_STATE: ShipState = {
+    ...STATE,
+    resources: { ...STATE.resources, 'sentry.projectId': '4505123456', 'sentry.projectName': 'shop', 'sentry.createdProjectId': '4505123456' },
+    steps: { ...STATE.steps, 'sentry:project': { status: 'done', at: '2026-08-05T10:00:00.000Z', planId: 'plan-1' } },
+  };
+
+  /** A fake world that answers as Sentry (the id the recorded spec and the inventory name). */
+  const sentryWorld = () => {
+    const w = fakeWorld();
+    arrange(w);
+    w.mon.providerId = 'sentry';
+    w.mon.withMonitoring = true;
+    return w;
+  };
+  const mon = (checkIds: readonly string[] = [...CHECKS, 'sentry-ingest'], skipChecks: readonly string[] = []) =>
+    setup({ config: MON_CONFIG, state: MON_STATE, adapters: sentryWorld().adapters, checkIds, skipChecks });
+
+  it('names it as a created resource with its removal, and its own check in the runbook', async () => {
+    const withCheck = mon();
+    const doc = await withCheck.buildWith(releaseChecks(withCheck.ctx));
+    const row = doc.resources.find((r) => r.kind === 'analytics project')!;
+    expect(row).toMatchObject({ axis: 'monitoring', provider: 'sentry', providerTitle: 'Sentry', name: 'shop', id: '4505123456', ownership: 'created', removable: true, provenance: { kind: 'recorded', at: '2026-08-05T10:00:00.000Z' } });
+    expect(row.proof).toMatch(/creation marker \(sentry\.createdProjectId\)/);
+
+    // With the axis configured, the check its own predicate says applies is the runbook command.
+    const monitoring = doc.runbook.find((r) => r.subject.startsWith('monitoring'))!;
+    expect(monitoring.subject).toBe('monitoring (FakeMonitor)');
+    expect(monitoring.commands).toEqual(['golive doctor', 'golive verify --only sentry-ingest']);
+
+    // A stack whose own predicate says the check does not run is told so, not sent to a skipping check.
+    const skipped = mon([...CHECKS, 'sentry-ingest'], ['sentry-ingest']);
+    const other = await skipped.build();
+    const skippedRunbook = other.runbook.find((r) => r.subject.startsWith('monitoring'))!;
+    expect(skippedRunbook.commands).toEqual(['golive doctor']);
+    expect(skippedRunbook.note).toMatch(/none of them runs on this stack/);
+
+    // Costs: Sentry's own billing page, read by nobody (golive reads no usage).
+    const cost = doc.costs.find((c) => c.provider === 'sentry')!;
+    expect(cost.where).toMatch(/Sentry organization settings → Billing/);
+    expect(cost.read).toMatch(/golive does not read plans, quotas, usage or invoices/);
+
+    // Retirement: an approved teardown removes it (the adapter exposes delete + read-back).
+    const retirement = doc.retirement.find((r) => r.resource.includes('4505123456'))!;
+    expect(retirement.removable).toBe(true);
+    expect(retirement.how).toMatch(/golive teardown → apply --plan <id> --yes --confirm-destroy/);
+  });
+
+  it('never claims an adopted Sentry project, and hands its removal to the dashboard', async () => {
+    const adopted = await setup({
+      config: MON_CONFIG,
+      state: { ...STATE, resources: { ...STATE.resources, 'sentry.projectId': '4505123456', 'sentry.projectName': 'shop' } },
+    }).build();
+    const row = adopted.resources.find((r) => r.kind === 'analytics project')!;
+    expect(row).toMatchObject({ ownership: 'adopted', removable: false });
+    expect(row.proof).toMatch(/without golive's creation marker/);
+    expect(adopted.retirement.find((r) => r.resource.includes('4505123456'))).toBeUndefined();
+  });
+});

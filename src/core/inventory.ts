@@ -121,9 +121,10 @@ export interface InventoryProject {
 /**
  * A removal golive can perform right now, through the provider's own delete plus the read that
  * confirms it. `confirm` answers `present` | `gone` | `pending`: `pending` is a deletion the provider
- * accepted and only SCHEDULED (PostHog keeps the row visible with `is_pending_deletion`), which is a
- * confirmed removal, not a resource that is still there. A recorded resource without one keeps its
- * manual handoff: golive never reports a delete it cannot confirm.
+ * accepted and only SCHEDULED (PostHog keeps the row visible with `is_pending_deletion`; Sentry
+ * reports the scheduled state where it still lists the project), which is a confirmed removal, not a
+ * resource that is still there. A recorded resource without one keeps its manual handoff: golive
+ * never reports a delete it cannot confirm.
  */
 export interface RecordedRemoval {
   adapter: Adapter;
@@ -233,6 +234,19 @@ const RECORDED: RecordedSpec[] = [
     extra: '; PostHog schedules a deletion, so the project stays listed as pending execution until it is purged',
     removal: posthogRemoval,
   },
+  {
+    axis: 'monitoring',
+    provider: 'sentry',
+    providerTitle: 'Sentry',
+    kind: 'analytics-project',
+    idKey: 'sentry.projectId',
+    nameKey: 'sentry.projectName',
+    createdBy: ['sentry.createdProjectId'],
+    needs: 'the Sentry dashboard',
+    where: 'the Sentry dashboard',
+    extra: '; Sentry deletes asynchronously, so the provider\'s own read (pending deletion or gone) is what confirms the removal',
+    removal: sentryRemoval,
+  },
 ];
 
 /**
@@ -246,6 +260,21 @@ async function posthogRemoval(ctx: Ctx, id: string): Promise<RecordedRemoval | u
   const adapter = s.adapter;
   const remove = adapter.capabilities.project?.remove;
   const confirm = (adapter.capabilities as { analytics?: { projectState?: (ctx: Ctx, id: string) => Promise<'present' | 'gone' | 'pending'> } }).analytics?.projectState;
+  if (!remove || !confirm) return undefined;
+  return { adapter, remove: (c) => remove(c), confirm: (c) => confirm(c, id) };
+}
+
+/**
+ * Sentry's removal handle: only when `golive.yaml` still names Sentry for monitoring, that adapter is
+ * usable, and it really exposes both halves (the delete and the read that confirms it). Its
+ * `projectState` read is the non-contract extension the adapter publishes beside its linker.
+ */
+async function sentryRemoval(ctx: Ctx, id: string): Promise<RecordedRemoval | undefined> {
+  const s = await axisStatus(ctx, 'monitoring');
+  if (s.kind !== 'ready' || s.adapter.id !== 'sentry') return undefined;
+  const adapter = s.adapter;
+  const remove = adapter.capabilities.project?.remove;
+  const confirm = (adapter.capabilities as { monitoring?: { projectState?: (ctx: Ctx, id: string) => Promise<'present' | 'gone' | 'pending'> } }).monitoring?.projectState;
   if (!remove || !confirm) return undefined;
   return { adapter, remove: (c) => remove(c), confirm: (c) => confirm(c, id) };
 }

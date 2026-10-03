@@ -43,6 +43,4 @@ export const GUIDED: GuidedProvider[] = [
   // dns
   { id: 'namecheap', title: 'Namecheap', axes: ['dns'] },
   { id: 'vercel-dns', title: 'Vercel DNS', axes: ['dns'] },
-  // monitoring
-  { id: 'sentry', title: 'Sentry', axes: ['monitoring'] },
 ];

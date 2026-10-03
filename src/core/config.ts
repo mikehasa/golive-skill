@@ -140,6 +140,25 @@ export function parseConfig(text: string): ShipConfig {
     }
     cfg.posthog = raw.posthog as ShipConfig['posthog'];
   }
+  if (raw.sentry !== undefined) {
+    if (!raw.sentry || typeof raw.sentry !== 'object' || Array.isArray(raw.sentry)) {
+      throw new ConfigError(`${CONFIG_FILE}: sentry must be a mapping of non-secret selectors`);
+    }
+    for (const [key, value] of Object.entries(raw.sentry)) {
+      if (key === 'region') {
+        if (value !== 'us' && value !== 'eu') throw new ConfigError(`${CONFIG_FILE}: sentry.${key} must be "us" (default) or "eu"`);
+        continue;
+      }
+      if (key === 'team') {
+        if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$/.test(value)) {
+          throw new ConfigError(`${CONFIG_FILE}: sentry.team must be a team slug or name (letters, digits, space, dash, dot, underscore), never a credential`);
+        }
+        continue;
+      }
+      throw new ConfigError(`${CONFIG_FILE}: unknown sentry setting; expected region ("us" or "eu") or team — no credentials`);
+    }
+    cfg.sentry = raw.sentry as ShipConfig['sentry'];
+  }
   const auth = raw.auth as Record<string, unknown> | undefined;
   if (auth !== undefined) {
     if (!auth || typeof auth !== 'object' || Array.isArray(auth)) throw new ConfigError(`${CONFIG_FILE}: auth must be a mapping of non-secret settings`);

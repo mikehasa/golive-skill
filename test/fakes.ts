@@ -725,6 +725,23 @@ export function fakeWorld() {
     counts: [1] as number[],
     /** Every synthetic event the fake was asked to send. */
     captured: [] as Array<{ projectId: string; event: string; distinctId: string; properties?: Record<string, string> }>,
+    /** When false, the fake exposes no Sentry-style store/read-back surface. */
+    withMonitoring: false,
+    /** The PUBLIC DSN the API hands out. null = the provider returns none. */
+    dsn: 'https://FAKEsentryPUBLICkey0123456789abcdef@o4505.ingest.us.sentry.io/42' as string | null,
+    /** When set, the DSN read throws this (a read that cannot be answered). */
+    dsnError: null as string | null,
+    /** When set, the synthetic store call throws this. */
+    storeError: null as string | null,
+    /** When set, the event read-back throws this (with a status, e.g. a 403 for a missing scope). */
+    eventError: null as { status?: number; message: string } | null,
+    /**
+     * What the event read-back answers, one per poll (the last answer repeats). `'pending'` is "not
+     * visible yet"; `['pending', 'pending', 'seen']` is an event that only shows up on the third poll.
+     */
+    eventStates: ['seen'] as Array<'pending' | 'seen' | 'seen-without-marker'>,
+    /** Every synthetic event the fake was asked to store. */
+    stored: [] as Array<{ projectId: string; eventId: string; message: string; tags?: Record<string, string> }>,
   };
   const monCaps = {
     project: {
@@ -795,6 +812,27 @@ export function fakeWorld() {
             count: async () => {
               if (mon.countError) throw Object.assign(new Error(mon.countError.message), { status: mon.countError.status });
               return mon.counts.length > 1 ? mon.counts.shift()! : mon.counts[0] ?? 0;
+            },
+            projectState: async () => mon.projectState,
+          }
+        : undefined;
+    },
+    get monitoring() {
+      return mon.withMonitoring
+        ? {
+            dsn: async () => {
+              if (mon.dsnError) throw new Error(mon.dsnError);
+              if (!mon.dsn) throw new Error('FakeMonitor returned no DSN for this project');
+              return mon.dsn;
+            },
+            capture: async (_c: unknown, projectId: string, spec: { eventId: string; message: string; tags?: Record<string, string> }) => {
+              if (mon.storeError) throw new Error(mon.storeError);
+              mon.stored.push({ projectId, ...spec });
+              return { status: 200, eventId: spec.eventId };
+            },
+            readEvent: async () => {
+              if (mon.eventError) throw Object.assign(new Error(mon.eventError.message), { status: mon.eventError.status });
+              return mon.eventStates.length > 1 ? mon.eventStates.shift()! : mon.eventStates[0] ?? 'pending';
             },
             projectState: async () => mon.projectState,
           }

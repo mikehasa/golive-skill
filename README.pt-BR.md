@@ -450,7 +450,10 @@ pendente) · **🗺️ Planejado**
   RLS/advisor e de padrões de credencial.
 - [ ] 🗺️ **Monitoramento e alertas:** rastreamento de erros, logs, uptime e alertas acionáveis.
   Sugestões de provedores são guiadas hoje; uma configuração verificada está planejada. Checagens de
-  drift sob demanda existem (`golive status`, abaixo) — monitoramento contínuo e alertas, não.
+  drift sob demanda existem (`golive status`, abaixo) — monitoramento contínuo e alertas, não. O
+  Sentry está implementado como provedor de monitoramento automatizado — adaptador, escrita das
+  variáveis de ambiente do host e a checagem `sentry-ingest` —, coberto apenas por mocks e sem
+  execução real até agora.
 - [ ] 🚧 **Analytics de produto:** validação de eventos e configurações de consentimento/dados, além
   das sugestões guiadas de provedores que existem hoje. O analytics do PostHog é conectado através de
   um plano aprovado — o projeto de analytics do app é adotado ou selecionado (uma criação é planejada

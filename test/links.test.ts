@@ -5,6 +5,7 @@ import { applyPlan } from '../src/core/runner.js';
 import { emptyState } from '../src/core/state.js';
 import type { Check, Ctx, DeploymentInfo, Finding, Http, Plan, ReleaseIdentity, ShipConfig, ShipState, Step, StepRecord } from '../src/core/types.js';
 import { envParityCheck } from '../src/checks/env-parity.js';
+import { sentryAdapter, SentryTeamChoiceError } from '../src/adapters/sentry.js';
 import { previewBundleCheck, previewDeployCheck, productionReleaseCheck } from '../src/checks/release.js';
 import { ALL_LINKS } from '../src/links/all.js';
 import { availableKeys, forgetDeployFacts, previousProductionDeploy, productionUrl, readDeployHistory, readRelease, recordDeploy, step } from '../src/links/util.js';
@@ -2419,6 +2420,245 @@ describe('analytics (monitoring)', () => {
     expect(env.status).toBe('failed');
     expect(env.error).toMatch(/token changed since approval/);
     expect(w.host.env.production.has('NEXT_PUBLIC_POSTHOG_KEY')).toBe(false);
+  });
+});
+
+describe('sentry (monitoring)', () => {
+  const SENTRY_ENV = ['SENTRY_DSN', 'NEXT_PUBLIC_SENTRY_DSN'];
+  const monStack = { ...FAKE_STACK, monitoring: 'fakemonitor' };
+  const DSN = 'https://FAKEsentryPUBLICkey0123456789abcdef@o4505.ingest.us.sentry.io/42';
+
+  /** The sentry link only owns a monitoring adapter that exposes the store/read-back surface. */
+  const setupSentry = (opts: Parameters<typeof setup>[0] = {}) =>
+    setup({
+      ...opts,
+      arrange: (w) => {
+        w.mon.withMonitoring = true;
+        w.mon.withAnalytics = false;
+        w.mon.dsn = DSN;
+        opts.arrange?.(w);
+      },
+    });
+
+  it('is planned only when the monitoring axis names an automated adapter with the store surface', async () => {
+    const off = await build(setup({ env: [...ENV, ...SENTRY_ENV] }).ctx);
+    expect(ids(off).some((i) => i.startsWith('sentry:'))).toBe(false);
+    expect(hIds(off)).not.toContain('sentry:snippet');
+
+    // A guided monitoring provider stays guided: no step, and no warning about it.
+    const guided = await build(setup({ config: { stack: { ...FAKE_STACK, monitoring: 'fakeguided' } }, env: [...ENV, ...SENTRY_ENV] }).ctx);
+    expect(ids(guided).some((i) => i.startsWith('sentry:'))).toBe(false);
+    expect(guided.warnings.join('\n')).not.toMatch(/monitoring/);
+  });
+
+  it('stays out of the plan — with one warning — when the automated adapter has no surface at all', async () => {
+    const { ctx } = setup({ config: { stack: monStack }, env: [...ENV, ...SENTRY_ENV], arrange: (w) => void (w.mon.withAnalytics = false) });
+    const plan = await build(ctx);
+    expect(ids(plan).some((i) => i.startsWith('sentry:'))).toBe(false);
+    // The analytics link owns this warning; the sentry link stays silent rather than saying it twice.
+    expect(plan.warnings.filter((x) => /no capture \+ read-back surface/.test(x))).toHaveLength(1);
+  });
+
+  it('pins the linked project (zero writes) and depends each env step on it', async () => {
+    const { w, ctx } = setupSentry({ config: { stack: monStack }, env: [...ENV, ...SENTRY_ENV] });
+    const plan = await build(ctx);
+    const project = byId(plan, 'sentry:project');
+    expect(project.kind).toBe('provision');
+    expect(project.risk.writes).toBe(false);
+    expect(project.destination).toMatchObject({ axis: 'monitoring', provider: 'fakemonitor', action: 'pin', project: { id: 'prj_9', name: 'shop' } });
+    expect(project.preview[0]).toBe('monitoring: FakeMonitor project shop (prj_9) in organization Fake Org (org_1), from the project already linked to this repo (golive state); every FakeMonitor write in this plan goes there');
+    expect(project.preview.join('\n')).toContain('FakeMonitor access: fakemonitor API key');
+
+    for (const target of ['preview', 'production'] as const) {
+      const env = byId(plan, `sentry:env:${target}`);
+      expect(env.kind).toBe('wire');
+      expect(env.risk.writes).toBe(true);
+      expect(env.dependsOn).toEqual(['sentry:project', 'project:hosting']);
+      expect(env.preview.join('\n')).toContain('add SENTRY_DSN ← sentry.dsn from FakeMonitor project shop (public: the DSN ships in the browser by design)');
+      expect(env.preview.join('\n')).toContain('no server secret is written');
+    }
+    // The app reads the names golive fills: no app-code handoff, and no DSN value anywhere.
+    expect(hIds(plan)).not.toContain('sentry:snippet');
+    expect(JSON.stringify(planView(plan))).not.toContain(w.mon.dsn!);
+    expect(byId(plan, 'sentry:env:production').intent).toMatch(/sentry\.dsn\|fakemonitor\|prj_9\|[0-9a-f]{8}/);
+  });
+
+  it('writes the public DSN as a plain, non-sensitive value and records only its fingerprint', async () => {
+    const { w, ctx } = setupSentry({ config: { stack: monStack }, env: [...ENV, ...SENTRY_ENV] });
+    const outcomes = await apply(ctx, await build(ctx));
+    expect(outcomes.every((o) => o.status === 'done')).toBe(true);
+
+    const prod = w.host.env.production;
+    expect(prod.get('SENTRY_DSN')).toBe(DSN);
+    expect(prod.get('SENTRY_DSN')).not.toBeInstanceOf(Secret);
+    expect(prod.get('NEXT_PUBLIC_SENTRY_DSN')).toBe(DSN);
+    expect(w.host.env.preview.get('SENTRY_DSN')).toBe(DSN);
+
+    // A public-by-design value must not be marked sensitive on the host, and only its fingerprint may
+    // reach state (the DSN ships in the browser bundle, but state never needs the value).
+    const sets = w.calls.filter((c) => c.method === 'env.set' && String(c.args[0]).includes('SENTRY'));
+    expect(sets).toHaveLength(4);
+    for (const c of sets) expect((c.args[3] as { sensitive?: boolean }).sensitive).toBe(false);
+    const st = ctx.state.get();
+    expect(st.secrets['SENTRY_DSN@production']?.fp).toBeDefined();
+    expect(JSON.stringify(st)).not.toContain(DSN);
+    expect(JSON.stringify(outcomes)).not.toContain(DSN);
+    expect(ctx.logs.join('\n')).not.toContain(DSN);
+    expectNoRawSecrets([JSON.stringify(outcomes), ...ctx.logs]);
+  });
+
+  it('creates a project named after the repo only when nothing is linked, recording the creation marker', async () => {
+    const { w, ctx } = setupSentry({
+      config: { stack: monStack },
+      env: [...ENV, ...SENTRY_ENV],
+      arrange: (x) => {
+        x.mon.current = null;
+        x.mon.candidates = [{ id: 'prj_other', name: 'other-app', scope: { kind: 'organization', id: 'org_1', name: 'Fake Org' } }];
+      },
+    });
+    const plan = await build(ctx);
+    const project = byId(plan, 'sentry:project');
+    expect(project.risk.writes).toBe(true);
+    expect(project.destination).toMatchObject({ action: 'create', project: { name: 'shop' } });
+    expect(project.preview.join('\n')).toMatch(/Create FakeMonitor project shop for monitoring in organization Fake Org \(org_1\)/);
+    expect(project.preview.join('\n')).toMatch(/existing FakeMonitor projects that could be used instead: other-app \(prj_other\)/);
+    expect(plan.warnings.join('\n')).toMatch(/already has 1 project\(s\) in this organization \(other-app \(prj_other\)\)/);
+
+    const outcomes = await apply(ctx, plan);
+    expect(outcomes.find((o) => o.id === 'sentry:project')).toMatchObject({ status: 'done' });
+    const st = ctx.state.get();
+    expect(st.resources['fakemonitor.projectId']).toBe('prj_new_1');
+    expect(st.resources['fakemonitor.createdProjectId']).toBe('prj_new_1');
+    expect(w.calls.find((c) => c.method === 'project.create')?.args).toEqual(['shop']);
+    // The env step read the DSN of the project this run created, not of the placeholder.
+    expect(w.host.env.production.get('SENTRY_DSN')).toBe(DSN);
+  });
+
+  it('hands the team choice over instead of guessing when creation is ambiguous', async () => {
+    const { ctx } = setupSentry({
+      config: { stack: monStack },
+      env: [...ENV, ...SENTRY_ENV],
+      arrange: (x) => {
+        x.mon.current = null;
+        const project = x.adapters.find((a) => a.id === 'fakemonitor')!.capabilities.project!;
+        project.creationTarget = async () => { throw new SentryTeamChoiceError('FakeMonitor organization Fake Org has 2 teams (growth, platform), so golive will not guess which one the project belongs to.', [{ slug: 'growth', name: 'Growth' }, { slug: 'platform', name: 'Platform' }]); };
+      },
+    });
+    const plan = await build(ctx);
+    expect(ids(plan)).not.toContain('sentry:project');
+    const h = plan.handoffs.find((x) => x.id === 'sentry:project')!;
+    expect(h).toMatchObject({ blocking: true });
+    expect(h.why).toMatch(/cannot create the project without a team/);
+    expect(h.action).toMatch(/Growth \(growth\), Platform \(platform\)/);
+    expect(h.action).toMatch(/sentry\.team/);
+  });
+
+  it('selects the project golive.yaml names and records no creation marker for it', async () => {
+    const { w, ctx } = setupSentry({
+      config: { stack: monStack, projects: { monitoring: 'other-app' } },
+      env: [...ENV, ...SENTRY_ENV],
+      arrange: (x) => {
+        x.mon.current = null;
+        x.mon.candidates = [{ id: 'prj_2', name: 'other-app', scope: { kind: 'organization', id: 'org_1', name: 'Fake Org' } }];
+      },
+    });
+    const plan = await build(ctx);
+    const project = byId(plan, 'sentry:project');
+    expect(project.preview[0]).toMatch(/^Use existing FakeMonitor project other-app \(prj_2\)/);
+    expect(project.destination).toMatchObject({ action: 'select', project: { id: 'prj_2', name: 'other-app' } });
+    await apply(ctx, plan);
+    expect(ctx.state.resource('fakemonitor.projectId')).toBe('prj_2');
+    // Adopted, not made: teardown must never treat it as golive's to delete.
+    expect(ctx.state.resource('fakemonitor.createdProjectId')).toBeUndefined();
+    expect(w.calls.some((c) => c.method === 'project.create')).toBe(false);
+  });
+
+  it('hands the app-code task over when the app reads no Sentry DSN name', async () => {
+    const { ctx } = setupSentry({ config: { stack: monStack } });
+    const plan = await build(ctx);
+    const h = plan.handoffs.find((x) => x.id === 'sentry:snippet')!;
+    // No check can see the app's own code, so nothing may claim to close this: it stays open
+    // (`done: false`) until the app reads the name golive fills and the handoff stops being planned.
+    expect(h.blocking).toBe(false);
+    expect(h.verifiedBy).toBeUndefined();
+    expect(h.action).toMatch(/SENTRY_DSN/);
+    expect(h.action).toMatch(/NEXT_PUBLIC_SENTRY_DSN/);
+    expect(h.action).toMatch(/golive verify --only sentry-ingest/);
+    expect(h.action).toMatch(/not that the app sends one/);
+    expect(ids(plan).filter((i) => i.startsWith('sentry:env'))).toEqual([]);
+    // The project work still happens: the handoff is about the app's code, not the resource.
+    expect(ids(plan)).toContain('sentry:project');
+  });
+
+  it('hands the env names to the human when the host cannot be written', async () => {
+    const { ctx } = setupSentry({ config: { stack: { ...FAKE_STACK, hosting: 'fakeguided', monitoring: 'fakemonitor' } }, env: [...ENV, ...SENTRY_ENV] });
+    const plan = await build(ctx);
+    const prod = plan.handoffs.find((x) => x.id === 'sentry:env:production')!;
+    expect(prod).toMatchObject({ blocking: true, verifiedBy: 'env-parity' });
+    expect(prod.action).toContain('SENTRY_DSN, NEXT_PUBLIC_SENTRY_DSN');
+    expect(prod.action).toMatch(/public by design/);
+    expect(plan.handoffs.some((h) => h.id === 'sentry:snippet')).toBe(false);
+    expect(ids(plan)).toContain('sentry:project');
+  });
+
+  it('is idempotent: after apply only the zero-write pin remains', async () => {
+    const { ctx } = setupSentry({ config: { stack: monStack }, env: [...ENV, ...SENTRY_ENV] });
+    await apply(ctx, await build(ctx));
+    const next = await build(ctx);
+    expect(ids(next).filter((i) => i.startsWith('sentry:'))).toEqual(['sentry:project']);
+    expect(byId(next, 'sentry:project').risk.writes).toBe(false);
+  });
+
+  it('refuses to write a DSN that changed after approval', async () => {
+    const { w, ctx } = setupSentry({ config: { stack: monStack }, env: [...ENV, ...SENTRY_ENV] });
+    const plan = await build(ctx);
+    w.mon.dsn = 'https://FAKEsentryPUBLICkeyROTATED98765432@o4505.ingest.us.sentry.io/42';
+    const outcomes = await apply(ctx, plan);
+    const env = outcomes.find((o) => o.id === 'sentry:env:production')!;
+    expect(env.status).toBe('failed');
+    expect(env.error).toMatch(/DSN changed since approval/);
+    expect(w.host.env.production.has('SENTRY_DSN')).toBe(false);
+  });
+});
+
+describe('sentry (monitoring): the real adapter through the plan', () => {
+  const US = 'https://us.sentry.io';
+  const TOKEN = 'sntrys' + '_FAKEsentryAUTHtoken0123456789abcdef';
+  const DSN = 'https://FAKEsentryPUBLICkey0123456789abcdef@o4505.ingest.us.sentry.io/4505123456';
+  const row = { id: 4505123456, slug: 'shop', name: 'shop', status: 'active' };
+  const routes: Parameters<typeof mockHttp>[0] = [
+    ['GET', `${US}/api/0/organizations/`, () => ({ json: [{ id: '4505', slug: 'acme', name: 'Acme' }] })],
+    ['GET', `${US}/api/0/organizations/acme/projects/`, () => ({ json: [row] })],
+    ['GET', `${US}/api/0/projects/acme/4505123456/`, () => ({ json: row })],
+    ['GET', `${US}/api/0/projects/acme/4505123456/keys/`, () => ({ json: [{ id: 'key-1', isActive: true, dsn: { public: DSN } }] })],
+  ];
+
+  it('resolves the real adapter\'s project and writes its DSN through the whole plan and apply', async () => {
+    const w = fakeWorld();
+    const h = mockHttp(routes);
+    const ctx = testCtx({
+      cwd: '/work/shop',
+      exec: mockExec([]).run,
+      http: h.http,
+      adapters: [...w.adapters, sentryAdapter],
+      config: { stack: { ...FAKE_STACK, monitoring: 'sentry' }, targets: ['production'] },
+      tokens: { SENTRY_AUTH_TOKEN: TOKEN },
+      detect: { envRefs: [{ name: 'SENTRY_DSN', files: ['src/lib.ts'], clientExposed: false }] },
+    });
+    const plan = await buildPlan(ctx, ALL_LINKS, { unmappedEnv: [], warnings: [] });
+    // The repo's own name matches the account's project, so the plan adopts it rather than creating.
+    expect(byId(plan, 'sentry:project').destination).toMatchObject({ provider: 'sentry', action: 'select', project: { id: '4505123456', name: 'shop' } });
+    const outcomes = await applyPlan(ctx, plan, new Map(), { approvedPlanId: plan.id, yes: true, confirmLive: true, confirmDns: true });
+    expect(outcomes.filter((o) => o.id.startsWith('sentry:'))).toMatchObject([{ id: 'sentry:project', status: 'done' }, { id: 'sentry:env:production', status: 'done' }]);
+    expect(w.host.env.production.get('SENTRY_DSN')).toBe(DSN);
+    // Only the DSN's fingerprint may be recorded; the credential stays in the Authorization header.
+    expect(ctx.state.resource('sentry.projectId')).toBe('4505123456');
+    expect(JSON.stringify(ctx.state.get())).not.toContain(DSN);
+    expect(JSON.stringify(ctx.state.get())).not.toContain(TOKEN);
+    for (const call of h.calls) {
+      expect(call.url).not.toContain(TOKEN);
+      expect(JSON.stringify(call.body ?? null)).not.toContain(TOKEN);
+    }
   });
 });
 
