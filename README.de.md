@@ -415,8 +415,11 @@ aus) · **🗺️ Geplant**
   und Reviews beim Provider. Die aktuelle Einrichtung von Auth-Providern ist geführt.
 - [x] ✅ **Zahlungen und Abos:** ~~Checkout im Testmodus und Webhook-Annahme mit Stripe nachweisen.~~
   Eine echte Testkarten-Zahlung lieferte ein signaturgeprüftes `checkout.session.completed`-Event.
-  Bereitschaft für den Live-Modus, Entitlements, Rückerstattungen und Abo-Events brauchen noch
-  Validierung.
+  Ein neuer schreibgeschützter `stripe-live-payment`-Check liest den jüngsten erfolgreichen
+  PaymentIntent im Live-Modus, den Live-Webhook-Endpunkt, der ihn empfangen würde, und das passende
+  Zustell-Event und meldet eine eventuelle Rückerstattung; er ist implementiert und mock-abgedeckt,
+  aber noch nicht live validiert. Bereitschaft für den Live-Modus, Entitlements, Rückerstattungen und
+  Abo-Events brauchen noch Validierung.
 - [x] ✅ **Transaktions-E-Mail:** ~~Einrichtung der Versanddomain, Verifikation und echte Zustellung
   mit Resend nachweisen.~~ Ein Versand über den eigenen Umgebungs-Key der App wurde zugestellt (auf
   einer frischen Subdomain in den Spam, noch kein DMARC). Mit `auth.smtp: resend` schreibt der Schritt

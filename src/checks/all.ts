@@ -6,6 +6,7 @@ import { rlsCheck } from './rls.js';
 import { dbConnectionCheck } from './db-connection.js';
 import { webhookRegisteredCheck, webhookUnsignedCheck } from './webhook.js';
 import { stripeLiveReadyCheck } from './stripe-live.js';
+import { stripeLivePaymentCheck } from './stripe-live-payment.js';
 import { authRedirectsCheck } from './auth-redirects.js';
 import { authPolicyCheck } from './auth.js';
 import { authSignupCheck } from './auth-signup.js';
@@ -42,6 +43,7 @@ export const ALL_CHECKS: Check[] = [
   webhookUnsignedCheck,
   webhookRegisteredCheck,
   stripeLiveReadyCheck,
+  stripeLivePaymentCheck,
   emailDnsCheck,
   emailVerifiedCheck,
   posthogIngestCheck,

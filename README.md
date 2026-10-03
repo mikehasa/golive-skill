@@ -374,8 +374,11 @@ live-tested milestones**, not a finished category or a completed checklist for y
 - [ ] 🗺️ **OAuth / social login / SSO:** client registration, consent screens, scopes, callback
   URLs and provider reviews. Current auth-provider setup is guided.
 - [x] ✅ **Payments and subscriptions:** ~~Prove test-mode checkout and webhook acceptance with Stripe.~~
-  A real test-card payment delivered a signature-verified `checkout.session.completed` event. Live-mode
-  readiness, entitlements, refunds and subscription events still need validation.
+  A real test-card payment delivered a signature-verified `checkout.session.completed` event. A new
+  read-only `stripe-live-payment` check reads the most recent succeeded live PaymentIntent, the live
+  webhook endpoint that would receive it and the matching delivery event, and reports any refund; it
+  is implemented and mock-covered but not live-validated yet. Live-mode readiness, entitlements,
+  refunds and subscription events still need validation.
 - [x] ✅ **Transactional email:** ~~Prove sending-domain setup, verification and real delivery with Resend.~~
   A send through the app's own environment key was delivered (to spam on a fresh subdomain, no DMARC yet).
   With `auth.smtp: resend` the `auth:smtp` step also writes the auth project's custom SMTP — Resend's

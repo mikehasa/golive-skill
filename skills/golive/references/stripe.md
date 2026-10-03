@@ -88,6 +88,14 @@ golive automates (after plan approval; live-mode steps also need `--confirm-live
   right URL, events covered), `stripe-live-ready` (the account can take live payments), and
   `env-parity` (key names present).
 
+The read-only `stripe-live-payment` check is the live-mode counterpart: it reads the most recent
+succeeded live PaymentIntent, the live enabled endpoint subscribed to `payment_intent.succeeded`,
+that event's `pending_webhooks` (deliveries still pending or failed — 0 is what proves the app's
+handler accepted it) and any refund for the payment (reported, never required), and names the fix for
+a missing payment, endpoint or delivery. It never writes and never makes a payment, and the live
+operator key needs PaymentIntents and Refunds read on top of the documented permissions (a 403 warns,
+never fails: unknown is not failed). Implemented and mock-covered, not live-validated yet.
+
 Stays with the human (and why):
 - **Keys** (§1). Alternatives the `plan` handoff mentions: connect Vercel's Stripe integration (its
   vars are adopted, never overwritten), or the human pastes the key **directly into the host's

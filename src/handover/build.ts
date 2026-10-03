@@ -150,7 +150,7 @@ const AXIS_CHECKS: Record<Axis, string[]> = {
   hosting: ['domain-live', 'env-parity', 'netlify-public-access', 'bundle-secrets'],
   db: ['db-connection', 'rls-probe'],
   auth: ['auth-redirects'],
-  payments: ['webhook-registered', 'webhook-unsigned', 'stripe-live-ready'],
+  payments: ['webhook-registered', 'webhook-unsigned', 'stripe-live-ready', 'stripe-live-payment'],
   email: ['email-dns', 'email-verified'],
   dns: ['domain-live'],
   monitoring: ['posthog-ingest'],

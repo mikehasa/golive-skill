@@ -368,8 +368,11 @@ alpha 경로가 아닙니다.** 다른 인증 프로바이더는 안내형으로
 - [ ] 🗺️ **OAuth / 소셜 로그인 / SSO:** 클라이언트 등록, 동의 화면, 스코프, 콜백 URL, 프로바이더
   심사. 현재 인증 프로바이더 설정은 안내형입니다.
 - [x] ✅ **결제와 구독:** ~~Stripe로 테스트 모드 결제와 webhook 수락을 증명한다.~~ 실제 테스트 카드
-  결제가 서명이 검증된 `checkout.session.completed` 이벤트로 전달됐습니다. live 모드 준비 상태, 권한
-  부여(entitlements), 환불, 구독 이벤트는 아직 검증이 필요합니다.
+  결제가 서명이 검증된 `checkout.session.completed` 이벤트로 전달됐습니다. 새로운 읽기 전용
+  `stripe-live-payment` 검사는 가장 최근에 성공한 live PaymentIntent, 이를 수신할 live webhook
+  엔드포인트와 일치하는 전달 이벤트를 읽고 환불이 있으면 보고합니다. 구현과 mock 커버리지는 끝났지만
+  아직 live 검증은 되지 않았습니다. live 모드 준비 상태, 권한 부여(entitlements), 환불, 구독
+  이벤트는 아직 검증이 필요합니다.
 - [x] ✅ **트랜잭션 이메일:** ~~Resend로 발신 도메인 설정, 검증, 실제 전달을 증명한다.~~ 앱 자체의
   환경 키를 통한 발송이 전달됐습니다(새 서브도메인이라 스팸함으로, DMARC는 아직 없음). `auth.smtp:
   resend`를 쓰면 `auth:smtp` 단계가 인증 프로젝트의 사용자 지정 SMTP도 함께 씁니다 — Resend의
