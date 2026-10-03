@@ -404,7 +404,10 @@ pendente) · **🗺️ Planejado**
   callback e revisões do provedor. A configuração atual de provedores de autenticação é guiada.
 - [x] ✅ **Pagamentos e assinaturas:** ~~Provar checkout em modo de teste e aceitação de webhook com a
   Stripe.~~ Um pagamento real com cartão de teste entregou um evento `checkout.session.completed` com
-  assinatura verificada. Prontidão para o modo live, direitos de acesso (entitlements), reembolsos e
+  assinatura verificada. Uma nova verificação somente leitura `stripe-live-payment` lê o PaymentIntent
+  live bem-sucedido mais recente, o endpoint de webhook live que o receberia e o evento de entrega
+  correspondente, e informa qualquer reembolso; ela está implementada e coberta por mocks, mas ainda
+  não validada em live. Prontidão para o modo live, direitos de acesso (entitlements), reembolsos e
   eventos de assinatura ainda precisam de validação.
 - [x] ✅ **E-mail transacional:** ~~Provar configuração do domínio de envio, verificação e entrega real
   com a Resend.~~ Um envio pela chave de ambiente do próprio app foi entregue (foi para o spam num

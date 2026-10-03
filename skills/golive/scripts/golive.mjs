@@ -2582,9 +2582,9 @@ var require_stringifyNumber = __commonJS({
     function stringifyNumber({ format, minFractionDigits, tag: tag2, value }) {
       if (typeof value === "bigint")
         return String(value);
-      const num2 = typeof value === "number" ? value : Number(value);
-      if (!isFinite(num2))
-        return isNaN(num2) ? ".nan" : num2 < 0 ? "-.inf" : ".inf";
+      const num3 = typeof value === "number" ? value : Number(value);
+      if (!isFinite(num3))
+        return isNaN(num3) ? ".nan" : num3 < 0 ? "-.inf" : ".inf";
       let n = Object.is(value, -0) ? "-0" : JSON.stringify(value);
       if (!format && minFractionDigits && (!tag2 || tag2 === "tag:yaml.org,2002:float") && /^-?\d/.test(n) && !n.includes("e")) {
         let i = n.indexOf(".");
@@ -2624,8 +2624,8 @@ var require_float = __commonJS({
       test: /^[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)[eE][-+]?[0-9]+$/,
       resolve: (str4) => parseFloat(str4),
       stringify(node) {
-        const num2 = Number(node.value);
-        return isFinite(num2) ? num2.toExponential() : stringifyNumber.stringifyNumber(node);
+        const num3 = Number(node.value);
+        return isFinite(num3) ? num3.toExponential() : stringifyNumber.stringifyNumber(node);
       }
     };
     var float = {
@@ -3064,8 +3064,8 @@ var require_float2 = __commonJS({
       test: /^[-+]?(?:[0-9][0-9_]*)?(?:\.[0-9_]*)?[eE][-+]?[0-9]+$/,
       resolve: (str4) => parseFloat(str4.replace(/_/g, "")),
       stringify(node) {
-        const num2 = Number(node.value);
-        return isFinite(num2) ? num2.toExponential() : stringifyNumber.stringifyNumber(node);
+        const num3 = Number(node.value);
+        return isFinite(num3) ? num3.toExponential() : stringifyNumber.stringifyNumber(node);
       }
     };
     var float = {
@@ -3267,23 +3267,23 @@ var require_timestamp = __commonJS({
     function parseSexagesimal(str4, asBigInt) {
       const sign = str4[0];
       const parts = sign === "-" || sign === "+" ? str4.substring(1) : str4;
-      const num2 = (n) => asBigInt ? BigInt(n) : Number(n);
-      const res = parts.replace(/_/g, "").split(":").reduce((res2, p) => res2 * num2(60) + num2(p), num2(0));
-      return sign === "-" ? num2(-1) * res : res;
+      const num3 = (n) => asBigInt ? BigInt(n) : Number(n);
+      const res = parts.replace(/_/g, "").split(":").reduce((res2, p) => res2 * num3(60) + num3(p), num3(0));
+      return sign === "-" ? num3(-1) * res : res;
     }
     function stringifySexagesimal(node) {
       let { value } = node;
-      let num2 = (n) => n;
+      let num3 = (n) => n;
       if (typeof value === "bigint")
-        num2 = (n) => BigInt(n);
+        num3 = (n) => BigInt(n);
       else if (isNaN(value) || !isFinite(value))
         return stringifyNumber.stringifyNumber(node);
       let sign = "";
       if (value < 0) {
         sign = "-";
-        value *= num2(-1);
+        value *= num3(-1);
       }
-      const _60 = num2(60);
+      const _60 = num3(60);
       const parts = [value % _60];
       if (value < 60) {
         parts.unshift(0);
@@ -3329,15 +3329,15 @@ var require_timestamp = __commonJS({
           throw new Error("!!timestamp expects a date, starting with yyyy-mm-dd");
         const [, year, month, day, hour, minute, second] = match.map(Number);
         const millisec = match[7] ? Number((match[7] + "00").substr(1, 3)) : 0;
-        let date = Date.UTC(year, month - 1, day, hour || 0, minute || 0, second || 0, millisec);
+        let date2 = Date.UTC(year, month - 1, day, hour || 0, minute || 0, second || 0, millisec);
         const tz = match[8];
         if (tz && tz !== "Z") {
           let d = parseSexagesimal(tz, false);
           if (Math.abs(d) < 30)
             d *= 60;
-          date -= 6e4 * d;
+          date2 -= 6e4 * d;
         }
-        return new Date(date);
+        return new Date(date2);
       },
       stringify: ({ value }) => value?.toISOString().replace(/(T00:00:00)?\.000Z$/, "") ?? ""
     };
@@ -20953,6 +20953,111 @@ var stripeLiveReadyCheck = {
   }
 };
 
+// src/checks/stripe-live-payment.ts
+init_config();
+init_stripe_api();
+var PAYMENT_EVENT = "payment_intent.succeeded";
+var clip = (v, max = 200) => v.length > max ? `${v.slice(0, max)}\u2026` : v;
+var short3 = (v) => clip(v, 32);
+var num2 = (v) => typeof v === "number" && Number.isFinite(v) ? String(v) : "unknown";
+var date = (v) => typeof v === "number" && v > 0 && v < 4e9 ? new Date(v * 1e3).toISOString().slice(0, 10) : null;
+async function readList(ctx, path, what) {
+  try {
+    const res = await stripeCall(ctx, "live", { path, what });
+    const data = res.json?.data;
+    return { ok: true, data: Array.isArray(data) ? data : [] };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+var READ_PERMS_FIX = "On the Stripe Dashboard\u2019s API keys page, grant the live operator key read access to PaymentIntents, Events, Webhook Endpoints and Refunds (a restricted key needs those Reads), or use the standard secret key; then re-run `verify`.";
+function readFailure(error, what) {
+  if (error?.status === 403) {
+    return result("warn", "medium", [errMsg(error), `${what} is unknown, not failed: the live key lacks the read permission (HTTP 403)`], READ_PERMS_FIX);
+  }
+  return result("fail", "high", [`could not read ${what}: ${errMsg(error)}`], "Re-run verify; if it persists, check the Stripe login with `golive doctor`.");
+}
+var stripeLivePaymentCheck = {
+  id: "stripe-live-payment",
+  title: "A live payment was received and its webhook delivered",
+  severity: "medium",
+  applies: (ctx) => ctx.config.stack.payments === "stripe" && modeFor(ctx.config, "production") === "live",
+  async run(ctx) {
+    const pre = await prereq(ctx, "payments", { project: false });
+    if (pre) return pre;
+    const intents = await readList(ctx, "/v1/payment_intents?limit=100", "list live-mode PaymentIntents");
+    if (!intents.ok) return readFailure(intents.error, "whether this account has a succeeded live payment");
+    const pi = intents.data.find((p) => p.livemode === true && p.status === "succeeded");
+    if (!pi?.id) {
+      return result(
+        "warn",
+        "medium",
+        ["no succeeded live PaymentIntent found in this account"],
+        "Complete one real live payment in the app \u2014 the smallest amount it can take; test-mode payments do not count, and golive never makes payments \u2014 then re-run `verify`."
+      );
+    }
+    const piId = pi.id;
+    const when = date(pi.created);
+    const evidence = [`most recent succeeded live PaymentIntent ${short3(piId)}: amount_received ${num2(pi.amount_received)} ${typeof pi.currency === "string" ? pi.currency : "unknown currency"}${when ? ` (created ${when})` : ""}`];
+    const endpoints = await readList(ctx, "/v1/webhook_endpoints?limit=100", "list live-mode webhook endpoints");
+    if (!endpoints.ok) return readFailure(endpoints.error, "which live webhook endpoints exist");
+    const endpoint = endpoints.data.find((e) => e.livemode === true && e.status === "enabled" && ((e.enabled_events ?? []).includes("*") || (e.enabled_events ?? []).includes(PAYMENT_EVENT)));
+    if (!endpoint) {
+      return result(
+        "warn",
+        "medium",
+        [...evidence, `no live-mode enabled webhook endpoint subscribes to ${PAYMENT_EVENT}`],
+        "Register the live webhook endpoint (`golive plan` + apply the payments webhook link for production), then re-run `verify`."
+      );
+    }
+    evidence.push(`live webhook endpoint ${short3(endpoint.id ?? "unknown")} \u2192 ${clip(endpoint.url ?? "no url")}`);
+    const events = await readList(ctx, `/v1/events?type=${PAYMENT_EVENT}&limit=100`, `list live-mode ${PAYMENT_EVENT} events`);
+    if (!events.ok) return readFailure(events.error, `whether a ${PAYMENT_EVENT} event exists for this payment`);
+    const event = events.data.find((e) => e.data?.object?.id === piId || e.data?.object?.payment_intent === piId);
+    if (!event) {
+      return result(
+        "warn",
+        "medium",
+        [...evidence, `no ${PAYMENT_EVENT} event found for this payment`, "Stripe retains events for about 30 days, so a payment older than that may no longer have one"],
+        "If this payment is older than the retention window, complete a new live payment and re-run `verify`; otherwise confirm the live endpoint was subscribed when the payment happened."
+      );
+    }
+    const pending = event.pending_webhooks;
+    if (typeof pending !== "number" || !Number.isInteger(pending) || pending < 0) {
+      return result(
+        "warn",
+        "medium",
+        [...evidence, `${PAYMENT_EVENT} event ${short3(event.id ?? "unknown")} (pending_webhooks: not reported)`, "the event exists, but its delivery state is unknown: an absent field is not evidence of a successful delivery"],
+        "Re-run `verify`; if the field stays absent, confirm the live operator key has Events: Read (a restricted key can answer without it) and check the endpoint\u2019s delivery attempts in the Dashboard."
+      );
+    }
+    evidence.push(`${PAYMENT_EVENT} event ${short3(event.id ?? "unknown")} (pending_webhooks: ${pending})`);
+    if (pending > 0) {
+      return result(
+        "warn",
+        "medium",
+        [...evidence, `${pending} webhook deliver${pending === 1 ? "y" : "ies"} for this event ${pending === 1 ? "is" : "are"} pending or failed`],
+        "Check the route that verifies the Stripe signature (it must read the raw body and return 2xx quickly; see the Stripe webhook notes) and the delivery attempts for the endpoint in the Dashboard, then re-run `verify`."
+      );
+    }
+    const refunds = await readList(ctx, `/v1/refunds?payment_intent=${encodeURIComponent(piId)}&limit=1`, "list live-mode refunds for this payment");
+    if (!refunds.ok) {
+      const denied = refunds.error?.status === 403;
+      return result(
+        "warn",
+        "medium",
+        [...evidence, `could not read refunds for this payment (${denied ? "the live key lacks Refunds: Read (HTTP 403)" : clip(errMsg(refunds.error))}); the payment and delivery evidence above is unaffected`],
+        denied ? "Grant the live operator key Refunds: Read (or use the standard secret key) to report refunds too, then re-run `verify`." : "Re-run verify; if the refunds read keeps failing, check the Stripe login with `golive doctor`. The payment evidence above stands."
+      );
+    }
+    const refund = refunds.data[0];
+    evidence.push(
+      refund ? `refund ${short3(refund.id ?? "unknown")}: ${num2(refund.amount)} ${typeof refund.currency === "string" ? refund.currency : "unknown currency"} (${typeof refund.status === "string" ? refund.status : "unknown status"})` : "no refund recorded for this payment (not required)"
+    );
+    return pass(evidence);
+  }
+};
+
 // src/checks/auth-redirects.ts
 function concrete(base2, path) {
   return base2 + (path.startsWith("/") ? path : `/${path}`).replace(/\*\*/g, "golive/probe").replace(/\*/g, "golive");
@@ -21968,7 +22073,7 @@ var CORE = ["strict-transport-security", "x-content-type-options"];
 var OPTIONAL = ["content-security-policy", "referrer-policy", "permissions-policy"];
 var BANNERS = ["server", "x-powered-by"];
 var FRAME_ANCESTORS = /frame-ancestors/i;
-var clip = (v) => v.length > 200 ? `${v.slice(0, 200)}\u2026` : v;
+var clip2 = (v) => v.length > 200 ? `${v.slice(0, 200)}\u2026` : v;
 var howToFix = (headers) => `Set ${headers.join(", ")} on the app's responses: on Vercel in the \`headers\` block of vercel.json (or the framework's next.config headers()), on Netlify in netlify.toml \`[[headers]]\` or a _headers file. golive deploys the app but does not set its response headers, so this is a change in your repo \u2014 then redeploy and re-run verify.`;
 var siteHeadersCheck = {
   id: "site-headers",
@@ -21996,7 +22101,7 @@ var siteHeadersCheck = {
       return result("warn", "medium", [`${got}: the production page did not load, so its headers are unverified`], "Fix the deployment, then re-run verify.");
     }
     const h = res.headers;
-    const header = (name3) => `${name3}: ${h[name3] ? clip(h[name3]) : "absent"}`;
+    const header = (name3) => `${name3}: ${h[name3] ? clip2(h[name3]) : "absent"}`;
     const frameOptions = h["x-frame-options"];
     const frameAncestors = FRAME_ANCESTORS.test(h["content-security-policy"] ?? "");
     const clickjacking = Boolean(frameOptions) || frameAncestors;
@@ -22007,7 +22112,7 @@ var siteHeadersCheck = {
     ];
     for (const name3 of BANNERS) {
       const v = h[name3];
-      if (v) evidence.push(`${name3}: ${clip(v)} (names the stack; not a finding)`);
+      if (v) evidence.push(`${name3}: ${clip2(v)} (names the stack; not a finding)`);
     }
     const missing = [];
     if (!h["strict-transport-security"]) missing.push("strict-transport-security");
@@ -22021,7 +22126,7 @@ var siteHeadersCheck = {
 };
 
 // src/checks/site-metadata.ts
-var clip2 = (v) => v.length > 200 ? `${v.slice(0, 200)}\u2026` : v;
+var clip3 = (v) => v.length > 200 ? `${v.slice(0, 200)}\u2026` : v;
 var MAX_HTML = 512 * 1024;
 var TAGS = ["title", "meta description", "link rel=canonical", "og:title", "og:description", "og:image", "og:url", "twitter:card"];
 var SHARE = ["og:title", "og:description", "og:image", "og:url", "twitter:card"];
@@ -22101,7 +22206,7 @@ var siteMetadataCheck = {
     const html = res.text.slice(0, MAX_HTML);
     if (!/<(?:head|html|title)\b/i.test(html)) {
       const type = res.headers["content-type"];
-      return result("warn", "medium", [got, `the response is not an HTML page${type ? ` (content-type: ${clip2(type)})` : ""}, so no <head> metadata could be read`], "Point the production URL at the deployed app page, then re-run verify.");
+      return result("warn", "medium", [got, `the response is not an HTML page${type ? ` (content-type: ${clip3(type)})` : ""}, so no <head> metadata could be read`], "Point the production URL at the deployed app page, then re-run verify.");
     }
     const values = readHead(html);
     const evidence = [
@@ -22110,7 +22215,7 @@ var siteMetadataCheck = {
         const v = values[t];
         if (v === null) return `${t}: absent`;
         const relative2 = ABSOLUTE.includes(t) && !isAbsoluteHttp(v) ? " (not an absolute http(s) URL)" : "";
-        return `${t}: ${clip2(v)}${relative2}`;
+        return `${t}: ${clip3(v)}${relative2}`;
       })
     ];
     const missingCore = [];
@@ -22233,6 +22338,7 @@ var ALL_CHECKS = [
   webhookUnsignedCheck,
   webhookRegisteredCheck,
   stripeLiveReadyCheck,
+  stripeLivePaymentCheck,
   emailDnsCheck,
   emailVerifiedCheck,
   posthogIngestCheck,
@@ -23515,7 +23621,7 @@ var AXIS_CHECKS = {
   hosting: ["domain-live", "env-parity", "netlify-public-access", "bundle-secrets"],
   db: ["db-connection", "rls-probe"],
   auth: ["auth-redirects"],
-  payments: ["webhook-registered", "webhook-unsigned", "stripe-live-ready"],
+  payments: ["webhook-registered", "webhook-unsigned", "stripe-live-ready", "stripe-live-payment"],
   email: ["email-dns", "email-verified"],
   dns: ["domain-live"],
   monitoring: ["posthog-ingest"]

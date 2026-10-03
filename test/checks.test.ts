@@ -15,6 +15,7 @@ import { scanSecrets, scriptUrls, findPublicSupabaseKeys, fetchBundle, MAX_BYTES
 import { rlsCheck, MAX_TABLES } from '../src/checks/rls.js';
 import { webhookRegisteredCheck, webhookUnsignedCheck } from '../src/checks/webhook.js';
 import { stripeLiveReadyCheck } from '../src/checks/stripe-live.js';
+import { stripeLivePaymentCheck } from '../src/checks/stripe-live-payment.js';
 import { authRedirectsCheck } from '../src/checks/auth-redirects.js';
 import { authPolicyCheck } from '../src/checks/auth.js';
 import { authSignupCheck } from '../src/checks/auth-signup.js';
@@ -58,7 +59,7 @@ describe('ALL_CHECKS', () => {
     const ids = ALL_CHECKS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.sort()).toEqual(
-      ['accounts', 'auth-isolation', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'posthog-ingest', 'preview-bundle', 'preview-deploy', 'production-release', 'rls-probe', 'site-headers', 'site-metadata', 'stripe-live-ready', 'upload-exposure', 'webhook-registered', 'webhook-unsigned'].sort(),
+      ['accounts', 'auth-isolation', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'posthog-ingest', 'preview-bundle', 'preview-deploy', 'production-release', 'rls-probe', 'site-headers', 'site-metadata', 'stripe-live-payment', 'stripe-live-ready', 'upload-exposure', 'webhook-registered', 'webhook-unsigned'].sort(),
     );
   });
 });
@@ -596,6 +597,204 @@ describe('stripe-live-ready', () => {
   it('only applies to stripe in live mode', () => {
     expect(stripeLiveReadyCheck.applies(testCtx({ config: { ...cfg, payments: { modes: { production: 'test' } } } }))).toBe(false);
     expect(stripeLiveReadyCheck.applies(testCtx({ config: { stack: { payments: 'polar' } } }))).toBe(false);
+  });
+});
+
+// ── stripe-live-payment ─────────────────────────────────────────────────────────────────────────
+
+describe('stripe-live-payment', () => {
+  const cfg = { stack: { payments: 'stripe' } };
+  const API = 'https://api.stripe.com';
+  const KEY = 'sk_' + 'live' + '_51FAKElivePAYMENTkey00000000abcd';
+  const RK = 'rk_' + 'live' + '_51FAKErestrictedPAYMENTkey000000efgh';
+  const PI = 'pi_3Live000000000000000001';
+  const WE = 'we_1Live00000000000000001';
+  const EVT = 'evt_1Live0000000000000001';
+  const stripeAuth = fakeAdapter({ id: 'stripe', axes: ['payments'] });
+  type Route = Parameters<typeof mockHttp>[0][number];
+  const route = (path: string, data: unknown[]): Route => ['GET', `${API}${path}`, () => ({ json: { object: 'list', data, has_more: false } })];
+  const pi = (over: Record<string, unknown> = {}) => ({ id: PI, object: 'payment_intent', livemode: true, status: 'succeeded', amount_received: 4200, currency: 'eur', created: 1759276800, ...over });
+  const endpoint = (over: Record<string, unknown> = {}) => ({ id: WE, object: 'webhook_endpoint', url: `${PROD}/api/stripe/webhook`, livemode: true, status: 'enabled', enabled_events: ['payment_intent.succeeded'], ...over });
+  const event = (over: Record<string, unknown> = {}) => ({ id: EVT, object: 'event', livemode: true, type: 'payment_intent.succeeded', pending_webhooks: 0, data: { object: { id: PI, object: 'payment_intent' } }, ...over });
+  const ctxOf = (http: ReturnType<typeof mockHttp>['http'], tokens: Record<string, string> = { STRIPE_LIVE_SECRET_KEY: KEY }, adapters: Adapter[] = [stripeAuth]) => testCtx({ http, config: cfg, tokens, adapters });
+
+  it('passes when a succeeded live payment, a subscribed live endpoint and a delivered event agree', async () => {
+    const { http, calls } = mockHttp([
+      route('/v1/payment_intents', [pi()]),
+      route('/v1/webhook_endpoints', [endpoint()]),
+      route('/v1/events', [event()]),
+      route('/v1/refunds', []),
+    ]);
+    const r = await run(stripeLivePaymentCheck, ctxOf(http));
+    expect(r.status).toBe('pass');
+    expect(r.severity).toBe('info');
+    const text = r.evidence.join('\n');
+    expect(text).toContain(`most recent succeeded live PaymentIntent ${PI}: amount_received 4200 eur`);
+    expect(text).toContain(`live webhook endpoint ${WE} → ${PROD}/api/stripe/webhook`);
+    expect(text).toContain(`payment_intent.succeeded event ${EVT} (pending_webhooks: 0)`);
+    expect(text).toContain('no refund recorded for this payment (not required)');
+    // Read-only: every call is a GET with the live operator key, and no key material reaches evidence.
+    expect(calls.map((c) => c.method)).toEqual(['GET', 'GET', 'GET', 'GET']);
+    expect(calls.every((c) => c.headers.authorization === `Bearer ${KEY}`)).toBe(true);
+    expect(JSON.stringify(r)).not.toContain(KEY);
+  });
+
+  it('accepts a live endpoint subscribed to * as covering payment_intent.succeeded', async () => {
+    const { http } = mockHttp([route('/v1/payment_intents', [pi()]), route('/v1/webhook_endpoints', [endpoint({ enabled_events: ['*'] })]), route('/v1/events', [event()]), route('/v1/refunds', [])]);
+    expect((await run(stripeLivePaymentCheck, ctxOf(http))).status).toBe('pass');
+  });
+
+  it('warns (medium) with the pay-then-re-run fix when there is no succeeded live payment', async () => {
+    for (const data of [[], [pi({ livemode: false })], [pi({ status: 'requires_payment_method' })], [pi({ status: 'processing' })]]) {
+      const { http, calls } = mockHttp([route('/v1/payment_intents', data)]);
+      const r = await run(stripeLivePaymentCheck, ctxOf(http));
+      expect(r.status).toBe('warn');
+      expect(r.severity).toBe('medium');
+      expect(r.evidence.join('\n')).toMatch(/no succeeded live PaymentIntent found in this account/);
+      expect(r.fix).toMatch(/Complete one real live payment/);
+      expect(r.fix).toMatch(/test-mode payments do not count/);
+      expect(r.fix).toMatch(/golive never makes payments/);
+      expect(calls).toHaveLength(1); // stops before reading endpoints
+    }
+  });
+
+  it('warns (medium) naming the registration fix when no live enabled endpoint subscribes', async () => {
+    const cases: Array<Record<string, unknown>[]> = [
+      [],
+      [endpoint({ livemode: false })],
+      [endpoint({ status: 'disabled' })],
+      [endpoint({ enabled_events: ['invoice.paid'] })],
+    ];
+    for (const data of cases) {
+      const { http } = mockHttp([route('/v1/payment_intents', [pi()]), route('/v1/webhook_endpoints', data)]);
+      const r = await run(stripeLivePaymentCheck, ctxOf(http));
+      expect(r.status).toBe('warn');
+      expect(r.severity).toBe('medium');
+      const text = r.evidence.join('\n');
+      expect(text).toMatch(/no live-mode enabled webhook endpoint subscribes to payment_intent\.succeeded/);
+      expect(text).toContain('amount_received 4200 eur'); // the payment evidence is kept
+      expect(r.fix).toMatch(/`golive plan`/);
+      expect(r.fix).toMatch(/payments webhook link/);
+    }
+  });
+
+  it('warns naming the ~30-day retention window when no matching event exists', async () => {
+    const { http } = mockHttp([
+      route('/v1/payment_intents', [pi()]),
+      route('/v1/webhook_endpoints', [endpoint()]),
+      route('/v1/events', [event({ data: { object: { id: 'pi_someone_else' } } })]),
+    ]);
+    const r = await run(stripeLivePaymentCheck, ctxOf(http));
+    expect(r.status).toBe('warn');
+    expect(r.severity).toBe('medium');
+    const text = r.evidence.join('\n');
+    expect(text).toMatch(/no payment_intent\.succeeded event found for this payment/);
+    expect(text).toMatch(/about 30 days/);
+    expect(text).toContain(`live webhook endpoint ${WE}`); // the endpoint evidence is kept
+  });
+
+  it('accepts a delivery event that references the payment as data.object.payment_intent', async () => {
+    const { http } = mockHttp([
+      route('/v1/payment_intents', [pi()]),
+      route('/v1/webhook_endpoints', [endpoint()]),
+      route('/v1/events', [event({ data: { object: { id: 'cs_live_x', payment_intent: PI } } })]),
+      route('/v1/refunds', []),
+    ]);
+    expect((await run(stripeLivePaymentCheck, ctxOf(http))).status).toBe('pass');
+  });
+
+  it('warns naming the delivery failure when pending_webhooks is above zero', async () => {
+    const { http, calls } = mockHttp([
+      route('/v1/payment_intents', [pi()]),
+      route('/v1/webhook_endpoints', [endpoint()]),
+      route('/v1/events', [event({ pending_webhooks: 2 })]),
+    ]);
+    const r = await run(stripeLivePaymentCheck, ctxOf(http));
+    expect(r.status).toBe('warn');
+    expect(r.severity).toBe('medium');
+    const text = r.evidence.join('\n');
+    expect(text).toContain('(pending_webhooks: 2)');
+    expect(text).toMatch(/2 webhook deliveries for this event are pending or failed/);
+    expect(r.fix).toMatch(/signature/);
+    expect(r.fix).toMatch(/raw body/);
+    expect(calls).toHaveLength(3); // stops before refunds
+  });
+
+  it('warns (medium) instead of passing when pending_webhooks is absent from the event', async () => {
+    const { http, calls } = mockHttp([
+      route('/v1/payment_intents', [pi()]),
+      route('/v1/webhook_endpoints', [endpoint()]),
+      route('/v1/events', [event({ pending_webhooks: undefined })]),
+    ]);
+    const r = await run(stripeLivePaymentCheck, ctxOf(http));
+    expect(r.status).toBe('warn');
+    expect(r.severity).toBe('medium');
+    const text = r.evidence.join('\n');
+    expect(text).toContain(`payment_intent.succeeded event ${EVT} (pending_webhooks: not reported)`);
+    expect(text).toMatch(/delivery state is unknown/);
+    expect(r.fix).toMatch(/Events: Read/);
+    expect(r.fix).toMatch(/Re-run `verify`/);
+    expect(calls).toHaveLength(3); // stops before refunds
+  });
+
+  it('stays pass and reports a refund when one exists', async () => {
+    const refund = { id: 're_1LiveRefund0000000000001', object: 'refund', amount: 4200, currency: 'eur', status: 'succeeded' };
+    const { http } = mockHttp([route('/v1/payment_intents', [pi()]), route('/v1/webhook_endpoints', [endpoint()]), route('/v1/events', [event()]), route('/v1/refunds', [refund])]);
+    const r = await run(stripeLivePaymentCheck, ctxOf(http));
+    expect(r.status).toBe('pass');
+    expect(r.evidence.join('\n')).toContain('refund re_1LiveRefund0000000000001: 4200 eur (succeeded)');
+  });
+
+  it('keeps the payment evidence when refunds cannot be read, degrading only that line', async () => {
+    const broken = mockHttp([
+      route('/v1/payment_intents', [pi()]),
+      route('/v1/webhook_endpoints', [endpoint()]),
+      route('/v1/events', [event()]),
+      ['GET', `${API}/v1/refunds`, () => ({ status: 500, json: { error: { type: 'api_error', message: 'boom' } } })],
+    ]);
+    const r = await run(stripeLivePaymentCheck, ctxOf(broken.http));
+    expect(r.status).toBe('warn');
+    expect(r.severity).toBe('medium');
+    const text = r.evidence.join('\n');
+    expect(text).toContain('amount_received 4200 eur');
+    expect(text).toContain(`event ${EVT} (pending_webhooks: 0)`);
+    expect(text).toMatch(/could not read refunds for this payment/);
+    expect(text).toMatch(/payment and delivery evidence above is unaffected/);
+  });
+
+  it('warns (medium) — never fails — when a restricted live key cannot read payments data (403)', async () => {
+    const { http, calls } = mockHttp([['GET', `${API}/v1/payment_intents`, () => ({ status: 403, json: { error: { type: 'invalid_request_error', message: 'does not have the required permissions' } } })]]);
+    const r = await run(stripeLivePaymentCheck, ctxOf(http, { STRIPE_LIVE_SECRET_KEY: RK }));
+    expect(r.status).toBe('warn');
+    expect(r.severity).toBe('medium');
+    expect(r.evidence.join('\n')).toMatch(/403/);
+    expect(r.fix).toMatch(/PaymentIntents/);
+    expect(printable(r)).not.toContain(RK);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('fails high on an unexpected Stripe error, with re-run guidance', async () => {
+    const { http } = mockHttp([['GET', `${API}/v1/payment_intents`, () => ({ status: 500, json: { error: { type: 'api_error', message: 'boom' } } })]]);
+    const r = await run(stripeLivePaymentCheck, ctxOf(http));
+    expect(r.status).toBe('fail');
+    expect(r.severity).toBe('high');
+    expect(r.fix).toMatch(/Re-run verify/);
+  });
+
+  it('only applies to stripe in live mode', () => {
+    expect(stripeLivePaymentCheck.severity).toBe('medium');
+    expect(stripeLivePaymentCheck.applies(testCtx({ config: cfg }))).toBe(true);
+    expect(stripeLivePaymentCheck.applies(testCtx({ config: { ...cfg, payments: { modes: { production: 'test' } } } }))).toBe(false);
+    expect(stripeLivePaymentCheck.applies(testCtx({ config: { stack: { payments: 'polar' } } }))).toBe(false);
+  });
+
+  it('skips with blocked by: login:stripe when Stripe is not connected, and reads nothing', async () => {
+    const { http, calls } = mockHttp([]);
+    const down = fakeAdapter({ id: 'stripe', axes: ['payments'], auth: { ok: false, howToFix: 'add the live key' } });
+    const r = await run(stripeLivePaymentCheck, ctxOf(http, { STRIPE_LIVE_SECRET_KEY: KEY }, [down]));
+    expect(r.status).toBe('skip');
+    expect(r.evidence[0]).toMatch(/^blocked by: login:stripe/);
+    expect(calls).toHaveLength(0);
   });
 });
 

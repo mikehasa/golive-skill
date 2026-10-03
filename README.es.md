@@ -421,8 +421,11 @@ de verificación completada para tu app.
   autenticación es guiada.
 - [x] ✅ **Pagos y suscripciones:** ~~Demostrar el pago en modo de prueba y la aceptación de webhooks con Stripe.~~
   Un pago real con tarjeta de prueba entregó un evento `checkout.session.completed` verificado por
-  firma. La preparación para modo live, los derechos de suscripción (entitlements), los reembolsos y
-  los eventos de suscripción todavía necesitan validación.
+  firma. Una nueva comprobación de solo lectura `stripe-live-payment` lee el PaymentIntent live
+  exitoso más reciente, el endpoint de webhook live que lo recibiría y el evento de entrega
+  correspondiente, e informa de cualquier reembolso; está implementada y cubierta con mocks, pero aún
+  no validada en live. La preparación para modo live, los derechos de suscripción (entitlements), los
+  reembolsos y los eventos de suscripción todavía necesitan validación.
 - [x] ✅ **Correo transaccional:** ~~Demostrar la configuración del dominio de envío, su verificación y la entrega real con Resend.~~
   Un envío con la clave del propio entorno de la app llegó a destino (a spam en un subdominio nuevo,
   todavía sin DMARC). Con `auth.smtp: resend`, el paso `auth:smtp` también escribe el SMTP personalizado

@@ -440,6 +440,7 @@ Check scope:
 | `webhook-unsigned` | the production webhook rejects unsigned POSTs (a non-HTML 401/403 only warns: it may be an auth wall) |
 | `webhook-registered` | the endpoint exists, enabled, for the right URL and events |
 | `stripe-live-ready` | the Stripe account can take live payments |
+| `stripe-live-payment` | a real live payment was received and reached the app: the most recent succeeded live PaymentIntent, a live enabled endpoint subscribed to `payment_intent.succeeded`, and its event reporting `pending_webhooks: 0`; any refund is reported (never required), and a restricted key that cannot read payments data warns rather than fails (read-only) |
 | `email-dns` | the sending domain's SPF/DKIM/DMARC records are published |
 | `email-verified` | the email provider marks the domain verified **and** the records it lists for that domain resolve in public DNS: a domain the provider still calls verified whose records are gone fails; a lookup that failed, a provider that cannot list its records, or one that lists none, warns or skips — never a pass; a record golive wrote inside the 48 h propagation window warns instead of failing |
 | `preview-deploy` | with `release.preview: true`: the hosting provider's own read confirms the preview deployment golive recorded (`deployed:preview:id`) is ready, belongs to the linked project and is not the production deployment; skips once golive itself promoted that deployment (it is production then, not a preview to gate) |
