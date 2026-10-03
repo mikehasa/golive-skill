@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=pt-BR; source=README.md; source-commit=a62a270; reviewed=false; updated=2026-09-30 -->
+<!-- golive-translation: lang=pt-BR; source=README.md; source-commit=a62a270; reviewed=false; updated=2026-10-03 -->
 
 # GoLive
 
@@ -515,8 +515,15 @@ pendente) · **🗺️ Planejado**
   aprovação, porque o provedor não oferece nenhuma leitura para confirmar isso.
 - [ ] 🗺️ **Custos e cotas:** escolha de planos, orçamentos, alertas e checagens de capacidade. Hoje
   existem guardas pontuais para planos gratuitos; a gestão contínua de custos está planejada.
-- [ ] 🗺️ **Essenciais de lançamento:** metadados, previews de compartilhamento, indexação,
-  acessibilidade, links de suporte e páginas de política revisadas pelo dono.
+- [ ] 🚧 **Essenciais de lançamento:** metadados, previews de compartilhamento, indexação,
+  acessibilidade, links de suporte e páginas de política revisadas pelo dono. A checagem
+  `site-metadata`, somente leitura, lê uma vez o `<head>` da própria página de produção e reporta
+  seu título, descrição, link canônico e as tags de compartilhamento do Open Graph/Twitter (a
+  ausência do título, da descrição ou de uma tag de compartilhamento — ou um `og:image`/`og:url` que
+  não seja uma URL absoluta — apenas avisa, nunca falha; o golive não edita o código do app, então a
+  correção é uma mudança no seu repositório). Ela tem cobertura por mocks e ainda não teve execução
+  ao vivo; previews de compartilhamento, indexação, acessibilidade, links de suporte e páginas de
+  política continuam planejados.
 - [ ] 🚧 **Propriedade e handover:** contas, recursos, acessos, responsabilidades de renovação e
   instruções de manutenção. O `golive handoff --write` registra a rota de login, as provas de
   propriedade, os jobs recorrentes e os portões de remoção em `GOLIVE_HANDOVER.md`, marcando cada linha

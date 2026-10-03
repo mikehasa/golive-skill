@@ -426,6 +426,7 @@ Check scope:
 | `env-parity` | the host has every env name the code needs, per environment (names only) |
 | `domain-live` | custom domain is attached at an automated host (`ok`), resolves, serves HTTPS; with a guided host, DNS + HTTPS only (attachment not confirmed) |
 | `netlify-public-access` | Netlify's confirmed production homepage accepts an anonymous request; a private gate needs the exact-project visibility UI handoff, without changing team defaults or exposing previews |
+| `site-metadata` | the production page's own `<head>` — title, description, canonical link and the Open Graph/Twitter share tags — from one read of the host-confirmed URL; a missing core tag warns **medium**, missing or relative share tags warn **low**, a non-HTML body warns, and a private deployment (401/403) or a redirect skips; read-only, never fails, and the fix is a change in the app's own code |
 | `bundle-secrets` | known secret patterns in fetched production HTML/JavaScript; incomplete fetches or scan limits warn instead of passing |
 | `upload-exposure` | production serves none of golive's own files (`.golive/*`, `golive.yaml`, `GOLIVE_REPORT.md`, `GOLIVE_HANDOVER.md`, `docs/GOLIVE-*`): 404 is a pass, a body that is the file fails **high**, the app's own catch-all answering 200 is named as such, and a private deployment (401/403) skips |
 | `rls-probe` | tables not readable with the public key |

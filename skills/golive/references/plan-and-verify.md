@@ -410,7 +410,7 @@ vars`). Only `accounts` fails for login problems; fix it first, then re-run `ver
 
 **Active probes** (`bundle-secrets`, `webhook-unsigned`, `auth-session`'s protected-path GET and the
 public-root GET that corroborates it, `auth-isolation`'s route reads and its one marker row per test
-account, `upload-exposure`'s reads of golive's own paths, and the key `rls-probe` takes from the bundle) only target the production URL the hosting
+account, `site-metadata`'s read of the production page's `<head>`, `upload-exposure`'s reads of golive's own paths, and the key `rls-probe` takes from the bundle) only target the production URL the hosting
 adapter reports
 for the linked project, never `config.domain` directly. If the host can't confirm it, the check skips with `cannot confirm <url>
 belongs to your project yet`. If the host reports another origin than `config.domain` (e.g. the domain
@@ -418,6 +418,14 @@ isn't verified at Vercel yet), `webhook-unsigned` probes the host's URL and says
 does resolve and GET `config.domain`. `preview-bundle` is the one probe outside production: it scans
 the preview URL the hosting adapter reports for the linked project — never a URL golive only has in
 state — and a protected preview skips instead of being reported as scanned.
+
+`site-metadata` reads the production root once and reports the page's own `<head>`: its title,
+description, canonical link and the Open Graph/Twitter share tags a link preview uses. It is
+read-only and never fails — a missing title or description warns medium, missing share tags or an
+`og:image`/`og:url` that is not an absolute http(s) URL warn low, a 200 body that is not HTML warns,
+and a private deployment (401/403) or an unfollowed redirect skips; because golive does not edit app
+code, the fix names the app's own metadata (the framework's API or the template's `<head>`) and the
+redeploy-then-re-run-verify path.
 
 | id | passes when | skips when |
 |---|---|---|

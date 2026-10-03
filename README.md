@@ -470,8 +470,13 @@ live-tested milestones**, not a finished category or a completed checklist for y
   offers no read to confirm it.
 - [ ] 🗺️ **Costs and quotas:** plan choices, budgets, alerts and capacity checks.
   Scoped Free-plan guards exist today; ongoing cost management is planned.
-- [ ] 🗺️ **Launch essentials:** metadata, share previews, indexing, accessibility, support links
-  and owner-reviewed policy pages.
+- [ ] 🚧 **Launch essentials:** metadata, share previews, indexing, accessibility, support links
+  and owner-reviewed policy pages. The read-only `site-metadata` check reads the production page's
+  own `<head>` once and reports its title, description, canonical link and Open Graph/Twitter share
+  tags (a missing title, description or share tag — or an `og:image`/`og:url` that is not absolute —
+  warns, never fails; golive does not edit app code, so the fix is a change in your repo). It is
+  mock-covered with no live run yet; share previews, indexing, accessibility, support links and
+  policy pages stay planned.
 - [ ] 🚧 **Ownership and handover:** accounts, resources, access, renewal responsibilities and
   maintenance instructions. `golive handoff --write` records the login route, ownership proofs,
   recurring jobs and removal gates in `GOLIVE_HANDOVER.md`, tagging every row as verified, recorded,

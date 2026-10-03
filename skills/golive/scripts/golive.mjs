@@ -468,11 +468,11 @@ var require_directives = __commonJS({
     };
     var escapeTagName = (tn) => tn.replace(/[!,[\]{}]/g, (ch) => escapeChars[ch]);
     var Directives = class _Directives {
-      constructor(yaml, tags) {
+      constructor(yaml, tags2) {
         this.docStart = null;
         this.docEnd = false;
         this.yaml = Object.assign({}, _Directives.defaultYaml, yaml);
-        this.tags = Object.assign({}, _Directives.defaultTags, tags);
+        this.tags = Object.assign({}, _Directives.defaultTags, tags2);
       }
       clone() {
         const copy = new _Directives(this.yaml, this.tags);
@@ -600,12 +600,12 @@ var require_directives = __commonJS({
         const tagEntries = Object.entries(this.tags);
         let tagNames;
         if (doc && tagEntries.length > 0 && identity.isNode(doc.contents)) {
-          const tags = {};
+          const tags2 = {};
           visit.visit(doc.contents, (_key, node) => {
             if (identity.isNode(node) && node.tag)
-              tags[node.tag] = true;
+              tags2[node.tag] = true;
           });
-          tagNames = Object.keys(tags);
+          tagNames = Object.keys(tags2);
         } else
           tagNames = [];
         for (const [handle, prefix] of tagEntries) {
@@ -970,15 +970,15 @@ var require_createNode = __commonJS({
     var identity = require_identity();
     var Scalar = require_Scalar();
     var defaultTagPrefix = "tag:yaml.org,2002:";
-    function findTagObject(value, tagName, tags) {
+    function findTagObject(value, tagName, tags2) {
       if (tagName) {
-        const match = tags.filter((t) => t.tag === tagName);
+        const match = tags2.filter((t) => t.tag === tagName);
         const tagObj = match.find((t) => !t.format) ?? match[0];
         if (!tagObj)
           throw new Error(`Tag ${tagName} not found`);
         return tagObj;
       }
-      return tags.find((t) => t.identify?.(value) && !t.format);
+      return tags2.find((t) => t.identify?.(value) && !t.format);
     }
     function createNode(value, tagName, ctx) {
       if (identity.isDocument(value))
@@ -1573,8 +1573,8 @@ ${indent}${start}${value}${end}`;
 ${indent}`);
       if (actualString) {
         const test = (tag2) => tag2.default && tag2.tag !== "tag:yaml.org,2002:str" && tag2.test?.test(str4);
-        const { compat, tags } = ctx.doc.schema;
-        if (tags.some(test) || compat?.some(test))
+        const { compat, tags: tags2 } = ctx.doc.schema;
+        if (tags2.some(test) || compat?.some(test))
           return quotedString(value, ctx);
       }
       return implicitKey ? str4 : foldFlowLines.foldFlowLines(str4, indent, foldFlowLines.FOLD_FLOW, getFoldOptions(ctx, false));
@@ -1666,9 +1666,9 @@ var require_stringify = __commonJS({
         options: opt
       };
     }
-    function getTagObject(tags, item) {
+    function getTagObject(tags2, item) {
       if (item.tag) {
-        const match = tags.filter((t) => t.tag === item.tag);
+        const match = tags2.filter((t) => t.tag === item.tag);
         if (match.length > 0)
           return match.find((t) => t.format === item.format) ?? match[0];
       }
@@ -1676,7 +1676,7 @@ var require_stringify = __commonJS({
       let obj3;
       if (identity.isScalar(item)) {
         obj3 = item.value;
-        let match = tags.filter((t) => t.identify?.(obj3));
+        let match = tags2.filter((t) => t.identify?.(obj3));
         if (match.length > 1) {
           const testMatch = match.filter((t) => t.test);
           if (testMatch.length > 0)
@@ -1685,7 +1685,7 @@ var require_stringify = __commonJS({
         tagObj = match.find((t) => t.format === item.format) ?? match.find((t) => !t.format);
       } else {
         obj3 = item;
-        tagObj = tags.find((t) => t.nodeClass && obj3 instanceof t.nodeClass);
+        tagObj = tags2.find((t) => t.nodeClass && obj3 instanceof t.nodeClass);
       }
       if (!tagObj) {
         const name3 = obj3?.constructor?.name ?? (obj3 === null ? "null" : typeof obj3);
@@ -3451,10 +3451,10 @@ var require_tags = __commonJS({
       if (schemaTags && !customTags) {
         return addMergeTag && !schemaTags.includes(merge.merge) ? schemaTags.concat(merge.merge) : schemaTags.slice();
       }
-      let tags = schemaTags;
-      if (!tags) {
+      let tags2 = schemaTags;
+      if (!tags2) {
         if (Array.isArray(customTags))
-          tags = [];
+          tags2 = [];
         else {
           const keys3 = Array.from(schemas.keys()).filter((key) => key !== "yaml11").map((key) => JSON.stringify(key)).join(", ");
           throw new Error(`Unknown schema "${schemaName}"; use one of ${keys3} or define customTags array`);
@@ -3462,22 +3462,22 @@ var require_tags = __commonJS({
       }
       if (Array.isArray(customTags)) {
         for (const tag2 of customTags)
-          tags = tags.concat(tag2);
+          tags2 = tags2.concat(tag2);
       } else if (typeof customTags === "function") {
-        tags = customTags(tags.slice());
+        tags2 = customTags(tags2.slice());
       }
       if (addMergeTag)
-        tags = tags.concat(merge.merge);
-      return tags.reduce((tags2, tag2) => {
+        tags2 = tags2.concat(merge.merge);
+      return tags2.reduce((tags3, tag2) => {
         const tagObj = typeof tag2 === "string" ? tagsByName[tag2] : tag2;
         if (!tagObj) {
           const tagName = JSON.stringify(tag2);
           const keys3 = Object.keys(tagsByName).map((key) => JSON.stringify(key)).join(", ");
           throw new Error(`Unknown custom tag ${tagName}; use one of ${keys3}`);
         }
-        if (!tags2.includes(tagObj))
-          tags2.push(tagObj);
-        return tags2;
+        if (!tags3.includes(tagObj))
+          tags3.push(tagObj);
+        return tags3;
       }, []);
     }
     exports.coreKnownTags = coreKnownTags;
@@ -3493,14 +3493,14 @@ var require_Schema = __commonJS({
     var map = require_map();
     var seq = require_seq();
     var string = require_string();
-    var tags = require_tags();
+    var tags2 = require_tags();
     var sortMapEntriesByKey = (a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
     var Schema = class _Schema {
       constructor({ compat, customTags, merge, resolveKnownTags, schema, sortMapEntries, toStringDefaults }) {
-        this.compat = Array.isArray(compat) ? tags.getTags(compat, "compat") : compat ? tags.getTags(null, compat) : null;
+        this.compat = Array.isArray(compat) ? tags2.getTags(compat, "compat") : compat ? tags2.getTags(null, compat) : null;
         this.name = typeof schema === "string" && schema || "core";
-        this.knownTags = resolveKnownTags ? tags.coreKnownTags : {};
-        this.tags = tags.getTags(customTags, this.name, merge);
+        this.knownTags = resolveKnownTags ? tags2.coreKnownTags : {};
+        this.tags = tags2.getTags(customTags, this.name, merge);
         this.toStringOptions = toStringDefaults ?? null;
         Object.defineProperty(this, identity.MAP, { value: map.map });
         Object.defineProperty(this, identity.SCALAR, { value: string.string });
@@ -22020,6 +22020,120 @@ var siteHeadersCheck = {
   }
 };
 
+// src/checks/site-metadata.ts
+var clip2 = (v) => v.length > 200 ? `${v.slice(0, 200)}\u2026` : v;
+var MAX_HTML = 512 * 1024;
+var TAGS = ["title", "meta description", "link rel=canonical", "og:title", "og:description", "og:image", "og:url", "twitter:card"];
+var SHARE = ["og:title", "og:description", "og:image", "og:url", "twitter:card"];
+var ABSOLUTE = ["og:image", "og:url"];
+function isAbsoluteHttp(value) {
+  try {
+    const u = new URL(value);
+    return (u.protocol === "http:" || u.protocol === "https:") && Boolean(u.host);
+  } catch {
+    return false;
+  }
+}
+function tags(html, name3) {
+  const re = new RegExp(`<${name3}\\b((?:[^>"']|"[^"]*"|'[^']*')*)>`, "gi");
+  return [...html.matchAll(re)].map((m) => m[1] ?? "");
+}
+function attrs(tag2) {
+  const out = {};
+  for (const m of tag2.matchAll(/([a-z_:][-a-z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi)) {
+    out[m[1].toLowerCase()] = m[2] ?? m[3] ?? m[4] ?? "";
+  }
+  return out;
+}
+function metaContent(metas, attr2, value) {
+  for (const m of metas) if ((m[attr2] ?? "").toLowerCase() === value && (m.content ?? "").trim()) return m.content.trim();
+  return null;
+}
+function readHead(html) {
+  const head = /<head\b(?:[^>"']|"[^"]*"|'[^']*')*>([\s\S]*?)<\/head\s*>/i.exec(html);
+  const doc = head?.[1] ?? html;
+  const metas = tags(doc, "meta").map(attrs);
+  const title = /<title\b(?:[^>"']|"[^"]*"|'[^']*')*>([\s\S]*?)<\/title\s*>/i.exec(doc)?.[1]?.trim();
+  let canonical2 = null;
+  for (const l of tags(doc, "link").map(attrs)) {
+    if (!(l.rel ?? "").toLowerCase().split(/\s+/).includes("canonical")) continue;
+    if ((l.href ?? "").trim()) {
+      canonical2 = l.href.trim();
+      break;
+    }
+  }
+  return {
+    title: title || null,
+    "meta description": metaContent(metas, "name", "description"),
+    "link rel=canonical": canonical2,
+    "og:title": metaContent(metas, "property", "og:title"),
+    "og:description": metaContent(metas, "property", "og:description"),
+    "og:image": metaContent(metas, "property", "og:image"),
+    "og:url": metaContent(metas, "property", "og:url"),
+    "twitter:card": metaContent(metas, "name", "twitter:card") ?? metaContent(metas, "property", "twitter:card")
+  };
+}
+var siteMetadataCheck = {
+  id: "site-metadata",
+  title: "The production page carries the metadata crawlers and link previews read",
+  severity: "medium",
+  applies: () => true,
+  async run(ctx) {
+    const confirmed = await confirmedProductionUrl(ctx);
+    if (!confirmed.ok) return confirmed.outcome;
+    const url = `${trimSlash(confirmed.url)}/`;
+    let res;
+    try {
+      res = await probe(ctx, url, { headers: { "user-agent": "golive-verify" }, timeoutMs: 15e3 });
+    } catch (e) {
+      return result("warn", "medium", [`could not fetch ${url}: ${errMsg(e)}`], "Make sure the production deployment is reachable, then re-run verify.");
+    }
+    const got = `GET ${url} \u2192 HTTP ${res.status}`;
+    if (res.status === 401 || res.status === 403) {
+      return skip(`${got}: the deployment may be private (visitor access, SSO or an auth wall answering anonymous requests), so its page metadata is unverified; make production publicly reachable, then re-run verify`);
+    }
+    if (res.status >= 300 && res.status < 400) {
+      return skip(`${got}: a redirect is not followed, so the metadata of the app's own page is unverified; point the production URL at the deployed app (or set the host's redirect), then re-run verify`);
+    }
+    if (res.status < 200 || res.status >= 300) {
+      return result("warn", "medium", [`${got}: the production page did not load, so its page metadata is unverified`], "Fix the deployment, then re-run verify.");
+    }
+    const html = res.text.slice(0, MAX_HTML);
+    if (!/<(?:head|html|title)\b/i.test(html)) {
+      const type = res.headers["content-type"];
+      return result("warn", "medium", [got, `the response is not an HTML page${type ? ` (content-type: ${clip2(type)})` : ""}, so no <head> metadata could be read`], "Point the production URL at the deployed app page, then re-run verify.");
+    }
+    const values = readHead(html);
+    const evidence = [
+      got,
+      ...TAGS.map((t) => {
+        const v = values[t];
+        if (v === null) return `${t}: absent`;
+        const relative2 = ABSOLUTE.includes(t) && !isAbsoluteHttp(v) ? " (not an absolute http(s) URL)" : "";
+        return `${t}: ${clip2(v)}${relative2}`;
+      })
+    ];
+    const missingCore = [];
+    if (!values.title) missingCore.push("<title>");
+    if (!values["meta description"]) missingCore.push('<meta name="description">');
+    const missingShare = [];
+    for (const t of SHARE) {
+      const v = values[t];
+      if (!v) missingShare.push(t);
+      else if (ABSOLUTE.includes(t) && !isAbsoluteHttp(v)) missingShare.push(`${t} (not an absolute http(s) URL)`);
+    }
+    if (missingCore.length) {
+      const also = missingShare.length ? `; share tags also missing: ${missingShare.join(", ")}` : "";
+      return result("warn", "medium", [...evidence, `missing: ${[...missingCore, ...missingShare].join(", ")}`], `Add ${missingCore.join(" and ")} in the app's own <head>${also}: use the framework's metadata API \u2014 Next.js's \`metadata\` export, Nuxt's \`useHead\`, Astro frontmatter \u2014 or the template's <head>. Crawlers and link-preview bots often do not run client-side JavaScript, so render these tags server-side. golive does not edit app code: this is a change in your repo \u2014 then redeploy and re-run verify.`);
+    }
+    if (missingShare.length) {
+      const absolute = missingShare.some((t) => t.startsWith("og:image") || t.startsWith("og:url")) ? " `og:image` and `og:url` must be absolute http(s) URLs." : "";
+      return result("warn", "low", [...evidence, `missing: ${missingShare.join(", ")}`], `Add the missing share tags (${missingShare.join(", ")}) as <meta> tags in the app's own <head> \u2014 the same framework metadata APIs (Next.js \`metadata\`, Nuxt \`useHead\`, Astro frontmatter) or the template's <head> \u2014 and render them server-side: link-preview bots often do not run client-side JavaScript.${absolute} golive does not edit app code: this is a change in your repo \u2014 then redeploy and re-run verify.`);
+    }
+    return pass(evidence);
+  }
+};
+
 // src/checks/upload-exposure.ts
 function identifies(file, body2) {
   const head = body2.slice(0, 4e3);
@@ -22105,6 +22219,7 @@ var ALL_CHECKS = [
   domainLiveCheck,
   netlifyPublicAccessCheck,
   siteHeadersCheck,
+  siteMetadataCheck,
   uploadExposureCheck,
   bundleSecretsCheck,
   rlsCheck,

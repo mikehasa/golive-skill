@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=ko; source=README.md; source-commit=a62a270; reviewed=false; updated=2026-09-30 -->
+<!-- golive-translation: lang=ko; source=README.md; source-commit=a62a270; reviewed=false; updated=2026-10-03 -->
 # GoLive
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Português (Brasil)](README.pt-BR.md) · [Deutsch](README.de.md)
@@ -463,8 +463,13 @@ alpha 경로가 아닙니다.** 다른 인증 프로바이더는 안내형으로
   보고됩니다.
 - [ ] 🗺️ **비용과 할당량:** 요금제 선택, 예산, 알림, 용량 점검. 범위가 한정된 무료 요금제 보호 장치는
   오늘도 있습니다. 지속적인 비용 관리는 계획 단계입니다.
-- [ ] 🗺️ **출시 필수 요소:** 메타데이터, 공유 미리보기, 색인, 접근성, 지원 링크, 소유자가 검토한 정책
-  페이지.
+- [ ] 🚧 **출시 필수 요소:** 메타데이터, 공유 미리보기, 색인, 접근성, 지원 링크, 소유자가 검토한 정책
+  페이지. 읽기 전용 `site-metadata` 검사는 프로덕션 페이지 자체의 `<head>`를 한 번 읽고 title,
+  description, canonical 링크, Open Graph/Twitter 공유 태그를 보고합니다(title, description,
+  공유 태그가 없거나 `og:image`/`og:url`이 절대 URL이 아니면 경고만 하고 실패하지 않습니다.
+  golive는 앱 코드를 수정하지 않으므로 고칠 곳은 당신의 저장소입니다). 아직 mock으로만 커버되며
+  live 실행은 없습니다. 공유 미리보기, 색인, 접근성, 지원 링크, 정책 페이지는 계획 단계로 남아
+  있습니다.
 - [ ] 🚧 **소유권과 인계:** 계정, 리소스, 접근 권한, 갱신 책임, 유지 관리 지침.
   `golive handoff --write`는 로그인 경로, 소유권 증명, 반복 작업, 제거 게이트를
   `GOLIVE_HANDOVER.md`에 기록하고 모든 행에 검증됨·기록됨·검증 불가·알 수 없음 중 하나를 표시합니다.

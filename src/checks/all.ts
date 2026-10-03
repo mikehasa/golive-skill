@@ -17,6 +17,7 @@ import { posthogIngestCheck } from './posthog-ingest.js';
 import { domainLiveCheck } from './domain.js';
 import { netlifyPublicAccessCheck } from './netlify-public-access.js';
 import { siteHeadersCheck } from './site-headers.js';
+import { siteMetadataCheck } from './site-metadata.js';
 import { uploadExposureCheck } from './upload-exposure.js';
 import { previewBundleCheck, previewDeployCheck, productionReleaseCheck } from './release.js';
 
@@ -27,6 +28,7 @@ export const ALL_CHECKS: Check[] = [
   domainLiveCheck,
   netlifyPublicAccessCheck,
   siteHeadersCheck,
+  siteMetadataCheck,
   uploadExposureCheck,
   bundleSecretsCheck,
   rlsCheck,

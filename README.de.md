@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=de; source=README.md; source-commit=a62a270; reviewed=false; updated=2026-09-30 -->
+<!-- golive-translation: lang=de; source=README.md; source-commit=a62a270; reviewed=false; updated=2026-10-03 -->
 # GoLive
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Português (Brasil)](README.pt-BR.md) · [Deutsch](README.de.md)
@@ -528,8 +528,14 @@ aus) · **🗺️ Geplant**
   als bestanden, weil der Provider kein Lesen anbietet, das ihn bestätigen könnte.
 - [ ] 🗺️ **Kosten und Quotas:** Auswahl des Plans, Budgets, Alarme und Kapazitätsprüfungen.
   Eingegrenzte Guards für den Free-Plan gibt es heute; laufendes Kostenmanagement ist geplant.
-- [ ] 🗺️ **Launch-Essentials:** Metadaten, Share-Previews, Indexierung, Barrierefreiheit,
-  Support-Links und vom Inhaber geprüfte Policy-Seiten.
+- [ ] 🚧 **Launch-Essentials:** Metadaten, Share-Previews, Indexierung, Barrierefreiheit,
+  Support-Links und vom Inhaber geprüfte Policy-Seiten. Der schreibgeschützte Check `site-metadata`
+  liest einmal das `<head>` der Produktionsseite selbst und meldet ihren Titel, ihre Beschreibung,
+  den Canonical-Link und die Open-Graph-/Twitter-Share-Tags (ein fehlender Titel, eine fehlende
+  Beschreibung oder ein fehlendes Share-Tag — oder ein `og:image`/`og:url`, das keine absolute URL
+  ist — warnt nur, schlägt nie fehl; golive ändert keinen App-Code, die Korrektur ist also eine
+  Änderung in deinem Repository). Er ist mock-abgedeckt und noch ohne Live-Lauf; Share-Previews,
+  Indexierung, Barrierefreiheit, Support-Links und Policy-Seiten bleiben geplant.
 - [ ] 🚧 **Eigentum und Übergabe:** Konten, Ressourcen, Zugriff, Verantwortung für Verlängerungen und
   Wartungsanleitungen. `golive handoff --write` hält den Login-Weg, die Eigentumsnachweise,
   wiederkehrende Jobs und die Entfernungs-Gates in `GOLIVE_HANDOVER.md` fest und taggt jede Zeile als

@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=es; source=README.md; source-commit=a62a270; reviewed=false; updated=2026-09-30 -->
+<!-- golive-translation: lang=es; source=README.md; source-commit=a62a270; reviewed=false; updated=2026-10-03 -->
 # GoLive
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Português (Brasil)](README.pt-BR.md) · [Deutsch](README.de.md)
@@ -535,8 +535,15 @@ de verificación completada para tu app.
   pass, porque el proveedor no ofrece ninguna lectura que lo confirme.
 - [ ] 🗺️ **Costes y cuotas:** elección de planes, presupuestos, alertas y comprobaciones de capacidad.
   Hoy existen guardas acotadas para el plan gratuito; la gestión continua de costes está planificada.
-- [ ] 🗺️ **Esenciales del lanzamiento:** metadatos, previsualizaciones al compartir, indexación,
-  accesibilidad, enlaces de soporte y páginas de políticas revisadas por el propietario.
+- [ ] 🚧 **Esenciales del lanzamiento:** metadatos, previsualizaciones al compartir, indexación,
+  accesibilidad, enlaces de soporte y páginas de políticas revisadas por el propietario. La
+  comprobación `site-metadata`, de solo lectura, lee una vez el `<head>` de la propia página de
+  producción y reporta su título, descripción, enlace canónico y las etiquetas de compartición de
+  Open Graph/Twitter (que falte el título, la descripción o una etiqueta de compartición —o que
+  `og:image`/`og:url` no sea una URL absoluta— solo avisa, nunca falla; golive no edita el código de
+  la app, así que el arreglo es un cambio en tu repositorio). Está cubierta con mocks y aún no tiene
+  ejecución en vivo; las previsualizaciones al compartir, la indexación, la accesibilidad, los
+  enlaces de soporte y las páginas de políticas siguen planificados.
 - [ ] 🚧 **Propiedad y traspaso (handoff):** cuentas, recursos, accesos, responsabilidades de renovación
   e instrucciones de mantenimiento. `golive handoff --write` registra la ruta de inicio de sesión, las
   pruebas de propiedad, los trabajos recurrentes y las barreras de eliminación en

@@ -24,6 +24,7 @@ import { posthogTiming } from '../src/adapters/posthog.js';
 import { dnsBaselineKey } from '../src/core/dns-baseline.js';
 import { domainLiveCheck } from '../src/checks/domain.js';
 import { siteHeadersCheck } from '../src/checks/site-headers.js';
+import { siteMetadataCheck } from '../src/checks/site-metadata.js';
 import { uploadExposureCheck } from '../src/checks/upload-exposure.js';
 import { addressDomain, confirmedProductionUrl, globMatch, hostVariants } from '../src/checks/util.js';
 import { restProbe, accountStatus } from '../src/checks/providers.js';
@@ -57,7 +58,7 @@ describe('ALL_CHECKS', () => {
     const ids = ALL_CHECKS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.sort()).toEqual(
-      ['accounts', 'auth-isolation', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'posthog-ingest', 'preview-bundle', 'preview-deploy', 'production-release', 'rls-probe', 'site-headers', 'stripe-live-ready', 'upload-exposure', 'webhook-registered', 'webhook-unsigned'].sort(),
+      ['accounts', 'auth-isolation', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'posthog-ingest', 'preview-bundle', 'preview-deploy', 'production-release', 'rls-probe', 'site-headers', 'site-metadata', 'stripe-live-ready', 'upload-exposure', 'webhook-registered', 'webhook-unsigned'].sort(),
     );
   });
 });
@@ -1169,6 +1170,167 @@ describe('site-headers', () => {
     const r = await run(siteHeadersCheck, testCtx({ http, config: { stack: { hosting: 'vercel' } }, adapters: [hosting()] }));
     expect(r).toMatchObject({ status: 'warn', severity: 'medium' });
     expect(r.evidence[0]).toBe(`could not fetch ${PROD}/: fetch failed (CERT_HAS_EXPIRED)`);
+  });
+});
+
+// ── site-metadata ───────────────────────────────────────────────────────────────────────────────
+
+describe('site-metadata', () => {
+  const FULL = '<!doctype html><html><head>'
+    + '<title>Acme Shop</title>'
+    + '<meta name="description" content="Buy things.">'
+    + '<link rel="canonical" href="https://app.example.com/">'
+    + '<meta property="og:title" content="Acme">'
+    + '<meta property="og:description" content="Buy things.">'
+    + '<meta property="og:image" content="https://app.example.com/og.png">'
+    + '<meta property="og:url" content="https://app.example.com/">'
+    + '<meta name="twitter:card" content="summary_large_image">'
+    + '</head><body><h1>Acme</h1></body></html>';
+
+  /** One read-only GET of the host-confirmed production URL, answering with this body/status. */
+  const probePage = async (text: string, status = 200, headers: Record<string, string> = {}) => {
+    const { http, calls } = mockHttp([['GET', `${PROD}/`, () => ({ status, text, headers })]]);
+    const r = await run(siteMetadataCheck, testCtx({ http, config: { stack: { hosting: 'vercel' } }, adapters: [hosting()] }));
+    return { r, calls };
+  };
+
+  it('passes on a full head and reports every value from one request', async () => {
+    const { r, calls } = await probePage(FULL);
+    expect(r.status).toBe('pass');
+    expect(calls).toHaveLength(1); // one request for the whole metadata set
+    expect(calls[0]).toMatchObject({ method: 'GET', url: `${PROD}/` });
+    expect(calls[0]!.headers['user-agent']).toBe('golive-verify');
+    const ev = r.evidence.join('\n');
+    expect(ev).toContain(`GET ${PROD}/ → HTTP 200`);
+    for (const line of [
+      'title: Acme Shop',
+      'meta description: Buy things.',
+      'link rel=canonical: https://app.example.com/',
+      'og:title: Acme',
+      'og:description: Buy things.',
+      'og:image: https://app.example.com/og.png',
+      'og:url: https://app.example.com/',
+      'twitter:card: summary_large_image',
+    ]) expect(ev).toContain(line);
+    expect(ev).not.toContain('missing:');
+  });
+
+  it('warns (medium) when the title is missing, naming it and where to set it', async () => {
+    const { r } = await probePage(FULL.replace('<title>Acme Shop</title>', ''));
+    expect(r).toMatchObject({ status: 'warn', severity: 'medium' });
+    expect(r.evidence.join('\n')).toContain('title: absent');
+    expect(r.evidence.join('\n')).toContain('missing: <title>');
+    expect(r.fix).toContain('<title>');
+    expect(r.fix).toMatch(/Next\.js's `metadata` export/);
+    expect(r.fix).toMatch(/server-side/);
+    expect(r.fix).toMatch(/golive does not edit app code/);
+    expect(r.fix).toMatch(/redeploy and re-run verify/);
+  });
+
+  it('counts an empty description as missing and warns (medium)', async () => {
+    const { r } = await probePage(FULL.replace('<meta name="description" content="Buy things.">', '<meta name="description" content="">'));
+    expect(r).toMatchObject({ status: 'warn', severity: 'medium' });
+    expect(r.evidence.join('\n')).toContain('meta description: absent');
+    expect(r.evidence.join('\n')).toContain('missing: <meta name="description">');
+    expect(r.fix).toContain('<meta name="description">');
+  });
+
+  it('warns (low), never fails, when only share tags are missing', async () => {
+    const { r } = await probePage('<!doctype html><html><head><title>Acme Shop</title><meta name="description" content="Buy things."></head><body></body></html>');
+    expect(r).toMatchObject({ status: 'warn', severity: 'low' });
+    expect(r.evidence.join('\n')).toContain('missing: og:title, og:description, og:image, og:url, twitter:card');
+    expect(r.fix).toContain('og:title');
+    expect(r.fix).toMatch(/<head>/);
+    expect(r.fix).not.toMatch(/<title>/);
+  });
+
+  it('warns (low) when og:image is not absolute, naming the requirement', async () => {
+    const { r } = await probePage(FULL.replace('content="https://app.example.com/og.png"', 'content="/og.png"'));
+    expect(r).toMatchObject({ status: 'warn', severity: 'low' });
+    expect(r.evidence.join('\n')).toContain('og:image: /og.png (not an absolute http(s) URL)');
+    expect(r.evidence.join('\n')).toContain('missing: og:image (not an absolute http(s) URL)');
+    expect(r.fix).toContain('og:image');
+    expect(r.fix).toMatch(/absolute http\(s\) URLs/);
+  });
+
+  it('clips long values instead of printing the page', async () => {
+    const { r } = await probePage(FULL.replace('content="Buy things."', `content="${'x'.repeat(500)}"`));
+    expect(r.status).toBe('pass');
+    expect(r.evidence.join('\n')).toContain(`meta description: ${'x'.repeat(200)}…`);
+  });
+
+  it('skips without a host-confirmed production URL (no deployment, guided host, unreachable host)', async () => {
+    const none = await run(siteMetadataCheck, testCtx({ config: { stack: { hosting: 'vercel' } }, adapters: [hosting({}, null)] }));
+    expect(none.status).toBe('skip');
+    expect(none.evidence[0]).toMatch(/^blocked by: deploy:production/);
+
+    const guided = await run(siteMetadataCheck, testCtx({ config: { stack: { hosting: 'netlify' }, domain: 'shop.example.com' } }));
+    expect(guided.status).toBe('skip');
+    expect(guided.evidence[0]).toContain('cannot confirm https://shop.example.com belongs to your project yet');
+
+    const urlDown = fakeAdapter({ id: 'vercel', axes: ['hosting'], capabilities: { url: { get: async () => { throw new Error('vercel CLI not found'); } } } });
+    const hostDown = await run(siteMetadataCheck, testCtx({ config: { stack: { hosting: 'vercel' } }, adapters: [urlDown] }));
+    expect(hostDown.status).toBe('skip');
+    expect(hostDown.evidence[0]).toContain('the host could not report it: vercel CLI not found');
+  });
+
+  it.each([401, 403])('skips when production answers HTTP %i: the deployment may be private', async (status) => {
+    const { r, calls } = await probePage('secret', status);
+    expect(r.status).toBe('skip');
+    expect(r.evidence.join('\n')).toContain(`GET ${PROD}/ → HTTP ${status}`);
+    expect(r.evidence.join('\n')).toMatch(/the deployment may be private/);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('skips on a redirect without following it, and never carries the Location', async () => {
+    const { r, calls } = await probePage('', 302, { location: 'https://app.example.com/login' });
+    expect(r.status).toBe('skip');
+    expect(r.evidence.join('\n')).toMatch(/redirect is not followed/);
+    expect(calls).toHaveLength(1);
+    expect(JSON.stringify(r)).not.toContain('/login');
+  });
+
+  it('warns (medium) on a 5xx page and when the request never completes', async () => {
+    const { r } = await probePage('<html></html>', 500);
+    expect(r).toMatchObject({ status: 'warn', severity: 'medium' });
+    expect(r.evidence.join('\n')).toContain('did not load');
+
+    const { http } = mockHttp([['GET', `${PROD}/`, () => { throw new Error('fetch failed (CERT_HAS_EXPIRED)'); }]]);
+    const down = await run(siteMetadataCheck, testCtx({ http, config: { stack: { hosting: 'vercel' } }, adapters: [hosting()] }));
+    expect(down).toMatchObject({ status: 'warn', severity: 'medium' });
+    expect(down.evidence[0]).toBe(`could not fetch ${PROD}/: fetch failed (CERT_HAS_EXPIRED)`);
+  });
+
+  it('warns (medium), never fails, when the 200 body is not HTML', async () => {
+    const { r } = await probePage(JSON.stringify({ app: 'api' }), 200, { 'content-type': 'application/json' });
+    expect(r).toMatchObject({ status: 'warn', severity: 'medium' });
+    expect(r.evidence.join('\n')).toContain(`GET ${PROD}/ → HTTP 200`);
+    expect(r.evidence.join('\n')).toContain('not an HTML page (content-type: application/json)');
+    expect(r.fix).toMatch(/Point the production URL at the deployed app page/);
+  });
+
+  it('parses attribute order, quoting and case variants', async () => {
+    const text = [
+      '<!DOCTYPE HTML><HTML><HEAD>',
+      '<TITLE>Acme Shop</TITLE>',
+      "<meta content='Buy things.' name='DESCRIPTION'>",
+      '<LINK href="https://app.example.com/" rel="Canonical">',
+      "<META content='Acme' property='og:title'>",
+      '<meta property="og:description" content="Buy things.">',
+      "<meta property='og:image' content='https://app.example.com/og.png'>",
+      '<meta content="https://app.example.com/" property="OG:URL">',
+      "<meta property='twitter:card' content='summary'>",
+      '</HEAD></HTML>',
+    ].join('');
+    const { r } = await probePage(text);
+    expect(r.status).toBe('pass');
+    const ev = r.evidence.join('\n');
+    expect(ev).toContain('title: Acme Shop');
+    expect(ev).toContain('meta description: Buy things.');
+    expect(ev).toContain('link rel=canonical: https://app.example.com/');
+    expect(ev).toContain('og:title: Acme');
+    expect(ev).toContain('og:url: https://app.example.com/');
+    expect(ev).toContain('twitter:card: summary');
   });
 });
 

@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=zh-CN; source=README.md; source-commit=a62a270; reviewed=false; updated=2026-09-30 -->
+<!-- golive-translation: lang=zh-CN; source=README.md; source-commit=a62a270; reviewed=false; updated=2026-10-03 -->
 # GoLive
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Português (Brasil)](README.pt-BR.md) · [Deutsch](README.de.md)
@@ -208,7 +208,7 @@ GoLive 会保留应用里已有的服务商选择，只追问缺的部分。注�
 - [ ] 🗺️ **备份与恢复：** 保留策略、恢复演练、事故步骤和经批准的清理。经批准的 `teardown` 会删除 golive 创建的东西；备份和任何恢复仍然是人工、受监督的工作。
 - [x] ✅ **卸载 / 拆除：** ~~一份经批准的 golive 创建资源清单，以及它们的删除。~~ `golive teardown` 会规划删除，只删 golive 能证明是自己创建的东西（归属证明加上 `--confirm-destroy`），并在删除后重新读取 DNS zone 中 golive 拥有的记录列表和托管平台自己的项目读取结果。凡是它删不掉的东西都不会被悄悄丢掉：一个遗留项 —— 读不到的 zone、删不掉的托管项目、没登录的服务商 —— 会变成一条交接，写明剩下什么和确切的解决办法，而 Supabase/Neon 项目和 Resend 发信域名仍然需要人工交接（[#9](https://github.com/mikehasa/golive-skill/issues/9)）。删除会忘掉 golive 为那个资源记录的基线，所以 `golive status` 不会把 golive 自己的拆除报成漂移；而 golive 吊销过的发信 key 会报成警告而不是通过，因为服务商没有提供可以确认它的读取方式。
 - [ ] 🗺️ **成本与配额：** 套餐选择、预算、告警和容量检查。目前已有范围有限的 Free 套餐守卫；持续的成本管理仍在计划中。
-- [ ] 🗺️ **上线必备项：** metadata、分享预览、索引、无障碍、支持链接，以及由账号主人复核过的政策页。
+- [ ] 🚧 **上线必备项：** metadata、分享预览、索引、无障碍、支持链接，以及由账号主人复核过的政策页。只读的 `site-metadata` 检查会读取生产页面自己的 `<head>` 一次，报告其中的 title、description、canonical 链接和 Open Graph/Twitter 分享标签（title、description 或分享标签缺失，或者 `og:image`/`og:url` 不是绝对 URL，只会警告，从不判失败；golive 不会改应用代码，所以修复要落在你的仓库里）。它目前只有 mock 覆盖，还没有 live 运行；分享预览、索引、无障碍、支持链接和政策页仍在计划中。
 - [ ] 🚧 **归属与交接：** 账号、资源、访问权限、续费责任和维护说明。`golive handoff --write` 会把登录入口、归属证明、周期性任务和删除闸门记录进 `GOLIVE_HANDOVER.md`，并给每一行标注：已验证、已记录、无法验证或未知；`golive status` 则按需重新读取这些对象：它把 golive 记录的基线与服务商现在的实际情况做比较，并点名它读不到的东西。重新建立漂移基线仍然要人工、要批准 —— 这个命令已经实现，并在认证验证中只读运行过，但对每一个漂移对象的 live 验证仍然没有做。
 
 有些步骤永远需要人来完成：接受条款、身份核验、付款、账单选择，以及服务商要求的审核。“引导”仍然应该意味着：明确的下一步动作、正确的页面、正确的权限、事后的检查，以及回到同一条工作流。当应用本身需要改代码时，GoLive 应该给编码 agent 一个具体的任务，并复查结果。它不应该让你去协调十几个互不相干的配置对话。

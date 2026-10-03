@@ -13,7 +13,7 @@
     "approval": 1
   },
   "files": {
-    "SKILL.md": "1c047ccda1e58c16af9a7104d65dd00fb8cc5cf90e198c507cabdb048f0443b2",
+    "SKILL.md": "ab4fd60fa9abd20fbaad877e114ac8560e2e68ba17ff427872f1b33f93e8a6ce",
     "LICENSE": "b1546216882fd37b1602f3a004e8548b5f6c38ada73117308d4c3ac6968235e9",
     "THIRD_PARTY_NOTICES.md": "ad33f954a31c411cc667c07460859c77a014d6720e581a5ce5edd48c9c962781",
     "references/cloudflare-dns.md": "1e2c3143d714590486d181befa0237f18e077328ab7fcd2151adaa0f68b898ff",
@@ -21,7 +21,7 @@
     "references/guided.md": "0c2c1b3938edf38d76f371af5159a155692628c032010eb2c1f0a8e7a8d2b0d4",
     "references/neon.md": "a5a85919d318b8f15fca6dd49a8a495a6aeb3e713ddac620978747c5a67bd400",
     "references/netlify.md": "692727974530b549434af97b693c6cd9a51869b5cd5262983d8fc6e56ce459de",
-    "references/plan-and-verify.md": "337a7afe90cb868c24406b386191be04efdce544f88fad0c41d69693da4e12fe",
+    "references/plan-and-verify.md": "8af2f9c2f43eb487a1764546d7cd452cf4bb37882293b26372002e06cd34cfa3",
     "references/porkbun.md": "8eaeb8890ce3c104e242ced33e77179253a9d8f3b9425be6692585254c6b6490",
     "references/posthog.md": "4bcc6bd92c0e6c142dcc9627aaea292da743c6532ca4450aeba0c7a6e0337a41",
     "references/resend.md": "ec673b3c75f4bb0edd9825079c2be41f165ca7a4ac2b6b732bb4024968735947",
@@ -30,9 +30,9 @@
     "references/troubleshooting.md": "8a9a8bd3a4c79e5fac00edbec3db0d6c47eaf36f4f6e7a5b92a46a92b21e50fd",
     "references/updates.md": "931f430d466b9e61b7c3118542449cbca281b48828b99df5ba08fc808c078043",
     "references/vercel.md": "f3f915c763ce5bb623ce706021be43fa9a358be632b56d818b00063153532ad6",
-    "scripts/golive.mjs": "a4f9e213f8d3bc56d1885c6aea0ea8ba39380721e2f88c4811a94aae093e428a",
+    "scripts/golive.mjs": "80c3addc5777acd138c066818d5b7cdc7ed23b438bcc4cf66ed1b9ca6449f952",
     "scripts/install-cli.mjs": "ac9ee3f57b5fcbc54ef16b1ee0b22c967b846cc32512750046b13d5c1a7075bd",
     "scripts/install-lib.mjs": "43086f4d12380b6ce425d6188136b523f0cdda7bf168acc7c420f80bc3cff8f9"
   },
-  "bundleDigest": "c08691cb79283fd385cbb4570b4943ccb038a0463a5d0471a13e2da40c3b6300"
+  "bundleDigest": "785ed849a0c68dcf2740724530a9b44db078b931427c332e56138fe673ceb68d"
 }
