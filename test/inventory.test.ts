@@ -243,3 +243,63 @@ describe('inventory: the Sentry analytics project', () => {
     expect(out.recorded.find((x) => x.kind === 'analytics-project')!.removal).toBeUndefined();
   });
 });
+
+describe('inventory: the UptimeRobot monitor', () => {
+  const MON_CONFIG: Partial<ShipConfig> = { ...CONFIG, stack: { ...CONFIG.stack, monitoring: 'uptimerobot' } };
+  const MON_STATE = (over: Record<string, string> = {}): ShipState => ({
+    ...STATE,
+    resources: { ...STATE.resources, 'uptimerobot.monitorId': '777712827', 'uptimerobot.monitorName': 'shop', 'uptimerobot.createdMonitorId': '777712827', ...over },
+  });
+
+  function mon(state: ShipState = MON_STATE(), configure: (w: FakeWorld) => void = () => undefined) {
+    const w = fakeWorld();
+    w.mon.providerId = 'uptimerobot';
+    w.mon.withUptime = true;
+    w.mon.monitors = [{ id: '777712827', name: 'shop', url: 'https://example.com', type: 1, status: 2 }];
+    w.dns.owned = [...OWNED];
+    configure(w);
+    const ctx = testCtx({ cwd: '/work/shop', adapters: w.adapters, config: MON_CONFIG, state });
+    return { w, ctx, inventory: () => buildInventory(ctx) };
+  }
+
+  it('records the monitor golive created, with the creation marker and a removal handle', async () => {
+    const inv = await mon().inventory();
+    const r = inv.recorded.find((x) => x.kind === 'uptime-monitor')!;
+    expect(r).toMatchObject({
+      axis: 'monitoring',
+      provider: 'uptimerobot',
+      providerTitle: 'UptimeRobot',
+      id: '777712827',
+      name: 'shop',
+      created: true,
+      markers: ['uptimerobot.createdMonitorId'],
+      needs: 'the UptimeRobot dashboard',
+      where: 'the UptimeRobot dashboard',
+    });
+    expect(r.extra).toMatch(/UptimeRobot deletes a monitor at once/);
+    expect(r.removal).toBeDefined();
+    expect(r.removal!.adapter.id).toBe('uptimerobot');
+    // The recorded resources keep their order: the monitor entry is appended, never interleaved.
+    expect(inv.recorded.map((x) => x.kind)).toEqual(['database-project', 'sending-domain', 'uptime-monitor']);
+  });
+
+  it('records it as adopted — with no removal handle — when the marker names another monitor', async () => {
+    const inv = await mon(MON_STATE({ 'uptimerobot.createdMonitorId': '777700000' })).inventory();
+    const r = inv.recorded.find((x) => x.kind === 'uptime-monitor')!;
+    expect(r.created).toBe(false);
+    expect(r.removal).toBeUndefined();
+  });
+
+  it('offers no removal when the monitoring provider is not the one that recorded it', async () => {
+    const quiet = await mon(undefined, (w) => void (w.mon.providerId = 'fakemonitor')).inventory();
+    const r = quiet.recorded.find((x) => x.kind === 'uptime-monitor')!;
+    expect(r.created).toBe(true);
+    expect(r.removal).toBeUndefined();
+
+    const noSurface = await mon(undefined, (w) => void (w.mon.withUptime = false)).inventory();
+    expect(noSurface.recorded.find((x) => x.kind === 'uptime-monitor')!.removal).toBeUndefined();
+
+    const out = await mon(undefined, (w) => void (w.mon.authed = false)).inventory();
+    expect(out.recorded.find((x) => x.kind === 'uptime-monitor')!.removal).toBeUndefined();
+  });
+});

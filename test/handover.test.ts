@@ -692,3 +692,68 @@ describe('handover: the Sentry analytics project', () => {
     expect(adopted.retirement.find((r) => r.resource.includes('4505123456'))).toBeUndefined();
   });
 });
+
+// ── the UptimeRobot monitor (monitoring) ────────────────────────────────────────────────────────
+
+describe('handover: the UptimeRobot monitor', () => {
+  const MON_CONFIG: Partial<ShipConfig> = { stack: { ...CONFIG.stack, monitoring: 'uptimerobot' } };
+  const MON_STATE: ShipState = {
+    ...STATE,
+    resources: { ...STATE.resources, 'uptimerobot.monitorId': '777712827', 'uptimerobot.monitorName': 'shop', 'uptimerobot.createdMonitorId': '777712827' },
+    steps: { ...STATE.steps, 'uptimerobot:monitor': { status: 'done', at: '2026-08-06T10:00:00.000Z', planId: 'plan-1' } },
+  };
+
+  /** A fake world that answers as UptimeRobot (the id the recorded spec and the inventory name). */
+  const uptimerobotWorld = () => {
+    const w = fakeWorld();
+    arrange(w);
+    w.mon.providerId = 'uptimerobot';
+    w.mon.withUptime = true;
+    w.mon.monitors = [{ id: '777712827', name: 'shop', url: 'https://example.com', type: 1, status: 2 }];
+    return w;
+  };
+  const mon = (checkIds: readonly string[] = [...CHECKS, 'uptime-monitor'], skipChecks: readonly string[] = []) =>
+    setup({ config: MON_CONFIG, state: MON_STATE, adapters: uptimerobotWorld().adapters, checkIds, skipChecks });
+
+  it('names it as a created monitor with its removal, and its own check in the runbook', async () => {
+    const withCheck = mon();
+    const doc = await withCheck.buildWith(releaseChecks(withCheck.ctx));
+    const row = doc.resources.find((r) => r.kind === 'uptime monitor')!;
+    expect(row).toMatchObject({ axis: 'monitoring', provider: 'uptimerobot', providerTitle: 'UptimeRobot', name: 'shop', id: '777712827', ownership: 'created', removable: true, provenance: { kind: 'recorded', at: '2026-08-06T10:00:00.000Z' } });
+    expect(row.proof).toMatch(/creation marker \(uptimerobot\.createdMonitorId\)/);
+
+    // With the axis configured, the check its own predicate says applies is the runbook command.
+    const monitoring = doc.runbook.find((r) => r.subject.startsWith('monitoring'))!;
+    expect(monitoring.subject).toBe('monitoring (FakeMonitor)');
+    expect(monitoring.commands).toEqual(['golive doctor', 'golive verify --only uptime-monitor']);
+
+    // A stack whose own predicate says the check does not run is told so, not sent to a skipping check.
+    const skipped = mon([...CHECKS, 'uptime-monitor'], ['uptime-monitor']);
+    const other = await skipped.build();
+    const skippedRunbook = other.runbook.find((r) => r.subject.startsWith('monitoring'))!;
+    expect(skippedRunbook.commands).toEqual(['golive doctor']);
+    expect(skippedRunbook.note).toMatch(/none of them runs on this stack/);
+
+    // Costs: UptimeRobot's own billing page and published plans, read by nobody.
+    const cost = doc.costs.find((c) => c.provider === 'uptimerobot')!;
+    expect(cost.where).toMatch(/UptimeRobot account → Billing/);
+    expect(cost.where).toMatch(/uptimerobot\.com\/pricing/);
+    expect(cost.read).toMatch(/golive does not read plans, quotas, usage or invoices/);
+
+    // Retirement: an approved teardown removes it (the adapter exposes delete + read-back).
+    const retirement = doc.retirement.find((r) => r.resource.includes('777712827'))!;
+    expect(retirement.removable).toBe(true);
+    expect(retirement.how).toMatch(/golive teardown → apply --plan <id> --yes --confirm-destroy/);
+  });
+
+  it('never claims an adopted monitor, and hands its removal to the dashboard', async () => {
+    const adopted = await setup({
+      config: MON_CONFIG,
+      state: { ...STATE, resources: { ...STATE.resources, 'uptimerobot.monitorId': '777712827', 'uptimerobot.monitorName': 'shop' } },
+    }).build();
+    const row = adopted.resources.find((r) => r.kind === 'uptime monitor')!;
+    expect(row).toMatchObject({ ownership: 'adopted', removable: false });
+    expect(row.proof).toMatch(/without golive's creation marker/);
+    expect(adopted.retirement.find((r) => r.resource.includes('777712827'))).toBeUndefined();
+  });
+});

@@ -14,6 +14,7 @@ import { authIsolationLink } from './auth-isolation.js';
 import { emailDomainLink, emailKeysLink } from './email.js';
 import { analyticsLink } from './analytics.js';
 import { sentryLink } from './sentry.js';
+import { uptimerobotLink } from './uptimerobot.js';
 import { uploadLink } from './upload.js';
 import { deployLink } from './deploy.js';
 import { netlifyVisibilityLink } from './netlify-visibility.js';
@@ -27,10 +28,12 @@ import { releaseLink } from './release.js';
  * site), which orderSteps() then sorts topologically. The email links come before the
  * auth journey ones because `auth:smtp` takes the sending key the email journey issues (or the domain
  * to issue its own) and the journeys wait for the custom SMTP it writes. The monitoring links
- * (analytics for PostHog, sentry for Sentry — one plans, the other declines by the surface the
- * adapter exposes) come with the other env-writing links, before upload/deploy: their env steps fill
- * the app's monitoring names, and the deploy link must be able to order a production redeploy after
- * them. release is last: it reads what the other links planned (the preview env writes, the host
- * project) before it plans a preview deploy.
+ * (analytics for PostHog, sentry for Sentry, uptimerobot for UptimeRobot — each plans for its own
+ * surface, the others decline by the surface the adapter exposes) come with the other env-writing
+ * links, before upload/deploy: their env steps fill the app's monitoring names, and the deploy link
+ * must be able to order a production redeploy after them. UptimeRobot writes no env and only reads
+ * the production URL the others establish, so nothing depends on it. release is last: it reads what
+ * the other links planned (the preview env writes, the host project) before it plans a preview
+ * deploy.
  */
-export const ALL_LINKS: Link[] = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, emailDomainLink, emailKeysLink, authSmtpLink, authE2eLink, authIsolationLink, authRecoveryLink, analyticsLink, sentryLink, uploadLink, deployLink, netlifyVisibilityLink, releaseLink];
+export const ALL_LINKS: Link[] = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, emailDomainLink, emailKeysLink, authSmtpLink, authE2eLink, authIsolationLink, authRecoveryLink, analyticsLink, sentryLink, uptimerobotLink, uploadLink, deployLink, netlifyVisibilityLink, releaseLink];

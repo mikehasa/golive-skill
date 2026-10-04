@@ -24,6 +24,7 @@ const ALLOWED = new Set([
   'eu.i.posthog.com',
   'us.sentry.io',
   'de.sentry.io',
+  'api.uptimerobot.com',
 ]);
 const ALLOWED_SUFFIXES = ['.supabase.co', '.ingest.sentry.io', '.ingest.us.sentry.io', '.ingest.de.sentry.io'];
 const dynamicHosts = new Set<string>();

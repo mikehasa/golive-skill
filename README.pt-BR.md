@@ -453,7 +453,9 @@ pendente) · **🗺️ Planejado**
   drift sob demanda existem (`golive status`, abaixo) — monitoramento contínuo e alertas, não. O
   Sentry está implementado como provedor de monitoramento automatizado — adaptador, escrita das
   variáveis de ambiente do host e a checagem `sentry-ingest` —, coberto apenas por mocks e sem
-  execução real até agora.
+  execução real até agora. O monitor de uptime do UptimeRobot também está implementado —
+  `uptimerobot:monitor` e a checagem somente leitura `uptime-monitor` —, coberto apenas por mocks e
+  sem execução real até agora.
 - [ ] 🚧 **Analytics de produto:** validação de eventos e configurações de consentimento/dados, além
   das sugestões guiadas de provedores que existem hoje. O analytics do PostHog é conectado através de
   um plano aprovado — o projeto de analytics do app é adotado ou selecionado (uma criação é planejada

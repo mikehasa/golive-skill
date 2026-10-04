@@ -463,7 +463,8 @@ aus) · **🗺️ Geplant**
   auf Abruf gibt es (`golive status`, unten) — kontinuierliches Monitoring und Alerting nicht.
   Sentry ist als automatisierter Monitoring-Anbieter umgesetzt — Adapter, Schreiben der
   Host-Umgebungsvariablen und der Check `sentry-ingest` —, bisher nur mit Mock-Abdeckung und ohne
-  Live-Lauf.
+  Live-Lauf. UptimeRobots Uptime-Monitor ist ebenfalls umgesetzt — `uptimerobot:monitor` und der nur
+  lesende Check `uptime-monitor` —, bisher nur mit Mock-Abdeckung und ohne Live-Lauf.
 - [ ] 🚧 **Produkt-Analytics:** Event-Validierung sowie Consent- und Dateneinstellungen, über die
   heutigen geführten Provider-Vorschläge hinaus. PostHog-Analytics wird über einen freigegebenen Plan
   verdrahtet — das Analytics-Projekt der App wird übernommen oder ausgewählt (wenn nichts passt, wird
