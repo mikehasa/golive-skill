@@ -6,6 +6,7 @@ import { emptyState } from '../src/core/state.js';
 import type { Check, Ctx, DeploymentInfo, Finding, Http, Plan, ReleaseIdentity, ShipConfig, ShipState, Step, StepRecord } from '../src/core/types.js';
 import { envParityCheck } from '../src/checks/env-parity.js';
 import { sentryAdapter, SentryTeamChoiceError } from '../src/adapters/sentry.js';
+import { uptimerobotAdapter } from '../src/adapters/uptimerobot.js';
 import { previewBundleCheck, previewDeployCheck, productionReleaseCheck } from '../src/checks/release.js';
 import { ALL_LINKS } from '../src/links/all.js';
 import { availableKeys, forgetDeployFacts, previousProductionDeploy, productionUrl, readDeployHistory, readRelease, recordDeploy, step } from '../src/links/util.js';
@@ -2659,6 +2660,300 @@ describe('sentry (monitoring): the real adapter through the plan', () => {
       expect(call.url).not.toContain(TOKEN);
       expect(JSON.stringify(call.body ?? null)).not.toContain(TOKEN);
     }
+  });
+});
+
+describe('uptimerobot (monitoring)', () => {
+  const monStack = { ...FAKE_STACK, monitoring: 'fakemonitor' };
+  const monitor = (over: Partial<{ id: string; name: string; url: string; type: number; status: number }> = {}) => ({ id: 'mon_9', name: 'shop', url: 'https://example.com', type: 1, status: 2, ...over });
+
+  /** The uptimerobot link only owns a monitoring adapter that exposes the monitor surface. */
+  const setupUptime = (opts: Parameters<typeof setup>[0] = {}) =>
+    setup({
+      ...opts,
+      arrange: (w) => {
+        w.mon.withUptime = true;
+        w.mon.withMonitoring = false;
+        w.mon.withAnalytics = false;
+        w.mon.monitors = [monitor()];
+        w.mon.current = { id: 'mon_9', name: 'shop' };
+        opts.arrange?.(w);
+      },
+    });
+
+  it('is planned only when the monitoring axis names an automated adapter with the monitor surface', async () => {
+    const off = await build(setup().ctx);
+    expect(ids(off)).not.toContain('uptimerobot:monitor');
+
+    // A guided monitoring provider stays guided: no step, and no warning about it.
+    const guided = await build(setup({ config: { stack: { ...FAKE_STACK, monitoring: 'fakeguided' } } }).ctx);
+    expect(ids(guided)).not.toContain('uptimerobot:monitor');
+    expect(guided.warnings.join('\n')).not.toMatch(/monitoring/);
+
+    // An adapter with a project surface but no monitor read is declined silently (the analytics and
+    // sentry links own their own shapes).
+    const bare = await build(setup({ config: { stack: monStack }, arrange: (w) => void (w.mon.withUptime = false) }).ctx);
+    expect(ids(bare)).not.toContain('uptimerobot:monitor');
+  });
+
+  it('pins the linked monitor with a zero-write step that names the account', async () => {
+    const { w, ctx } = setupUptime({ config: { stack: monStack } });
+    const plan = await build(ctx);
+    const step = byId(plan, 'uptimerobot:monitor');
+    expect(step.kind).toBe('provision');
+    expect(step.risk.writes).toBe(false);
+    expect(step.destination).toMatchObject({ axis: 'monitoring', provider: 'fakemonitor', action: 'pin', project: { id: 'mon_9', name: 'shop' } });
+    expect(step.preview[0]).toBe('monitoring: FakeMonitor monitor shop (mon_9), from the monitor already linked to this repo (golive state); the uptime check re-reads this monitor');
+    expect(step.preview.join('\n')).toContain('FakeMonitor access: fakemonitor API key');
+
+    const outcomes = await apply(ctx, plan);
+    expect(outcomes.find((o) => o.id === 'uptimerobot:monitor')).toMatchObject({ status: 'done' });
+    expect(ctx.state.resource(`${w.mon.providerId}.monitorId`)).toBe('mon_9');
+    expect(ctx.state.resource(`${w.mon.providerId}.createdMonitorId`)).toBeUndefined();
+  });
+
+  it('selects the monitor golive.yaml names, recording it without a creation marker', async () => {
+    const { w, ctx } = setupUptime({
+      config: { stack: monStack, projects: { monitoring: 'mon_9' } },
+      arrange: (x) => {
+        x.mon.current = null;
+        x.mon.candidates = [{ id: 'mon_9', name: 'shop' }];
+      },
+    });
+    const plan = await build(ctx);
+    const step = byId(plan, 'uptimerobot:monitor');
+    expect(step.risk.writes).toBe(true);
+    expect(step.destination).toMatchObject({ action: 'select', project: { id: 'mon_9', name: 'shop' } });
+    await apply(ctx, plan);
+    expect(ctx.state.resource(`${w.mon.providerId}.monitorId`)).toBe('mon_9');
+    // Adopted, not made: teardown must never treat it as golive's to delete.
+    expect(ctx.state.resource(`${w.mon.providerId}.createdMonitorId`)).toBeUndefined();
+    expect(w.calls.some((c) => c.method === 'uptime.createMonitor')).toBe(false);
+  });
+
+  it('adopts the monitor that already watches the production URL instead of creating a duplicate', async () => {
+    const { w, ctx } = setupUptime({
+      config: { stack: monStack },
+      arrange: (x) => {
+        x.mon.current = null;
+        x.mon.monitors = [monitor({ id: 'mon_7', name: 'someone-elses-name', url: 'https://example.com/' })];
+      },
+    });
+    const plan = await build(ctx);
+    const step = byId(plan, 'uptimerobot:monitor');
+    expect(step.risk.writes).toBe(true);
+    expect(step.preview.join('\n')).toContain('it already watches https://example.com');
+    expect(ids(plan)).toContain('uptimerobot:monitor');
+    await apply(ctx, plan);
+    expect(w.calls.some((c) => c.method === 'uptime.createMonitor')).toBe(false);
+    expect(ctx.state.resource(`${w.mon.providerId}.monitorId`)).toBe('mon_7');
+  });
+
+  it('adopts a monitor named like the repository when none watches the URL', async () => {
+    const { w, ctx } = setupUptime({
+      config: { stack: monStack },
+      arrange: (x) => {
+        x.mon.current = null;
+        x.mon.monitors = [monitor({ id: 'mon_3', name: 'Shop', url: 'https://other.example' })];
+      },
+    });
+    const plan = await build(ctx);
+    expect(byId(plan, 'uptimerobot:monitor').preview.join('\n')).toContain('its name matches this repository');
+    await apply(ctx, plan);
+    expect(ctx.state.resource(`${w.mon.providerId}.monitorId`)).toBe('mon_3');
+    expect(w.calls.some((c) => c.method === 'uptime.createMonitor')).toBe(false);
+  });
+
+  it('creates one named after the repository for the production URL when nothing watches it', async () => {
+    const { w, ctx } = setupUptime({
+      config: { stack: monStack },
+      arrange: (x) => {
+        x.mon.current = null;
+        x.mon.monitors = [monitor({ id: 'mon_1', name: 'other-app', url: 'https://other.example' })];
+      },
+    });
+    const plan = await build(ctx);
+    const step = byId(plan, 'uptimerobot:monitor');
+    expect(step.risk.writes).toBe(true);
+    expect(step.destination).toMatchObject({ action: 'create', project: { name: 'shop' } });
+    expect(step.preview[0]).toBe('Create FakeMonitor monitor shop for https://example.com (the production URL golive can name; HTTP(S), checked at the provider\'s own default interval — no existing monitor watches it)');
+    expect(step.preview.join('\n')).toMatch(/existing FakeMonitor monitors that could be used instead: other-app \(mon_1\)/);
+    expect(plan.warnings.join('\n')).toMatch(/already has 1 monitor\(s\) in this account/);
+
+    const outcomes = await apply(ctx, plan);
+    expect(outcomes.find((o) => o.id === 'uptimerobot:monitor')).toMatchObject({ status: 'done' });
+    expect(w.calls.find((c) => c.method === 'uptime.createMonitor')?.args).toEqual([{ name: 'shop', url: 'https://example.com' }]);
+    expect(ctx.state.resource(`${w.mon.providerId}.monitorId`)).toBe('mon_2');
+    expect(ctx.state.resource(`${w.mon.providerId}.createdMonitorId`)).toBe('mon_2');
+    // The link plans no env, snippet or DNS step: an external monitor has no app-code half.
+    expect(step.verifyWith).toEqual([]);
+    expect(ids(plan).filter((i) => i.startsWith('uptimerobot:'))).toEqual(['uptimerobot:monitor']);
+    expect(Object.keys(ctx.state.get().secrets).filter((n) => /MONITOR/.test(n))).toEqual([]);
+  });
+
+  it('hands the choice over instead of guessing when several monitors carry the repository name', async () => {
+    const { ctx } = setupUptime({
+      config: { stack: monStack },
+      arrange: (x) => {
+        x.mon.current = null;
+        x.mon.monitors = [monitor({ id: 'mon_3', name: 'shop', url: 'https://other.example' }), monitor({ id: 'mon_4', name: 'SHOP', url: 'https://another.example' })];
+      },
+    });
+    const plan = await build(ctx);
+    expect(ids(plan)).not.toContain('uptimerobot:monitor');
+    const h = plan.handoffs.find((x) => x.id === 'uptimerobot:monitor')!;
+    expect(h).toMatchObject({ blocking: true });
+    expect(h.why).toMatch(/2 FakeMonitor monitors are named like this repository \(shop \(mon_3\), SHOP \(mon_4\)\)/);
+    expect(h.action).toMatch(/Set `projects\.monitoring` in golive\.yaml to the monitor to use/);
+  });
+
+  it('adopts the lowest id — with a warning — when several monitors watch the production URL', async () => {
+    const { w, ctx } = setupUptime({
+      config: { stack: monStack },
+      arrange: (x) => {
+        x.mon.current = null;
+        x.mon.monitors = [monitor({ id: 'mon_5', name: 'a', url: 'https://example.com' }), monitor({ id: 'mon_2', name: 'b', url: 'https://example.com/' })];
+      },
+    });
+    const plan = await build(ctx);
+    expect(plan.warnings.join('\n')).toContain('2 FakeMonitor monitors watch https://example.com (b (mon_2), a (mon_5)); golive adopts b (mon_2), the first by id');
+    await apply(ctx, plan);
+    expect(ctx.state.resource(`${w.mon.providerId}.monitorId`)).toBe('mon_2');
+    expect(w.calls.some((c) => c.method === 'uptime.createMonitor')).toBe(false);
+  });
+
+  it('plans nothing — with what to do next — until the production URL is known', async () => {
+    const { ctx } = setupUptime({
+      config: { stack: monStack, domain: undefined },
+      arrange: (x) => void (x.mon.current = null),
+    });
+    const plan = await build(ctx);
+    expect(ids(plan)).not.toContain('uptimerobot:monitor');
+    expect(plan.warnings.join('\n')).toMatch(/FakeMonitor monitor: the production URL isn't known yet/);
+    expect(plan.warnings.join('\n')).toMatch(/Apply this plan, then run `plan` again/);
+  });
+
+  it('hands the create over when the provider cannot create monitors', async () => {
+    const { ctx } = setupUptime({
+      config: { stack: monStack },
+      arrange: (x) => {
+        x.mon.current = null;
+        x.mon.monitors = [];
+        x.mon.canCreateMonitor = false;
+      },
+    });
+    const plan = await build(ctx);
+    expect(ids(plan)).not.toContain('uptimerobot:monitor');
+    const h = plan.handoffs.find((x) => x.id === 'uptimerobot:monitor')!;
+    expect(h).toMatchObject({ blocking: true });
+    expect(h.why).toMatch(/doesn't create FakeMonitor monitors on this account/);
+    expect(h.action).toMatch(/Create the monitor for https:\/\/example.com in the FakeMonitor dashboard/);
+    expect(h.action).toMatch(/projects\.monitoring/);
+  });
+
+  it('refuses a production URL that changed after approval, creating nothing', async () => {
+    const { w, ctx } = setupUptime({
+      config: { stack: monStack },
+      arrange: (x) => {
+        x.mon.current = null;
+        x.mon.monitors = [];
+      },
+    });
+    const plan = await build(ctx);
+    ctx.config.domain = 'other.example';
+    const outcome = (await apply(ctx, plan)).find((o) => o.id === 'uptimerobot:monitor')!;
+    expect(outcome.status).toBe('failed');
+    expect(outcome.error).toMatch(/the production URL changed since the plan was approved \(planned https:\/\/example.com, now https:\/\/other.example\)/);
+    expect(w.calls.some((c) => c.method === 'uptime.createMonitor')).toBe(false);
+  });
+
+  it('is idempotent: after apply only the zero-write pin remains', async () => {
+    const { ctx } = setupUptime({
+      config: { stack: monStack },
+      arrange: (x) => {
+        x.mon.current = null;
+        x.mon.monitors = [];
+      },
+    });
+    await apply(ctx, await build(ctx));
+    const next = await build(ctx);
+    expect(ids(next).filter((i) => i.startsWith('uptimerobot:'))).toEqual(['uptimerobot:monitor']);
+    expect(byId(next, 'uptimerobot:monitor').risk.writes).toBe(false);
+  });
+});
+
+describe('uptimerobot (monitoring): the real adapter through the plan', () => {
+  const HOST = 'https://api.uptimerobot.com';
+  const KEY = 'ur' + '_FAKEuptimerobotAPIkey0123456789abcdef';
+  const accountRow = { stat: 'ok', account: { email: 'owner@example.com', monitor_limit: 50, monitor_interval: 5, up_monitors: 0, down_monitors: 0, paused_monitors: 0 } };
+  const monitorRow = { id: 777712827, friendly_name: 'shop', url: 'https://example.com', type: 1, status: 2, interval: 300 };
+
+  it('adopts the monitor that watches the production URL, and records its id and no creation marker', async () => {
+    const w = fakeWorld();
+    const h = mockHttp([
+      ['POST', `${HOST}/v2/getAccountDetails`, () => ({ json: accountRow })],
+      ['POST', `${HOST}/v2/getMonitors`, () => ({ json: { stat: 'ok', pagination: { offset: 0, limit: 50, total: 1 }, monitors: [monitorRow] } })],
+    ]);
+    const ctx = testCtx({
+      cwd: '/work/shop',
+      exec: mockExec([]).run,
+      http: h.http,
+      adapters: [...w.adapters, uptimerobotAdapter],
+      config: { stack: { ...FAKE_STACK, monitoring: 'uptimerobot' }, domain: 'example.com', targets: ['production'] },
+      tokens: { UPTIMEROBOT_API_KEY: KEY },
+      detect: { envRefs: [] },
+    });
+    const plan = await buildPlan(ctx, ALL_LINKS, { unmappedEnv: [], warnings: [] });
+    expect(byId(plan, 'uptimerobot:monitor').destination).toMatchObject({ provider: 'uptimerobot', action: 'select', project: { id: '777712827', name: 'shop' } });
+    expect(byId(plan, 'uptimerobot:monitor').preview.join('\n')).toContain('it already watches https://example.com');
+
+    const outcomes = await applyPlan(ctx, plan, new Map(), { approvedPlanId: plan.id, yes: true, confirmLive: true, confirmDns: true });
+    expect(outcomes.filter((o) => o.id.startsWith('uptimerobot:'))).toMatchObject([{ id: 'uptimerobot:monitor', status: 'done' }]);
+    expect(ctx.state.resource('uptimerobot.monitorId')).toBe('777712827');
+    expect(ctx.state.resource('uptimerobot.createdMonitorId')).toBeUndefined();
+    // The credential is in the form body only — never a URL, the plan, state or the log.
+    expect(JSON.stringify(planView(plan))).not.toContain(KEY);
+    expect(JSON.stringify(ctx.state.get())).not.toContain(KEY);
+    expect(ctx.logs.join('\n')).not.toContain(KEY);
+    for (const call of h.calls) {
+      expect(call.url).not.toContain(KEY);
+      expect((call.body as Record<string, unknown>).api_key).toBe(KEY);
+    }
+    expectNoRawSecrets([JSON.stringify(outcomes), JSON.stringify(planView(plan)), ...ctx.logs]);
+  });
+
+  it('creates the monitor through the real adapter when nothing watches the URL', async () => {
+    const w = fakeWorld();
+    const made = { id: 777799999, friendly_name: 'shop', url: 'https://example.com', type: 1, status: 1, interval: 300 };
+    // The plan itself lists monitors (nothing linked), so the route answers empty until the create.
+    let madeOnce = false;
+    const h = mockHttp([
+      ['POST', `${HOST}/v2/getMonitors`, () => ({ json: { stat: 'ok', pagination: { offset: 0, limit: 50, total: madeOnce ? 1 : 0 }, monitors: madeOnce ? [made] : [] } })],
+      ['POST', `${HOST}/v2/getAccountDetails`, () => ({ json: accountRow })],
+      ['POST', `${HOST}/v2/newMonitor`, () => {
+        madeOnce = true;
+        return { json: { stat: 'ok', monitor: { id: 777799999, status: 1 } } };
+      }],
+    ]);
+    const ctx = testCtx({
+      cwd: '/work/shop',
+      exec: mockExec([]).run,
+      http: h.http,
+      adapters: [...w.adapters, uptimerobotAdapter],
+      config: { stack: { ...FAKE_STACK, monitoring: 'uptimerobot' }, domain: 'example.com', targets: ['production'] },
+      tokens: { UPTIMEROBOT_API_KEY: KEY },
+      detect: { envRefs: [] },
+    });
+    const plan = await buildPlan(ctx, ALL_LINKS, { unmappedEnv: [], warnings: [] });
+    expect(byId(plan, 'uptimerobot:monitor').destination).toMatchObject({ action: 'create', project: { name: 'shop' } });
+    const outcomes = await applyPlan(ctx, plan, new Map(), { approvedPlanId: plan.id, yes: true, confirmLive: true, confirmDns: true });
+    expect(outcomes.find((o) => o.id === 'uptimerobot:monitor')).toMatchObject({ status: 'done' });
+    expect(ctx.state.resource('uptimerobot.monitorId')).toBe('777799999');
+    expect(ctx.state.resource('uptimerobot.createdMonitorId')).toBe('777799999');
+    const created = h.calls.find((c) => c.url.endsWith('/newMonitor'))!;
+    // The exact documented fields: no guessed interval, and no alert_contacts (golive never touches
+    // who gets alerted).
+    expect(created.body).toEqual({ api_key: KEY, format: 'json', friendly_name: 'shop', url: 'https://example.com', type: 1 });
   });
 });
 

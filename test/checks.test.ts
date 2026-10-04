@@ -6,7 +6,7 @@ import { mockHttp, testCtx } from './helpers.js';
 import { dohRoute, fakeAdapter, fakeFetch, jwt } from './check-fakes.js';
 import { createHttp } from '../src/core/http.js';
 import { _resetSecretRegistry, fingerprint, Secret } from '../src/core/secret.js';
-import type { Adapter, AuthSettings, AuthStatus, Check, Ctx, DnsRecord, TableInfo } from '../src/core/types.js';
+import type { Adapter, AuthSettings, AuthStatus, Check, Ctx, DnsRecord, ShipConfig, TableInfo } from '../src/core/types.js';
 import { ALL_CHECKS } from '../src/checks/all.js';
 import { accountsCheck } from '../src/checks/accounts.js';
 import { envParityCheck } from '../src/checks/env-parity.js';
@@ -23,6 +23,7 @@ import { emailDnsCheck, emailVerifiedCheck } from '../src/checks/email.js';
 import { posthogIngestCheck } from '../src/checks/posthog-ingest.js';
 import { posthogTiming } from '../src/adapters/posthog.js';
 import { sentryIngestCheck } from '../src/checks/sentry-ingest.js';
+import { uptimeMonitorCheck } from '../src/checks/uptime-monitor.js';
 import { sentryTiming } from '../src/adapters/sentry.js';
 import { dnsBaselineKey } from '../src/core/dns-baseline.js';
 import { domainLiveCheck } from '../src/checks/domain.js';
@@ -61,7 +62,7 @@ describe('ALL_CHECKS', () => {
     const ids = ALL_CHECKS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.sort()).toEqual(
-      ['accounts', 'auth-isolation', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'posthog-ingest', 'preview-bundle', 'preview-deploy', 'production-release', 'rls-probe', 'sentry-ingest', 'site-headers', 'site-metadata', 'stripe-live-payment', 'stripe-live-ready', 'upload-exposure', 'webhook-registered', 'webhook-unsigned'].sort(),
+      ['accounts', 'auth-isolation', 'auth-policy', 'auth-recovery', 'auth-redirects', 'auth-session', 'auth-signup', 'bundle-secrets', 'db-connection', 'domain-live', 'email-dns', 'email-verified', 'env-parity', 'netlify-public-access', 'posthog-ingest', 'preview-bundle', 'preview-deploy', 'production-release', 'rls-probe', 'sentry-ingest', 'site-headers', 'site-metadata', 'stripe-live-payment', 'stripe-live-ready', 'upload-exposure', 'uptime-monitor', 'webhook-registered', 'webhook-unsigned'].sort(),
     );
   });
 });
@@ -2438,5 +2439,148 @@ describe('sentry-ingest', () => {
     const r = await run(sentryIngestCheck, ctxFor(m));
     expect(JSON.stringify(r)).not.toContain(DSN);
     expect(JSON.stringify(r)).not.toContain('FAKEsentry');
+  });
+});
+
+// ── uptime-monitor ──────────────────────────────────────────────────────────────────────────────
+
+describe('uptime-monitor', () => {
+  const LINKED = { id: '777712827', name: 'shop' };
+  const PROD = 'https://example.com';
+
+  /** A monitoring adapter with the monitor surface a check may reach. */
+  function monitor(over: {
+    auth?: AuthStatus;
+    current?: () => Promise<typeof LINKED | null>;
+    monitor?: () => Promise<{ id: string; name: string; url: string; type: number; status: number; interval?: number; lastLog?: { type: number; datetime: number; duration?: number; reason?: string } } | null>;
+  } = {}) {
+    const adapter = fakeAdapter({
+      id: 'uptimerobot',
+      axes: ['monitoring'],
+      auth: over.auth ?? { ok: true, via: 'UPTIMEROBOT_API_KEY env (owner@example.com, 1/50 monitors)' },
+      capabilities: {
+        project: { current: over.current ?? (async () => LINKED), candidates: async () => [], select: async () => LINKED },
+        uptime: {
+          list: async () => [],
+          monitor: async () => (over.monitor ? over.monitor() : { id: '777712827', name: 'shop', url: PROD, type: 1, status: 2, interval: 300 }),
+          monitorState: async () => 'present',
+        },
+      },
+    });
+    return adapter;
+  }
+
+  const ctxFor = (adapter: Adapter, config: Partial<ShipConfig> = {}) =>
+    testCtx({ config: { stack: { monitoring: 'uptimerobot' }, domain: 'example.com', ...config }, adapters: [adapter] });
+
+  it('applies only when the monitoring axis is UptimeRobot', () => {
+    expect(uptimeMonitorCheck.applies(testCtx({ config: { stack: { monitoring: 'uptimerobot' } } }))).toBe(true);
+    expect(uptimeMonitorCheck.applies(testCtx({ config: { stack: { monitoring: 'sentry' } } }))).toBe(false);
+    expect(uptimeMonitorCheck.applies(testCtx())).toBe(false);
+  });
+
+  it('passes when the monitor watches the production URL and reports up, making no request to the app', async () => {
+    // The default testCtx http throws on ANY request: a pass here proves the check reads the provider
+    // only, and never probes the production URL.
+    const r = await run(uptimeMonitorCheck, ctxFor(monitor({ monitor: async () => ({ id: '777712827', name: 'shop', url: `${PROD}/`, type: 1, status: 2, interval: 300 }) })));
+    expect(r.status).toBe('pass');
+    expect(r.evidence.join('\n')).toContain('Uptimerobot monitor shop (777712827) reports up: watching https://example.com/, checked every 300 s');
+  });
+
+  it('warns high and names the provider\'s own reason when the site is down', async () => {
+    const m = monitor({
+      monitor: async () => ({
+        id: '777712827',
+        name: 'shop',
+        url: PROD,
+        type: 1,
+        status: 9,
+        lastLog: { type: 1, datetime: 1_782_000_000, duration: 5400, reason: 'HTTP 503 – Service Unavailable' },
+      }),
+    });
+    const r = await run(uptimeMonitorCheck, ctxFor(m));
+    expect(r.status).toBe('warn');
+    expect(r.severity).toBe('high');
+    expect(r.evidence.join('\n')).toMatch(/reports down: watching https:\/\/example\.com/);
+    expect(r.evidence.join('\n')).toMatch(/last log: down at 2026-06-21T00:00:00\.000Z \(duration 1 h 30 min\) — HTTP 503 – Service Unavailable/);
+    expect(r.evidence.join('\n')).toMatch(/its status is down/);
+    expect(r.fix).toMatch(/check the site now/);
+    expect(r.fix).toMatch(/golive verify --only uptime-monitor/);
+  });
+
+  it('warns for paused, not checked yet and seems-down, each naming the status', async () => {
+    for (const [status, text] of [[0, 'paused'], [1, 'not checked yet'], [8, 'seems down']] as const) {
+      const r = await run(uptimeMonitorCheck, ctxFor(monitor({ monitor: async () => ({ id: '777712827', name: 'shop', url: PROD, type: 1, status }) })));
+      expect(r.status).toBe('warn');
+      expect(r.severity).toBe(status === 8 ? 'high' : 'medium');
+      expect(r.evidence.join('\n')).toContain(`its status is ${text}`);
+    }
+    const paused = await run(uptimeMonitorCheck, ctxFor(monitor({ monitor: async () => ({ id: '777712827', name: 'shop', url: PROD, type: 1, status: 0 }) })));
+    expect(paused.fix).toMatch(/resume it in the Uptimerobot dashboard/);
+  });
+
+  it('warns when the monitor watches a different URL, and when it is also not up names both', async () => {
+    const other = await run(uptimeMonitorCheck, ctxFor(monitor({ monitor: async () => ({ id: '777712827', name: 'shop', url: 'https://staging.example.com', type: 1, status: 2 }) })));
+    expect(other.status).toBe('warn');
+    expect(other.severity).toBe('medium');
+    expect(other.evidence.join('\n')).toContain("it watches https://staging.example.com, not this app's production URL https://example.com");
+    expect(other.fix).toMatch(/point the monitor at https:\/\/example\.com/);
+    expect(other.fix).toMatch(/golive never rewrites a monitor's URL on its own/);
+
+    const both = await run(uptimeMonitorCheck, ctxFor(monitor({ monitor: async () => ({ id: '777712827', name: 'shop', url: 'http://example.com', type: 1, status: 9 }) })));
+    expect(both.status).toBe('warn');
+    expect(both.severity).toBe('high');
+    expect(both.evidence.join('\n')).toMatch(/it watches http:\/\/example\.com/);
+    expect(both.evidence.join('\n')).toMatch(/its status is down/);
+  });
+
+  it('skips when the credential is unusable, naming login:uptimerobot', async () => {
+    const r = await run(uptimeMonitorCheck, ctxFor(monitor({ auth: { ok: false, howToFix: 'Create an API key in UptimeRobot' } })));
+    expect(r.status).toBe('skip');
+    expect(r.evidence[0]).toMatch(/^blocked by: login:uptimerobot/);
+  });
+
+  it('skips when no monitor is linked, naming the step that provides one', async () => {
+    const r = await run(uptimeMonitorCheck, ctxFor(monitor({ current: async () => null })));
+    expect(r.status).toBe('skip');
+    expect(r.evidence[0]).toMatch(/^blocked by: uptimerobot:monitor \(no Uptimerobot monitor is linked/);
+  });
+
+  it('skips when the linked monitor is gone from the account', async () => {
+    const r = await run(uptimeMonitorCheck, ctxFor(monitor({ monitor: async () => null })));
+    expect(r.status).toBe('skip');
+    expect(r.evidence[0]).toMatch(/^blocked by: uptimerobot:monitor \(the Uptimerobot monitor 777712827 .* is gone/);
+  });
+
+  it('skips, never fails, when the provider cannot be read', async () => {
+    const r = await run(uptimeMonitorCheck, ctxFor(monitor({ monitor: async () => { throw new Error('UptimeRobot read monitor 777712827 failed (HTTP 429): rate-limiting requests'); } })));
+    expect(r.status).toBe('skip');
+    expect(r.evidence.join('\n')).toMatch(/could not read Uptimerobot monitor 777712827: .*HTTP 429/);
+
+    const unreadableLink = await run(uptimeMonitorCheck, ctxFor(monitor({ current: async () => { throw new Error('UptimeRobot list monitors failed (HTTP 401): the key was rejected'); } })));
+    expect(unreadableLink.status).toBe('skip');
+    expect(unreadableLink.evidence.join('\n')).toMatch(/could not read the Uptimerobot monitor this app is linked to/);
+  });
+
+  it('skips with deploy:production named when the production URL is not known yet', async () => {
+    const r = await run(uptimeMonitorCheck, ctxFor(monitor(), { domain: undefined }));
+    expect(r.status).toBe('skip');
+    expect(r.evidence[0]).toMatch(/cannot confirm the production URL this monitor should watch yet \(blocked by: deploy:production/);
+  });
+
+  it('skips a guided monitoring provider and an adapter without the monitor surface', async () => {
+    const guided = fakeAdapter({ id: 'uptimerobot', axes: ['monitoring'], automated: false });
+    expect((await uptimeMonitorCheck.run(testCtx({ config: { stack: { monitoring: 'uptimerobot' } }, adapters: [guided] }))).status).toBe('skip');
+
+    const bare = fakeAdapter({ id: 'uptimerobot', axes: ['monitoring'], capabilities: { project: { current: async () => LINKED, candidates: async () => [], select: async () => LINKED } } });
+    const r = await uptimeMonitorCheck.run(testCtx({ config: { stack: { monitoring: 'uptimerobot' }, domain: 'example.com' }, adapters: [bare] }));
+    expect(r.status).toBe('skip');
+    expect(r.evidence[0]).toMatch(/exposes no monitor read/);
+  });
+
+  it('never puts a credential into its evidence', async () => {
+    const m = monitor({ monitor: async () => ({ id: '777712827', name: 'shop', url: 'https://evil.example/?key=sk_live_FAKEsecret0123456789', type: 1, status: 9 }) });
+    const r = await run(uptimeMonitorCheck, ctxFor(m));
+    expect(printable(r)).not.toContain('sk_live_FAKEsecret0123456789');
   });
 });

@@ -153,7 +153,7 @@ const AXIS_CHECKS: Record<Axis, string[]> = {
   payments: ['webhook-registered', 'webhook-unsigned', 'stripe-live-ready', 'stripe-live-payment'],
   email: ['email-dns', 'email-verified'],
   dns: ['domain-live'],
-  monitoring: ['posthog-ingest', 'sentry-ingest'],
+  monitoring: ['posthog-ingest', 'sentry-ingest', 'uptime-monitor'],
 };
 
 /** Where each provider's own cost facts live. golive reads no usage, invoice or quota data. */
@@ -166,6 +166,7 @@ const BILLING: Record<string, string> = {
   resend: 'your Resend account → Billing',
   posthog: 'your PostHog organization settings → Billing (usage is priced per ingested event)',
   sentry: 'your Sentry organization settings → Billing (usage is priced per event)',
+  uptimerobot: 'your UptimeRobot account → Billing, and the published plans at uptimerobot.com/pricing (each plan includes a monitor count)',
   cloudflare: 'your Cloudflare account → Billing',
   godaddy: 'your GoDaddy account → Subscriptions and renewals',
   porkbun: 'your Porkbun account → domain pricing and renewals',
@@ -178,15 +179,17 @@ const RECORDING_STEP = {
   database: ['project:db'],
   domain: ['email:domain'],
   dns: ['domain:dns', 'email:dns'],
-  // Both monitoring links record the project under their own step id; a recorded project names the
-  // one that ran, so the row's timestamp is read from whichever exists.
+  // The monitoring links each record their resource under their own step id; a recorded resource
+  // names the one that ran, so the row's timestamp is read from whichever exists.
   analytics: ['analytics:project', 'sentry:project'],
+  uptime: ['uptimerobot:monitor'],
 } satisfies Record<string, string[]>;
 
 /** The steps that recorded a recorded-inventory resource, by its kind. */
 function recordedSteps(kind: InventoryRecorded['kind']): string[] {
   if (kind === 'database-project') return RECORDING_STEP.database;
   if (kind === 'sending-domain') return RECORDING_STEP.domain;
+  if (kind === 'uptime-monitor') return RECORDING_STEP.uptime;
   return RECORDING_STEP.analytics;
 }
 
@@ -194,6 +197,7 @@ function recordedSteps(kind: InventoryRecorded['kind']): string[] {
 function recordedKind(kind: InventoryRecorded['kind']): string {
   if (kind === 'database-project') return 'database project';
   if (kind === 'sending-domain') return 'sending domain';
+  if (kind === 'uptime-monitor') return 'uptime monitor';
   return 'analytics project';
 }
 
@@ -599,7 +603,7 @@ function retirementRows(ctx: Ctx, inventory: Inventory): HandoverRetirement[] {
     });
   }
   for (const r of inventory.recorded.filter((x) => x.created)) {
-    const label = r.kind === 'database-project' ? `${r.providerTitle} project ${r.id}` : r.kind === 'sending-domain' ? `${r.providerTitle} sending domain ${r.name}` : `${r.providerTitle} project ${r.name} (${r.id})`;
+    const label = r.kind === 'database-project' ? `${r.providerTitle} project ${r.id}` : r.kind === 'sending-domain' ? `${r.providerTitle} sending domain ${r.name}` : r.kind === 'uptime-monitor' ? `${r.providerTitle} monitor ${r.name} (${r.id})` : `${r.providerTitle} project ${r.name} (${r.id})`;
     rows.push({
       resource: label,
       how: r.removal

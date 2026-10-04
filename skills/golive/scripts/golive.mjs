@@ -63,8 +63,8 @@ function isRegisteredSecret(value) {
   for (const v of registry.keys()) if (value.includes(v)) return true;
   return false;
 }
-function redact(text3) {
-  let out = text3;
+function redact(text4) {
+  let out = text4;
   const values = [...registry.keys()].sort((a, b) => b.length - a.length);
   for (const v of values) {
     if (out.includes(v)) out = out.split(v).join(`[redacted ${registry.get(v)} fp:${fingerprint(v)}]`);
@@ -87,8 +87,8 @@ function containsSecret(v) {
   return false;
 }
 function secretJson(name3, body2) {
-  const text3 = JSON.stringify(revealDeep(body2));
-  return containsSecret(body2) ? new Secret(name3, text3) : text3;
+  const text4 = JSON.stringify(revealDeep(body2));
+  return containsSecret(body2) ? new Secret(name3, text4) : text4;
 }
 function vaultPut(key, s) {
   vault.set(key, s);
@@ -177,19 +177,19 @@ function createHttp(fetchImpl = fetch) {
       const timer = setTimeout(() => ctrl.abort(), req.timeoutMs ?? 3e4);
       try {
         const res = await fetchImpl(url, { method, headers, body: body2, signal: ctrl.signal, redirect: "manual" });
-        const text3 = await res.text();
+        const text4 = await res.text();
         if ((res.status === 429 || res.status >= 500 && idempotent) && attempt < 2) {
           await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
           continue;
         }
         let json2 = void 0;
         try {
-          json2 = text3 ? JSON.parse(text3) : void 0;
+          json2 = text4 ? JSON.parse(text4) : void 0;
         } catch {
         }
         const outHeaders = {};
         res.headers.forEach((v, k) => outHeaders[k] = v);
-        return { status: res.status, headers: outHeaders, json: json2, text: text3 };
+        return { status: res.status, headers: outHeaders, json: json2, text: text4 };
       } catch (e) {
         lastErr = e;
         if (!idempotent) break;
@@ -223,7 +223,8 @@ var init_http = __esm({
       "us.i.posthog.com",
       "eu.i.posthog.com",
       "us.sentry.io",
-      "de.sentry.io"
+      "de.sentry.io",
+      "api.uptimerobot.com"
     ]);
     ALLOWED_SUFFIXES = [".supabase.co", ".ingest.sentry.io", ".ingest.us.sentry.io", ".ingest.de.sentry.io"];
     dynamicHosts = /* @__PURE__ */ new Set();
@@ -675,9 +676,9 @@ var require_anchors = __commonJS({
          */
         setAnchors: () => {
           for (const source of aliasObjects) {
-            const ref3 = sourceObjects.get(source);
-            if (typeof ref3 === "object" && ref3.anchor && (identity.isScalar(ref3.node) || identity.isCollection(ref3.node))) {
-              ref3.node.anchor = ref3.anchor;
+            const ref4 = sourceObjects.get(source);
+            if (typeof ref4 === "object" && ref4.anchor && (identity.isScalar(ref4.node) || identity.isCollection(ref4.node))) {
+              ref4.node.anchor = ref4.anchor;
             } else {
               const error = new Error("Failed to resolve repeated object (this should not happen)");
               error.source = source;
@@ -699,7 +700,7 @@ var require_anchors = __commonJS({
 var require_applyReviver = __commonJS({
   "node_modules/.pnpm/yaml@2.9.1/node_modules/yaml/dist/doc/applyReviver.js"(exports) {
     "use strict";
-    function applyReviver(reviver, obj4, key, val) {
+    function applyReviver(reviver, obj5, key, val) {
       if (val && typeof val === "object") {
         if (Array.isArray(val)) {
           for (let i = 0, len = val.length; i < len; ++i) {
@@ -739,7 +740,7 @@ var require_applyReviver = __commonJS({
           }
         }
       }
-      return reviver.call(obj4, key, val);
+      return reviver.call(obj5, key, val);
     }
     exports.applyReviver = applyReviver;
   }
@@ -996,15 +997,15 @@ var require_createNode = __commonJS({
         value = value.valueOf();
       }
       const { aliasDuplicateObjects, onAnchor, onTagObj, schema, sourceObjects } = ctx;
-      let ref3 = void 0;
+      let ref4 = void 0;
       if (aliasDuplicateObjects && value && typeof value === "object") {
-        ref3 = sourceObjects.get(value);
-        if (ref3) {
-          ref3.anchor ?? (ref3.anchor = onAnchor(value));
-          return new Alias.Alias(ref3.anchor);
+        ref4 = sourceObjects.get(value);
+        if (ref4) {
+          ref4.anchor ?? (ref4.anchor = onAnchor(value));
+          return new Alias.Alias(ref4.anchor);
         } else {
-          ref3 = { anchor: null, node: null };
-          sourceObjects.set(value, ref3);
+          ref4 = { anchor: null, node: null };
+          sourceObjects.set(value, ref4);
         }
       }
       if (tagName?.startsWith("!!"))
@@ -1016,8 +1017,8 @@ var require_createNode = __commonJS({
         }
         if (!value || typeof value !== "object") {
           const node2 = new Scalar.Scalar(value);
-          if (ref3)
-            ref3.node = node2;
+          if (ref4)
+            ref4.node = node2;
           return node2;
         }
         tagObj = value instanceof Map ? schema[identity.MAP] : Symbol.iterator in Object(value) ? schema[identity.SEQ] : schema[identity.MAP];
@@ -1031,8 +1032,8 @@ var require_createNode = __commonJS({
         node.tag = tagName;
       else if (!tagObj.default)
         node.tag = tagObj.tag;
-      if (ref3)
-        ref3.node = node;
+      if (ref4)
+        ref4.node = node;
       return node;
     }
     exports.createNode = createNode;
@@ -1206,14 +1207,14 @@ var require_foldFlowLines = __commonJS({
     var FOLD_FLOW = "flow";
     var FOLD_BLOCK = "block";
     var FOLD_QUOTED = "quoted";
-    function foldFlowLines(text3, indent, mode = "flow", { indentAtStart, lineWidth = 80, minContentWidth = 20, onFold, onOverflow } = {}) {
+    function foldFlowLines(text4, indent, mode = "flow", { indentAtStart, lineWidth = 80, minContentWidth = 20, onFold, onOverflow } = {}) {
       if (!lineWidth || lineWidth < 0)
-        return text3;
+        return text4;
       if (lineWidth < minContentWidth)
         minContentWidth = 0;
       const endStep = Math.max(1 + minContentWidth, 1 + lineWidth - indent.length);
-      if (text3.length <= endStep)
-        return text3;
+      if (text4.length <= endStep)
+        return text4;
       const folds = [];
       const escapedFolds = {};
       let end = lineWidth - indent.length;
@@ -1230,14 +1231,14 @@ var require_foldFlowLines = __commonJS({
       let escStart = -1;
       let escEnd = -1;
       if (mode === FOLD_BLOCK) {
-        i = consumeMoreIndentedLines(text3, i, indent.length);
+        i = consumeMoreIndentedLines(text4, i, indent.length);
         if (i !== -1)
           end = i + endStep;
       }
-      for (let ch; ch = text3[i += 1]; ) {
+      for (let ch; ch = text4[i += 1]; ) {
         if (mode === FOLD_QUOTED && ch === "\\") {
           escStart = i;
-          switch (text3[i + 1]) {
+          switch (text4[i + 1]) {
             case "x":
               i += 3;
               break;
@@ -1254,12 +1255,12 @@ var require_foldFlowLines = __commonJS({
         }
         if (ch === "\n") {
           if (mode === FOLD_BLOCK)
-            i = consumeMoreIndentedLines(text3, i, indent.length);
+            i = consumeMoreIndentedLines(text4, i, indent.length);
           end = i + indent.length + endStep;
           split = void 0;
         } else {
           if (ch === " " && prev && prev !== " " && prev !== "\n" && prev !== "	") {
-            const next = text3[i + 1];
+            const next = text4[i + 1];
             if (next && next !== " " && next !== "\n" && next !== "	")
               split = i;
           }
@@ -1271,12 +1272,12 @@ var require_foldFlowLines = __commonJS({
             } else if (mode === FOLD_QUOTED) {
               while (prev === " " || prev === "	") {
                 prev = ch;
-                ch = text3[i += 1];
+                ch = text4[i += 1];
                 overflow = true;
               }
               const j = i > escEnd + 1 ? i - 2 : escStart - 1;
               if (escapedFolds[j])
-                return text3;
+                return text4;
               folds.push(j);
               escapedFolds[j] = true;
               end = j + endStep;
@@ -1291,39 +1292,39 @@ var require_foldFlowLines = __commonJS({
       if (overflow && onOverflow)
         onOverflow();
       if (folds.length === 0)
-        return text3;
+        return text4;
       if (onFold)
         onFold();
-      let res = text3.slice(0, folds[0]);
+      let res = text4.slice(0, folds[0]);
       for (let i2 = 0; i2 < folds.length; ++i2) {
         const fold = folds[i2];
-        const end2 = folds[i2 + 1] || text3.length;
+        const end2 = folds[i2 + 1] || text4.length;
         if (fold === 0)
           res = `
-${indent}${text3.slice(0, end2)}`;
+${indent}${text4.slice(0, end2)}`;
         else {
           if (mode === FOLD_QUOTED && escapedFolds[fold])
-            res += `${text3[fold]}\\`;
+            res += `${text4[fold]}\\`;
           res += `
-${indent}${text3.slice(fold + 1, end2)}`;
+${indent}${text4.slice(fold + 1, end2)}`;
         }
       }
       return res;
     }
-    function consumeMoreIndentedLines(text3, i, indent) {
+    function consumeMoreIndentedLines(text4, i, indent) {
       let end = i;
       let start = i + 1;
-      let ch = text3[start];
+      let ch = text4[start];
       while (ch === " " || ch === "	") {
         if (i < start + indent) {
-          ch = text3[++i];
+          ch = text4[++i];
         } else {
           do {
-            ch = text3[++i];
+            ch = text4[++i];
           } while (ch && ch !== "\n");
           end = i;
           start = i + 1;
-          ch = text3[start];
+          ch = text4[start];
         }
       }
       return end;
@@ -1675,10 +1676,10 @@ var require_stringify = __commonJS({
           return match.find((t) => t.format === item.format) ?? match[0];
       }
       let tagObj = void 0;
-      let obj4;
+      let obj5;
       if (identity.isScalar(item)) {
-        obj4 = item.value;
-        let match = tags2.filter((t) => t.identify?.(obj4));
+        obj5 = item.value;
+        let match = tags2.filter((t) => t.identify?.(obj5));
         if (match.length > 1) {
           const testMatch = match.filter((t) => t.test);
           if (testMatch.length > 0)
@@ -1686,11 +1687,11 @@ var require_stringify = __commonJS({
         }
         tagObj = match.find((t) => t.format === item.format) ?? match.find((t) => !t.format);
       } else {
-        obj4 = item;
-        tagObj = tags2.find((t) => t.nodeClass && obj4 instanceof t.nodeClass);
+        obj5 = item;
+        tagObj = tags2.find((t) => t.nodeClass && obj5 instanceof t.nodeClass);
       }
       if (!tagObj) {
-        const name3 = obj4?.constructor?.name ?? (obj4 === null ? "null" : typeof obj4);
+        const name3 = obj5?.constructor?.name ?? (obj5 === null ? "null" : typeof obj5);
         throw new Error(`Tag not resolved for ${name3} value`);
       }
       return tagObj;
@@ -2246,23 +2247,23 @@ var require_YAMLMap = __commonJS({
        * A generic collection parsing method that can be extended
        * to other node classes that inherit from YAMLMap
        */
-      static from(schema, obj4, ctx) {
+      static from(schema, obj5, ctx) {
         const { keepUndefined, replacer } = ctx;
         const map = new this(schema);
         const add = (key, value) => {
           if (typeof replacer === "function")
-            value = replacer.call(obj4, key, value);
+            value = replacer.call(obj5, key, value);
           else if (Array.isArray(replacer) && !replacer.includes(key))
             return;
           if (value !== void 0 || keepUndefined)
             map.items.push(Pair.createPair(key, value, ctx));
         };
-        if (obj4 instanceof Map) {
-          for (const [key, value] of obj4)
+        if (obj5 instanceof Map) {
+          for (const [key, value] of obj5)
             add(key, value);
-        } else if (obj4 && typeof obj4 === "object") {
-          for (const key of Object.keys(obj4))
-            add(key, obj4[key]);
+        } else if (obj5 && typeof obj5 === "object") {
+          for (const key of Object.keys(obj5))
+            add(key, obj5[key]);
         }
         if (typeof schema.sortMapEntries === "function") {
           map.items.sort(schema.sortMapEntries);
@@ -2372,7 +2373,7 @@ var require_map = __commonJS({
           onError("Expected a mapping for this tag");
         return map2;
       },
-      createNode: (schema, obj4, ctx) => YAMLMap.YAMLMap.from(schema, obj4, ctx)
+      createNode: (schema, obj5, ctx) => YAMLMap.YAMLMap.from(schema, obj5, ctx)
     };
     exports.map = map;
   }
@@ -2468,15 +2469,15 @@ var require_YAMLSeq = __commonJS({
           onComment
         });
       }
-      static from(schema, obj4, ctx) {
+      static from(schema, obj5, ctx) {
         const { replacer } = ctx;
         const seq = new this(schema);
-        if (obj4 && Symbol.iterator in Object(obj4)) {
+        if (obj5 && Symbol.iterator in Object(obj5)) {
           let i = 0;
-          for (let it of obj4) {
+          for (let it of obj5) {
             if (typeof replacer === "function") {
-              const key = obj4 instanceof Set ? it : String(i++);
-              it = replacer.call(obj4, key, it);
+              const key = obj5 instanceof Set ? it : String(i++);
+              it = replacer.call(obj5, key, it);
             }
             seq.items.push(createNode.createNode(it, void 0, ctx));
           }
@@ -2510,7 +2511,7 @@ var require_seq = __commonJS({
           onError("Expected a sequence for this tag");
         return seq2;
       },
-      createNode: (schema, obj4, ctx) => YAMLSeq.YAMLSeq.from(schema, obj4, ctx)
+      createNode: (schema, obj5, ctx) => YAMLSeq.YAMLSeq.from(schema, obj5, ctx)
     };
     exports.seq = seq;
   }
@@ -7589,8 +7590,8 @@ function loadConfig(cwd) {
   if (!existsSync(p)) return null;
   return parseConfig(readFileSync4(p, "utf8"));
 }
-function parseConfig(text3) {
-  const raw2 = import_yaml.default.parse(text3);
+function parseConfig(text4) {
+  const raw2 = import_yaml.default.parse(text4);
   if (!raw2 || typeof raw2 !== "object") throw new ConfigError(`${CONFIG_FILE} is empty or not a mapping`);
   if (raw2.version !== 1) throw new ConfigError(`${CONFIG_FILE}: version must be 1`);
   const stack = {};
@@ -7697,15 +7698,15 @@ function parseConfig(text3) {
     }
     cfg2.sentry = raw2.sentry;
   }
-  const auth10 = raw2.auth;
-  if (auth10 !== void 0) {
-    if (!auth10 || typeof auth10 !== "object" || Array.isArray(auth10)) throw new ConfigError(`${CONFIG_FILE}: auth must be a mapping of non-secret settings`);
-    for (const [key, value] of Object.entries(auth10)) {
+  const auth11 = raw2.auth;
+  if (auth11 !== void 0) {
+    if (!auth11 || typeof auth11 !== "object" || Array.isArray(auth11)) throw new ConfigError(`${CONFIG_FILE}: auth must be a mapping of non-secret settings`);
+    for (const [key, value] of Object.entries(auth11)) {
       if (!Object.hasOwn(AUTH_SETTINGS, key)) throw new ConfigError(`${CONFIG_FILE}: unknown auth setting; expected ${Object.keys(AUTH_SETTINGS).join(", ")} (no credentials)`);
       const problem = AUTH_SETTINGS[key](value);
       if (problem) throw new ConfigError(`${CONFIG_FILE}: auth.${key} ${problem}`);
     }
-    cfg2.auth = auth10;
+    cfg2.auth = auth11;
   }
   const release2 = raw2.release;
   if (release2 !== void 0) {
@@ -7802,8 +7803,8 @@ function setupCredentials(path = credentialsPath()) {
     if (!opened.isFile() || opened.nlink !== 1) throw new Error("Credentials setup requires a regular file with no hard links; nothing was written.");
     if (process.platform !== "win32") fchmodSync(fd, 384);
     const after = fstatSync4(fd);
-    const current5 = lstatSync4(target);
-    if (current5.isSymbolicLink() || current5.dev !== after.dev || current5.ino !== after.ino) throw new Error("The credentials path changed during setup; retry after checking the path.");
+    const current6 = lstatSync4(target);
+    if (current6.isSymbolicLink() || current6.dev !== after.dev || current6.ino !== after.ino) throw new Error("The credentials path changed during setup; retry after checking the path.");
     return { path: target, exists: true, created, private: process.platform === "win32" ? null : (after.mode & 511) === 384 };
   } finally {
     closeSync4(fd);
@@ -7827,9 +7828,9 @@ function ensureDirectory(path) {
   const parent = dirname5(path);
   if (parent !== path) ensureDirectory(parent);
 }
-function parseCredentials(text3) {
+function parseCredentials(text4) {
   const out = /* @__PURE__ */ new Map();
-  for (const raw2 of text3.split(/\r?\n/)) {
+  for (const raw2 of text4.split(/\r?\n/)) {
     const line = raw2.trim();
     if (!line || line.startsWith("#")) continue;
     const m = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
@@ -7871,8 +7872,8 @@ function removeCredential(name3, path = credentialsPath()) {
   }
   if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1) throw new Error(UNSAFE_TARGET);
   ensureDirectory(dirname5(target));
-  const { stats, text: text3 } = readStored(target, before);
-  const lines = text3.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+  const { stats, text: text4 } = readStored(target, before);
+  const lines = text4.match(/[^\n]*\n|[^\n]+$/g) ?? [];
   const kept = lines.filter((line) => assignedName(line) !== name3);
   if (kept.length === lines.length) {
     cache = void 0;
@@ -7920,8 +7921,8 @@ function replaceAtomically(target, opened, content3) {
     if (!info.isFile() || info.nlink !== 1) throw new Error(UNSAFE_TARGET);
     writeFileSync5(temp, content3, { encoding: "utf8" });
     fsyncSync(temp);
-    const current5 = lstatSync4(target);
-    if (current5.isSymbolicLink() || !current5.isFile() || current5.dev !== opened.dev || current5.ino !== opened.ino || current5.size !== opened.size || current5.mtimeMs !== opened.mtimeMs) throw new Error(CHANGED_TARGET);
+    const current6 = lstatSync4(target);
+    if (current6.isSymbolicLink() || !current6.isFile() || current6.dev !== opened.dev || current6.ino !== opened.ino || current6.size !== opened.size || current6.mtimeMs !== opened.mtimeMs) throw new Error(CHANGED_TARGET);
     renameSync4(tempPath, target);
     committed = true;
   } catch (error) {
@@ -7937,8 +7938,8 @@ function replaceAtomically(target, opened, content3) {
 }
 function removeStaged(path, info) {
   try {
-    const current5 = lstatSync4(path);
-    if (!current5.isFile() || current5.dev !== info.dev || current5.ino !== info.ino) return;
+    const current6 = lstatSync4(path);
+    if (!current6.isFile() || current6.dev !== info.dev || current6.ino !== info.ino) return;
     unlinkSync2(path);
   } catch {
   }
@@ -8021,8 +8022,8 @@ function storedFile(path, secret) {
     const valid = (s) => s.isFile() && s.nlink === 1 && s.size <= 4096 && (!process.getuid || s.uid === process.getuid()) && (s.mode & (secret ? 63 : 18)) === 0;
     if (before.isSymbolicLink() || !valid(before)) throw failure("Supabase CLI storage is not an owner-private regular file.");
     fd = openSync5(path, constants5.O_RDONLY | constants5.O_NOFOLLOW | constants5.O_NONBLOCK);
-    const current5 = fstatSync5(fd);
-    if (!valid(current5) || current5.ino !== before.ino || current5.dev !== before.dev) throw failure("Supabase CLI storage changed while being read.");
+    const current6 = fstatSync5(fd);
+    if (!valid(current6) || current6.ino !== before.ino || current6.dev !== before.dev) throw failure("Supabase CLI storage changed while being read.");
     return readFileSync7(fd, "utf8");
   } catch (e) {
     if (e?.code === "ENOENT") return void 0;
@@ -8146,15 +8147,15 @@ function tokenHelp() {
 function needToken(what) {
   return new SupabaseError(`${what} needs a reusable Supabase login. ${LOGIN_HELP}; golive reuses its production-profile credential for the Management API on supported stores. Alternatively, ${tokenHelp()} Then re-run.`);
 }
-function assertRef(ref3) {
-  if (typeof ref3 !== "string" || !REF_RE.test(ref3)) throw new SupabaseError(`not a Supabase project ref: ${JSON.stringify(ref3)} (expected 20 lowercase letters)`);
-  return ref3;
+function assertRef(ref4) {
+  if (typeof ref4 !== "string" || !REF_RE.test(ref4)) throw new SupabaseError(`not a Supabase project ref: ${JSON.stringify(ref4)} (expected 20 lowercase letters)`);
+  return ref4;
 }
 function linkedRef(cwd) {
   const p = join9(cwd, "supabase", ".temp", "project-ref");
   if (!existsSync5(p)) return void 0;
-  const ref3 = readFileSync8(p, "utf8").trim();
-  return REF_RE.test(ref3) ? ref3 : void 0;
+  const ref4 = readFileSync8(p, "utf8").trim();
+  return REF_RE.test(ref4) ? ref4 : void 0;
 }
 function messageOf(json2) {
   if (!json2 || typeof json2 !== "object") return "";
@@ -8278,8 +8279,8 @@ function codeOf(json2) {
 }
 function detailOf(json2) {
   const o = asObject(json2);
-  const text3 = [str(o.error_code), str(o.msg), str(o.message), str(o.error_description), str(o.error)].filter(Boolean).join(" ");
-  return redact(text3).slice(0, 200);
+  const text4 = [str(o.error_code), str(o.msg), str(o.message), str(o.error_description), str(o.error)].filter(Boolean).join(" ");
+  return redact(text4).slice(0, 200);
 }
 function view(status, u) {
   const id2 = str(u.id);
@@ -8325,25 +8326,25 @@ function expectOk(status, json2, what) {
   if (status < 200 || status >= 300) fail2(status, json2, what);
 }
 async function require2(deps2, ctx) {
-  const ref3 = await deps2.ref(ctx);
-  if (!ref3) {
+  const ref4 = await deps2.ref(ctx);
+  if (!ref4) {
     throw new SupabaseAuthPrereqError("No Supabase project is selected for this app, so its auth users cannot be reached. Run `golive plan` to select one, or set `projects.db` in golive.yaml.");
   }
-  const memo2 = `supabaseAuth.keys:${ref3}`;
+  const memo2 = `supabaseAuth.keys:${ref4}`;
   let keys3 = ctx.cache.get(memo2);
   if (!keys3) {
-    keys3 = deps2.keys(ctx, ref3).catch((e) => {
+    keys3 = deps2.keys(ctx, ref4).catch((e) => {
       if (e instanceof SupabaseError) throw new SupabaseAuthPrereqError(e.message, e.status);
       throw e;
     });
     ctx.cache.set(memo2, keys3);
   }
-  return { ref: ref3, keys: await keys3 };
+  return { ref: ref4, keys: await keys3 };
 }
 async function signup(deps2, ctx, email, password) {
-  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const { ref: ref4, keys: keys3 } = await require2(deps2, ctx);
   const res = await ctx.http({
-    url: `${base(ref3)}/signup`,
+    url: `${base(ref4)}/signup`,
     method: "POST",
     headers: publicHeaders(requirePublic(keys3)),
     body: { email, password }
@@ -8366,9 +8367,9 @@ async function signup(deps2, ctx, email, password) {
   };
 }
 async function login(deps2, ctx, email, password) {
-  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const { ref: ref4, keys: keys3 } = await require2(deps2, ctx);
   const res = await ctx.http({
-    url: `${base(ref3)}/token?grant_type=password`,
+    url: `${base(ref4)}/token?grant_type=password`,
     method: "POST",
     headers: publicHeaders(requirePublic(keys3)),
     body: { email, password }
@@ -8388,9 +8389,9 @@ function sessionOutcome(status, json2) {
   return { status, rateLimited: status === 429, code: [codeOf(json2), detail].filter(Boolean).join(" | ").slice(0, 200) || `HTTP ${status}` };
 }
 async function requestRecovery(deps2, ctx, email) {
-  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const { ref: ref4, keys: keys3 } = await require2(deps2, ctx);
   const res = await ctx.http({
-    url: `${base(ref3)}/recover`,
+    url: `${base(ref4)}/recover`,
     method: "POST",
     headers: publicHeaders(requirePublic(keys3)),
     body: { email }
@@ -8407,9 +8408,9 @@ async function requestRecovery(deps2, ctx, email) {
   };
 }
 async function recoveryLink(deps2, ctx, email) {
-  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const { ref: ref4, keys: keys3 } = await require2(deps2, ctx);
   const res = await ctx.http({
-    url: `${base(ref3)}/admin/generate_link`,
+    url: `${base(ref4)}/admin/generate_link`,
     method: "POST",
     headers: adminHeaders(requireSecret(keys3)),
     body: { type: "recovery", email }
@@ -8433,9 +8434,9 @@ function tokenParam(actionLink) {
   }
 }
 async function recoverySession(deps2, ctx, token2) {
-  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const { ref: ref4, keys: keys3 } = await require2(deps2, ctx);
   const res = await ctx.http({
-    url: `${base(ref3)}/verify`,
+    url: `${base(ref4)}/verify`,
     method: "POST",
     headers: publicHeaders(requirePublic(keys3)),
     body: { type: "recovery", token_hash: token2 }
@@ -8443,9 +8444,9 @@ async function recoverySession(deps2, ctx, token2) {
   return sessionOutcome(res.status, res.json);
 }
 async function updateOwnPassword(deps2, ctx, session2, password) {
-  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const { ref: ref4, keys: keys3 } = await require2(deps2, ctx);
   const res = await ctx.http({
-    url: `${base(ref3)}/user`,
+    url: `${base(ref4)}/user`,
     method: "PUT",
     headers: publicHeaders(requirePublic(keys3), session2),
     body: { password }
@@ -8453,21 +8454,21 @@ async function updateOwnPassword(deps2, ctx, session2, password) {
   expectOk(res.status, res.json, "Setting a new password on the signed-in Supabase user");
 }
 async function user(deps2, ctx, token2) {
-  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
-  const res = await ctx.http({ url: `${base(ref3)}/user`, headers: publicHeaders(requirePublic(keys3), token2) });
+  const { ref: ref4, keys: keys3 } = await require2(deps2, ctx);
+  const res = await ctx.http({ url: `${base(ref4)}/user`, headers: publicHeaders(requirePublic(keys3), token2) });
   return view(res.status, asObject(res.json));
 }
 async function adminUser(deps2, ctx, id2) {
-  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
-  const res = await ctx.http({ url: `${base(ref3)}/admin/users/${encodeURIComponent(id2)}`, headers: adminHeaders(requireSecret(keys3)) });
+  const { ref: ref4, keys: keys3 } = await require2(deps2, ctx);
+  const res = await ctx.http({ url: `${base(ref4)}/admin/users/${encodeURIComponent(id2)}`, headers: adminHeaders(requireSecret(keys3)) });
   if (res.status === 404) return null;
   expectOk(res.status, res.json, `Reading Supabase auth user ${id2}`);
   return view(res.status, asObject(res.json));
 }
 async function setPassword(deps2, ctx, id2, password) {
-  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const { ref: ref4, keys: keys3 } = await require2(deps2, ctx);
   const res = await ctx.http({
-    url: `${base(ref3)}/admin/users/${encodeURIComponent(id2)}`,
+    url: `${base(ref4)}/admin/users/${encodeURIComponent(id2)}`,
     method: "PUT",
     headers: adminHeaders(requireSecret(keys3)),
     body: { password }
@@ -8475,9 +8476,9 @@ async function setPassword(deps2, ctx, id2, password) {
   expectOk(res.status, res.json, `Setting a new password on the Supabase test user ${id2}`);
 }
 async function confirmEmail(deps2, ctx, id2) {
-  const { ref: ref3, keys: keys3 } = await require2(deps2, ctx);
+  const { ref: ref4, keys: keys3 } = await require2(deps2, ctx);
   const res = await ctx.http({
-    url: `${base(ref3)}/admin/users/${encodeURIComponent(id2)}`,
+    url: `${base(ref4)}/admin/users/${encodeURIComponent(id2)}`,
     method: "PUT",
     headers: adminHeaders(requireSecret(keys3)),
     body: { email_confirm: true }
@@ -8485,13 +8486,13 @@ async function confirmEmail(deps2, ctx, id2) {
   expectOk(res.status, res.json, `Confirming the Supabase auth user ${id2}`);
 }
 async function destination(deps2, ctx) {
-  let ref3 = null;
+  let ref4 = null;
   try {
-    ref3 = await deps2.ref(ctx);
+    ref4 = await deps2.ref(ctx);
   } catch {
     return null;
   }
-  return ref3 ? { ref: ref3, url: `https://${ref3}.supabase.co` } : null;
+  return ref4 ? { ref: ref4, url: `https://${ref4}.supabase.co` } : null;
 }
 function supabaseAuthUsers(deps2) {
   return {
@@ -8523,7 +8524,7 @@ var init_supabase_auth = __esm({
     str = (v) => typeof v === "string" && v ? v : void 0;
     isCaptcha = (code, detail) => /captcha|challenge/i.test(`${code ?? ""} ${detail}`);
     confirmedOf = (u) => Boolean(str(u.email_confirmed_at) ?? str(u.confirmed_at));
-    base = (ref3) => `https://${ref3}.supabase.co/auth/v1`;
+    base = (ref4) => `https://${ref4}.supabase.co/auth/v1`;
   }
 });
 
@@ -8598,13 +8599,13 @@ async function scopedAuth(ctx, tok) {
   if (!Array.isArray(r.json) || r.json.some((p) => !p || typeof p !== "object" || !refOf(p))) {
     return { ok: false, howToFix: "Supabase returned an unexpected project-list response; golive could not verify this token's project access. Re-run later or check Supabase service status." };
   }
-  let ref3;
+  let ref4;
   try {
-    ref3 = await resolveRef(ctx);
+    ref4 = await resolveRef(ctx);
   } catch {
     return { ok: false, howToFix: "This token can list Supabase projects, but the configured project name is missing or ambiguous. Select an existing accessible project by its exact ref with `golive init --project db=<ref>` and re-run; golive has not verified organization or project-creation access." };
   }
-  if (!ref3) {
+  if (!ref4) {
     try {
       const target = await creationTarget(ctx);
       return { ok: true, via: `${via} (organization-scoped read access verified for Free organization ${target.scope.id}; creation write permission unverified; plan/apply checks the destination and permissions)` };
@@ -8612,10 +8613,10 @@ async function scopedAuth(ctx, tok) {
       return { ok: false, howToFix: `This token can list projects but cannot read the user profile (HTTP 403), and no existing project is explicitly selected. golive could not verify one eligible Free organization through organization discovery and plan details. Select an accessible existing project with \`golive init --project db=<ref>\`, or check Organizations Read and Organization Settings Read access to the intended Free organization (with Organization Projects Read-write to create). An empty or denied organization list does not prove creation access; project-scoped Full access does not grant that. ${help2}` };
     }
   }
-  if (!r.json.some((p) => refOf(p) === ref3 && p.status !== "REMOVED" && p.status !== "GOING_DOWN")) {
-    return { ok: false, howToFix: `The selected Supabase project ${ref3} is not visible to this token. Check the token's selected project and Project Settings Read permission, or select an accessible existing project with \`golive init --project db=<ref>\`. ${help2}` };
+  if (!r.json.some((p) => refOf(p) === ref4 && p.status !== "REMOVED" && p.status !== "GOING_DOWN")) {
+    return { ok: false, howToFix: `The selected Supabase project ${ref4} is not visible to this token. Check the token's selected project and Project Settings Read permission, or select an accessible existing project with \`golive init --project db=<ref>\`. ${help2}` };
   }
-  return { ok: true, via: `${via} (project-scoped access verified for ${ref3}; each operation checks its own permissions; organization/creation access not verified)` };
+  return { ok: true, via: `${via} (project-scoped access verified for ${ref4}; each operation checks its own permissions; organization/creation access not verified)` };
 }
 async function tokenNeeds(ctx) {
   const needs = [];
@@ -8667,16 +8668,16 @@ async function listProjects(ctx) {
   const raw2 = tok ? await api(ctx, tok, "GET", "/projects", what) : await cli(ctx, ["projects", "list", "-o", "json"], what);
   const out = [];
   for (const p of Array.isArray(raw2) ? raw2 : []) {
-    const ref3 = refOf(p);
-    if (!ref3 || p.status === "REMOVED" || p.status === "GOING_DOWN") continue;
+    const ref4 = refOf(p);
+    if (!ref4 || p.status === "REMOVED" || p.status === "GOING_DOWN") continue;
     const org = typeof p.organization_slug === "string" ? p.organization_slug : typeof p.organization_id === "string" ? p.organization_id : void 0;
-    out.push({ id: ref3, name: typeof p.name === "string" ? p.name : ref3, ...org ? { org } : {}, ...typeof p.status === "string" ? { status: p.status } : {} });
+    out.push({ id: ref4, name: typeof p.name === "string" ? p.name : ref4, ...org ? { org } : {}, ...typeof p.status === "string" ? { status: p.status } : {} });
   }
   return out;
 }
-function remember(ctx, ref3) {
+function remember(ctx, ref4) {
   ctx.state.save((s) => {
-    s.resources[STATE_REF] = ref3;
+    s.resources[STATE_REF] = ref4;
   });
 }
 async function resolveRef(ctx) {
@@ -8693,25 +8694,25 @@ async function resolveRef(ctx) {
   return linkedRef(ctx.cwd) ?? null;
 }
 async function requireRef(ctx) {
-  const ref3 = await resolveRef(ctx);
-  if (!ref3) {
+  const ref4 = await resolveRef(ctx);
+  if (!ref4) {
     throw new SupabaseError("No Supabase project is selected for this app. Select one (golive plan lists candidates), set `projects.db` in golive.yaml to a project ref, or run `supabase link` in the repo.");
   }
-  return ref3;
+  return ref4;
 }
 async function current(ctx) {
-  const ref3 = await resolveRef(ctx);
-  if (!ref3) return null;
+  const ref4 = await resolveRef(ctx);
+  if (!ref4) return null;
   const tok = await supabaseCredentialOrUndefined(ctx);
   if (tok) {
     try {
-      const r = await apiStatus(ctx, tok, `/projects/${ref3}`);
+      const r = await apiStatus(ctx, tok, `/projects/${ref4}`);
       const name3 = r.json?.name;
-      if (r.status === 200 && typeof name3 === "string") return { id: ref3, name: name3 };
+      if (r.status === 200 && typeof name3 === "string") return { id: ref4, name: name3 };
     } catch {
     }
   }
-  return { id: ref3, name: ref3 };
+  return { id: ref4, name: ref4 };
 }
 async function homeOrg(ctx) {
   const key = "supabase.homeOrg";
@@ -8820,29 +8821,29 @@ async function creationTarget(ctx) {
   const label3 = ctx.cache.get(`supabase.orgName:${id2}`);
   return { scope: { kind: "organization", id: id2, ...typeof label3 === "string" ? { name: label3 } : {} }, region: regionSelection(ctx.config).code };
 }
-async function projectStatus(ctx, ref3) {
+async function projectStatus(ctx, ref4) {
   const tok = await supabaseCredentialOrUndefined(ctx);
-  if (tok) return (await api(ctx, tok, "GET", `/projects/${ref3}`, "Checking the Supabase project"))?.status ?? "unknown";
-  return (await listProjects(ctx)).find((p) => p.id === ref3)?.status ?? "REMOVED";
+  if (tok) return (await api(ctx, tok, "GET", `/projects/${ref4}`, "Checking the Supabase project"))?.status ?? "unknown";
+  return (await listProjects(ctx)).find((p) => p.id === ref4)?.status ?? "REMOVED";
 }
-async function waitHealthy(ctx, ref3, opts = {}) {
+async function waitHealthy(ctx, ref4, opts = {}) {
   const timeoutMs = opts.created ? supabaseTiming.createTimeoutMs : supabaseTiming.timeoutMs;
   const deadline = Date.now() + timeoutMs;
   let status = "unknown";
   for (; ; ) {
-    status = await projectStatus(ctx, ref3);
+    status = await projectStatus(ctx, ref4);
     if (status === "ACTIVE_HEALTHY") return;
-    if (BROKEN.has(status) || status === "REMOVED" || PAUSED.has(status)) throw new SupabaseError(`Supabase project ${ref3} failed to start (status ${status}). Check it at https://supabase.com/dashboard/project/${ref3}.`);
+    if (BROKEN.has(status) || status === "REMOVED" || PAUSED.has(status)) throw new SupabaseError(`Supabase project ${ref4} failed to start (status ${status}). Check it at https://supabase.com/dashboard/project/${ref4}.`);
     if (Date.now() >= deadline) break;
     await sleep(supabaseTiming.pollMs);
   }
   const mins = Math.round(timeoutMs / 6e4);
   if (opts.created) {
     throw new SupabaseError(
-      `Supabase project ${ref3} (created by golive) is still starting (status ${status}) after ${mins} min. It is recorded in golive state: re-run later and golive waits for it and carries on. The database password generated for it lives only in this run's memory; if it is gone by then, golive sets a new one on this project (nothing can be using it yet).`
+      `Supabase project ${ref4} (created by golive) is still starting (status ${status}) after ${mins} min. It is recorded in golive state: re-run later and golive waits for it and carries on. The database password generated for it lives only in this run's memory; if it is gone by then, golive sets a new one on this project (nothing can be using it yet).`
     );
   }
-  throw new SupabaseError(`Supabase project ${ref3} is still starting (status ${status}) after ${mins} min; re-run later \u2014 golive will adopt it by name.`);
+  throw new SupabaseError(`Supabase project ${ref4} is still starting (status ${status}) after ${mins} min; re-run later \u2014 golive will adopt it by name.`);
 }
 async function create(ctx, name3, approvedTarget) {
   const tok = await supabaseCredential(ctx);
@@ -8895,19 +8896,19 @@ async function create(ctx, name3, approvedTarget) {
     ctx.log.info(`the create request for Supabase project ${name3} failed in transit, but Supabase created it (${found}); using it`);
     created = { ref: found, name: name3, organization_slug: org };
   }
-  const ref3 = assertRef(refOf(created ?? {}));
+  const ref4 = assertRef(refOf(created ?? {}));
   if (approvedTarget) {
-    const actualOrg = typeof created.organization_slug === "string" ? created.organization_slug : (await resolveProject(ctx, ref3)).scope?.id;
+    const actualOrg = typeof created.organization_slug === "string" ? created.organization_slug : (await resolveProject(ctx, ref4)).scope?.id;
     if (actualOrg !== approvedTarget.scope.id) throw new SupabaseError("Supabase returned an unexpected project organization; inspect the created resource before continuing.");
   }
-  vaultPut(dbPassKey(ref3), dbPass);
+  vaultPut(dbPassKey(ref4), dbPass);
   ctx.state.save((s) => {
-    s.resources[STATE_REF] = ref3;
-    s.resources[STATE_CREATED] = ref3;
+    s.resources[STATE_REF] = ref4;
+    s.resources[STATE_CREATED] = ref4;
   });
-  ctx.log.info(`created Supabase project ${name3} (${ref3}) in ${org}; waiting for it to become healthy`);
-  await waitHealthy(ctx, ref3, { created: true });
-  return { id: ref3, name: typeof created.name === "string" ? created.name : name3, ...approvedTarget ? { scope: approvedTarget.scope } : {} };
+  ctx.log.info(`created Supabase project ${name3} (${ref4}) in ${org}; waiting for it to become healthy`);
+  await waitHealthy(ctx, ref4, { created: true });
+  return { id: ref4, name: typeof created.name === "string" ? created.name : name3, ...approvedTarget ? { scope: approvedTarget.scope } : {} };
 }
 async function findCreated(ctx, name3, org, before, requireOrg = false) {
   try {
@@ -8917,10 +8918,10 @@ async function findCreated(ctx, name3, org, before, requireOrg = false) {
     return null;
   }
 }
-async function listKeys(ctx, ref3) {
+async function listKeys(ctx, ref4) {
   const what = "Reading Supabase API keys";
   const tok = await supabaseCredentialOrUndefined(ctx);
-  const raw2 = tok ? await api(ctx, tok, "GET", `/projects/${ref3}/api-keys?reveal=true`, what) : await cli(ctx, ["projects", "api-keys", "--project-ref", ref3, "--reveal", "-o", "json"], what);
+  const raw2 = tok ? await api(ctx, tok, "GET", `/projects/${ref4}/api-keys?reveal=true`, what) : await cli(ctx, ["projects", "api-keys", "--project-ref", ref4, "--reveal", "-o", "json"], what);
   return Array.isArray(raw2) ? raw2 : [];
 }
 function pickKeys(keys3) {
@@ -8974,46 +8975,46 @@ function usesPrisma(d) {
   const provider = Object.values(d.providers).some((ids) => ids?.some((id2) => /prisma/i.test(id2)));
   return cfg2 || note || provider || d.envRefs.some((r) => r.name === "POSTGRES_PRISMA_URL");
 }
-function dbUrlWritten(ctx, ref3) {
+function dbUrlWritten(ctx, ref4) {
   for (const [k, v] of Object.entries(ctx.state.get().resources)) {
-    if (k.startsWith("supabase.dbUrlWritten@") && v === ref3) return true;
+    if (k.startsWith("supabase.dbUrlWritten@") && v === ref4) return true;
     if (!k.startsWith("env:")) continue;
     const m = /^db\.(?:url|directUrl)\|[^|]*\|(.*)$/.exec(v);
     if (!m) continue;
     const ids = m[1].split("+");
-    if (ids.includes(ref3) || !ids.some((id2) => REF_RE.test(id2))) return true;
+    if (ids.includes(ref4) || !ids.some((id2) => REF_RE.test(id2))) return true;
   }
   return false;
 }
-async function passwordResettable(ctx, ref3) {
-  return ctx.state.resource(STATE_CREATED) === ref3 && !vaultGet(dbPassKey(ref3)) && !dbUrlWritten(ctx, ref3) && await supabaseCredentialOrUndefined(ctx) !== void 0;
+async function passwordResettable(ctx, ref4) {
+  return ctx.state.resource(STATE_CREATED) === ref4 && !vaultGet(dbPassKey(ref4)) && !dbUrlWritten(ctx, ref4) && await supabaseCredentialOrUndefined(ctx) !== void 0;
 }
-async function resetDbPassword(ctx, tok, ref3) {
+async function resetDbPassword(ctx, tok, ref4) {
   const pass2 = new Secret("SUPABASE_DB_PASSWORD", randomBytes2(24).toString("base64url"));
-  await api(ctx, tok, "PATCH", `/projects/${ref3}/database/password`, "Setting a new database password on the Supabase project golive created", { password: pass2 }, { idempotent: true });
-  vaultPut(dbPassKey(ref3), pass2);
-  ctx.log.info(`set a new generated database password on Supabase project ${ref3} (created by golive; the one generated at creation was lost with the run that created it, and nothing used it yet)`);
+  await api(ctx, tok, "PATCH", `/projects/${ref4}/database/password`, "Setting a new database password on the Supabase project golive created", { password: pass2 }, { idempotent: true });
+  vaultPut(dbPassKey(ref4), pass2);
+  ctx.log.info(`set a new generated database password on Supabase project ${ref4} (created by golive; the one generated at creation was lost with the run that created it, and nothing used it yet)`);
   return pass2;
 }
-async function dbUrls(ctx, ref3, mayReset) {
-  let pass2 = vaultGet(dbPassKey(ref3));
-  if (!pass2 && mayReset && await passwordResettable(ctx, ref3)) pass2 = await resetDbPassword(ctx, await supabaseCredential(ctx), ref3);
+async function dbUrls(ctx, ref4, mayReset) {
+  let pass2 = vaultGet(dbPassKey(ref4));
+  if (!pass2 && mayReset && await passwordResettable(ctx, ref4)) pass2 = await resetDbPassword(ctx, await supabaseCredential(ctx), ref4);
   if (!pass2) return {};
   const pw = pass2.reveal();
   const out = {};
   const tok = await supabaseCredential(ctx);
-  const entries = tok ? await api(ctx, tok, "GET", `/projects/${ref3}/config/database/pooler`, "Reading Supabase pooler config") : [];
+  const entries = tok ? await api(ctx, tok, "GET", `/projects/${ref4}/config/database/pooler`, "Reading Supabase pooler config") : [];
   const list4 = Array.isArray(entries) ? entries : [];
   const session2 = sessionUrl(list4, pw);
   if (session2) out["db.directUrl"] = new Secret("DIRECT_URL", session2);
   else {
-    out["db.directUrl"] = new Secret("DIRECT_URL", `postgresql://postgres:${encodeURIComponent(pw)}@db.${ref3}.supabase.co:5432/postgres`);
+    out["db.directUrl"] = new Secret("DIRECT_URL", `postgresql://postgres:${encodeURIComponent(pw)}@db.${ref4}.supabase.co:5432/postgres`);
     ctx.log.warn(
-      `DIRECT_URL for ${ref3} falls back to the direct host db.${ref3}.supabase.co, which is IPv6-only unless the project has the IPv4 add-on: Vercel builds and functions (IPv4 only) can't reach it (Prisma: P1001). ${tok ? "Supabase returned no shared-pooler entry" : "The IPv4 session-pooler URL needs a reusable CLI credential or SUPABASE_ACCESS_TOKEN"}; use it only for migrations from an IPv6-capable machine.`
+      `DIRECT_URL for ${ref4} falls back to the direct host db.${ref4}.supabase.co, which is IPv6-only unless the project has the IPv4 add-on: Vercel builds and functions (IPv4 only) can't reach it (Prisma: P1001). ${tok ? "Supabase returned no shared-pooler entry" : "The IPv4 session-pooler URL needs a reusable CLI credential or SUPABASE_ACCESS_TOKEN"}; use it only for migrations from an IPv6-capable machine.`
     );
   }
   if (!tok) {
-    ctx.log.warn(`pooled DATABASE_URL for ${ref3} needs a reusable CLI credential or SUPABASE_ACCESS_TOKEN`);
+    ctx.log.warn(`pooled DATABASE_URL for ${ref4} needs a reusable CLI credential or SUPABASE_ACCESS_TOKEN`);
     return out;
   }
   const prisma = usesPrisma(ctx.detect);
@@ -9025,15 +9026,15 @@ async function dbUrls(ctx, ref3, mayReset) {
         `DATABASE_URL uses Supabase's transaction pooler (port 6543), which has no prepared statements: with postgres.js or Drizzle pass \`prepare: false\` to the client (node-postgres needs nothing)`
       );
     }
-  } else ctx.log.warn(`Supabase returned no PRIMARY pooler entry for ${ref3}; DATABASE_URL not produced`);
+  } else ctx.log.warn(`Supabase returned no PRIMARY pooler entry for ${ref4}; DATABASE_URL not produced`);
   return out;
 }
-async function collect(ctx, ref3, mayReset, requestedKeys) {
+async function collect(ctx, ref4, mayReset, requestedKeys) {
   const wantsKeys = requestedKeys === void 0 || requestedKeys.some((k) => k === "supabase.publishableKey" || k === "supabase.secretKey");
   const out = {
-    "supabase.url": `https://${ref3}.supabase.co`,
-    ...wantsKeys ? pickKeys(await listKeys(ctx, ref3)) : {},
-    ...wantsDbUrls(requestedKeys) ? await dbUrls(ctx, ref3, mayReset) : {}
+    "supabase.url": `https://${ref4}.supabase.co`,
+    ...wantsKeys ? pickKeys(await listKeys(ctx, ref4)) : {},
+    ...wantsDbUrls(requestedKeys) ? await dbUrls(ctx, ref4, mayReset) : {}
   };
   if (requestedKeys === void 0) return out;
   return Object.fromEntries(Object.entries(out).filter(([k]) => requestedKeys.includes(k)));
@@ -9042,23 +9043,23 @@ async function outputs(ctx, _target, requestedKeys) {
   return collect(ctx, await requireRef(ctx), isStepRun(ctx), requestedKeys);
 }
 async function provides(ctx, _target, requestedKeys) {
-  const ref3 = await requireRef(ctx);
-  const out = await collect(ctx, ref3, false, requestedKeys);
+  const ref4 = await requireRef(ctx);
+  const out = await collect(ctx, ref4, false, requestedKeys);
   const keys3 = Object.keys(out).filter((k) => out[k] !== void 0);
-  if (wantsDbUrls(requestedKeys) && !out["db.url"] && !out["db.directUrl"] && await passwordResettable(ctx, ref3)) {
+  if (wantsDbUrls(requestedKeys) && !out["db.url"] && !out["db.directUrl"] && await passwordResettable(ctx, ref4)) {
     const warned = "supabase.resetWarned";
     if (!ctx.cache.has(warned)) {
       ctx.cache.set(warned, true);
       ctx.log.warn(
-        `Supabase project ${ref3} was created by golive, but the database password generated for it is gone (it is kept only in memory, and the run that created the project stopped before DATABASE_URL/DIRECT_URL were written). Nothing can be using that password yet, so apply will set a new generated password on the project when it writes the database URLs.`
+        `Supabase project ${ref4} was created by golive, but the database password generated for it is gone (it is kept only in memory, and the run that created the project stopped before DATABASE_URL/DIRECT_URL were written). Nothing can be using that password yet, so apply will set a new generated password on the project when it writes the database URLs.`
       );
     }
     keys3.push(...["db.url", "db.directUrl"].filter((k) => requestedKeys === void 0 || requestedKeys.includes(k)));
   }
   return keys3;
 }
-async function exposedSchemas(ctx, tok, ref3) {
-  const res = await api(ctx, tok, "GET", `/projects/${ref3}/postgrest`, "Reading Supabase Data API settings");
+async function exposedSchemas(ctx, tok, ref4) {
+  const res = await api(ctx, tok, "GET", `/projects/${ref4}/postgrest`, "Reading Supabase Data API settings");
   const raw2 = res && typeof res === "object" ? res.db_schema : void 0;
   if (typeof raw2 !== "string") return ["public"];
   return raw2.split(",").map((s) => s.trim()).filter((s) => /^[\w$-]+$/.test(s));
@@ -9102,20 +9103,20 @@ function rowsOf(raw2) {
   return rows3.filter((r) => !!r && typeof r === "object");
 }
 async function tables(ctx) {
-  const ref3 = await requireRef(ctx);
+  const ref4 = await requireRef(ctx);
   const tok = await supabaseCredentialOrUndefined(ctx);
   const what = "Reading Supabase tables and RLS policies";
-  const schemas = tok ? await exposedSchemas(ctx, tok, ref3) : ["public"];
+  const schemas = tok ? await exposedSchemas(ctx, tok, ref4) : ["public"];
   if (!schemas.length) return [];
   const sql = tablesSql(schemas);
-  const raw2 = tok ? await api(ctx, tok, "POST", `/projects/${ref3}/database/query/read-only`, what, { query: sql }, { idempotent: true }) : await cli(ctx, ["db", "query", "--linked", "--project-ref", ref3, "-o", "json"], what, sql);
+  const raw2 = tok ? await api(ctx, tok, "POST", `/projects/${ref4}/database/query/read-only`, what, { query: sql }, { idempotent: true }) : await cli(ctx, ["db", "query", "--linked", "--project-ref", ref4, "-o", "json"], what, sql);
   return rowsOf(raw2).map(toTableInfo);
 }
 async function advisors(ctx) {
-  const ref3 = await requireRef(ctx);
+  const ref4 = await requireRef(ctx);
   const tok = await supabaseCredential(ctx);
   if (!tok) throw needToken("Reading Supabase security advisors");
-  const res = await api(ctx, tok, "GET", `/projects/${ref3}/advisors/security`, "Reading Supabase security advisors");
+  const res = await api(ctx, tok, "GET", `/projects/${ref4}/advisors/security`, "Reading Supabase security advisors");
   const lints = Array.isArray(res?.lints) ? res.lints : [];
   return lints.map((l) => {
     const name3 = l.name ?? "unknown";
@@ -9163,16 +9164,16 @@ function smtpOf(reported) {
     ...senderName ? { senderName } : {}
   };
 }
-function fieldValue(obj4, name3) {
+function fieldValue(obj5, name3) {
   const [head, tail] = name3.split(".");
-  if (!obj4 || typeof obj4 !== "object") return void 0;
-  const value = obj4[head];
+  if (!obj5 || typeof obj5 !== "object") return void 0;
+  const value = obj5[head];
   if (!tail) return value;
   return value && typeof value === "object" ? value[tail] : void 0;
 }
-function setField(obj4, name3, value) {
+function setField(obj5, name3, value) {
   const [head, tail] = name3.split(".");
-  const rec = obj4;
+  const rec = obj5;
   if (!tail) {
     rec[head] = value;
     return;
@@ -9181,10 +9182,10 @@ function setField(obj4, name3, value) {
   nested[tail] = value;
 }
 async function getAuth(ctx) {
-  const ref3 = await requireRef(ctx);
+  const ref4 = await requireRef(ctx);
   const tok = await supabaseCredential(ctx);
   if (!tok) throw needToken("Reading Supabase auth settings");
-  const res = await api(ctx, tok, "GET", `/projects/${ref3}/config/auth`, "Reading Supabase auth settings");
+  const res = await api(ctx, tok, "GET", `/projects/${ref4}/config/auth`, "Reading Supabase auth settings");
   const body2 = res && typeof res === "object" && !Array.isArray(res) ? res : {};
   const out = { siteUrl: null, redirectUrls: [] };
   for (const f of AUTH_FIELDS) {
@@ -9206,10 +9207,10 @@ async function setAuth(ctx, patch2) {
     requested.push(f);
   }
   if (!requested.length) return { applied: [], skipped: [] };
-  const ref3 = await requireRef(ctx);
+  const ref4 = await requireRef(ctx);
   const tok = await supabaseCredential(ctx);
   if (!tok) throw needToken("Changing Supabase auth settings");
-  await api(ctx, tok, "PATCH", `/projects/${ref3}/config/auth`, "Updating Supabase auth settings", body2);
+  await api(ctx, tok, "PATCH", `/projects/${ref4}/config/auth`, "Updating Supabase auth settings", body2);
   const after = await getAuth(ctx);
   const applied = [];
   const skipped = [];
@@ -9226,22 +9227,22 @@ async function setAuth(ctx, patch2) {
   }
   return { after, applied, skipped };
 }
-async function supabaseRestProbe(ctx, ref3, table, schema, publishableKey2) {
-  assertRef(ref3);
+async function supabaseRestProbe(ctx, ref4, table, schema, publishableKey2) {
+  assertRef(ref4);
   const key = typeof publishableKey2 === "string" ? publishableKey2 : publishableKey2.reveal();
   const headers = { apikey: publishableKey2, Accept: "application/json" };
   if (key.startsWith("eyJ")) headers.Authorization = typeof publishableKey2 === "string" ? `Bearer ${key}` : new Secret(publishableKey2.name, `Bearer ${key}`);
   if (schema && schema !== "public") headers["Accept-Profile"] = schema;
-  const res = await ctx.http({ url: `https://${ref3}.supabase.co/rest/v1/${encodeURIComponent(table)}?select=*&limit=1`, headers });
+  const res = await ctx.http({ url: `https://${ref4}.supabase.co/rest/v1/${encodeURIComponent(table)}?select=*&limit=1`, headers });
   const rows3 = res.status === 200 && Array.isArray(res.json) ? res.json.length : 0;
   const code = res.json && typeof res.json === "object" && !Array.isArray(res.json) ? res.json.code : void 0;
   return { status: res.status, rows: rows3, ...typeof code === "string" ? { code } : {} };
 }
-async function supabaseAuthedProbe(ctx, ref3, table, schema, publishableKey2, accessToken) {
-  assertRef(ref3);
+async function supabaseAuthedProbe(ctx, ref4, table, schema, publishableKey2, accessToken) {
+  assertRef(ref4);
   const headers = { apikey: publishableKey2, Authorization: new Secret(accessToken.name, `Bearer ${accessToken.reveal()}`), Accept: "application/json" };
   if (schema && schema !== "public") headers["Accept-Profile"] = schema;
-  const res = await ctx.http({ url: `https://${ref3}.supabase.co/rest/v1/${encodeURIComponent(table)}?select=*&limit=1`, headers });
+  const res = await ctx.http({ url: `https://${ref4}.supabase.co/rest/v1/${encodeURIComponent(table)}?select=*&limit=1`, headers });
   const rows3 = res.status === 200 && Array.isArray(res.json) ? res.json.length : 0;
   const code = res.json && typeof res.json === "object" && !Array.isArray(res.json) ? res.json.code : void 0;
   return { status: res.status, rows: rows3, ...typeof code === "string" ? { code } : {} };
@@ -9260,7 +9261,7 @@ var init_supabase = __esm({
     init_supabase_api();
     init_supabase_api();
     supabaseTiming = { pollMs: 5e3, timeoutMs: 5 * 6e4, createTimeoutMs: 15 * 6e4 };
-    dbPassKey = (ref3) => `supabase.dbPass:${ref3}`;
+    dbPassKey = (ref4) => `supabase.dbPass:${ref4}`;
     STATE_CREATED = "supabase.createdByGolive";
     refOf = (p) => [p.ref, p.id].find((x) => typeof x === "string" && REF_RE.test(x));
     PAUSED = /* @__PURE__ */ new Set(["INACTIVE", "PAUSING", "PAUSED"]);
@@ -9325,8 +9326,8 @@ var init_supabase = __esm({
         // readers so the auth adapter never touches the Management API itself.
         authUsers: supabaseAuthUsers({
           ref: resolveRef,
-          keys: async (ctx, ref3) => {
-            const picked = pickKeys(await listKeys(ctx, ref3));
+          keys: async (ctx, ref4) => {
+            const picked = pickKeys(await listKeys(ctx, ref4));
             return { publishable: picked["supabase.publishableKey"], secret: picked["supabase.secretKey"] };
           }
         })
@@ -9770,14 +9771,14 @@ var init_stripe = __esm({
       identify: (ctx, mode) => paymentIdentity(pinnedCredentials(ctx, mode), mode),
       async bind(ctx, approved, options) {
         const bound = pinnedCredentials(ctx, approved.mode);
-        const current5 = await paymentIdentity(bound, approved.mode);
-        if (current5.accountId !== approved.accountId || current5.operatorFingerprint !== approved.operatorFingerprint) {
+        const current6 = await paymentIdentity(bound, approved.mode);
+        if (current6.accountId !== approved.accountId || current6.operatorFingerprint !== approved.operatorFingerprint) {
           throw new Error(`Stripe ${approved.mode}-mode account or operator key changed since approval; nothing was written. Run plan again and approve the exact account.`);
         }
         if (options?.appKey) {
           const app = lookupAppKey(bound, approved.mode).key;
           if (!app) throw new Error(`The approved Stripe ${approved.mode}-mode app key is unavailable; no env write was performed. Run plan again.`);
-          if (operatorFingerprint(app) !== current5.operatorFingerprint) {
+          if (operatorFingerprint(app) !== current6.operatorFingerprint) {
             const appContext = { ...bound, envToken: (name3) => name3 === MODE_KEY_ENV[approved.mode] ? app : bound.envToken(name3) };
             const appIdentity = await paymentIdentity(appContext, approved.mode);
             if (appIdentity.accountId !== approved.accountId) throw new Error(`The Stripe ${approved.mode}-mode app key belongs to another account; no env write was performed. Use an app key from the approved account and run plan again.`);
@@ -9801,7 +9802,7 @@ var init_stripe = __esm({
 
 // src/cli.ts
 import { writeFileSync as writeFileSync9, mkdirSync as mkdirSync7 } from "node:fs";
-import { join as join22, resolve as resolve11 } from "node:path";
+import { join as join22, resolve as resolve12 } from "node:path";
 import { dirname as dirname9, basename as basename10 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
@@ -10125,12 +10126,12 @@ async function download(fetcher, timeoutMs) {
     controller.abort();
   }
 }
-async function checkForUpdate(current5, options = {}) {
+async function checkForUpdate(current6, options = {}) {
   const owner = options.ownership;
   const base2 = {
     ok: true,
     status: "unavailable",
-    current: current5,
+    current: current6,
     cached: false,
     automaticCheck: !options.disabled,
     automaticInstall: owner?.manager === "owned" && owner.autoUpdate === true && !owner.pin,
@@ -10150,7 +10151,7 @@ async function checkForUpdate(current5, options = {}) {
     if (!cached && cachePath) writeCache(cachePath, { url: UPDATE_METADATA_URL, checkedAt, manifest });
     return {
       ...base2,
-      status: owner?.pin ? "pinned" : compareVersions(latest.version, current5.version) > 0 ? "available" : "current",
+      status: owner?.pin ? "pinned" : compareVersions(latest.version, current6.version) > 0 ? "available" : "current",
       latest,
       checkedAt,
       cached: !!cached,
@@ -10188,16 +10189,16 @@ function stat(path) {
 }
 function safePath(path, allowMissing = false) {
   const absolute = resolve2(path);
-  let current5 = parse(absolute).root;
-  for (const part of relative(current5, absolute).split(sep).filter(Boolean)) {
-    current5 = join3(current5, part);
-    const info = stat(current5);
+  let current6 = parse(absolute).root;
+  for (const part of relative(current6, absolute).split(sep).filter(Boolean)) {
+    current6 = join3(current6, part);
+    const info = stat(current6);
     if (!info) {
       if (allowMissing) continue;
       fail("Installation path is missing.");
     }
     if (info.isSymbolicLink()) fail("Refusing a symlink in an installation or source path.");
-    if (current5 !== absolute && !info.isDirectory()) fail("Installation parent is not a directory.");
+    if (current6 !== absolute && !info.isDirectory()) fail("Installation parent is not a directory.");
   }
 }
 function readSafe(path, maximum = MAX_FILE) {
@@ -10227,8 +10228,8 @@ function isReleaseVersion2(value) {
   const pre = value.split("-").slice(1).join("-");
   return !pre || pre.split(".").every((part) => !/^[0-9]+$/.test(part) || part === "0" || !part.startsWith("0"));
 }
-function isRef(ref3) {
-  return typeof ref3 === "string" && ref3.startsWith("v") && isReleaseVersion2(ref3.slice(1));
+function isRef(ref4) {
+  return typeof ref4 === "string" && ref4.startsWith("v") && isReleaseVersion2(ref4.slice(1));
 }
 function filePath(path) {
   return typeof path === "string" && !path.includes("\\") && !path.includes("%") && !path.split("/").some((p) => !p || p === "." || p === "..") && /^(?:SKILL\.md|LICENSE|THIRD_PARTY_NOTICES\.md|(?:references|scripts)\/[A-Za-z0-9._/-]+)$/.test(path);
@@ -10276,24 +10277,24 @@ function verifyBundle(source) {
   if (canonical(found.sort()) !== canonical([...Object.keys(manifest.files), "release.json"].sort())) fail("Bundle file set is incomplete or mixed.");
   return manifest;
 }
-function layout(destination4) {
-  return { store: join3(dirname3(destination4), `.${PRODUCT}-owned`), destination: resolve2(destination4) };
+function layout(destination5) {
+  return { store: join3(dirname3(destination5), `.${PRODUCT}-owned`), destination: resolve2(destination5) };
 }
-function active(destination4) {
-  const { store } = layout(destination4);
-  safePath(dirname3(destination4), true);
+function active(destination5) {
+  const { store } = layout(destination5);
+  safePath(dirname3(destination5), true);
   safePath(store, true);
-  const info = stat(destination4);
+  const info = stat(destination5);
   if (!info) return null;
   if (!info.isSymbolicLink()) return { manager: "external" };
-  const link = readlinkSync(destination4);
-  const target = resolve2(dirname3(destination4), link);
+  const link = readlinkSync(destination5);
+  const target = resolve2(dirname3(destination5), link);
   const rel = relative(store, target).split(sep).join("/");
   if (!/^versions\/[a-f0-9-]{36}\/bundle$/.test(rel)) return { manager: "external" };
   safePath(target);
   const container = dirname3(target);
   const receipt = json(join3(container, "receipt.json"));
-  if (receipt.schema !== 1 || receipt.manager !== "owned" || receipt.channel !== "own-installer" || receipt.location !== resolve2(destination4) || receipt.source !== REPOSITORY || typeof receipt.autoUpdate !== "boolean" || !(receipt.pin === null || isRef(receipt.pin)) || !(receipt.previous === null || /^[a-f0-9-]{36}$/.test(receipt.previous))) fail("Owned installation metadata is inconsistent.");
+  if (receipt.schema !== 1 || receipt.manager !== "owned" || receipt.channel !== "own-installer" || receipt.location !== resolve2(destination5) || receipt.source !== REPOSITORY || typeof receipt.autoUpdate !== "boolean" || !(receipt.pin === null || isRef(receipt.pin)) || !(receipt.previous === null || /^[a-f0-9-]{36}$/.test(receipt.previous))) fail("Owned installation metadata is inconsistent.");
   const manifest = verifyBundle(target);
   if (receipt.version !== manifest.version || receipt.digest !== manifest.bundleDigest || receipt.ref !== manifest.source.ref) fail("Installed release and ownership metadata disagree.");
   return { manager: "owned", target, container, id: rel.split("/")[1], receipt, manifest };
@@ -10304,22 +10305,22 @@ function ownedLocationForBundle(bundle) {
   if (!stat(path)) return null;
   const receipt = json(path);
   if (typeof receipt.location !== "string" || !isAbsolute2(receipt.location)) fail("Invalid owned installation location.");
-  const current5 = active(receipt.location);
-  if (current5?.manager !== "owned" || current5.target !== resolve2(bundle)) fail("This is not the active owned release; use its current skill path.");
+  const current6 = active(receipt.location);
+  if (current6?.manager !== "owned" || current6.target !== resolve2(bundle)) fail("This is not the active owned release; use its current skill path.");
   return receipt.location;
 }
 function statusForBundle(bundleRoot) {
   const location = ownedLocationForBundle(bundleRoot);
   return location ? installationStatus(location) : { manager: "external", location: resolve2(bundleRoot), updateCommand: managerAdvice(bundleRoot), autoUpdate: false, pin: null };
 }
-function managerAdvice(destination4, global = false) {
-  const normalized = destination4.split(sep).join("/");
+function managerAdvice(destination5, global = false) {
+  const normalized = destination5.split(sep).join("/");
   if (/\/(?:plugins|\.codex\/plugins)\//.test(normalized)) return "Use the plugin manager to update this installation.";
   return `This copy is externally managed. For Skills CLI use: npx skills update ${PRODUCT} ${global ? "-g" : "-p"}. For a plugin use its manager; for a manual copy replace the complete verified bundle yourself.`;
 }
-function installationStatus(destination4, { global = false, candidates: candidates5 = [] } = {}) {
-  const value = active(destination4);
-  return { installed: Boolean(value), manager: value?.manager ?? null, location: resolve2(destination4), ...value?.manager === "owned" ? { version: value.manifest.version, ref: value.receipt.ref, pin: value.receipt.pin, source: value.receipt.source, autoUpdate: value.receipt.autoUpdate, previous: value.receipt.previous !== null } : { updateCommand: managerAdvice(destination4, global) }, duplicates: [...new Set(candidates5.map((path) => resolve2(path)))].filter((path) => path !== resolve2(destination4) && stat(path)).map((location) => ({ location, action: "left unchanged" })) };
+function installationStatus(destination5, { global = false, candidates: candidates6 = [] } = {}) {
+  const value = active(destination5);
+  return { installed: Boolean(value), manager: value?.manager ?? null, location: resolve2(destination5), ...value?.manager === "owned" ? { version: value.manifest.version, ref: value.receipt.ref, pin: value.receipt.pin, source: value.receipt.source, autoUpdate: value.receipt.autoUpdate, previous: value.receipt.previous !== null } : { updateCommand: managerAdvice(destination5, global) }, duplicates: [...new Set(candidates6.map((path) => resolve2(path)))].filter((path) => path !== resolve2(destination5) && stat(path)).map((location) => ({ location, action: "left unchanged" })) };
 }
 
 // src/core/exec.ts
@@ -10336,7 +10337,7 @@ var exec = async (cmd, args, opts = {}) => {
   for (const a of [cmd, ...args]) {
     if (isRegisteredSecret(a)) throw new ExecError(`refusing to pass a secret in argv to ${cmd}; use stdin`);
   }
-  return new Promise((resolve12, reject) => {
+  return new Promise((resolve13, reject) => {
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
       env: { ...process.env, ...opts.env },
@@ -10359,7 +10360,7 @@ var exec = async (cmd, args, opts = {}) => {
     });
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
-      resolve12({ code: code ?? 1, stdout, stderr });
+      resolve13({ code: code ?? 1, stdout, stderr });
     });
     const input = opts.stdin instanceof Secret ? opts.stdin.reveal() : opts.stdin;
     if (input !== void 0) child.stdin.write(input);
@@ -10373,8 +10374,8 @@ init_http();
 // src/core/output.ts
 init_secret();
 function emit(result2, opts) {
-  const text3 = opts.json ? JSON.stringify(result2, null, 2) : pretty(result2);
-  process.stdout.write(redact(text3) + "\n");
+  const text4 = opts.json ? JSON.stringify(result2, null, 2) : pretty(result2);
+  process.stdout.write(redact(text4) + "\n");
 }
 var logger = {
   info: (m) => process.stderr.write(redact(`\xB7 ${m}`) + "\n"),
@@ -10482,26 +10483,26 @@ function mapEnv(refs) {
   const mapped = [];
   const unmapped = [];
   const findings = [];
-  for (const ref3 of refs) {
-    const bare = stripClientPrefix(ref3.name);
-    if (IGNORE.test(ref3.name) || IGNORE.test(bare)) continue;
+  for (const ref4 of refs) {
+    const bare = stripClientPrefix(ref4.name);
+    if (IGNORE.test(ref4.name) || IGNORE.test(bare)) continue;
     const rule = RULES.find((r) => r.re.test(bare));
     if (!rule) {
-      unmapped.push(ref3.name);
+      unmapped.push(ref4.name);
       continue;
     }
-    const clientExposed = ref3.clientExposed || clientPrefix(ref3.name) !== null;
+    const clientExposed = ref4.clientExposed || clientPrefix(ref4.name) !== null;
     if (rule.secret && clientExposed) {
       findings.push({
         id: "secret-in-client-env",
         severity: "critical",
-        title: `${ref3.name} puts a server secret into the browser bundle`,
-        evidence: [`${ref3.name} (${rule.key}) is referenced in: ${ref3.files.slice(0, 5).join(", ")}`],
-        fix: clientPrefix(ref3.name) ? `Rename it to ${bare} and only read it in server code (API routes, server actions, edge functions). Anyone can read client-prefixed variables from your site's JavaScript.` : `${ref3.name} is inlined into the browser bundle by the framework config (next.config \`env\`, a Vite/Astro \`define\`, or a custom public prefix). Remove it from that config and only read it in server code.`
+        title: `${ref4.name} puts a server secret into the browser bundle`,
+        evidence: [`${ref4.name} (${rule.key}) is referenced in: ${ref4.files.slice(0, 5).join(", ")}`],
+        fix: clientPrefix(ref4.name) ? `Rename it to ${bare} and only read it in server code (API routes, server actions, edge functions). Anyone can read client-prefixed variables from your site's JavaScript.` : `${ref4.name} is inlined into the browser bundle by the framework config (next.config \`env\`, a Vite/Astro \`define\`, or a custom public prefix). Remove it from that config and only read it in server code.`
       });
       continue;
     }
-    mapped.push({ name: ref3.name, key: rule.key, clientExposed });
+    mapped.push({ name: ref4.name, key: rule.key, clientExposed });
   }
   return { mapped, unmapped, findings };
 }
@@ -11396,10 +11397,10 @@ function exposure(ctx) {
   const mapped = mappedEnv(ctx);
   const known = /* @__PURE__ */ new Set([...ctx.detect.envRefs.map((r) => r.name), ...mapped.map((m) => m.name)]);
   for (const f of findings) {
-    const text3 = [f.title, ...f.evidence].join(" ");
-    const tokens = new Set(text3.split(/[^A-Za-z0-9_]+/).filter(Boolean));
+    const text4 = [f.title, ...f.evidence].join(" ");
+    const tokens = new Set(text4.split(/[^A-Za-z0-9_]+/).filter(Boolean));
     const names = [...known].filter((n) => tokens.has(n));
-    const keys3 = OUTPUT_KEYS.filter((k) => text3.includes(k));
+    const keys3 = OUTPUT_KEYS.filter((k) => text4.includes(k));
     for (const m of mapped) if (keys3.includes(m.key)) names.push(m.name);
     if (!names.length && !keys3.length) out.all = true;
     names.forEach((n) => out.names.add(n));
@@ -11672,25 +11673,47 @@ var RECORDED = [
     where: "the Sentry dashboard",
     extra: "; Sentry deletes asynchronously, so the provider's own read (pending deletion or gone) is what confirms the removal",
     removal: sentryRemoval
+  },
+  {
+    axis: "monitoring",
+    provider: "uptimerobot",
+    providerTitle: "UptimeRobot",
+    kind: "uptime-monitor",
+    idKey: "uptimerobot.monitorId",
+    nameKey: "uptimerobot.monitorName",
+    createdBy: ["uptimerobot.createdMonitorId"],
+    needs: "the UptimeRobot dashboard",
+    where: "the UptimeRobot dashboard",
+    extra: "; UptimeRobot deletes a monitor at once, and the provider's own monitor read is what confirms the removal",
+    removal: uptimerobotRemoval
   }
 ];
 async function posthogRemoval(ctx, id2) {
   const s = await axisStatus(ctx, "monitoring");
   if (s.kind !== "ready" || s.adapter.id !== "posthog") return void 0;
   const adapter = s.adapter;
-  const remove4 = adapter.capabilities.project?.remove;
+  const remove5 = adapter.capabilities.project?.remove;
   const confirm = adapter.capabilities.analytics?.projectState;
-  if (!remove4 || !confirm) return void 0;
-  return { adapter, remove: (c) => remove4(c), confirm: (c) => confirm(c, id2) };
+  if (!remove5 || !confirm) return void 0;
+  return { adapter, remove: (c) => remove5(c), confirm: (c) => confirm(c, id2) };
 }
 async function sentryRemoval(ctx, id2) {
   const s = await axisStatus(ctx, "monitoring");
   if (s.kind !== "ready" || s.adapter.id !== "sentry") return void 0;
   const adapter = s.adapter;
-  const remove4 = adapter.capabilities.project?.remove;
+  const remove5 = adapter.capabilities.project?.remove;
   const confirm = adapter.capabilities.monitoring?.projectState;
-  if (!remove4 || !confirm) return void 0;
-  return { adapter, remove: (c) => remove4(c), confirm: (c) => confirm(c, id2) };
+  if (!remove5 || !confirm) return void 0;
+  return { adapter, remove: (c) => remove5(c), confirm: (c) => confirm(c, id2) };
+}
+async function uptimerobotRemoval(ctx, id2) {
+  const s = await axisStatus(ctx, "monitoring");
+  if (s.kind !== "ready" || s.adapter.id !== "uptimerobot") return void 0;
+  const adapter = s.adapter;
+  const remove5 = adapter.capabilities.project?.remove;
+  const confirm = adapter.capabilities.uptime?.monitorState;
+  if (!remove5 || !confirm) return void 0;
+  return { adapter, remove: (c) => remove5(c), confirm: (c) => confirm(c, id2) };
 }
 async function buildInventory(ctx) {
   const webhooks2 = await webhookInventory(ctx);
@@ -11716,8 +11739,8 @@ async function webhookInventory(ctx) {
       const id2 = ctx.state.resource(stateKey);
       if (!id2) continue;
       const caps = ready2 && ready2.adapter.id === provider ? ready2.adapter.capabilities.webhooks : void 0;
-      const remove4 = caps?.remove;
-      out.push({ provider, providerTitle: titleOf(ctx, provider), key: stateKey, mode, id: id2, ...ready2 && remove4 && caps ? { removal: { adapter: ready2.adapter, remove: remove4, list: caps.list } } : {} });
+      const remove5 = caps?.remove;
+      out.push({ provider, providerTitle: titleOf(ctx, provider), key: stateKey, mode, id: id2, ...ready2 && remove5 && caps ? { removal: { adapter: ready2.adapter, remove: remove5, list: caps.list } } : {} });
     }
   }
   return out;
@@ -11730,14 +11753,14 @@ async function dnsInventory(ctx) {
   const s = await axisStatus(ctx, "dns");
   const zone = s.kind === "ready" ? s.adapter.capabilities.dns : void 0;
   const listOwned = zone?.listOwned;
-  const remove4 = zone?.remove;
-  if (s.kind !== "ready" || !zone || !listOwned || !remove4) return { records: [], gaps: [dnsGap(known, baselines, s)] };
+  const remove5 = zone?.remove;
+  if (s.kind !== "ready" || !zone || !listOwned || !remove5) return { records: [], gaps: [dnsGap(known, baselines, s)] };
   const gaps = foreign.length ? foreignDnsGaps(ctx, foreign, baselines) : [];
-  const candidates5 = [];
+  const candidates6 = [];
   for (const domain of read2) {
-    for (const record2 of await listOwned(ctx, domain)) candidates5.push({ domain, record: record2 });
+    for (const record2 of await listOwned(ctx, domain)) candidates6.push({ domain, record: record2 });
   }
-  candidates5.sort((a, b) => {
+  candidates6.sort((a, b) => {
     const ka = recordKey(a.record);
     const kb = recordKey(b.record);
     if (ka !== kb) return ka < kb ? -1 : 1;
@@ -11745,11 +11768,11 @@ async function dnsInventory(ctx) {
   });
   const out = [];
   const seen2 = /* @__PURE__ */ new Set();
-  for (const c of candidates5) {
+  for (const c of candidates6) {
     const unique = `${c.domain}|${recordKey(c.record)}`;
     if (seen2.has(unique)) continue;
     seen2.add(unique);
-    out.push({ provider: s.adapter.id, providerTitle: s.adapter.title, domain: c.domain, record: c.record, adapter: s.adapter, listOwned, remove: remove4 });
+    out.push({ provider: s.adapter.id, providerTitle: s.adapter.title, domain: c.domain, record: c.record, adapter: s.adapter, listOwned, remove: remove5 });
   }
   return { records: out, gaps };
 }
@@ -11839,9 +11862,9 @@ async function projectInventory(ctx) {
   const s = await axisStatus(ctx, "hosting");
   const linked = linkedHostProjects(ctx);
   const ready2 = s.kind === "ready" ? s : null;
-  const remove4 = ready2?.adapter.capabilities.project?.remove;
-  const mine = ready2 && remove4 ? linked.find((l) => l.provider === ready2.adapter.id) : void 0;
-  if (ready2 && remove4 && mine) {
+  const remove5 = ready2?.adapter.capabilities.project?.remove;
+  const mine = ready2 && remove5 ? linked.find((l) => l.provider === ready2.adapter.id) : void 0;
+  if (ready2 && remove5 && mine) {
     const read2 = ready2.adapter.capabilities.project?.exists;
     return {
       project: {
@@ -11851,7 +11874,7 @@ async function projectInventory(ctx) {
         id: mine.id,
         ...mine.name ? { name: mine.name } : {},
         created: mine.created,
-        remove: remove4,
+        remove: remove5,
         ...read2 ? { exists: (x) => read2(x, mine.id) } : {}
       },
       gaps: linked.filter((l) => l !== mine).map((l) => hostGap(s, l))
@@ -11927,14 +11950,14 @@ async function buildTeardownPlan(ctx) {
   const webhooks2 = webhookTeardown(inventory2.webhooks);
   const keys3 = keyTeardown(inventory2.sendingKeys);
   const recorded = recordedTeardown(inventory2.recorded);
-  const project3 = projectTeardown(inventory2.project);
-  const steps = [...webhooks2.steps, ...dnsSteps(inventory2.dnsRecords), ...keys3.steps, ...recorded.steps, ...project3.steps];
+  const project4 = projectTeardown(inventory2.project);
+  const steps = [...webhooks2.steps, ...dnsSteps(inventory2.dnsRecords), ...keys3.steps, ...recorded.steps, ...project4.steps];
   const stepIds = /* @__PURE__ */ new Set();
   for (const s of steps) {
     if (stepIds.has(s.id)) throw new Error(`teardown: two resources map to step ${s.id}, so golive cannot plan an unambiguous deletion. Resolve the duplicate and re-run.`);
     stepIds.add(s.id);
   }
-  const handoffs = [...recorded.handoffs, ...webhooks2.handoffs, ...keys3.handoffs, ...project3.handoffs, ...gapHandoffs(inventory2.gaps)];
+  const handoffs = [...recorded.handoffs, ...webhooks2.handoffs, ...keys3.handoffs, ...project4.handoffs, ...gapHandoffs(inventory2.gaps)];
   const ordered = orderSteps(steps);
   return { id: planId(ordered, handoffs, ctx.release), release: structuredClone(ctx.release), steps: ordered, handoffs, unmappedEnv: [], warnings: [] };
 }
@@ -11957,7 +11980,7 @@ function webhookTeardown(webhooks2) {
   return { steps, handoffs };
 }
 function webhookStep(w, removal) {
-  const { adapter, remove: remove4, list: list4 } = removal;
+  const { adapter, remove: remove5, list: list4 } = removal;
   const { mode, id: id2, key } = w;
   const stepId = `teardown:webhook:${adapter.id}:${mode}`;
   let left = false;
@@ -11969,7 +11992,7 @@ function webhookStep(w, removal) {
     preview: [`delete the ${adapter.title} ${mode}-mode webhook endpoint golive created (${id2})`],
     intent: intentOf({ provider: adapter.id, mode, endpoint: id2 }),
     async run(sctx) {
-      const r = await remove4(sctx, id2, mode);
+      const r = await remove5(sctx, id2, mode);
       if (r.deleted) return { changes: [`deleted webhook ${id2}`] };
       if (r.reason === "endpoint not found") return { changes: [`already gone: ${id2}`] };
       if (r.reason === "not created by golive") {
@@ -12039,7 +12062,7 @@ function dnsSteps(records3) {
 }
 var sameRecord = (a, b) => a.type === b.type && a.content === b.content && a.name.toLowerCase() === b.name.toLowerCase();
 function dnsStep2(r, id2) {
-  const { adapter, domain, record: record2, listOwned, remove: remove4 } = r;
+  const { adapter, domain, record: record2, listOwned, remove: remove5 } = r;
   return step({
     id: id2,
     title: `Delete the ${adapter.title} record golive created (${record2.type} ${record2.name})`,
@@ -12048,7 +12071,7 @@ function dnsStep2(r, id2) {
     preview: [`delete the ${adapter.title} record golive created: ${formatRecord(record2)}`],
     intent: intentOf({ provider: adapter.id, domain, type: record2.type, name: record2.name, content: record2.content }),
     async run(sctx) {
-      const outcome = await remove4(sctx, domain, record2);
+      const outcome = await remove5(sctx, domain, record2);
       return { changes: [outcome === "removed" ? `deleted: ${formatRecord(record2)}` : `already gone: ${formatRecord(record2)}`] };
     },
     // A delete is only reported as done once the provider's own owned-record list no longer has it.
@@ -12152,21 +12175,21 @@ function forgetKeyRecord(ctx, key) {
     delete s.resources[key];
   });
 }
-function projectTeardown(project3) {
-  if (!project3) return { steps: [], handoffs: [] };
-  if (!project3.created) {
+function projectTeardown(project4) {
+  if (!project4) return { steps: [], handoffs: [] };
+  if (!project4.created) {
     return {
       steps: [],
       handoffs: [{
         id: "teardown:project:hosting",
-        why: `the ${project3.providerTitle} project ${project3.id} was adopted (not created by golive), so golive will not delete it`,
-        action: `If the project should go away, delete it in the ${project3.providerTitle} dashboard; keep it if the app continues elsewhere.`,
+        why: `the ${project4.providerTitle} project ${project4.id} was adopted (not created by golive), so golive will not delete it`,
+        action: `If the project should go away, delete it in the ${project4.providerTitle} dashboard; keep it if the app continues elsewhere.`,
         blocking: false,
         manual: true
       }]
     };
   }
-  return { steps: [projectStep(project3)], handoffs: [] };
+  return { steps: [projectStep(project4)], handoffs: [] };
 }
 function projectStep(p) {
   const id2 = "teardown:project:hosting";
@@ -12257,15 +12280,17 @@ function recordedTeardown(recorded) {
 function recordedSubject(r) {
   if (r.kind === "database-project") return `${r.providerTitle} project ${r.id}`;
   if (r.kind === "sending-domain") return `${r.providerTitle} sending domain ${r.name}`;
+  if (r.kind === "uptime-monitor") return `${r.providerTitle} monitor ${r.name} (${r.id})`;
   return `${r.providerTitle} project ${r.name} (${r.id})`;
 }
 function recordedThing(r) {
   if (r.kind === "database-project") return `the ${r.providerTitle} project ${r.id}`;
   if (r.kind === "sending-domain") return `the sending domain ${r.name}`;
+  if (r.kind === "uptime-monitor") return `the ${r.providerTitle} monitor ${r.name} (${r.id})`;
   return `the ${r.providerTitle} project ${r.name} (${r.id})`;
 }
 function recordedStep(r, removal) {
-  const { adapter, remove: remove4, confirm } = removal;
+  const { adapter, remove: remove5, confirm } = removal;
   const id2 = `teardown:${r.axis}:${r.provider}`;
   const label3 = recordedSubject(r);
   let deleted = false;
@@ -12277,7 +12302,7 @@ function recordedStep(r, removal) {
     preview: [`delete the ${label3} \u2014 golive created it (marker ${r.markers.join(", ")})${r.extra ?? ""}`],
     intent: intentOf({ provider: adapter.id, kind: r.kind, resource: r.id }),
     async run(sctx) {
-      const outcome = await remove4(sctx);
+      const outcome = await remove5(sctx);
       deleted = outcome.removed;
       if (outcome.removed) {
         forgetRecorded(sctx, r);
@@ -12288,9 +12313,9 @@ function recordedStep(r, removal) {
       throw new Error(`could not delete the ${label3}: ${redact(reason)}`);
     },
     // A delete is only reported as done once the provider's own read confirms it — here with three
-    // states, because PostHog and Sentry schedule a deletion instead of applying it at once:
-    // `pending` is the provider saying it accepted and queued the removal, which is confirmation,
-    // not a maybe.
+    // states, because PostHog and Sentry schedule a deletion instead of applying it at once
+    // (UptimeRobot deletes at once and never answers `pending`): `pending` is the provider saying it
+    // accepted and queued the removal, which is confirmation, not a maybe.
     async verifyInline(vctx) {
       if (!deleted) return [];
       const checkId = `${id2}:removed`;
@@ -12378,13 +12403,13 @@ async function approvedPlan(ctx, approvedId, forward) {
 init_config();
 
 // src/checks/providers.ts
-async function restProbe(ctx, ref3, table, schema, publishableKey2) {
+async function restProbe(ctx, ref4, table, schema, publishableKey2) {
   const { supabaseRestProbe: supabaseRestProbe2 } = await Promise.resolve().then(() => (init_supabase(), supabase_exports));
-  return supabaseRestProbe2(ctx, ref3, table, schema, publishableKey2);
+  return supabaseRestProbe2(ctx, ref4, table, schema, publishableKey2);
 }
-async function authedRestProbe(ctx, ref3, table, schema, publishableKey2, accessToken) {
+async function authedRestProbe(ctx, ref4, table, schema, publishableKey2, accessToken) {
   const { supabaseAuthedProbe: supabaseAuthedProbe2 } = await Promise.resolve().then(() => (init_supabase(), supabase_exports));
-  return supabaseAuthedProbe2(ctx, ref3, table, schema, publishableKey2, accessToken);
+  return supabaseAuthedProbe2(ctx, ref4, table, schema, publishableKey2, accessToken);
 }
 async function accountStatus(ctx, mode) {
   const { stripeAccountStatus: stripeAccountStatus2 } = await Promise.resolve().then(() => (init_stripe(), stripe_exports));
@@ -12407,19 +12432,19 @@ var domainLink = {
     const status = await attach.status(ctx, domain).catch(() => "pending");
     if (status === "ok") return null;
     const records3 = await attach.requiredRecords(ctx, domain).catch(() => null);
-    const project3 = await projectIntent(ctx, host.adapter);
-    const steps = track(ctx, [attachStep(ctx, host.adapter, attach, domain, project3)]);
+    const project4 = await projectIntent(ctx, host.adapter);
+    const steps = track(ctx, [attachStep(ctx, host.adapter, attach, domain, project4)]);
     const handoffs = [];
     const warnings = [];
     const dns = await dnsFor(ctx, domain);
-    if (dns.kind === "ready") steps.push(...track(ctx, [dnsStep3(ctx, host.adapter, attach, domain, dns.adapter, dns.zone, records3, project3)]));
+    if (dns.kind === "ready") steps.push(...track(ctx, [dnsStep3(ctx, host.adapter, attach, domain, dns.adapter, dns.zone, records3, project4)]));
     else if (dns.kind === "handoff") handoffs.push(dnsHandoff2(host.adapter, domain, dns.where, records3));
     else if (dns.kind === "error") warnings.push(`${domain}: ${dns.message}`);
-    if (attach.verify) steps.push(...track(ctx, [verifyStep2(ctx, host.adapter, attach.verify.bind(attach), attach, domain, project3)]));
+    if (attach.verify) steps.push(...track(ctx, [verifyStep2(ctx, host.adapter, attach.verify.bind(attach), attach, domain, project4)]));
     return { steps, handoffs, warnings };
   }
 };
-function attachStep(ctx, adapter, attach, domain, project3) {
+function attachStep(ctx, adapter, attach, domain, project4) {
   const prev = ctx.state.get().steps["domain:attach"];
   return step({
     id: "domain:attach",
@@ -12428,7 +12453,7 @@ function attachStep(ctx, adapter, attach, domain, project3) {
     risk: { writes: true },
     dependsOn: deps(ctx, ["project:hosting"]),
     preview: [`attach ${domain} to the ${adapter.title} project (no-op if already attached)`],
-    intent: intentOf({ project: project3, domain, previous: prev?.at }),
+    intent: intentOf({ project: project4, domain, previous: prev?.at }),
     async run(sctx) {
       await attach.add(sctx, domain);
       return { changes: [`attached ${domain} to ${adapter.title}`] };
@@ -12455,7 +12480,7 @@ function satisfies2(have, want) {
   if (h === w) return true;
   return want.type === "TXT" && w.startsWith("v=spf1") && h.startsWith("v=spf1") && spfTerms(w).every((t) => spfTerms(h).includes(t));
 }
-function dnsStep3(ctx, adapter, attach, domain, dnsAdapter, zone, planned, project3) {
+function dnsStep3(ctx, adapter, attach, domain, dnsAdapter, zone, planned, project4) {
   let wrote = [];
   return step({
     id: "domain:dns",
@@ -12464,7 +12489,7 @@ function dnsStep3(ctx, adapter, attach, domain, dnsAdapter, zone, planned, proje
     risk: { writes: true, dns: true },
     dependsOn: deps(ctx, ["domain:attach"]),
     preview: planned?.length ? planned.map((r) => `upsert at ${dnsAdapter.title}: ${formatRecord(r)} (not proxied)`) : [`upsert at ${dnsAdapter.title} the records ${adapter.title} requires for ${domain} (known after attaching)`],
-    intent: intentOf({ project: project3, zone: `${dnsAdapter.id}:${domain}`, records: planned?.length ? planned.map(recordKey2) : ["(after attach)"] }),
+    intent: intentOf({ project: project4, zone: `${dnsAdapter.id}:${domain}`, records: planned?.length ? planned.map(recordKey2) : ["(after attach)"] }),
     async run(sctx) {
       const records3 = await attach.requiredRecords(sctx, domain);
       if (planned?.length && !sameRecords(planned, records3)) {
@@ -12501,7 +12526,7 @@ function dnsStep3(ctx, adapter, attach, domain, dnsAdapter, zone, planned, proje
     }
   });
 }
-function verifyStep2(ctx, adapter, verify2, attach, domain, project3) {
+function verifyStep2(ctx, adapter, verify2, attach, domain, project4) {
   const prev = ctx.state.get().steps["domain:verify"];
   return step({
     id: "domain:verify",
@@ -12513,7 +12538,7 @@ function verifyStep2(ctx, adapter, verify2, attach, domain, project3) {
       `ask ${adapter.title} to verify ownership of ${domain} (if another ${adapter.title} account used this domain, a passing check moves it to this project; DNS still propagating is not a failure)`,
       ...prev ? [`previous request: ${prev.at}`] : []
     ],
-    intent: intentOf({ project: project3, domain }),
+    intent: intentOf({ project: project4, domain }),
     async run(sctx) {
       const changes = [];
       try {
@@ -13206,20 +13231,20 @@ async function dbItems(ctx, at, c) {
       checkId: dbCheckId(s.adapter)
     });
   }
-  const current5 = await once(ctx, `db:current:${provider}`, async () => {
+  const current6 = await once(ctx, `db:current:${provider}`, async () => {
     try {
       return { ok: true, ref: await linker.current(ctx) };
     } catch (e) {
       return { ok: false, error: e };
     }
   });
-  if (current5.ok && current5.ref && current5.ref.id !== recordedId) {
+  if (current6.ok && current6.ref && current6.ref.id !== recordedId) {
     c.items.push({
       id: "db:current",
       class: "db-selectors",
       subject,
       expected: label(`this repo uses ${recordedId}`, baseline),
-      observed: seen(`the repo now resolves to ${current5.ref.name ?? current5.ref.id} (${current5.ref.id})`, at),
+      observed: seen(`the repo now resolves to ${current6.ref.name ?? current6.ref.id} (${current6.ref.id})`, at),
       baseline,
       severity: "medium",
       action: "verify",
@@ -13503,16 +13528,16 @@ async function hostItems(ctx, at, c) {
       reason: unreadable2(host, "project read")
     });
   } else {
-    const current5 = await once(ctx, `project:current:${provider}`, async () => {
+    const current6 = await once(ctx, `project:current:${provider}`, async () => {
       try {
         return { ok: true, ref: await linker.current(ctx) };
       } catch (e) {
         return { ok: false, error: e };
       }
     });
-    if (!current5.ok && isUnreadable(current5.error)) {
-      unread(c, { id: "project:hosting", class: "host-project", subject, expected: `this repo is linked to ${recordedId}`, baseline, reason: `reading the linked project failed: ${errMsg2(current5.error)}` });
-    } else if (current5.ok && current5.ref && current5.ref.id === recordedId) {
+    if (!current6.ok && isUnreadable(current6.error)) {
+      unread(c, { id: "project:hosting", class: "host-project", subject, expected: `this repo is linked to ${recordedId}`, baseline, reason: `reading the linked project failed: ${errMsg2(current6.error)}` });
+    } else if (current6.ok && current6.ref && current6.ref.id === recordedId) {
       c.verified.push(`${subject}: still the project this repo links (${recordedId})`);
     } else {
       let exists = null;
@@ -13527,7 +13552,7 @@ async function hostItems(ctx, at, c) {
         });
         exists = r.ok;
       }
-      const linked = current5.ok ? current5.ref ? `${current5.ref.name ?? current5.ref.id} (${current5.ref.id})` : "nothing" : errMsg2(current5.error);
+      const linked = current6.ok ? current6.ref ? `${current6.ref.name ?? current6.ref.id} (${current6.ref.id})` : "nothing" : errMsg2(current6.error);
       c.items.push({
         id: "project:hosting",
         class: "host-project",
@@ -13969,28 +13994,28 @@ function checkAcl(path) {
 function directories(path, create7) {
   const owner = uid();
   const paths = [];
-  for (let current5 = dirname7(path); ; current5 = dirname7(current5)) {
-    paths.unshift(current5);
-    if (dirname7(current5) === current5) break;
+  for (let current6 = dirname7(path); ; current6 = dirname7(current6)) {
+    paths.unshift(current6);
+    if (dirname7(current6) === current6) break;
   }
   const out = /* @__PURE__ */ new Map();
-  for (const current5 of paths) {
-    let info = statOrMissing(current5);
+  for (const current6 of paths) {
+    let info = statOrMissing(current6);
     if (!info && create7) {
       try {
-        mkdirSync5(current5, { mode: 448 });
+        mkdirSync5(current6, { mode: 448 });
       } catch (error) {
         if (error.code !== "EEXIST") throw error;
       }
-      info = lstatSync6(current5);
+      info = lstatSync6(current6);
     }
     if (!info) break;
     if (info.isSymbolicLink() || !info.isDirectory() || info.uid !== owner && info.uid !== 0) throw new SafeFailure("unsafe-path");
     const sharedSticky = info.uid === 0 && (info.mode & 512) !== 0;
     if ((info.mode & 18) !== 0 && !sharedSticky) throw new SafeFailure("unsafe-path");
-    if (current5 === dirname7(path) && info.uid !== owner) throw new SafeFailure("unsafe-path");
-    checkAcl(current5);
-    out.set(current5, info);
+    if (current6 === dirname7(path) && info.uid !== owner) throw new SafeFailure("unsafe-path");
+    checkAcl(current6);
+    out.set(current6, info);
   }
   return out;
 }
@@ -14020,12 +14045,12 @@ function snapshot(path) {
       if (!got) break;
     }
     const bytes = buffer.subarray(0, size);
-    const text3 = bytes.toString("utf8");
-    const content3 = text3 ? new Secret("credential-file", text3) : null;
-    if (!Buffer.from(text3, "utf8").equals(bytes)) throw new SafeFailure("unsafe-path");
+    const text4 = bytes.toString("utf8");
+    const content3 = text4 ? new Secret("credential-file", text4) : null;
+    if (!Buffer.from(text4, "utf8").equals(bytes)) throw new SafeFailure("unsafe-path");
     const after = fstatSync6(fd);
-    const current5 = lstatSync6(path);
-    if (!sameFile(opened, after) || !sameFile(after, current5)) throw new SafeFailure("concurrent-change");
+    const current6 = lstatSync6(path);
+    if (!sameFile(opened, after) || !sameFile(after, current6)) throw new SafeFailure("concurrent-change");
     return { directories: parents, file: after, content: content3 };
   } finally {
     closeSync6(fd);
@@ -14042,8 +14067,8 @@ function hasAssignment(content3, name3) {
 }
 function changed(before, now) {
   for (const [path, old] of before.directories) {
-    const current5 = now.directories.get(path);
-    if (!current5 || current5.dev !== old.dev || current5.ino !== old.ino || current5.uid !== old.uid || current5.mode !== old.mode) return true;
+    const current6 = now.directories.get(path);
+    if (!current6 || current6.dev !== old.dev || current6.ino !== old.ino || current6.uid !== old.uid || current6.mode !== old.mode) return true;
   }
   return Boolean(before.file) !== Boolean(now.file) || Boolean(before.file && now.file && !sameFile(before.file, now.file)) || raw(before) !== raw(now);
 }
@@ -14065,9 +14090,9 @@ function updated(before, name3, value) {
 }
 function removeOwned(path, info) {
   try {
-    const current5 = statOrMissing(path);
-    if (!current5) return true;
-    if (!info || !current5.isFile() || current5.dev !== info.dev || current5.ino !== info.ino) return false;
+    const current6 = statOrMissing(path);
+    if (!current6) return true;
+    if (!info || !current6.isFile() || current6.dev !== info.dev || current6.ino !== info.ino) return false;
     unlinkSync3(path);
     return true;
   } catch {
@@ -14091,8 +14116,8 @@ function saveAtomically(path, before, name3, value) {
   let failure2;
   try {
     lockInfo = fstatSync6(lock);
-    const current5 = snapshot(path);
-    if (changed(before, current5)) throw new SafeFailure("concurrent-change");
+    const current6 = snapshot(path);
+    if (changed(before, current6)) throw new SafeFailure("concurrent-change");
     const content3 = updated(before, name3, value);
     const tempPath = join10(dirname7(path), `.${basename5(path)}-${randomBytes3(12).toString("hex")}.tmp`);
     const fd = openSync6(tempPath, constants6.O_CREAT | constants6.O_EXCL | constants6.O_WRONLY | constants6.O_NOFOLLOW, 384);
@@ -14199,15 +14224,15 @@ async function resolveSession(ctx) {
   return { kind: "none", cliInstalled };
 }
 function readLinkFile(ctx) {
-  const candidates5 = [];
+  const candidates6 = [];
   try {
-    candidates5.push(readFileSync9(join11(ctx.cwd, ".vercel", "project.json"), "utf8"));
+    candidates6.push(readFileSync9(join11(ctx.cwd, ".vercel", "project.json"), "utf8"));
   } catch {
   }
   const fromDetect = ctx.detect.configs[".vercel/project.json"];
-  if (fromDetect) candidates5.push(fromDetect);
-  for (const text3 of candidates5) {
-    const j = parseJson(text3);
+  if (fromDetect) candidates6.push(fromDetect);
+  for (const text4 of candidates6) {
+    const j = parseJson(text4);
     if (j && (j.projectId || j.orgId)) return { projectId: j.projectId, orgId: j.orgId, projectName: j.projectName };
   }
   return null;
@@ -14265,12 +14290,12 @@ async function viaToken(ctx, token2, method, path, body2, opts) {
 function serialise(body2) {
   return secretJson("vercel-api-body", body2);
 }
-function parseCliError(text3) {
-  const json2 = text3.match(/\{[\s\S]*\}/);
+function parseCliError(text4) {
+  const json2 = text4.match(/\{[\s\S]*\}/);
   const j = json2 ? parseJson(json2[0]) : null;
-  const status = j?.status ?? Number(text3.match(/\b([45]\d\d)\b/)?.[1] ?? NaN);
-  const code = j?.error?.code ?? j?.code ?? (/not[_ ]found/i.test(text3) ? "not_found" : void 0);
-  const message = redact((j?.error?.message ?? j?.message ?? text3.trim().split("\n").slice(-3).join(" ")).replace(/\s+/g, " ").trim().slice(0, 300));
+  const status = j?.status ?? Number(text4.match(/\b([45]\d\d)\b/)?.[1] ?? NaN);
+  const code = j?.error?.code ?? j?.code ?? (/not[_ ]found/i.test(text4) ? "not_found" : void 0);
+  const message = redact((j?.error?.message ?? j?.message ?? text4.trim().split("\n").slice(-3).join(" ")).replace(/\s+/g, " ").trim().slice(0, 300));
   return { status: Number.isFinite(status) ? status : code === "not_found" ? 404 : void 0, code, message };
 }
 function apiError(method, path, status, code, message) {
@@ -14289,9 +14314,9 @@ function hintFor(status) {
 function isNotFound(e) {
   return e instanceof VercelError && (e.status === 404 || e.code === "not_found");
 }
-function parseJson(text3) {
+function parseJson(text4) {
   try {
-    return JSON.parse(text3);
+    return JSON.parse(text4);
   } catch {
     return null;
   }
@@ -14328,8 +14353,8 @@ function writeLinkFile(ctx, p) {
     ctx.log.info(`vercel: ${file} not written (Vercel did not report the owning account); deploys still pin the project`);
     return;
   }
-  const current5 = readProjectLink(ctx);
-  if (current5?.projectId === p.id && current5.orgId === p.accountId) return;
+  const current6 = readProjectLink(ctx);
+  if (current6?.projectId === p.id && current6.orgId === p.accountId) return;
   try {
     mkdirSync6(join12(ctx.cwd, ".vercel"), { recursive: true });
     writeFileSync7(join12(ctx.cwd, ".vercel", "project.json"), JSON.stringify({ projectId: p.id, orgId: p.accountId, projectName: p.name }, null, 2) + "\n");
@@ -14438,15 +14463,15 @@ async function linkedProject(ctx) {
   const stateName = ctx.state.resource("vercel.projectName");
   if (stateId && stateName) return { id: stateId, name: stateName };
   const link = readLinkFile(ctx);
-  const ref3 = stateId ?? ctx.config.projects?.hosting ?? link?.projectId;
-  if (!ref3) return null;
-  if (link?.projectId === ref3 && link.projectName) return { id: ref3, name: link.projectName, accountId: link.orgId };
+  const ref4 = stateId ?? ctx.config.projects?.hosting ?? link?.projectId;
+  if (!ref4) return null;
+  if (link?.projectId === ref4 && link.projectName) return { id: ref4, name: link.projectName, accountId: link.orgId };
   try {
-    const p = await projectInfo(ctx, ref3);
+    const p = await projectInfo(ctx, ref4);
     return { id: p.id, name: p.name, accountId: p.accountId };
   } catch (e) {
     if (!isNotFound(e)) throw e;
-    ctx.log.warn(`Vercel project "${ref3}" no longer exists or is in another team; pick or create one again.`);
+    ctx.log.warn(`Vercel project "${ref4}" no longer exists or is in another team; pick or create one again.`);
     return null;
   }
 }
@@ -15030,11 +15055,11 @@ function loginHelp() {
 function sendingOnlyHelp() {
   return `RESEND_API_KEY is a sending-only key; golive needs a Full access key to create domains and keys. ${CLI_LOGIN} Or create a Full access key at https://resend.com/api-keys and replace the sending-only one: ${tokenHowTo(TOKEN)}`;
 }
-function restError(what, status, body2, text3) {
+function restError(what, status, body2, text4) {
   const b = body2 && typeof body2 === "object" ? body2 : {};
   const code = b.name ?? "";
-  const detail = b.message ?? text3.slice(0, 300);
-  return new HttpError(redact(`Resend ${what} failed (HTTP ${status}${code ? ` ${code}` : ""}): ${detail}${hintFor2(code, status, detail)}`), status, redact(text3));
+  const detail = b.message ?? text4.slice(0, 300);
+  return new HttpError(redact(`Resend ${what} failed (HTTP ${status}${code ? ` ${code}` : ""}): ${detail}${hintFor2(code, status, detail)}`), status, redact(text4));
 }
 function hintFor2(code, status, detail) {
   if (code === "restricted_api_key") return ` \u2014 ${sendingOnlyHelp()}`;
@@ -15383,7 +15408,7 @@ function mergeSpf(existing, wanted, name3) {
   const have = terms(existing);
   const seen2 = /* @__PURE__ */ new Map();
   for (const t of have) if (!seen2.has(mech(t))) seen2.set(mech(t), t);
-  const current5 = ["v=spf1", ...have].join(" ");
+  const current6 = ["v=spf1", ...have].join(" ");
   const added = [];
   for (const t of terms(wanted)) {
     if (ALL.test(t) || MODIFIER.test(t)) continue;
@@ -15391,7 +15416,7 @@ function mergeSpf(existing, wanted, name3) {
     if (prior !== void 0) {
       if (passes(t) && !passes(prior)) {
         throw new Error(
-          `SPF at ${name3} already has "${prior}", which matches this sender first with a non-pass result, so SPF for it can never pass. Change that term to "${t.replace(/^\+/, "")}" in the existing record "${current5}" in your DNS dashboard, then re-run.`
+          `SPF at ${name3} already has "${prior}", which matches this sender first with a non-pass result, so SPF for it can never pass. Change that term to "${t.replace(/^\+/, "")}" in the existing record "${current6}" in your DNS dashboard, then re-run.`
         );
       }
       continue;
@@ -15399,7 +15424,7 @@ function mergeSpf(existing, wanted, name3) {
     seen2.set(mech(t), t);
     added.push(t);
   }
-  if (!added.length) return { content: current5, added };
+  if (!added.length) return { content: current6, added };
   let at = have.findIndex((t) => ALL.test(t));
   if (at < 0) at = have.findIndex((t) => MODIFIER.test(t));
   if (at < 0) at = have.length;
@@ -15407,7 +15432,7 @@ function mergeSpf(existing, wanted, name3) {
   const lookups = countSpfLookups(content3);
   if (lookups > SPF_LOOKUP_LIMIT) {
     throw new Error(
-      `SPF at ${name3} would need ${lookups} DNS lookups after adding ${added.join(" ")} (limit ${SPF_LOOKUP_LIMIT}; over it SPF fails). Remove unused include:/a/mx mechanisms from the existing record "${current5}" (or flatten it) in your DNS dashboard, then re-run.`
+      `SPF at ${name3} would need ${lookups} DNS lookups after adding ${added.join(" ")} (limit ${SPF_LOOKUP_LIMIT}; over it SPF fails). Remove unused include:/a/mx mechanisms from the existing record "${current6}" (or flatten it) in your DNS dashboard, then re-run.`
     );
   }
   return { content: content3, added };
@@ -15866,9 +15891,9 @@ async function cliRequest(ctx, cli3, method, path, body2) {
   const match = typeof message === "string" ? /HTTP error (\d{3})/.exec(message) : null;
   return { status: match ? Number(match[1]) : 0 };
 }
-function safeJson(text3) {
+function safeJson(text4) {
   try {
-    return JSON.parse(text3);
+    return JSON.parse(text4);
   } catch {
     return void 0;
   }
@@ -16088,10 +16113,10 @@ async function create3(ctx, zone, want) {
 }
 async function update(ctx, zone, before, want) {
   if (!owned(ctx, zone, before)) conflict();
-  const current5 = await records(ctx, zone);
-  rejectDelegatedRecords(zone, current5, fullName(before, zone));
-  const fresh = current5.find((r) => r.recordId === before.recordId);
-  if (!fresh || snapshot2(fresh) !== snapshot2(before) || current5.some((r) => r.recordId !== before.recordId && r.name === before.name && (r.type === "CNAME" || want.type === "CNAME" || r.type === want.type && ADDRESS2.has(want.type)))) conflict();
+  const current6 = await records(ctx, zone);
+  rejectDelegatedRecords(zone, current6, fullName(before, zone));
+  const fresh = current6.find((r) => r.recordId === before.recordId);
+  if (!fresh || snapshot2(fresh) !== snapshot2(before) || current6.some((r) => r.recordId !== before.recordId && r.name === before.name && (r.type === "CNAME" || want.type === "CNAME" || r.type === want.type && ADDRESS2.has(want.type)))) conflict();
   const replaced = parseRecord(await api3(ctx, "PUT", `${pathFor(zone)}/${encodeURIComponent(before.recordId)}`, want));
   if (replaced.recordId !== before.recordId || !same(replaced, want)) throw malformed();
   remember4(ctx, zone, replaced);
@@ -16304,12 +16329,12 @@ async function findZone2(ctx, domain) {
   return null;
 }
 async function withinAuthority(ctx, target, zone) {
-  let current5 = target.replace(/^\*\./, "");
-  while (current5 !== zone) {
-    const answer = await resolve4(ctx, current5, "NS");
-    if (answer.status !== 0 && answer.status !== 3) throw new Error(`Cannot confirm DNS delegation for ${current5}; retry before changing records.`);
-    if (answer.answers.some((r) => r.type === "NS" && r.name === current5)) return false;
-    current5 = current5.split(".").slice(1).join(".");
+  let current6 = target.replace(/^\*\./, "");
+  while (current6 !== zone) {
+    const answer = await resolve4(ctx, current6, "NS");
+    if (answer.status !== 0 && answer.status !== 3) throw new Error(`Cannot confirm DNS delegation for ${current6}; retry before changing records.`);
+    if (answer.answers.some((r) => r.type === "NS" && r.name === current6)) return false;
+    current6 = current6.split(".").slice(1).join(".");
   }
   return true;
 }
@@ -16771,10 +16796,10 @@ async function create4(ctx, name3, approved) {
   if (confirmed.name !== name3) {
     throw new PosthogError("PostHog created-project destination could not be confirmed. Inspect the organization and re-plan; nothing was linked.");
   }
-  const ref3 = refOf2(confirmed, org);
-  remember5(ctx, ref3, { created: true });
+  const ref4 = refOf2(confirmed, org);
+  remember5(ctx, ref4, { created: true });
   ctx.log.info(`created PostHog project ${confirmed.name} (${confirmed.id}) in organization ${org.name ?? org.id}`);
-  return ref3;
+  return ref4;
 }
 async function remove2(ctx) {
   const region = regionOf(ctx);
@@ -17196,10 +17221,10 @@ async function create5(ctx, name3, approved) {
   if (target.team && confirmed.team && confirmed.team.slug !== target.team) {
     throw new SentryError(`Sentry created the project in team ${confirmed.team.slug}, not the approved ${target.team}; inspect it and re-plan before linking anything.`);
   }
-  const ref3 = refOf3(confirmed, org);
+  const ref4 = refOf3(confirmed, org);
   remember6(ctx, confirmed, org, { created: true });
   ctx.log.info(`created Sentry project ${confirmed.name} (${confirmed.slug}) in organization ${org.name ?? org.slug}`);
-  return ref3;
+  return ref4;
 }
 async function remove3(ctx) {
   const region = regionOf2(ctx);
@@ -17303,6 +17328,345 @@ var sentryAdapter = {
   capabilities: { project: project2, monitoring }
 };
 
+// src/adapters/uptimerobot.ts
+init_secret();
+
+// src/adapters/uptimerobot-api.ts
+init_credentials();
+init_http();
+init_secret();
+var UPTIMEROBOT_TOKEN = "UPTIMEROBOT_API_KEY";
+var UPTIMEROBOT_API_HOST = "https://api.uptimerobot.com";
+var UPTIMEROBOT_METHODS = ["getAccountDetails", "getMonitors", "newMonitor", "deleteMonitor"];
+var UPTIMEROBOT_KEY_TYPES = "UptimeRobot key types (uptimerobot.com/api/legacy): a read-only key can call every get* method \u2014 enough to read the monitor golive checks; a monitor-specific key can call only getMonitors for its one monitor; creating and deleting the monitor golive manages needs the account's main (account-specific) key. golive never needs a key wider than that.";
+function uptimerobotHelp() {
+  return `Create an API key in UptimeRobot under Integrations & API \u2192 API (older dashboards: My Settings \u2192 API). Use a read-only key for monitoring alone, or the account's main key when golive should create and delete the monitor it manages. ${UPTIMEROBOT_KEY_TYPES} ${tokenHowTo(UPTIMEROBOT_TOKEN)}`;
+}
+var UptimerobotApiError = class extends HttpError {
+  constructor(message, status, body2, code) {
+    super(message, status, body2);
+    this.code = code;
+  }
+  code;
+};
+function errorOf(res) {
+  const body2 = res.json && typeof res.json === "object" && !Array.isArray(res.json) ? res.json : {};
+  const err = body2.error && typeof body2.error === "object" && !Array.isArray(body2.error) ? body2.error : {};
+  const code = typeof err.type === "string" ? err.type : "";
+  const detail = typeof err.message === "string" ? err.message : typeof err.detail === "string" ? err.detail : "";
+  const parameter = typeof err.parameter_name === "string" ? err.parameter_name : "";
+  return { code, detail: detail || res.text.slice(0, 300), parameter };
+}
+function uptimerobotError(res, what) {
+  const { code, detail, parameter } = errorOf(res);
+  const kind = code ? ` (${code})` : "";
+  const at = parameter ? ` on ${parameter}` : "";
+  let hint;
+  if (res.status === 401 || res.status === 403) {
+    hint = ` The UptimeRobot credential in ${UPTIMEROBOT_TOKEN} was rejected or lacks this permission. ${UPTIMEROBOT_KEY_TYPES}`;
+  } else if (res.status === 404) {
+    hint = ' UptimeRobot answered "not found" for this path: the API version or method may have changed since the plan was approved. Re-run `golive plan` and re-approve.';
+  } else if (res.status === 429) {
+    const retry = res.headers?.["retry-after"];
+    hint = ` UptimeRobot is rate-limiting requests (the docs publish FREE 10 req/min up to 5000 for Pro).${retry ? ` It asked to retry after ${retry} s.` : ""} Wait a moment and re-run.`;
+  } else if (res.status === 0) {
+    hint = ` Could not reach ${UPTIMEROBOT_API_HOST}; check your network and re-run.`;
+  } else {
+    hint = "";
+  }
+  return new UptimerobotApiError(redact(`UptimeRobot ${what} failed (HTTP ${res.status}${kind}): ${detail}${at}${hint}`), res.status, redact(res.text.slice(0, 1e3)), code || void 0);
+}
+function uptimerobotStatError(res, what) {
+  const { code, detail, parameter } = errorOf(res);
+  const kind = code ? ` (${code})` : "";
+  const at = parameter ? ` on ${parameter}` : "";
+  const keyHint = /api[_-]?key|invalid[_ ]?parameter|missing[_ ]?parameter/i.test(`${code} ${detail} ${parameter}`) ? ` Check that ${UPTIMEROBOT_TOKEN} holds an account key that may call ${what}. ${UPTIMEROBOT_KEY_TYPES}` : "";
+  const planHint = code === "access_denied" ? " The account's plan refused this call: free plans have been observed refusing newMonitor with access_denied (the v2 docs publish no such limit). Create the monitor in the UptimeRobot dashboard and set projects.monitoring to its id or name (golive then adopts it), or change the plan yourself \u2014 golive never changes a plan or spends money." : "";
+  return new UptimerobotApiError(redact(`UptimeRobot ${what} failed${kind}: ${detail}${at}${keyHint}${planHint}`), res.status, redact(res.text.slice(0, 1e3)), code || void 0);
+}
+async function uptimerobotCall(ctx, call2) {
+  const key = ctx.envToken(UPTIMEROBOT_TOKEN);
+  if (!key) throw new UptimerobotApiError(`No UptimeRobot credential is available. ${uptimerobotHelp()}`, 0, "");
+  if (!UPTIMEROBOT_METHODS.includes(call2.method)) throw new UptimerobotApiError("Invalid UptimeRobot API method.", 0, "");
+  const res = await ctx.http({
+    method: "POST",
+    url: `${UPTIMEROBOT_API_HOST}/v2/${call2.method}`,
+    form: { api_key: key, format: "json", ...call2.form ?? {} },
+    ...call2.idempotent ? { idempotent: true } : {}
+  });
+  if (res.status < 200 || res.status >= 300) throw uptimerobotError(res, call2.what);
+  if (!res.json || typeof res.json !== "object" || Array.isArray(res.json) || res.json.stat !== "ok") {
+    throw uptimerobotStatError(res, call2.what);
+  }
+  return res.json;
+}
+function affectedMonitorId(json2) {
+  const m = json2 && typeof json2 === "object" && !Array.isArray(json2) ? json2.monitor : void 0;
+  const id2 = m && typeof m === "object" && !Array.isArray(m) ? m.id : void 0;
+  const s = typeof id2 === "number" ? String(id2) : typeof id2 === "string" ? id2 : "";
+  if (!/^[0-9]{1,20}$/.test(s)) throw new UptimerobotApiError("UptimeRobot returned no monitor id for the affected monitor; nothing was inferred.", 0, "");
+  return s;
+}
+
+// src/adapters/uptimerobot.ts
+var errMsg7 = (e) => redact(e instanceof Error ? e.message : String(e));
+var MONITOR_ID_KEY = "uptimerobot.monitorId";
+var MONITOR_NAME_KEY = "uptimerobot.monitorName";
+var CREATED_MONITOR_KEY = "uptimerobot.createdMonitorId";
+var UptimerobotError = class extends Error {
+};
+var MONITOR_TYPE_HTTP = 1;
+var MONITOR_STATUS_TEXT = { 0: "paused", 1: "not checked yet", 2: "up", 8: "seems down", 9: "down" };
+var monitorStatusText = (code) => MONITOR_STATUS_TEXT[code] ?? `unknown status ${code}`;
+var LOG_EVENT_TEXT = { 1: "down", 2: "up", 98: "started", 99: "paused" };
+function obj3(v, what) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) throw new UptimerobotError(`UptimeRobot returned an unexpected ${what}; nothing was inferred.`);
+  return v;
+}
+function text3(v, what) {
+  if (typeof v !== "string" || !v || v.length > 200 || /[\r\n\x00-\x1f]/.test(v) || isRegisteredSecret(v)) throw new UptimerobotError(`UptimeRobot returned an invalid ${what}.`);
+  return v;
+}
+function numericId2(v, what) {
+  const s = typeof v === "number" ? String(v) : v;
+  if (typeof s !== "string" || !/^[0-9]{1,20}$/.test(s)) throw new UptimerobotError(`UptimeRobot returned an invalid ${what} id.`);
+  return s;
+}
+function integer(v) {
+  if (typeof v === "number" && Number.isInteger(v)) return v;
+  if (typeof v === "string" && /^[0-9]{1,6}$/.test(v)) return Number(v);
+  return void 0;
+}
+function urlText(v) {
+  const s = typeof v === "string" ? v : "";
+  if (!s || s.length > 2048 || /[\r\n\x00-\x1f]/.test(s) || isRegisteredSecret(s)) throw new UptimerobotError("UptimeRobot returned an invalid monitor URL.");
+  let u;
+  try {
+    u = new URL(s);
+  } catch {
+    throw new UptimerobotError("UptimeRobot returned an invalid monitor URL.");
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") throw new UptimerobotError("The UptimeRobot monitor is not an HTTP(S) URL; golive only manages HTTP(S) monitors.");
+  return s;
+}
+function reasonText(v) {
+  const raw2 = typeof v === "string" ? v : v && typeof v === "object" && !Array.isArray(v) ? v.detail : void 0;
+  return typeof raw2 === "string" && raw2 && raw2.length <= 300 && !/[\r\n\x00-\x1f]/.test(raw2) && !isRegisteredSecret(raw2) ? raw2 : void 0;
+}
+function monitorsOf(json2, what) {
+  const list4 = obj3(json2, what).monitors;
+  if (!Array.isArray(list4)) throw new UptimerobotError(`UptimeRobot returned an unexpected ${what} list; nothing was inferred.`);
+  return list4.map((m) => obj3(m, "monitor"));
+}
+function monitorOf(v) {
+  const m = obj3(v, "monitor");
+  const type = integer(m.type);
+  const status = integer(m.status);
+  if (type === void 0) throw new UptimerobotError("UptimeRobot returned a monitor without a type; nothing was inferred.");
+  if (status === void 0) throw new UptimerobotError("UptimeRobot returned a monitor without a status; nothing was inferred.");
+  const interval = integer(m.interval);
+  const logs = Array.isArray(m.logs) ? m.logs : [];
+  const first = logs.length ? obj3(logs[0], "monitor log") : void 0;
+  const logType = first ? integer(first.type) : void 0;
+  const logAt = first ? integer(first.datetime) : void 0;
+  const logFor = first ? integer(first.duration) : void 0;
+  const reason = first ? reasonText(first.reason) : void 0;
+  return {
+    id: numericId2(m.id, "monitor"),
+    name: text3(m.friendly_name, "monitor name"),
+    url: urlText(m.url),
+    type,
+    status,
+    ...interval !== void 0 ? { interval } : {},
+    ...logType !== void 0 && logAt !== void 0 ? { lastLog: { type: logType, datetime: logAt, ...logFor !== void 0 ? { duration: logFor } : {}, ...reason ? { reason } : {} } } : {}
+  };
+}
+function accountOf(json2) {
+  const a = obj3(obj3(json2, "account answer").account, "account");
+  const email = text3(a.email, "account email");
+  const limit = integer(a.monitor_limit);
+  const interval = integer(a.monitor_interval);
+  const up = integer(a.up_monitors);
+  const down = integer(a.down_monitors);
+  const paused = integer(a.paused_monitors) ?? integer(a.pause_monitors);
+  return {
+    email,
+    ...limit !== void 0 ? { monitorLimit: limit } : {},
+    ...interval !== void 0 ? { monitorIntervalSeconds: interval } : {},
+    ...up !== void 0 ? { up } : {},
+    ...down !== void 0 ? { down } : {},
+    ...paused !== void 0 ? { paused } : {}
+  };
+}
+async function accountDetails(ctx) {
+  return accountOf(await uptimerobotCall(ctx, { method: "getAccountDetails", what: "read the account", idempotent: true }));
+}
+var PAGE_LIMIT = 50;
+var MAX_PAGES = 20;
+async function listMonitors(ctx) {
+  const out = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const json2 = await uptimerobotCall(ctx, {
+      method: "getMonitors",
+      form: { offset: out.length, limit: PAGE_LIMIT },
+      what: "list monitors",
+      idempotent: true
+    });
+    const rows3 = monitorsOf(json2, "monitor").map(monitorOf);
+    out.push(...rows3);
+    const pagination = obj3(json2, "answer").pagination;
+    const total = pagination && typeof pagination === "object" && !Array.isArray(pagination) ? integer(pagination.total) : void 0;
+    if (rows3.length < PAGE_LIMIT || total !== void 0 && out.length >= total) break;
+    if (page === MAX_PAGES - 1) ctx.log.info(`uptimerobot: read the first ${out.length} monitors only; an account this large needs projects.monitoring to name the monitor`);
+  }
+  return out;
+}
+async function exactMonitor(ctx, idValue) {
+  const id2 = numericId2(idValue, "monitor");
+  const rows3 = monitorsOf(
+    await uptimerobotCall(ctx, { method: "getMonitors", form: { monitors: id2, logs: 1, logs_limit: 1 }, what: `read monitor ${id2}`, idempotent: true }),
+    "monitor"
+  ).map(monitorOf);
+  if (!rows3.length) return null;
+  const match = rows3.filter((m) => m.id === id2);
+  if (!match.length) throw new UptimerobotError(`UptimeRobot answered a monitor read for ${id2} with a different monitor; nothing was inferred.`);
+  return match[0];
+}
+var refOf4 = (m) => ({ id: m.id, name: m.name });
+function canonicalUrl(raw2) {
+  try {
+    const u = new URL(raw2);
+    return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}${u.search}`;
+  } catch {
+    return null;
+  }
+}
+function sameWatchedUrl(a, b) {
+  const ca = canonicalUrl(a);
+  const cb = canonicalUrl(b);
+  return ca !== null && ca === cb;
+}
+async function resolve9(ctx, selected) {
+  if (/^[0-9]{1,20}$/.test(selected)) {
+    const exact4 = await exactMonitor(ctx, selected);
+    if (exact4) return refOf4(exact4);
+  } else {
+    const matches3 = (await listMonitors(ctx)).filter((m) => m.name.toLowerCase() === selected.toLowerCase());
+    if (matches3.length > 1) {
+      throw new UptimerobotError(
+        `UptimeRobot has ${matches3.length} monitors matching "${selected}" in this account; set projects.monitoring to one exact monitor id or friendly name (an ambiguous or missing selection is never guessed).`
+      );
+    }
+    if (matches3.length === 1) return refOf4(matches3[0]);
+  }
+  throw new UptimerobotError(`UptimeRobot has no monitor matching "${selected}" in this account; set projects.monitoring to one exact monitor id or friendly name (an ambiguous or missing selection is never guessed).`);
+}
+async function current4(ctx) {
+  const chosen = ctx.config.projects?.monitoring ?? ctx.state.resource(MONITOR_ID_KEY);
+  return chosen ? resolve9(ctx, chosen) : null;
+}
+async function candidates4(ctx) {
+  return (await listMonitors(ctx)).map(refOf4);
+}
+function remember7(ctx, m, opts = {}) {
+  ctx.state.save((s) => {
+    s.resources[MONITOR_ID_KEY] = m.id;
+    s.resources[MONITOR_NAME_KEY] = m.name;
+    if (opts.created) s.resources[CREATED_MONITOR_KEY] = m.id;
+    else if (s.resources[CREATED_MONITOR_KEY] !== m.id) delete s.resources[CREATED_MONITOR_KEY];
+  });
+}
+async function createMonitor(ctx, spec) {
+  if (!spec.name || spec.name.length > 200 || /[\r\n\x00-\x1f]/.test(spec.name)) throw new UptimerobotError("Invalid UptimeRobot monitor name.");
+  const url = urlText(spec.url);
+  const account2 = await accountDetails(ctx);
+  const used = (account2.up ?? 0) + (account2.down ?? 0) + (account2.paused ?? 0);
+  if (account2.monitorLimit !== void 0 && account2.up !== void 0 && account2.down !== void 0 && account2.paused !== void 0 && used >= account2.monitorLimit) {
+    throw new UptimerobotError(
+      `The UptimeRobot account already has ${used} of its ${account2.monitorLimit} monitors, so nothing was created. Reuse the monitor that already watches this URL (set projects.monitoring to its id or name and re-run \`golive plan\`), delete one you no longer need (a golive-created one goes with \`golive teardown\`), or upgrade the plan yourself \u2014 golive never changes a plan or spends money.`
+    );
+  }
+  const existing = (await listMonitors(ctx)).find((m) => sameWatchedUrl(m.url, url));
+  if (existing) {
+    throw new UptimerobotError(`A UptimeRobot monitor already watches ${url}: ${existing.name} (${existing.id}). Re-plan and approve adopting it; no duplicate was created.`);
+  }
+  const made = affectedMonitorId(
+    await uptimerobotCall(ctx, { method: "newMonitor", form: { friendly_name: spec.name, url, type: MONITOR_TYPE_HTTP }, what: `create the monitor ${spec.name}` })
+  );
+  const confirmed = await exactMonitor(ctx, made);
+  if (!confirmed) throw new UptimerobotError("UptimeRobot did not return the monitor it just created; inspect the account and re-plan. Nothing was linked.");
+  if (confirmed.name !== spec.name || !sameWatchedUrl(confirmed.url, url) || confirmed.type !== MONITOR_TYPE_HTTP) {
+    throw new UptimerobotError("The created UptimeRobot monitor does not match what was approved (its name, URL or type differs); inspect it and re-plan before linking anything.");
+  }
+  remember7(ctx, confirmed, { created: true });
+  ctx.log.info(`created UptimeRobot monitor ${confirmed.name} (${confirmed.id}) for ${confirmed.url}`);
+  return confirmed;
+}
+async function remove4(ctx) {
+  const id2 = ctx.state.resource(MONITOR_ID_KEY);
+  if (!id2) return { removed: false, reason: "no UptimeRobot monitor is linked in state" };
+  if (ctx.state.resource(CREATED_MONITOR_KEY) !== id2) return { removed: false, reason: "the UptimeRobot monitor was adopted or selected, not created by golive" };
+  try {
+    await uptimerobotCall(ctx, { method: "deleteMonitor", form: { id: id2 }, what: `delete monitor ${id2}` });
+  } catch (e) {
+    if (!(e instanceof UptimerobotApiError) || !/not found|no such|does not exist/i.test(e.message)) throw e;
+  }
+  const state = await monitorState(ctx, id2);
+  if (state === "present") return { removed: false, reason: "UptimeRobot still reports the monitor" };
+  ctx.state.save((s) => {
+    delete s.resources[MONITOR_ID_KEY];
+    delete s.resources[MONITOR_NAME_KEY];
+    delete s.resources[CREATED_MONITOR_KEY];
+  });
+  ctx.log.info(`uptimerobot: deleted monitor ${id2}`);
+  return { removed: true };
+}
+async function monitorState(ctx, id2) {
+  return await exactMonitor(ctx, id2) ? "present" : "gone";
+}
+function uptimeOf(adapter) {
+  return adapter.capabilities.uptime;
+}
+var uptime = {
+  list: listMonitors,
+  monitor: (ctx, monitorId) => exactMonitor(ctx, monitorId),
+  createMonitor,
+  monitorState
+};
+var project3 = {
+  current: current4,
+  candidates: candidates4,
+  resolve: resolve9,
+  select: async (ctx, idOrName) => {
+    const ref4 = await resolve9(ctx, idOrName);
+    const m = await exactMonitor(ctx, ref4.id);
+    if (!m) throw new UptimerobotError(`UptimeRobot no longer has monitor ${ref4.id}; re-plan.`);
+    remember7(ctx, m);
+    return refOf4(m);
+  },
+  remove: remove4
+};
+async function auth10(ctx) {
+  if (!ctx.envToken(UPTIMEROBOT_TOKEN)) return { ok: false, howToFix: uptimerobotHelp() };
+  try {
+    const account2 = await accountDetails(ctx);
+    const used = (account2.up ?? 0) + (account2.down ?? 0) + (account2.paused ?? 0);
+    const budget = account2.monitorLimit !== void 0 ? `${used}/${account2.monitorLimit} monitors` : "monitor count not reported";
+    return { ok: true, via: `${UPTIMEROBOT_TOKEN} env (${account2.email}, ${budget})` };
+  } catch (e) {
+    const msg = errMsg7(e);
+    return { ok: false, howToFix: /api[_-]?key|invalid[_ ]?parameter|missing[_ ]?parameter|getMonitors/i.test(msg) ? `${msg} ${UPTIMEROBOT_KEY_TYPES}` : msg };
+  }
+}
+var uptimerobotAdapter = {
+  id: "uptimerobot",
+  title: "UptimeRobot",
+  axes: ["monitoring"],
+  automated: true,
+  auth: auth10,
+  capabilities: { project: project3, uptime }
+};
+
 // src/adapters/netlify-api.ts
 init_credentials();
 init_secret();
@@ -17332,9 +17696,9 @@ function readNetlifyCliToken(expectedUserId, path = netlifyConfigPath()) {
     if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1 || before.size > 1024 * 1024) throw new Error();
     if (process.platform !== "win32" && ((before.mode & 63) !== 0 || process.getuid && before.uid !== process.getuid())) throw new Error();
     fd = openSync7(path, constants7.O_RDONLY | constants7.O_NOFOLLOW | constants7.O_NONBLOCK);
-    const current5 = fstatSync7(fd);
-    if (current5.ino !== before.ino || current5.dev !== before.dev || current5.nlink !== 1 || current5.size > 1024 * 1024) throw new Error();
-    if (!current5.isFile() || process.platform !== "win32" && ((current5.mode & 63) !== 0 || process.getuid && current5.uid !== process.getuid())) throw new Error();
+    const current6 = fstatSync7(fd);
+    if (current6.ino !== before.ino || current6.dev !== before.dev || current6.nlink !== 1 || current6.size > 1024 * 1024) throw new Error();
+    if (!current6.isFile() || process.platform !== "win32" && ((current6.mode & 63) !== 0 || process.getuid && current6.uid !== process.getuid())) throw new Error();
     const data = JSON.parse(readFileSync11(fd, "utf8"));
     if (typeof data.userId !== "string" || data.userId !== expectedUserId || !Object.hasOwn(data.users ?? {}, data.userId)) throw new Error();
     const value = data.users?.[data.userId]?.auth?.token;
@@ -17375,9 +17739,9 @@ function label2(value) {
   if (typeof value !== "string" || !value.trim() || value.length > 160 || /[\r\n\x00-\x1f]/.test(value) || isRegisteredSecret(value)) throw new NetlifyError("Netlify returned an invalid resource label.");
   return redact(value);
 }
-function parseJson2(text3) {
+function parseJson2(text4) {
   try {
-    return JSON.parse(text3);
+    return JSON.parse(text4);
   } catch {
     throw new NetlifyError("Netlify CLI did not return valid JSON; update the official CLI and retry.");
   }
@@ -17567,7 +17931,7 @@ async function requireSite(ctx) {
   if (!selected) throw new NetlifyError("No Netlify project is selected. Approve the exact project plan before wiring or deploying.");
   return resolveSite(ctx, selected);
 }
-function remember7(ctx, p) {
+function remember8(ctx, p) {
   ctx.state.save((s) => {
     s.resources["netlify.siteId"] = p.id;
     s.resources["netlify.siteName"] = p.name;
@@ -17620,7 +17984,7 @@ var netlifyProject = {
     }
   },
   async select(ctx, idOrName) {
-    return remember7(ctx, await resolveSite(ctx, idOrName));
+    return remember8(ctx, await resolveSite(ctx, idOrName));
   },
   async create(ctx, name3, approvedTarget) {
     if (!/^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/.test(name3)) throw new NetlifyError("Use a Netlify site name with 2\u201363 lowercase letters, digits and internal hyphens.");
@@ -17631,7 +17995,7 @@ var netlifyProject = {
     if ((await listSites(ctx, name3, a)).some((p2) => p2.name === name3)) throw new NetlifyError("A Netlify site with this name already exists in the selected team. Re-plan to explicitly select it; it was not adopted or changed.");
     const p = siteInfo(await netlifyHttp(ctx, "POST", `/${encodeURIComponent(a.slug)}/sites?configure_dns=false`, { name: name3 }));
     if (p.name !== name3 || p.accountId !== a.id || p.accountSlug !== a.slug) throw new NetlifyError("Netlify created a site with an unexpected destination. Stop and inspect that account; no environment variables or deployment were changed.");
-    const created = remember7(ctx, p);
+    const created = remember8(ctx, p);
     rememberCreated2(ctx, p.id);
     return created;
   },
@@ -17913,7 +18277,7 @@ var neonTiming = { pollMs: 2e3, timeoutMs: 5 * 6e4 };
 var ID = /^[a-z0-9][a-z0-9-]{0,59}$/;
 var STATE_PROJECT = "neon.projectId";
 var OUTPUTS = ["db.url", "db.directUrl"];
-function obj3(v) {
+function obj4(v) {
   if (!v || typeof v !== "object" || Array.isArray(v)) throw new NeonError("Neon returned an unexpected object; nothing was inferred.");
   return v;
 }
@@ -17927,9 +18291,9 @@ function id(v) {
   return s;
 }
 function list3(v, key) {
-  const a = obj3(v)[key];
+  const a = obj4(v)[key];
   if (!Array.isArray(a)) throw new NeonError(`Neon returned an unexpected ${key} list.`);
-  return a.map(obj3);
+  return a.map(obj4);
 }
 function cfg(ctx) {
   return ctx.config.neon ?? {};
@@ -17945,7 +18309,7 @@ function ref2(p) {
   return { id: id(p.id), name: str3(p.name), scope: { kind: "organization", id: org } };
 }
 async function organization(ctx, orgId2) {
-  const o = obj3(await neonApi(ctx, `/organizations/${id(orgId2)}`));
+  const o = obj4(await neonApi(ctx, `/organizations/${id(orgId2)}`));
   if (o.id !== orgId2 || typeof o.plan !== "string") throw new NeonError("Could not verify Neon organization identity and billing plan.");
   return o;
 }
@@ -17969,7 +18333,7 @@ async function projects(ctx, orgId2) {
   let cursor;
   for (let page = 0; page < 100; page++) {
     const query = new URLSearchParams({ org_id: orgId2, limit: "400", ...cursor ? { cursor } : {} });
-    const data = obj3(await neonApi(ctx, `/projects?${query}`));
+    const data = obj4(await neonApi(ctx, `/projects?${query}`));
     if (data.unavailable_project_ids !== void 0 && (!Array.isArray(data.unavailable_project_ids) || data.unavailable_project_ids.length > 0)) throw new NeonError("Neon project inventory is incomplete; refusing creation or adoption.");
     const batch = list3(data, "projects").map(ref2);
     if (batch.some((p) => p.scope.id !== orgId2)) throw new NeonError("Neon project list included a different organization.");
@@ -17978,7 +18342,7 @@ async function projects(ctx, orgId2) {
       found.push(p);
     }
     if (data.pagination === void 0) return found;
-    cursor = str3(obj3(data.pagination).cursor);
+    cursor = str3(obj4(data.pagination).cursor);
     if (!batch.length) return found;
     if (seen2.has(cursor)) throw new NeonError("Neon project pagination did not advance.");
     seen2.add(cursor);
@@ -17986,12 +18350,12 @@ async function projects(ctx, orgId2) {
   throw new NeonError("Neon project inventory exceeded the pagination safety limit.");
 }
 async function exact3(ctx, projectId2) {
-  const p = obj3(obj3(await neonApi(ctx, `/projects/${id(projectId2)}`)).project);
+  const p = obj4(obj4(await neonApi(ctx, `/projects/${id(projectId2)}`)).project);
   const pRef = ref2(p);
   if (pRef.id !== projectId2 || orgOverride(ctx) && pRef.scope.id !== orgOverride(ctx)) throw new NeonError("Neon returned a project outside the selected project/organization.");
   return p;
 }
-async function resolve9(ctx, selected) {
+async function resolve10(ctx, selected) {
   const explicitOrg = orgOverride(ctx);
   if (!explicitOrg) return ref2(await exact3(ctx, selected));
   const all = await projects(ctx, explicitOrg);
@@ -18000,11 +18364,11 @@ async function resolve9(ctx, selected) {
   if (matches3.length !== 1) throw new NeonError("Select one exact accessible Neon project ID; this selection is missing or ambiguous.");
   return ref2(await exact3(ctx, matches3[0].id));
 }
-async function current4(ctx) {
+async function current5(ctx) {
   const chosen = ctx.config.projects?.db ?? ctx.state.resource(STATE_PROJECT);
-  return chosen ? resolve9(ctx, chosen) : null;
+  return chosen ? resolve10(ctx, chosen) : null;
 }
-async function candidates4(ctx) {
+async function candidates5(ctx) {
   const o = await freeOrg2(ctx);
   const all = await projects(ctx, id(o.id));
   const name3 = basename8(ctx.cwd).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63) || "app";
@@ -18015,7 +18379,7 @@ async function candidates4(ctx) {
   }
   return all;
 }
-function remember8(ctx, p) {
+function remember9(ctx, p) {
   ctx.state.save((s) => {
     s.resources[STATE_PROJECT] = p.id;
     s.resources["neon.organizationId"] = p.scope.id;
@@ -18035,7 +18399,7 @@ async function waitOperations(ctx, projectId2, operationIds) {
   const deadline = Date.now() + neonTiming.timeoutMs;
   for (const operationId of operationIds) {
     for (; ; ) {
-      const op = obj3(obj3(await neonApi(ctx, `/projects/${projectId2}/operations/${enc3(operationId)}`)).operation);
+      const op = obj4(obj4(await neonApi(ctx, `/projects/${projectId2}/operations/${enc3(operationId)}`)).operation);
       if (op.id !== operationId || op.project_id !== projectId2) throw new NeonError("Neon operation identity mismatch.");
       if (op.status === "finished") break;
       if (!["scheduling", "running", "cancelling"].includes(String(op.status))) throw new NeonError("Neon provisioning operation failed or returned an unknown state; inspect this project before resuming.");
@@ -18060,11 +18424,11 @@ async function create6(ctx, name3, approved) {
   if ((await projects(ctx, approved.scope.id)).some((p) => p.name.toLowerCase() === name3.toLowerCase())) throw new NeonError("A Neon project with this name already exists. Re-plan and explicitly approve adoption; no duplicate was created.");
   const database = "neondb";
   const role = "neondb_owner";
-  const data = obj3(await neonApi(ctx, "/projects", "POST", { project: { name: name3, org_id: approved.scope.id, region_id: approved.region, branch: { name: "main", database_name: database, role_name: role }, default_endpoint_settings: { autoscaling_limit_min_cu: 0.25, autoscaling_limit_max_cu: 0.25 }, store_passwords: true } }));
-  const created = ref2(obj3(data.project));
+  const data = obj4(await neonApi(ctx, "/projects", "POST", { project: { name: name3, org_id: approved.scope.id, region_id: approved.region, branch: { name: "main", database_name: database, role_name: role }, default_endpoint_settings: { autoscaling_limit_min_cu: 0.25, autoscaling_limit_max_cu: 0.25 }, store_passwords: true } }));
+  const created = ref2(obj4(data.project));
   const confirmed = await exact3(ctx, created.id);
   if (created.scope.id !== approved.scope.id || ref2(confirmed).scope.id !== approved.scope.id || confirmed.region_id !== approved.region || confirmed.name !== name3) throw new NeonError("Neon created-project destination could not be confirmed. Inspect the organization and re-plan; nothing was linked.");
-  const branch = obj3(data.branch);
+  const branch = obj4(data.branch);
   if (branch.project_id !== created.id) throw new NeonError("Neon creation response did not identify the new project branch.");
   const branchId = id(branch.id);
   const ops = list3(data, "operations");
@@ -18076,29 +18440,29 @@ async function create6(ctx, name3, approved) {
   return ref2(confirmed);
 }
 async function selection(ctx) {
-  const project3 = await current4(ctx);
-  if (!project3) throw new NeonError("Select or create a Neon project first.");
-  const owned3 = ctx.state.resource("neon.createdProjectId") === project3.id;
+  const project4 = await current5(ctx);
+  if (!project4) throw new NeonError("Select or create a Neon project first.");
+  const owned3 = ctx.state.resource("neon.createdProjectId") === project4.id;
   const branchId = cfg(ctx).branchId ?? (owned3 ? ctx.state.resource("neon.branchId") : void 0);
   const database = cfg(ctx).database ?? (owned3 ? ctx.state.resource("neon.database") : void 0);
   const role = cfg(ctx).role ?? (owned3 ? ctx.state.resource("neon.role") : void 0);
   if (!branchId || !database || !role) throw new NeonError("For an existing Neon project set neon.branchId, neon.database and neon.role explicitly; golive never guesses the default or production branch.");
-  const branch = obj3(obj3(await neonApi(ctx, `/projects/${project3.id}/branches/${id(branchId)}`)).branch);
-  if (branch.project_id !== project3.id || branch.id !== branchId || branch.current_state !== "ready") throw new NeonError("The selected Neon branch is not ready or belongs to a different project.");
-  const databases = list3(await neonApi(ctx, `/projects/${project3.id}/branches/${branchId}/databases`), "databases");
-  const roles = list3(await neonApi(ctx, `/projects/${project3.id}/branches/${branchId}/roles`), "roles");
+  const branch = obj4(obj4(await neonApi(ctx, `/projects/${project4.id}/branches/${id(branchId)}`)).branch);
+  if (branch.project_id !== project4.id || branch.id !== branchId || branch.current_state !== "ready") throw new NeonError("The selected Neon branch is not ready or belongs to a different project.");
+  const databases = list3(await neonApi(ctx, `/projects/${project4.id}/branches/${branchId}/databases`), "databases");
+  const roles = list3(await neonApi(ctx, `/projects/${project4.id}/branches/${branchId}/roles`), "roles");
   if (!databases.some((d) => d.branch_id === branchId && d.name === database) || !roles.some((r) => r.branch_id === branchId && r.name === role && r.authentication_method !== "no_login" && r.authentication_method !== "oauth")) throw new NeonError("The selected Neon database or password-authenticated role is not present on this branch.");
-  const endpoints = list3(await neonApi(ctx, `/projects/${project3.id}/endpoints`), "endpoints");
-  const matches3 = endpoints.filter((e) => e.project_id === project3.id && e.branch_id === branchId && e.type === "read_write" && e.disabled === false);
+  const endpoints = list3(await neonApi(ctx, `/projects/${project4.id}/endpoints`), "endpoints");
+  const matches3 = endpoints.filter((e) => e.project_id === project4.id && e.branch_id === branchId && e.type === "read_write" && e.disabled === false);
   if (matches3.length !== 1) throw new NeonError("Could not confirm one enabled read-write Neon compute for the selected branch. No compute was created.");
   const endpoint = matches3[0];
   const host = str3(endpoint.host);
   if (!/^ep-[a-z0-9-]+\.[a-z0-9.-]+\.neon\.tech$/.test(host)) throw new NeonError("Neon returned an unexpected compute hostname.");
-  return { project: project3, branchId, database, role, endpointId: id(endpoint.id), host };
+  return { project: project4, branchId, database, role, endpointId: id(endpoint.id), host };
 }
 async function connection(ctx, s, pooled) {
   const query = new URLSearchParams({ branch_id: s.branchId, endpoint_id: s.endpointId, database_name: s.database, role_name: s.role, pooled: String(pooled) });
-  const value = obj3(await neonApi(ctx, `/projects/${s.project.id}/connection_uri?${query}`)).uri;
+  const value = obj4(await neonApi(ctx, `/projects/${s.project.id}/connection_uri?${query}`)).uri;
   if (!(value instanceof Secret)) throw new NeonError("Neon did not return a usable connection URI. Passwords may not be stored; golive will not reset them.");
   let uri;
   try {
@@ -18169,7 +18533,7 @@ var neonAdapter = {
   detect: (d) => d.providers.db?.includes("neon") ?? false,
   auth: async (ctx) => {
     try {
-      const a = obj3(await neonApi(ctx, "/auth"));
+      const a = obj4(await neonApi(ctx, "/auth"));
       const account2 = id(a.account_id);
       if (!["keycloak", "session_cookie", "api_key_user", "api_key_org", "oauth"].includes(String(a.auth_method))) throw new NeonError("Unknown Neon authentication method.");
       return { ok: true, via: `${ctx.envToken("NEON_API_KEY") ? "NEON_API_KEY" : "Neon CLI login"} (account ${account2}; destination is approved separately)` };
@@ -18178,9 +18542,9 @@ var neonAdapter = {
     }
   },
   capabilities: {
-    project: { current: current4, candidates: candidates4, resolve: resolve9, creationTarget: creationTarget6, select: async (ctx, chosen) => {
-      const p = await resolve9(ctx, chosen);
-      remember8(ctx, p);
+    project: { current: current5, candidates: candidates5, resolve: resolve10, creationTarget: creationTarget6, select: async (ctx, chosen) => {
+      const p = await resolve10(ctx, chosen);
+      remember9(ctx, p);
       return p;
     }, create: create6 },
     outputs: { outputs: outputs3, provides: async (_ctx, _target, keys3) => OUTPUTS.filter((k) => !keys3 || keys3.includes(k)), identity: connectionIdentity },
@@ -18223,7 +18587,7 @@ var GUIDED = [
 ];
 
 // src/adapters/index.ts
-var ADAPTERS = [cloudflareAdapter, godaddyAdapter, neonAdapter, netlifyAdapter, porkbunAdapter, posthogAdapter, resendAdapter, sentryAdapter, stripeAdapter, supabaseAdapter, vercelAdapter];
+var ADAPTERS = [cloudflareAdapter, godaddyAdapter, neonAdapter, netlifyAdapter, porkbunAdapter, posthogAdapter, resendAdapter, sentryAdapter, stripeAdapter, supabaseAdapter, uptimerobotAdapter, vercelAdapter];
 
 // src/links/accounts.ts
 init_types();
@@ -18317,16 +18681,16 @@ var projectsLink = {
   }
 };
 async function planAxis(ctx, axis, adapter, linker) {
-  let current5 = await linker.current(ctx).catch((e) => {
+  let current6 = await linker.current(ctx).catch((e) => {
     throw new Error(`reading the ${adapter.title} project linked to this repo failed: ${errMsg2(e)}`);
   });
   const account2 = await accountLine(ctx, adapter);
   const chosen = ctx.config.projects?.[axis];
-  if (current5) {
-    if (linker.resolve) current5 = await linker.resolve(ctx, current5.id);
-    const fromConfig = chosen !== void 0 && (chosen === current5.id || chosen === current5.name);
-    const warning = chosen !== void 0 && !fromConfig ? `golive.yaml projects.${axis} is "${chosen}", but this repo is already linked to ${adapter.title} project ${current5.name} (${current5.id}); golive uses the linked one. To switch, relink the repo to "${chosen}" (or remove the link), then run \`plan\` again.` : void 0;
-    return { step: pinStep(axis, adapter, linker, current5, fromConfig ? `golive.yaml projects.${axis}` : `the project already linked to this repo (golive state or ${adapter.title}'s local link file)`, account2), warning };
+  if (current6) {
+    if (linker.resolve) current6 = await linker.resolve(ctx, current6.id);
+    const fromConfig = chosen !== void 0 && (chosen === current6.id || chosen === current6.name);
+    const warning = chosen !== void 0 && !fromConfig ? `golive.yaml projects.${axis} is "${chosen}", but this repo is already linked to ${adapter.title} project ${current6.name} (${current6.id}); golive uses the linked one. To switch, relink the repo to "${chosen}" (or remove the link), then run \`plan\` again.` : void 0;
+    return { step: pinStep(axis, adapter, linker, current6, fromConfig ? `golive.yaml projects.${axis}` : `the project already linked to this repo (golive state or ${adapter.title}'s local link file)`, account2), warning };
   }
   if (chosen) {
     const resolved = linker.resolve ? await linker.resolve(ctx, chosen) : void 0;
@@ -18334,15 +18698,15 @@ async function planAxis(ctx, axis, adapter, linker) {
   }
   const identity = await repoIdentity(ctx);
   const name3 = identity.name;
-  const candidates5 = await linker.candidates(ctx).catch((e) => {
+  const candidates6 = await linker.candidates(ctx).catch((e) => {
     throw new Error(`listing ${adapter.title} project candidates failed: ${errMsg2(e)}`);
   });
-  const same2 = candidates5.find((c) => c.name.toLowerCase() === name3);
+  const same2 = candidates6.find((c) => c.name.toLowerCase() === name3);
   if (same2) {
     const resolved = linker.resolve ? await linker.resolve(ctx, same2.id) : same2;
     return { step: selectStep(ctx, axis, adapter, linker, resolved.id, resolved.name, account2, resolved) };
   }
-  const names = [...new Set(candidates5.map((c) => c.name))].sort();
+  const names = [...new Set(candidates6.map((c) => c.name))].sort();
   const listed = names.length ? `${names.slice(0, MAX_LISTED).join(", ")}${names.length > MAX_LISTED ? ", \u2026" : ""}` : "";
   if (linker.create) {
     const target = linker.creationTarget ? await linker.creationTarget(ctx) : void 0;
@@ -19536,14 +19900,14 @@ var authRecoveryLink = {
       intent: intentOf({ project: await projectIntent(ctx, au.adapter), user: seeded, email: address, previous: ctx.state.get().steps["auth:recovery"]?.at }),
       verifyWith: ["auth-recovery"],
       async run(sctx) {
-        const current5 = sctx.state.resource(TEST_USER_ID);
+        const current6 = sctx.state.resource(TEST_USER_ID);
         const email = sctx.state.resource(TEST_USER_EMAIL) ?? address;
-        if (!current5) {
+        if (!current6) {
           throw new Error("No test account is recorded in .golive/state.json, so there is nothing for the recovery rotation to set a password on. Run `plan` + `apply` with auth.e2e: true first.");
         }
-        const before = await authUsers.adminUser(sctx, current5);
+        const before = await authUsers.adminUser(sctx, current6);
         if (!before) {
-          throw new Error(`The test account ${current5} recorded in .golive/state.json is gone from ${au.adapter.title}. Remove "${TEST_USER_ID}" from .golive/state.json to seed a new account, or restore the user in the provider dashboard.`);
+          throw new Error(`The test account ${current6} recorded in .golive/state.json is gone from ${au.adapter.title}. Remove "${TEST_USER_ID}" from .golive/state.json to seed a new account, or restore the user in the provider dashboard.`);
         }
         if (!before.emailConfirmed) {
           throw new Error(`${email} is not confirmed yet, so a recovery link cannot set its password. Click the confirmation link in that inbox (the auth:confirm-email handoff), then re-run \`apply\`.`);
@@ -19564,24 +19928,24 @@ var authRecoveryLink = {
         }
         const minted = await mintLink(sctx, email);
         if (!minted) {
-          throw new Error(`${au.adapter.title} has no account for ${email}, so no recovery link could be minted for the recorded test account ${current5}. Check the address in .golive/state.json and the provider's user list.`);
+          throw new Error(`${au.adapter.title} has no account for ${email}, so no recovery link could be minted for the recorded test account ${current6}. Check the address in .golive/state.json and the provider's user list.`);
         }
-        if (minted.userId !== current5) {
-          throw new Error(`The recovery link ${au.adapter.title} minted for ${email} belongs to user ${minted.userId}, not the recorded test account ${current5}: stop and inspect the project before rotating anything.`);
+        if (minted.userId !== current6) {
+          throw new Error(`The recovery link ${au.adapter.title} minted for ${email} belongs to user ${minted.userId}, not the recorded test account ${current6}: stop and inspect the project before rotating anything.`);
         }
         const pass2 = testPassword();
         const verified = await authUsers.recoverySession(sctx, minted.token);
         if (!verified.session) {
           throw new Error(`The recovery link for ${email} was refused (${verified.code}), so the password was not rotated. Check that the project allows recovery (\`auth.signup: true\`) and re-run \`apply\`.`);
         }
-        if (verified.session.userId !== current5) {
-          throw new Error(`The recovery session belongs to user ${verified.session.userId}, not the recorded test account ${current5}: stop and inspect the project before rotating anything.`);
+        if (verified.session.userId !== current6) {
+          throw new Error(`The recovery session belongs to user ${verified.session.userId}, not the recorded test account ${current6}: stop and inspect the project before rotating anything.`);
         }
         await authUsers.updateOwnPassword(sctx, verified.session.accessToken, pass2);
-        const replaced = vaultGet(testUserPassKey(current5));
-        if (replaced) vaultPut(recoveryOldPassKey(current5), replaced);
-        vaultPut(testUserPassKey(current5), pass2);
-        vaultPut(recoveryTokenKey(current5), minted.token);
+        const replaced = vaultGet(testUserPassKey(current6));
+        if (replaced) vaultPut(recoveryOldPassKey(current6), replaced);
+        vaultPut(testUserPassKey(current6), pass2);
+        vaultPut(recoveryTokenKey(current6), minted.token);
         const changes = [
           `asked ${au.adapter.title} to send a recovery email for ${email} (HTTP ${asked.status})`,
           `set a new password on the same account through the recovery link (user ${minted.userId}); fp:${pass2.fingerprint}, kept in this run's memory only`
@@ -19589,7 +19953,7 @@ var authRecoveryLink = {
         changes.push(
           replaced ? `the replaced password is refused from now on (fp:${replaced.fingerprint}); the auth-recovery check re-proves that against the provider` : "this run held no previous password for the account (auth:test-user did not run in it), so the replaced password is not in this run's memory"
         );
-        const after = await authUsers.adminUser(sctx, current5);
+        const after = await authUsers.adminUser(sctx, current6);
         if (after) changes.push(`${email} still reads back confirmed (email_confirmed_at set)`);
         return { changes };
       }
@@ -19795,35 +20159,35 @@ var nameList = (refs) => [...new Set(refs.map((c) => `${c.name} (${c.id})`))].so
 async function planProject(ctx, adapter, linker, warnings) {
   const account2 = await accountLine2(ctx, adapter);
   const chosen = ctx.config.projects?.monitoring;
-  let current5 = await linker.current(ctx).catch((e) => {
+  let current6 = await linker.current(ctx).catch((e) => {
     throw new Error(`reading the ${adapter.title} project linked to this repo failed: ${errMsg2(e)}`);
   });
-  if (current5) {
-    if (linker.resolve) current5 = await linker.resolve(ctx, current5.id);
-    const fromConfig = chosen !== void 0 && (chosen === current5.id || chosen === current5.name);
+  if (current6) {
+    if (linker.resolve) current6 = await linker.resolve(ctx, current6.id);
+    const fromConfig = chosen !== void 0 && (chosen === current6.id || chosen === current6.name);
     if (chosen !== void 0 && !fromConfig) {
       warnings.push(
-        `golive.yaml projects.monitoring is "${chosen}", but this repo is already linked to ${adapter.title} project ${current5.name} (${current5.id}); golive uses the linked one. To switch, remove the recorded project (or the golive.yaml entry), then run \`plan\` again.`
+        `golive.yaml projects.monitoring is "${chosen}", but this repo is already linked to ${adapter.title} project ${current6.name} (${current6.id}); golive uses the linked one. To switch, remove the recorded project (or the golive.yaml entry), then run \`plan\` again.`
       );
     }
-    return { project: current5, created: false, steps: [pinStep2(adapter, linker, current5, fromConfig ? "golive.yaml projects.monitoring" : "the project already linked to this repo (golive state)", account2)], handoffs: [] };
+    return { project: current6, created: false, steps: [pinStep2(adapter, linker, current6, fromConfig ? "golive.yaml projects.monitoring" : "the project already linked to this repo (golive state)", account2)], handoffs: [] };
   }
   if (chosen) {
     const resolved = linker.resolve ? await linker.resolve(ctx, chosen) : void 0;
     return { project: resolved ?? { id: chosen, name: chosen }, created: false, steps: [selectStep2(adapter, linker, resolved?.id ?? chosen, resolved?.name ?? chosen, account2, resolved)], handoffs: [] };
   }
   const identity = await repoIdentity(ctx);
-  const candidates5 = await linker.candidates(ctx).catch((e) => {
+  const candidates6 = await linker.candidates(ctx).catch((e) => {
     throw new Error(`listing ${adapter.title} project candidates failed: ${errMsg2(e)}`);
   });
-  const same2 = candidates5.find((c) => c.name.toLowerCase() === identity.name.toLowerCase());
+  const same2 = candidates6.find((c) => c.name.toLowerCase() === identity.name.toLowerCase());
   if (same2) {
     const resolved = linker.resolve ? await linker.resolve(ctx, same2.id) : same2;
     return { project: resolved, created: false, steps: [selectStep2(adapter, linker, resolved.id, resolved.name, account2, resolved)], handoffs: [] };
   }
   if (linker.create) {
     const target = linker.creationTarget ? await linker.creationTarget(ctx) : void 0;
-    const listed = nameList(candidates5);
+    const listed = nameList(candidates6);
     if (listed.length) {
       warnings.push(
         `${adapter.title} already has ${listed.length} project(s) in this organization (${listed.slice(0, 10).join(", ")}${listed.length > 10 ? ", \u2026" : ""}). golive plans to create one more; when the plan refuses a new project, set projects.monitoring to the one to use and run \`plan\` again.`
@@ -19849,8 +20213,8 @@ async function accountLine2(ctx, adapter) {
   const via = (await authOf(ctx, adapter)).via;
   return via ? `${adapter.title} access: ${via}` : void 0;
 }
-function destination2(adapter, action, project3, scope, account2) {
-  return { axis: "monitoring", provider: adapter.id, providerTitle: adapter.title, action, project: project3, ...scope ? { scope } : {}, ...account2 ? { access: account2 } : {} };
+function destination2(adapter, action, project4, scope, account2) {
+  return { axis: "monitoring", provider: adapter.id, providerTitle: adapter.title, action, project: project4, ...scope ? { scope } : {}, ...account2 ? { access: account2 } : {} };
 }
 function pinStep2(adapter, linker, planned, source, account2) {
   return step({
@@ -19920,28 +20284,28 @@ function createStep2(adapter, linker, name3, listed, account2, target) {
     }
   });
 }
-async function tokenIdentity(ctx, provider, project3) {
-  const cached = ctx.cache.get(`analytics.token:${project3.id}`);
+async function tokenIdentity(ctx, provider, project4) {
+  const cached = ctx.cache.get(`analytics.token:${project4.id}`);
   if (cached) return cached;
-  const token2 = await provider.token(ctx, project3.id);
-  const out = { fingerprint: fingerprint(token2), identity: `${project3.id}|${fingerprint(token2)}` };
-  ctx.cache.set(`analytics.token:${project3.id}`, out);
+  const token2 = await provider.token(ctx, project4.id);
+  const out = { fingerprint: fingerprint(token2), identity: `${project4.id}|${fingerprint(token2)}` };
+  ctx.cache.set(`analytics.token:${project4.id}`, out);
   return out;
 }
 async function envStep(ctx, adapter, provider, linker, planned, hostAdapter, env, target, mapped) {
-  const project3 = planned.project;
+  const project4 = planned.project;
   const host = posthogIngestHost(regionOf(ctx));
   let approved;
   if (planned.created) {
     approved = { fingerprint: PENDING, identity: PENDING };
   } else {
     try {
-      approved = await tokenIdentity(ctx, provider, project3);
+      approved = await tokenIdentity(ctx, provider, project4);
     } catch (e) {
       throw new Error(`reading the ${adapter.title} project token for ${target} failed: ${errMsg2(e)}`);
     }
   }
-  const sourceOf = (key) => key === "posthog.key" ? planned.created ? `posthog.key|${adapter.id}|${PENDING}|${project3.name}` : `posthog.key|${adapter.id}|${approved.identity}` : `posthog.host|${adapter.id}|${host}`;
+  const sourceOf = (key) => key === "posthog.key" ? planned.created ? `posthog.key|${adapter.id}|${PENDING}|${project4.name}` : `posthog.key|${adapter.id}|${approved.identity}` : `posthog.host|${adapter.id}|${host}`;
   const byName = new Map(mapped.map((m) => [m.name, m.key]));
   const present = await observeNames(ctx, env, target, memo(ctx).pendingProjects.has("hosting"));
   const decision = decideEnv(ctx, target, [...byName.keys()], present, (n) => sourceOf(byName.get(n)));
@@ -19954,12 +20318,12 @@ async function envStep(ctx, adapter, provider, linker, planned, hostAdapter, env
     risk: { writes: true },
     dependsOn: deps(ctx, ["analytics:project", "project:hosting"]),
     preview: [
-      ...envPreview(decision, (n) => `${byName.get(n)} from ${adapter.title} project ${project3.name || project3.id}${planned.created ? " (created by this plan)" : ""} (public: the project token ships in the browser by design)`),
+      ...envPreview(decision, (n) => `${byName.get(n)} from ${adapter.title} project ${project4.name || project4.id}${planned.created ? " (created by this plan)" : ""} (public: the project token ships in the browser by design)`),
       `writes the ${adapter.title} project's public ingestion token and the ${regionOf(ctx)} ingestion host (${host}); no server secret is written`
     ],
-    intent: intentOf({ host: await projectIntent(ctx, hostAdapter), project: planned.created ? `${adapter.id}:create:${project3.name}` : `${adapter.id}:${project3.id}`, token: approved.fingerprint, write: decision.write.map((w) => `${w.name}=${sourceOf(byName.get(w.name))})`) }),
+    intent: intentOf({ host: await projectIntent(ctx, hostAdapter), project: planned.created ? `${adapter.id}:create:${project4.name}` : `${adapter.id}:${project4.id}`, token: approved.fingerprint, write: decision.write.map((w) => `${w.name}=${sourceOf(byName.get(w.name))})`) }),
     async run(runCtx) {
-      const now = planned.created ? await linker.current(runCtx) : project3;
+      const now = planned.created ? await linker.current(runCtx) : project4;
       if (!now) throw new Error(`the ${adapter.title} project this plan created could not be read back; no env write was performed. Re-run \`golive plan\`.`);
       const token2 = await provider.token(runCtx, now.id);
       if (!planned.created && fingerprint(token2) !== approved.fingerprint) {
@@ -19977,11 +20341,11 @@ async function envStep(ctx, adapter, provider, linker, planned, hostAdapter, env
     verifyInline: (vctx) => verifyEnvWritten(vctx, env, target, written, `analytics:env:${target}`, hostAdapter.title)
   });
 }
-function snippetHandoff(adapter, project3) {
+function snippetHandoff(adapter, project4) {
   return {
     id: "analytics:snippet",
     why: `the app reads no env name golive fills for ${adapter.title}, so nothing in it reports analytics events yet`,
-    action: `Initialize the ${adapter.title} SDK in the app with the env names golive writes (POSTHOG_KEY and POSTHOG_HOST, or this framework's client-prefixed spelling, e.g. NEXT_PUBLIC_POSTHOG_KEY / NEXT_PUBLIC_POSTHOG_HOST) and send an event; then re-run \`golive plan\` so the env wiring is planned. This handoff ends when the app reads those names \u2014 no check can see the app's own code, and \`golive verify --only posthog-ingest\` proves ${adapter.title} ingests events, not that the app sends them. The project is ${project3.name || project3.id}${project3.id ? ` (${project3.id})` : ""}.`,
+    action: `Initialize the ${adapter.title} SDK in the app with the env names golive writes (POSTHOG_KEY and POSTHOG_HOST, or this framework's client-prefixed spelling, e.g. NEXT_PUBLIC_POSTHOG_KEY / NEXT_PUBLIC_POSTHOG_HOST) and send an event; then re-run \`golive plan\` so the env wiring is planned. This handoff ends when the app reads those names \u2014 no check can see the app's own code, and \`golive verify --only posthog-ingest\` proves ${adapter.title} ingests events, not that the app sends them. The project is ${project4.name || project4.id}${project4.id ? ` (${project4.id})` : ""}.`,
     blocking: false
   };
 }
@@ -20037,28 +20401,28 @@ var nameList2 = (refs) => [...new Set(refs.map((c) => `${c.name} (${c.id})`))].s
 async function planProject2(ctx, adapter, linker, warnings) {
   const account2 = await accountLine3(ctx, adapter);
   const chosen = ctx.config.projects?.monitoring;
-  let current5 = await linker.current(ctx).catch((e) => {
+  let current6 = await linker.current(ctx).catch((e) => {
     throw new Error(`reading the ${adapter.title} project linked to this repo failed: ${errMsg2(e)}`);
   });
-  if (current5) {
-    if (linker.resolve) current5 = await linker.resolve(ctx, current5.id);
-    const fromConfig = chosen !== void 0 && (chosen === current5.id || chosen === current5.name);
+  if (current6) {
+    if (linker.resolve) current6 = await linker.resolve(ctx, current6.id);
+    const fromConfig = chosen !== void 0 && (chosen === current6.id || chosen === current6.name);
     if (chosen !== void 0 && !fromConfig) {
       warnings.push(
-        `golive.yaml projects.monitoring is "${chosen}", but this repo is already linked to ${adapter.title} project ${current5.name} (${current5.id}); golive uses the linked one. To switch, remove the recorded project (or the golive.yaml entry), then run \`plan\` again.`
+        `golive.yaml projects.monitoring is "${chosen}", but this repo is already linked to ${adapter.title} project ${current6.name} (${current6.id}); golive uses the linked one. To switch, remove the recorded project (or the golive.yaml entry), then run \`plan\` again.`
       );
     }
-    return { project: current5, created: false, steps: [pinStep3(adapter, linker, current5, fromConfig ? "golive.yaml projects.monitoring" : "the project already linked to this repo (golive state)", account2)], handoffs: [] };
+    return { project: current6, created: false, steps: [pinStep3(adapter, linker, current6, fromConfig ? "golive.yaml projects.monitoring" : "the project already linked to this repo (golive state)", account2)], handoffs: [] };
   }
   if (chosen) {
     const resolved = linker.resolve ? await linker.resolve(ctx, chosen) : void 0;
     return { project: resolved ?? { id: chosen, name: chosen }, created: false, steps: [selectStep3(adapter, linker, resolved?.id ?? chosen, resolved?.name ?? chosen, account2, resolved)], handoffs: [] };
   }
   const identity = await repoIdentity(ctx);
-  const candidates5 = await linker.candidates(ctx).catch((e) => {
+  const candidates6 = await linker.candidates(ctx).catch((e) => {
     throw new Error(`listing ${adapter.title} project candidates failed: ${errMsg2(e)}`);
   });
-  const same2 = candidates5.find((c) => c.name.toLowerCase() === identity.name.toLowerCase());
+  const same2 = candidates6.find((c) => c.name.toLowerCase() === identity.name.toLowerCase());
   if (same2) {
     const resolved = linker.resolve ? await linker.resolve(ctx, same2.id) : same2;
     return { project: resolved, created: false, steps: [selectStep3(adapter, linker, resolved.id, resolved.name, account2, resolved)], handoffs: [] };
@@ -20073,7 +20437,7 @@ async function planProject2(ctx, adapter, linker, warnings) {
         throw new Error(`reading the ${adapter.title} creation destination failed: ${errMsg2(e)}`);
       }
     }
-    const listed = nameList2(candidates5);
+    const listed = nameList2(candidates6);
     if (listed.length) {
       warnings.push(
         `${adapter.title} already has ${listed.length} project(s) in this organization (${listed.slice(0, 10).join(", ")}${listed.length > 10 ? ", \u2026" : ""}). golive plans to create one more; when the plan refuses a new project, set projects.monitoring to the one to use and run \`plan\` again.`
@@ -20099,8 +20463,8 @@ async function accountLine3(ctx, adapter) {
   const via = (await authOf(ctx, adapter)).via;
   return via ? `${adapter.title} access: ${via}` : void 0;
 }
-function destination3(adapter, action, project3, scope, account2, region) {
-  return { axis: "monitoring", provider: adapter.id, providerTitle: adapter.title, action, project: project3, ...scope ? { scope } : {}, ...region ? { region } : {}, ...account2 ? { access: account2 } : {} };
+function destination3(adapter, action, project4, scope, account2, region) {
+  return { axis: "monitoring", provider: adapter.id, providerTitle: adapter.title, action, project: project4, ...scope ? { scope } : {}, ...region ? { region } : {}, ...account2 ? { access: account2 } : {} };
 }
 function pinStep3(adapter, linker, planned, source, account2) {
   return step({
@@ -20184,27 +20548,27 @@ function teamHandoff(adapter, e) {
     blocking: true
   };
 }
-async function dsnIdentity(ctx, provider, project3) {
-  const cached = ctx.cache.get(`sentry.dsn:${project3.id}`);
+async function dsnIdentity(ctx, provider, project4) {
+  const cached = ctx.cache.get(`sentry.dsn:${project4.id}`);
   if (cached) return cached;
-  const dsn = await provider.dsn(ctx, project3.id);
-  const out = { fingerprint: fingerprint(dsn), identity: `${project3.id}|${fingerprint(dsn)}` };
-  ctx.cache.set(`sentry.dsn:${project3.id}`, out);
+  const dsn = await provider.dsn(ctx, project4.id);
+  const out = { fingerprint: fingerprint(dsn), identity: `${project4.id}|${fingerprint(dsn)}` };
+  ctx.cache.set(`sentry.dsn:${project4.id}`, out);
   return out;
 }
 async function envStep2(ctx, adapter, provider, linker, planned, hostAdapter, env, target, mapped) {
-  const project3 = planned.project;
+  const project4 = planned.project;
   let approved;
   if (planned.created) {
     approved = { fingerprint: PENDING2, identity: PENDING2 };
   } else {
     try {
-      approved = await dsnIdentity(ctx, provider, project3);
+      approved = await dsnIdentity(ctx, provider, project4);
     } catch (e) {
       throw new Error(`reading the ${adapter.title} project DSN for ${target} failed: ${errMsg2(e)}`);
     }
   }
-  const sourceOf = (key) => key === "sentry.dsn" && planned.created ? `sentry.dsn|${adapter.id}|${PENDING2}|${project3.name}` : `sentry.dsn|${adapter.id}|${approved.identity}`;
+  const sourceOf = (key) => key === "sentry.dsn" && planned.created ? `sentry.dsn|${adapter.id}|${PENDING2}|${project4.name}` : `sentry.dsn|${adapter.id}|${approved.identity}`;
   const byName = new Map(mapped.map((m) => [m.name, m.key]));
   const present = await observeNames(ctx, env, target, memo(ctx).pendingProjects.has("hosting"));
   const decision = decideEnv(ctx, target, [...byName.keys()], present, (n) => sourceOf(byName.get(n)));
@@ -20217,12 +20581,12 @@ async function envStep2(ctx, adapter, provider, linker, planned, hostAdapter, en
     risk: { writes: true },
     dependsOn: deps(ctx, ["sentry:project", "project:hosting"]),
     preview: [
-      ...envPreview(decision, (n) => `sentry.dsn from ${adapter.title} project ${project3.name || project3.id}${planned.created ? " (created by this plan)" : ""} (public: the DSN ships in the browser by design)`),
+      ...envPreview(decision, (n) => `sentry.dsn from ${adapter.title} project ${project4.name || project4.id}${planned.created ? " (created by this plan)" : ""} (public: the DSN ships in the browser by design)`),
       `writes the ${adapter.title} project's public DSN (client key); no server secret is written`
     ],
-    intent: intentOf({ host: await projectIntent(ctx, hostAdapter), project: planned.created ? `${adapter.id}:create:${project3.name}` : `${adapter.id}:${project3.id}`, dsn: approved.fingerprint, write: decision.write.map((w) => `${w.name}=${sourceOf(byName.get(w.name))})`) }),
+    intent: intentOf({ host: await projectIntent(ctx, hostAdapter), project: planned.created ? `${adapter.id}:create:${project4.name}` : `${adapter.id}:${project4.id}`, dsn: approved.fingerprint, write: decision.write.map((w) => `${w.name}=${sourceOf(byName.get(w.name))})`) }),
     async run(runCtx) {
-      const now = planned.created ? await linker.current(runCtx) : project3;
+      const now = planned.created ? await linker.current(runCtx) : project4;
       if (!now) throw new Error(`the ${adapter.title} project this plan created could not be read back; no env write was performed. Re-run \`golive plan\`.`);
       const dsn = await provider.dsn(runCtx, now.id);
       if (!planned.created && fingerprint(dsn) !== approved.fingerprint) {
@@ -20240,11 +20604,11 @@ async function envStep2(ctx, adapter, provider, linker, planned, hostAdapter, en
     verifyInline: (vctx) => verifyEnvWritten(vctx, env, target, written, `sentry:env:${target}`, hostAdapter.title)
   });
 }
-function snippetHandoff2(adapter, project3) {
+function snippetHandoff2(adapter, project4) {
   return {
     id: "sentry:snippet",
     why: `the app reads no env name golive fills for ${adapter.title}, so nothing in it reports errors yet`,
-    action: `Initialize the ${adapter.title} SDK in the app with the env name golive writes (SENTRY_DSN, or this framework's client-prefixed spelling, e.g. NEXT_PUBLIC_SENTRY_DSN) and send an error; then re-run \`golive plan\` so the env wiring is planned. This handoff ends when the app reads that name \u2014 no check can see the app's own code, and \`golive verify --only sentry-ingest\` proves ${adapter.title} ingests an event, not that the app sends one. The project is ${project3.name || project3.id}${project3.id ? ` (${project3.id})` : ""}.`,
+    action: `Initialize the ${adapter.title} SDK in the app with the env name golive writes (SENTRY_DSN, or this framework's client-prefixed spelling, e.g. NEXT_PUBLIC_SENTRY_DSN) and send an error; then re-run \`golive plan\` so the env wiring is planned. This handoff ends when the app reads that name \u2014 no check can see the app's own code, and \`golive verify --only sentry-ingest\` proves ${adapter.title} ingests an event, not that the app sends one. The project is ${project4.name || project4.id}${project4.id ? ` (${project4.id})` : ""}.`,
     blocking: false
   };
 }
@@ -20256,6 +20620,197 @@ function envHandoff2(ctx, adapter, mapped, target) {
     blocking: true,
     verifiedBy: "env-parity"
   };
+}
+
+// src/links/uptimerobot.ts
+init_repo();
+var STEP_ID = "uptimerobot:monitor";
+var uptimerobotLink = {
+  id: "uptimerobot",
+  async plan(ctx) {
+    const configured = ctx.config.stack.monitoring;
+    if (!configured) return null;
+    const r = await ready(ctx, "monitoring", "project");
+    if (!r) return null;
+    const provider = uptimeOf(r.adapter);
+    if (!provider) return null;
+    const warnings = [];
+    const planned = await planMonitor(ctx, r.adapter, r.cap, provider, warnings);
+    return { steps: track(ctx, planned.steps), handoffs: planned.handoffs, warnings };
+  }
+};
+async function planMonitor(ctx, adapter, linker, provider, warnings) {
+  const account2 = await accountLine4(ctx, adapter);
+  const chosen = ctx.config.projects?.monitoring;
+  let current6 = await linker.current(ctx).catch((e) => {
+    throw new Error(`reading the ${adapter.title} monitor linked to this repo failed: ${errMsg2(e)}`);
+  });
+  if (current6) {
+    if (linker.resolve) current6 = await linker.resolve(ctx, current6.id);
+    const fromConfig = chosen !== void 0 && (chosen === current6.id || chosen === current6.name);
+    if (chosen !== void 0 && !fromConfig) {
+      warnings.push(
+        `golive.yaml projects.monitoring is "${chosen}", but this repo is already linked to ${adapter.title} monitor ${current6.name} (${current6.id}); golive uses the linked one. To switch, remove the recorded monitor (or the golive.yaml entry), then run \`plan\` again.`
+      );
+    }
+    return {
+      monitor: current6,
+      steps: [pinStep4(adapter, linker, current6, fromConfig ? "golive.yaml projects.monitoring" : "the monitor already linked to this repo (golive state)", account2)],
+      handoffs: []
+    };
+  }
+  if (chosen) {
+    const resolved = linker.resolve ? await linker.resolve(ctx, chosen) : void 0;
+    return { monitor: resolved ?? { id: chosen, name: chosen }, steps: [selectStep4(adapter, linker, resolved?.id ?? chosen, resolved?.name ?? chosen, account2, void 0, resolved)], handoffs: [] };
+  }
+  const monitors = await provider.list(ctx).catch((e) => {
+    throw new Error(`listing ${adapter.title} monitors failed: ${errMsg2(e)}`);
+  });
+  const identity = await repoIdentity(ctx);
+  const url = await productionUrl(ctx);
+  if (!url) {
+    warnings.push(
+      `${adapter.title} monitor: the production URL isn't known yet (no \`domain\` in golive.yaml, and ${lastDeployAt(ctx) ? "the host reports no production URL" : "golive hasn't deployed production yet"}). Apply this plan, then run \`plan\` again \u2014 golive creates the monitor then.`
+    );
+    return { monitor: null, steps: [], handoffs: [] };
+  }
+  const watching = monitors.filter((m) => sameWatchedUrl(m.url, url)).sort(byMonitorId);
+  if (watching.length === 1) {
+    const only = watching[0];
+    return { monitor: ref3(only), steps: [selectStep4(adapter, linker, only.id, only.name, account2, `it already watches ${url}`, ref3(only))], handoffs: [] };
+  }
+  if (watching.length > 1) {
+    const chosen2 = watching[0];
+    warnings.push(
+      `${watching.length} ${adapter.title} monitors watch ${url} (${watching.map((m) => `${m.name} (${m.id})`).join(", ")}); golive adopts ${chosen2.name} (${chosen2.id}), the first by id. Set projects.monitoring to another one and run \`plan\` again to use that instead.`
+    );
+    return { monitor: ref3(chosen2), steps: [selectStep4(adapter, linker, chosen2.id, chosen2.name, account2, `it already watches ${url}`, ref3(chosen2))], handoffs: [] };
+  }
+  const same2 = monitors.filter((m) => m.name.toLowerCase() === identity.name.toLowerCase()).sort(byMonitorId);
+  if (same2.length === 1) {
+    const only = same2[0];
+    return { monitor: ref3(only), steps: [selectStep4(adapter, linker, only.id, only.name, account2, "its name matches this repository", ref3(only))], handoffs: [] };
+  }
+  if (same2.length > 1) {
+    const listed2 = same2.map((m) => `${m.name} (${m.id})`).join(", ");
+    return {
+      monitor: null,
+      steps: [],
+      handoffs: [
+        {
+          id: STEP_ID,
+          why: `${same2.length} ${adapter.title} monitors are named like this repository (${listed2}), so golive will not guess which one watches this app.`,
+          action: `Set \`projects.monitoring\` in golive.yaml to the monitor to use (${listed2}) and run \`golive plan\` again \u2014 or rename or remove the others in the ${adapter.title} dashboard.`,
+          blocking: true
+        }
+      ]
+    };
+  }
+  if (!provider.createMonitor) {
+    return {
+      monitor: null,
+      steps: [],
+      handoffs: [
+        {
+          id: STEP_ID,
+          why: `golive doesn't create ${adapter.title} monitors on this account, and none is linked to this repo.`,
+          action: `Create the monitor for ${url} in the ${adapter.title} dashboard, then set \`projects.monitoring\` in golive.yaml to its id or friendly name and run \`golive plan\` again.`,
+          blocking: true
+        }
+      ]
+    };
+  }
+  const listed = nameList3(monitors);
+  if (listed.length) {
+    warnings.push(
+      `${adapter.title} already has ${listed.length} monitor(s) in this account (${listed.slice(0, 10).join(", ")}${listed.length > 10 ? ", \u2026" : ""}). golive plans to create one more; when the plan refuses a new monitor, set projects.monitoring to the one to use and run \`plan\` again.`
+    );
+  }
+  return { monitor: { id: "", name: identity.name }, steps: [createStep4(adapter, provider, identity.name, url, listed, account2)], handoffs: [] };
+}
+var ref3 = (m) => ({ id: m.id, name: m.name });
+var nameList3 = (monitors) => [...new Set(monitors.map((m) => `${m.name} (${m.id})`))].sort();
+var byMonitorId = (a, b) => {
+  const na = /^[0-9]{1,20}$/.test(a.id) ? Number(a.id) : null;
+  const nb = /^[0-9]{1,20}$/.test(b.id) ? Number(b.id) : null;
+  if (na !== null && nb !== null && na !== nb) return na - nb;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+};
+async function accountLine4(ctx, adapter) {
+  const via = (await authOf(ctx, adapter)).via;
+  return via ? `${adapter.title} access: ${via}` : void 0;
+}
+function destination4(adapter, action, project4, account2) {
+  return { axis: "monitoring", provider: adapter.id, providerTitle: adapter.title, action, project: project4, ...account2 ? { access: account2 } : {} };
+}
+function pinStep4(adapter, linker, planned, source, account2) {
+  return step({
+    id: STEP_ID,
+    title: `Use ${adapter.title} monitor ${planned.name} for monitoring`,
+    kind: "provision",
+    risk: { writes: false },
+    preview: [`monitoring: ${adapter.title} monitor ${planned.name} (${planned.id}), from ${source}; the uptime check re-reads this monitor`, ...account2 ? [account2] : []],
+    intent: intentOf({ pin: `${adapter.id}:${planned.id}` }),
+    destination: destination4(adapter, "pin", { id: planned.id, name: planned.name }, account2),
+    async run(sctx) {
+      let now = await linker.current(sctx);
+      if (now && linker.resolve) now = await linker.resolve(sctx, now.id);
+      if (!now || now.id !== planned.id) {
+        throw new Error(`the ${adapter.title} monitor changed since the plan was approved (planned ${planned.name} (${planned.id}), now ${now ? `${now.name} (${now.id})` : "none"}); nothing was written. Run \`plan\` again and re-approve.`);
+      }
+      const p = await linker.select(sctx, planned.id);
+      if (p.id !== planned.id) throw new Error(`the ${adapter.title} monitor destination changed; run \`plan\` again and re-approve before any remote writes.`);
+      return { changes: [`using ${adapter.title} monitor ${p.name} (${p.id}) for monitoring (pinned in golive state)`] };
+    }
+  });
+}
+function selectStep4(adapter, linker, idOrName, label3, account2, why, planned) {
+  return step({
+    id: STEP_ID,
+    title: `Use existing ${adapter.title} monitor ${label3}`,
+    kind: "provision",
+    risk: { writes: true },
+    preview: [
+      `Use existing ${adapter.title} monitor ${label3}${why ? ` (${why})` : ""} for monitoring (links it in golive state; nothing is changed at ${adapter.title})`,
+      ...account2 ? [account2] : []
+    ],
+    intent: intentOf({ select: `${adapter.id}:${idOrName}` }),
+    destination: destination4(adapter, "select", { ...planned ? { id: planned.id } : {}, name: label3 }, account2),
+    async run(sctx) {
+      const p = await linker.select(sctx, idOrName);
+      if (planned && (p.id !== planned.id || p.name !== planned.name)) {
+        throw new Error(`the ${adapter.title} monitor destination changed (planned ${planned.name} (${planned.id}), now ${p.name} (${p.id})); run \`plan\` again and re-approve before any remote writes.`);
+      }
+      return { changes: [`linked ${adapter.title} monitor ${p.name} (${p.id}) for monitoring`] };
+    }
+  });
+}
+function createStep4(adapter, provider, name3, url, listed, account2) {
+  return step({
+    id: STEP_ID,
+    title: `Create ${adapter.title} monitor ${name3}`,
+    kind: "provision",
+    risk: { writes: true },
+    preview: [
+      `Create ${adapter.title} monitor ${name3} for ${url} (the production URL golive can name; HTTP(S), checked at the provider's own default interval \u2014 no existing monitor watches it)`,
+      ...listed.length ? [`existing ${adapter.title} monitors that could be used instead: ${listed.slice(0, 10).join(", ")}${listed.length > 10 ? ", \u2026" : ""} \u2014 ask the human; to use one, set \`projects.monitoring\` in golive.yaml and run \`plan\` again`] : [],
+      ...account2 ? [account2] : []
+    ],
+    intent: intentOf({ create: `${adapter.id}:${name3}`, url }),
+    destination: destination4(adapter, "create", { name: name3 }, account2),
+    async run(sctx) {
+      const now = await productionUrl(sctx);
+      if (!now || !sameWatchedUrl(now, url)) {
+        throw new Error(`the production URL changed since the plan was approved (planned ${url}, now ${now ?? "none"}); nothing was created. Run \`plan\` again and re-approve.`);
+      }
+      try {
+        const m = await provider.createMonitor(sctx, { name: name3, url });
+        return { changes: [`created ${adapter.title} monitor ${m.name} (${m.id}) for ${m.url}`] };
+      } catch (e) {
+        throw new Error(`creating ${adapter.title} monitor ${name3} failed: ${errMsg2(e)}`);
+      }
+    }
+  });
 }
 
 // src/links/upload.ts
@@ -20272,11 +20827,11 @@ var LEGACY_REPORT_FILE = "SHIP_REPORT.md";
 var STATE_DIR_FILES = ["state.json", "report.json", "handover.json"];
 var GOLIVE_IGNORE_MARKER = "# golive: keep its own files (state, config, reports, run docs) out of this upload";
 var GOLIVE_IGNORE_LINES = [".golive/", CONFIG_FILE, REPORT_FILE, HANDOVER_FILE, LEGACY_REPORT_FILE, "docs/GOLIVE-*"];
-function hasGoliveIgnoreBlock(text3) {
-  return text3.split("\n").some((line) => line.trim() === GOLIVE_IGNORE_MARKER);
+function hasGoliveIgnoreBlock(text4) {
+  return text4.split("\n").some((line) => line.trim() === GOLIVE_IGNORE_MARKER);
 }
-function withGoliveIgnoreBlock(text3) {
-  const base2 = text3.replace(/\s*$/, "");
+function withGoliveIgnoreBlock(text4) {
+  const base2 = text4.replace(/\s*$/, "");
   return `${base2 ? `${base2}
 
 ` : ""}${[GOLIVE_IGNORE_MARKER, ...GOLIVE_IGNORE_LINES].join("\n")}
@@ -20330,8 +20885,8 @@ var uploadLink = {
       };
     }
     const ignoreFile = join17(ctx.cwd, rules.ignoreFile);
-    const current5 = read(ignoreFile);
-    if (current5 !== null && hasGoliveIgnoreBlock(current5)) return null;
+    const current6 = read(ignoreFile);
+    if (current6 !== null && hasGoliveIgnoreBlock(current6)) return null;
     const files = goliveRepoFiles(ctx.cwd);
     if (!files.length) return null;
     return {
@@ -20350,12 +20905,12 @@ var uploadLink = {
           intent: intentOf({ file: rules.ignoreFile, lines: [...GOLIVE_IGNORE_LINES] }),
           async run(sctx) {
             const path = join17(sctx.cwd, rules.ignoreFile);
-            const text3 = read(path) ?? "";
-            if (hasGoliveIgnoreBlock(text3)) {
+            const text4 = read(path) ?? "";
+            if (hasGoliveIgnoreBlock(text4)) {
               return { changes: [`${rules.ignoreFile} already keeps golive's own files out of the ${h.adapter.title} upload`] };
             }
             try {
-              writeFileSync8(path, withGoliveIgnoreBlock(text3));
+              writeFileSync8(path, withGoliveIgnoreBlock(text4));
             } catch (e) {
               throw new Error(
                 `could not write ${rules.ignoreFile} (${errMsg2(e)}): add golive's block to it yourself (${GOLIVE_IGNORE_MARKER}) and run \`apply\` again \u2014 golive does not deploy while its own files would be uploaded`
@@ -20482,17 +21037,17 @@ var NETLIFY_PUBLIC_ACCESS_CHECK = "netlify-public-access";
 function netlifyPublicAccessApplies(ctx) {
   return ctx.config.stack.hosting === "netlify" && ctx.config.targets.includes("production");
 }
-function netlifyVisibilityAction(project3) {
-  return `Open ${project3.settingsUrl} and confirm project ID ${project3.id}. In Project configuration > General > Visitor access > Project visibility, inspect only this project's setting. If Netlify visitor protection is blocking the intended public homepage, keep Private and choose Applies to: Previews only (or use Make public when it explicitly preserves private previews). Save only after approving this exact visibility change. Do not select a setting that exposes previews or change team defaults. If the team enforces private access, stop for the owner; do not weaken application authentication. Then run golive verify again; no redeploy is needed. This check verifies anonymous homepage access, not backend or application behavior.`;
+function netlifyVisibilityAction(project4) {
+  return `Open ${project4.settingsUrl} and confirm project ID ${project4.id}. In Project configuration > General > Visitor access > Project visibility, inspect only this project's setting. If Netlify visitor protection is blocking the intended public homepage, keep Private and choose Applies to: Previews only (or use Make public when it explicitly preserves private previews). Save only after approving this exact visibility change. Do not select a setting that exposes previews or change team defaults. If the team enforces private access, stop for the owner; do not weaken application authentication. Then run golive verify again; no redeploy is needed. This check verifies anonymous homepage access, not backend or application behavior.`;
 }
 async function inspectNetlifyPublicAccess(ctx) {
   if (!netlifyPublicAccessApplies(ctx)) return { outcome: skip("only applies to Netlify production") };
   const confirmed = await confirmedProductionUrl(ctx);
   if (!confirmed.ok) return { outcome: confirmed.outcome };
-  let project3;
+  let project4;
   try {
     const site = await requireSite(ctx);
-    project3 = { id: site.id, settingsUrl: `https://app.netlify.com/projects/${encodeURIComponent(site.name)}/configuration/general/#project-visibility` };
+    project4 = { id: site.id, settingsUrl: `https://app.netlify.com/projects/${encodeURIComponent(site.name)}/configuration/general/#project-visibility` };
   } catch {
     return { outcome: skip("cannot confirm the exact Netlify project for the production access check") };
   }
@@ -20517,8 +21072,8 @@ async function inspectNetlifyPublicAccess(ctx) {
   }
   if (response.status === 401 || response.status === 403 || netlifyGate) {
     return {
-      blockedProject: project3,
-      outcome: result("fail", "high", [netlifyGate ? "Production redirects anonymous visitors to Netlify access control; the redirect was not followed." : `Production returned HTTP ${response.status} to an anonymous request; inspect project visibility and application authentication.`], netlifyVisibilityAction(project3))
+      blockedProject: project4,
+      outcome: result("fail", "high", [netlifyGate ? "Production redirects anonymous visitors to Netlify access control; the redirect was not followed." : `Production returned HTTP ${response.status} to an anonymous request; inspect project visibility and application authentication.`], netlifyVisibilityAction(project4))
     };
   }
   if (response.status >= 300 && response.status < 400) {
@@ -20543,15 +21098,15 @@ var netlifyVisibilityLink = {
     if (!netlifyPublicAccessApplies(ctx)) return null;
     const observed = await inspectNetlifyPublicAccess(ctx);
     if (!observed.blockedProject) return null;
-    const project3 = observed.blockedProject;
+    const project4 = observed.blockedProject;
     return {
       steps: [],
       handoffs: [{
         // Handoff IDs are included in the approved plan hash: bind this request to the exact site.
-        id: `netlify:public-access:${project3.id}`,
+        id: `netlify:public-access:${project4.id}`,
         why: "The published Netlify production homepage blocks anonymous access. Deployment succeeded; public access is still unverified.",
-        action: netlifyVisibilityAction(project3),
-        url: project3.settingsUrl,
+        action: netlifyVisibilityAction(project4),
+        url: project4.settingsUrl,
         blocking: true,
         verifiedBy: NETLIFY_PUBLIC_ACCESS_CHECK
       }]
@@ -20650,9 +21205,9 @@ async function fetchBundle(ctx, base2) {
   }
   return { files, notes, htmlStatus: res.status, complete };
 }
-function boundedText(text3, maximum) {
-  const encoded = Buffer.from(text3, "utf8");
-  if (encoded.length <= maximum) return { text: text3, bytes: encoded.length, truncated: false };
+function boundedText(text4, maximum) {
+  const encoded = Buffer.from(text4, "utf8");
+  if (encoded.length <= maximum) return { text: text4, bytes: encoded.length, truncated: false };
   let prefix = encoded.subarray(0, maximum).toString("utf8");
   while (Buffer.byteLength(prefix, "utf8") > maximum) prefix = prefix.slice(0, -1);
   return { text: prefix, bytes: maximum, truncated: true };
@@ -20688,13 +21243,13 @@ function scanSecrets(file) {
   }
   return hits;
 }
-function findPublicSupabaseKeys(files, ref3) {
+function findPublicSupabaseKeys(files, ref4) {
   const keys3 = [];
   for (const f of files) {
     for (const m of f.text.matchAll(/\bsb_publishable_[A-Za-z0-9_-]{10,}/g)) if (!keys3.includes(m[0])) keys3.push(m[0]);
     for (const m of f.text.matchAll(JWT)) {
       const p = jwtPayload(m[0]);
-      if (p?.role === "anon" && (!ref3 || p.ref === void 0 || p.ref === ref3) && !keys3.includes(m[0])) keys3.push(m[0]);
+      if (p?.role === "anon" && (!ref4 || p.ref === void 0 || p.ref === ref4) && !keys3.includes(m[0])) keys3.push(m[0]);
     }
   }
   return keys3;
@@ -20767,14 +21322,14 @@ async function readPreview(ctx) {
   const pre = await prereq(ctx, "hosting");
   if (pre) return { ok: false, outcome: pre };
   const linker = cap(ctx, "hosting", "project");
-  const current5 = linker ? await linker.current(ctx).catch(() => null) : null;
+  const current6 = linker ? await linker.current(ctx).catch(() => null) : null;
   let got;
   try {
     got = await url.get(ctx, TARGET);
   } catch (e) {
     return { ok: false, outcome: result("warn", "medium", [`could not read the ${provider} preview deployment: ${errMsg(e)}`], "Check the hosting login with `golive doctor`, then re-run verify.") };
   }
-  return { ok: true, read: { recorded, url: got ? trimSlash2(got) : null, ...current5 ? { project: `${current5.name} (${current5.id})` } : {} } };
+  return { ok: true, read: { recorded, url: got ? trimSlash2(got) : null, ...current6 ? { project: `${current6.name} (${current6.id})` } : {} } };
 }
 function recordedProductionUrl(ctx) {
   const prod = readRecordedDeploy(ctx, "production");
@@ -20788,7 +21343,7 @@ var previewDeployCheck = {
   async run(ctx) {
     const r = await readPreview(ctx);
     if (!r.ok) return r.outcome;
-    const { recorded, url, project: project3 } = r.read;
+    const { recorded, url, project: project4 } = r.read;
     const where = `${recorded.provider} deployment ${recorded.id}`;
     const recordedAt2 = `recorded by golive ${recorded.at} (${deployedIdKey(TARGET)})`;
     const prod = recordedProductionUrl(ctx);
@@ -20821,7 +21376,7 @@ var previewDeployCheck = {
     }
     if (url === recorded.url) {
       return pass([
-        `${where} is what ${recorded.provider} reports for the preview target${project3 ? ` of the project this repo links (${project3})` : ""}`,
+        `${where} is what ${recorded.provider} reports for the preview target${project4 ? ` of the project this repo links (${project4})` : ""}`,
         `that read confirms the deployment exists, is ready and belongs to this project, and that it is not the project's production deployment`,
         recordedAt2,
         "whether anyone else can reach the preview is not read here: a private preview is normal, and the production deployment is unchanged"
@@ -21202,8 +21757,8 @@ function builtForDeployment(ctx, deployment) {
 }
 async function projectLabel(ctx, adapter) {
   const linker = adapter.capabilities.project;
-  const current5 = linker ? await linker.current(ctx).catch(() => null) : null;
-  if (current5) return `${adapter.title} project ${current5.name} (${current5.id})`;
+  const current6 = linker ? await linker.current(ctx).catch(() => null) : null;
+  if (current6) return `${adapter.title} project ${current6.name} (${current6.id})`;
   return memo(ctx).pendingProjects.has("hosting") ? `${adapter.title} project this plan creates or selects (see project:hosting)` : `${adapter.title} project is not linked yet (this plan's project:hosting step decides it)`;
 }
 async function treeLine(ctx) {
@@ -21263,7 +21818,7 @@ function livePreviewNames(ctx, planned) {
 }
 
 // src/links/all.ts
-var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, emailDomainLink, emailKeysLink, authSmtpLink, authE2eLink, authIsolationLink, authRecoveryLink, analyticsLink, sentryLink, uploadLink, deployLink, netlifyVisibilityLink, releaseLink];
+var ALL_LINKS = [accountsLink, exposureLink, projectsLink, envLink, domainLink, paymentsLink, authRedirectsLink, authSettingsLink, emailDomainLink, emailKeysLink, authSmtpLink, authE2eLink, authIsolationLink, authRecoveryLink, analyticsLink, sentryLink, uptimerobotLink, uploadLink, deployLink, netlifyVisibilityLink, releaseLink];
 
 // src/links/index.ts
 var LINKS = ALL_LINKS;
@@ -21433,11 +21988,11 @@ var INTERNAL_SCHEMAS = /^(auth|storage|extensions|realtime|vault|pgsodium|pgsodi
 async function projectRef(ctx) {
   const fromState = ctx.state.resource("supabase.ref");
   if (fromState) return fromState;
-  const project3 = cap(ctx, "db", "project");
-  const cur = project3 ? await project3.current(ctx).catch(() => null) : null;
+  const project4 = cap(ctx, "db", "project");
+  const cur = project4 ? await project4.current(ctx).catch(() => null) : null;
   return cur?.id ?? null;
 }
-async function publishableKey(ctx, ref3) {
+async function publishableKey(ctx, ref4) {
   const outputs4 = cap(ctx, "db", "outputs");
   if (outputs4) {
     try {
@@ -21451,7 +22006,7 @@ async function publishableKey(ctx, ref3) {
   try {
     const bundle = await fetchBundle(ctx, confirmed.url);
     if (bundle.offsite || bundle.htmlStatus < 200 || bundle.htmlStatus >= 300) return null;
-    const key = findPublicSupabaseKeys(bundle.files, ref3)[0];
+    const key = findPublicSupabaseKeys(bundle.files, ref4)[0];
     return key ? { key, from: "the public bundle" } : null;
   } catch {
     return null;
@@ -21462,11 +22017,11 @@ function openReadPolicy(t) {
     (p) => p.permissive && /^(select|all|\*)$/i.test(p.command) && p.roles.some((r) => r === "anon" || r === "public") && p.using?.trim().toLowerCase() === "true"
   )?.name;
 }
-async function probeTable(ctx, ref3, key, t) {
+async function probeTable(ctx, ref4, key, t) {
   const fq = `${t.schema}.${t.name}`;
   let r;
   try {
-    r = await restProbe(ctx, ref3, t.name, t.schema, key);
+    r = await restProbe(ctx, ref4, t.name, t.schema, key);
   } catch (e) {
     return { severity: "medium", line: `${fq}: probe failed (${errMsg(e)})` };
   }
@@ -21489,8 +22044,8 @@ var rlsCheck = {
     if (!admin) return skip("database adapter has no admin capability");
     const pre = await prereq(ctx, "db", { project: false });
     if (pre) return pre;
-    const ref3 = await projectRef(ctx);
-    if (!ref3) return blocked("project:db", "no Supabase project linked yet");
+    const ref4 = await projectRef(ctx);
+    if (!ref4) return blocked("project:db", "no Supabase project linked yet");
     const issues = [];
     const evidence = [];
     let tables2;
@@ -21501,14 +22056,14 @@ var rlsCheck = {
     }
     let noKey = false;
     if (tables2.length) {
-      const pk = await publishableKey(ctx, ref3);
+      const pk = await publishableKey(ctx, ref4);
       if (!pk) {
         noKey = true;
       } else {
         const batch = tables2.slice(0, MAX_TABLES);
         evidence.push(`probed ${batch.length}/${tables2.length} table(s) anonymously with the publishable key from ${pk.from}`);
         for (const t of batch) {
-          const issue = await probeTable(ctx, ref3, pk.key, t);
+          const issue = await probeTable(ctx, ref4, pk.key, t);
           if (issue) issues.push(issue);
         }
         if (tables2.length > MAX_TABLES) issues.push({ severity: "low", line: `${tables2.length - MAX_TABLES} table(s) beyond the first ${MAX_TABLES} were not probed` });
@@ -21580,7 +22135,7 @@ async function registeredUrl(ctx) {
   const base2 = await baseUrl(ctx);
   return path && base2 ? join18(base2, path) : null;
 }
-var looksLikeHtml = (text3) => /^\s*(<!doctype html|<html)/i.test(text3);
+var looksLikeHtml = (text4) => /^\s*(<!doctype html|<html)/i.test(text4);
 var webhookUnsignedCheck = {
   id: "webhook-unsigned",
   title: "Webhook rejects unsigned requests",
@@ -21820,15 +22375,15 @@ var authRedirectsCheck = {
   severity: "high",
   applies: (ctx) => Boolean(ctx.config.stack.auth),
   async run(ctx) {
-    const auth10 = cap(ctx, "auth", "authConfig");
-    if (!auth10) return skip(`auth provider ${ctx.config.stack.auth} has no auth-config capability (guided)`);
+    const auth11 = cap(ctx, "auth", "authConfig");
+    if (!auth11) return skip(`auth provider ${ctx.config.stack.auth} has no auth-config capability (guided)`);
     const pre = await prereq(ctx, "auth");
     if (pre) return pre;
     const prod = await baseUrl(ctx);
     if (!prod) return blocked("deploy:production", "no production URL yet");
     let cfg2;
     try {
-      cfg2 = await auth10.get(ctx);
+      cfg2 = await auth11.get(ctx);
     } catch (e) {
       return result("fail", "high", [`could not read auth settings: ${errMsg(e)}`], "Re-run verify; if it persists, check the auth provider with `golive doctor`.");
     }
@@ -21873,13 +22428,13 @@ var authPolicyCheck = {
   applies: (ctx) => Boolean(ctx.config.stack.auth),
   async run(ctx) {
     const provider = ctx.config.stack.auth;
-    const auth10 = cap(ctx, "auth", "authConfig");
-    if (!auth10) return skip(`auth provider ${provider} has no auth-config capability (guided)`);
+    const auth11 = cap(ctx, "auth", "authConfig");
+    if (!auth11) return skip(`auth provider ${provider} has no auth-config capability (guided)`);
     const pre = await prereq(ctx, "auth");
     if (pre) return pre;
     let cfg2;
     try {
-      cfg2 = await auth10.get(ctx);
+      cfg2 = await auth11.get(ctx);
     } catch (e) {
       return result("fail", "high", [`could not read ${provider} auth settings: ${errMsg(e)}`], "Re-run verify; if it persists, check the auth provider with `golive doctor`.");
     }
@@ -22010,8 +22565,8 @@ var authSignupCheck = {
     const title = adapterFor(ctx, "auth")?.title ?? provider;
     const email = ctx.config.auth.testEmail;
     if (!email) return skip("auth.testEmail is not set in golive.yaml, so golive has no inbox address for the test account");
-    const auth10 = cap(ctx, "auth", "authUsers");
-    if (!auth10) return skip(`auth provider ${provider} has no auth-users surface (guided): the signup journey stays a manual dashboard task`);
+    const auth11 = cap(ctx, "auth", "authUsers");
+    if (!auth11) return skip(`auth provider ${provider} has no auth-users surface (guided): the signup journey stays a manual dashboard task`);
     const pre = await prereq(ctx, "auth");
     if (pre) return pre;
     const seeded = ctx.state.resource(TEST_USER_ID);
@@ -22021,7 +22576,7 @@ var authSignupCheck = {
     const probePass = testPassword();
     let signup2;
     try {
-      signup2 = await auth10.signup(ctx, probe2, probePass);
+      signup2 = await auth11.signup(ctx, probe2, probePass);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`signing up a probe account failed: ${errMsg(e)}`], `Check that ${provider} auth is reachable and that the project accepts new users (\`auth.signup: true\`), then re-run verify.`);
@@ -22046,7 +22601,7 @@ var authSignupCheck = {
     evidence.push(`signed up probe account ${probe2}: confirmation email sent (HTTP ${signup2.status})`);
     let refused;
     try {
-      refused = await auth10.login(ctx, probe2, probePass);
+      refused = await auth11.login(ctx, probe2, probePass);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`the password login for the probe account failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable and re-run verify.`);
@@ -22074,7 +22629,7 @@ var authSignupCheck = {
     const seededEmail = ctx.state.resource(TEST_USER_EMAIL) ?? email;
     let view2;
     try {
-      view2 = await auth10.adminUser(ctx, seeded);
+      view2 = await auth11.adminUser(ctx, seeded);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`could not read the test account ${seeded}: ${errMsg(e)}`, ...evidence], "Re-run verify; if it persists, check the provider login and read the user in its dashboard.");
@@ -22103,7 +22658,7 @@ var authSignupCheck = {
     }
     let login2;
     try {
-      login2 = await auth10.login(ctx, seededEmail, seededPass);
+      login2 = await auth11.login(ctx, seededEmail, seededPass);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`the password login for the confirmed test account failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -22138,8 +22693,8 @@ var authSessionCheck = {
     }
     const provider = ctx.config.stack.auth;
     const title = adapterFor(ctx, "auth")?.title ?? provider;
-    const auth10 = cap(ctx, "auth", "authUsers");
-    if (!auth10) return skip(`auth provider ${provider} has no auth-users surface (guided): the signup journey stays a manual dashboard task`);
+    const auth11 = cap(ctx, "auth", "authUsers");
+    if (!auth11) return skip(`auth provider ${provider} has no auth-users surface (guided): the signup journey stays a manual dashboard task`);
     const pre = await prereq(ctx, "auth");
     if (pre) return pre;
     const seeded = ctx.state.resource(TEST_USER_ID);
@@ -22148,13 +22703,13 @@ var authSessionCheck = {
     if (!password) {
       return skip("blocked by: no password for the test account in this run (only the run that seeds or rotates it keeps one, in memory); re-run `plan` + `apply` to rotate it and prove login");
     }
-    const dest = await auth10.destination(ctx);
+    const dest = await auth11.destination(ctx);
     if (!dest) return blocked("project:db", "no Supabase project is selected for this app");
     const address = ctx.state.resource(TEST_USER_EMAIL) ?? ctx.config.auth?.testEmail;
     if (!address) return skip("the test account's address is not recorded, so golive cannot sign in as it");
     let outcome;
     try {
-      outcome = await auth10.login(ctx, address, password);
+      outcome = await auth11.login(ctx, address, password);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`signing in as the test account ${address} failed: ${errMsg(e)}`], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -22176,7 +22731,7 @@ var authSessionCheck = {
     const issues = [];
     let view2;
     try {
-      view2 = await auth10.user(ctx, session2.accessToken);
+      view2 = await auth11.user(ctx, session2.accessToken);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`could not read the signed-in user: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -22193,7 +22748,7 @@ var authSessionCheck = {
     evidence.push(`GET /auth/v1/user with that token returned the same user (${view2.id})`);
     let anon;
     try {
-      anon = await auth10.user(ctx);
+      anon = await auth11.user(ctx);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`could not read the anonymous answer from the auth API: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -22284,7 +22839,7 @@ async function publicRouteRead(ctx, base2, url, line, status) {
     }
   };
 }
-async function signedInTables(ctx, ref3, token2) {
+async function signedInTables(ctx, ref4, token2) {
   const admin = cap(ctx, "db", "dbAdmin");
   const outputs4 = cap(ctx, "db", "outputs");
   if (!admin || !outputs4) return { lines: ["the signed-in table probe needs the database admin and outputs capabilities, so no table was probed"] };
@@ -22307,7 +22862,7 @@ async function signedInTables(ctx, ref3, token2) {
   for (const t of batch) {
     let verdict;
     try {
-      const r = await authedRestProbe(ctx, ref3, t.name, t.schema, key, token2);
+      const r = await authedRestProbe(ctx, ref4, t.name, t.schema, key, token2);
       verdict = r.status === 200 ? "reachable" : [401, 403, 404, 406].includes(r.status) || r.code === "42501" ? "denied" : "undecided";
     } catch {
       verdict = "undecided";
@@ -22358,8 +22913,8 @@ var authRecoveryCheck = {
     }
     const provider = ctx.config.stack.auth;
     const title = adapterFor(ctx, "auth")?.title ?? provider;
-    const auth10 = cap(ctx, "auth", "authUsers");
-    if (!auth10) return skip(`auth provider ${provider} has no auth-users surface (guided): the password-recovery journey stays a manual dashboard task`);
+    const auth11 = cap(ctx, "auth", "authUsers");
+    if (!auth11) return skip(`auth provider ${provider} has no auth-users surface (guided): the password-recovery journey stays a manual dashboard task`);
     const pre = await prereq(ctx, "auth");
     if (pre) return pre;
     const seeded = ctx.state.resource(TEST_USER_ID);
@@ -22378,7 +22933,7 @@ var authRecoveryCheck = {
     const evidence = [];
     let asked;
     try {
-      asked = await auth10.requestRecovery(ctx, address);
+      asked = await auth11.requestRecovery(ctx, address);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`the recovery request for ${address} failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -22404,7 +22959,7 @@ var authRecoveryCheck = {
       evidence.push(`the test address ${address} is not a plus-addressable one, so golive could not form an address with no account to compare the answer against`);
     } else {
       try {
-        unknown = await auth10.requestRecovery(ctx, unknownAddr);
+        unknown = await auth11.requestRecovery(ctx, unknownAddr);
       } catch (e) {
         if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
         return result("fail", "high", [`the recovery request for an address with no account failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -22436,7 +22991,7 @@ var authRecoveryCheck = {
     }
     let replay;
     try {
-      replay = await auth10.recoverySession(ctx, token2);
+      replay = await auth11.recoverySession(ctx, token2);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`replaying the recovery token failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -22452,7 +23007,7 @@ var authRecoveryCheck = {
     evidence.push(`the recovery token this run used is refused on replay (HTTP ${replay.status}${replay.code ? ` ${replay.code}` : ""})`);
     let fresh;
     try {
-      fresh = await auth10.login(ctx, address, newPass);
+      fresh = await auth11.login(ctx, address, newPass);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`signing in with the password set through recovery failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -22469,7 +23024,7 @@ var authRecoveryCheck = {
     evidence.push(`the password set through the recovery path signs in (user ${fresh.session.userId})`);
     let stale;
     try {
-      stale = await auth10.login(ctx, address, oldPass);
+      stale = await auth11.login(ctx, address, oldPass);
     } catch (e) {
       if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
       return result("fail", "high", [`signing in with the replaced password failed: ${errMsg(e)}`, ...evidence], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -22544,8 +23099,8 @@ var authIsolationCheck = {
       const missing2 = [!identityPath ? "auth.identityPath" : "", !isolationPath ? "auth.isolationPath" : ""].filter(Boolean).join(" and ");
       return skip(`auth.isolation is on in golive.yaml but no app route is declared (${missing2}): golive has nothing to read through, so isolation is not exercised (the auth:isolation-routes handoff names what the app must expose)`);
     }
-    const auth10 = cap(ctx, "auth", "authUsers");
-    if (!auth10) return skip(`auth provider ${provider} has no auth-users surface (guided): account isolation stays a manual app test`);
+    const auth11 = cap(ctx, "auth", "authUsers");
+    if (!auth11) return skip(`auth provider ${provider} has no auth-users surface (guided): account isolation stays a manual app test`);
     const pre = await prereq(ctx, "auth");
     if (pre) return pre;
     const first = ctx.state.resource(TEST_USER_ID);
@@ -22577,7 +23132,7 @@ var authIsolationCheck = {
     for (const [who, email, password, recorded] of wanted) {
       let outcome;
       try {
-        outcome = await auth10.login(ctx, email, password);
+        outcome = await auth11.login(ctx, email, password);
       } catch (e) {
         if (e instanceof SupabaseAuthPrereqError) return skip(errMsg(e));
         return result("fail", "high", [`signing in as ${who} ${email} failed: ${errMsg(e)}`], `Check that ${provider} auth is reachable, then re-run verify.`);
@@ -22767,23 +23322,23 @@ var posthogIngestCheck = {
     if (notLoggedIn) return notLoggedIn;
     const linker = adapter.capabilities.project;
     if (!linker) return skip(`the ${adapter.title} adapter has no project surface, so golive cannot name the project to check`);
-    let project3;
+    let project4;
     try {
-      project3 = await linker.current(ctx);
+      project4 = await linker.current(ctx);
     } catch (e) {
       return result("fail", "medium", [`could not read the ${adapter.title} project this app reports to: ${errMsg(e)}`], "Re-run verify; if it persists, check the PostHog access with `golive doctor` and re-plan.");
     }
-    if (!project3) return blocked("analytics:project", `no ${adapter.title} project is linked or selected for this app yet; run \`golive plan\` and apply it`);
+    if (!project4) return blocked("analytics:project", `no ${adapter.title} project is linked or selected for this app yet; run \`golive plan\` and apply it`);
     const marker2 = randomBytes7(4).toString("hex");
     const filter = { event: EVENT, property: { key: "golive_marker", value: marker2 }, minutes: posthogTiming.queryMinutes };
     let accepted;
     try {
-      accepted = (await analytics2.capture(ctx, project3.id, { event: EVENT, distinctId: DISTINCT_ID, properties: { golive_marker: marker2, golive_check: "posthog-ingest" } })).status;
+      accepted = (await analytics2.capture(ctx, project4.id, { event: EVENT, distinctId: DISTINCT_ID, properties: { golive_marker: marker2, golive_check: "posthog-ingest" } })).status;
     } catch (e) {
-      return result("fail", "medium", [`sending one "${EVENT}" event to ${adapter.title} project ${project3.name} (${project3.id}) failed: ${errMsg(e)}`], "Fix the ingestion host/network or the project token, then re-run `golive verify --only posthog-ingest`.");
+      return result("fail", "medium", [`sending one "${EVENT}" event to ${adapter.title} project ${project4.name} (${project4.id}) failed: ${errMsg(e)}`], "Fix the ingestion host/network or the project token, then re-run `golive verify --only posthog-ingest`.");
     }
     const evidence = [
-      `sent one "${EVENT}" event (distinct id ${DISTINCT_ID}, marker ${marker2}) to ${adapter.title} project ${project3.name} (${project3.id}); the ingestion endpoint answered HTTP ${accepted}`,
+      `sent one "${EVENT}" event (distinct id ${DISTINCT_ID}, marker ${marker2}) to ${adapter.title} project ${project4.name} (${project4.id}); the ingestion endpoint answered HTTP ${accepted}`,
       "the 2xx means accepted, not ingested: only the provider's own read-back proves it"
     ];
     const started = Date.now();
@@ -22792,7 +23347,7 @@ var posthogIngestCheck = {
     for (; ; ) {
       let count = null;
       try {
-        count = await analytics2.count(ctx, project3.id, filter);
+        count = await analytics2.count(ctx, project4.id, filter);
       } catch (e) {
         const code = e.status;
         if (code === 401 || code === 403) {
@@ -22812,7 +23367,7 @@ var posthogIngestCheck = {
             ...evidence,
             count !== null ? `PostHog had not recorded the marker ${marker2} yet after ${seconds}s (the read-back counts ingested events and can lag minutes)` : `the read-back could not be read within ${seconds}s: ${readError ?? "no answer"}`
           ],
-          `Ingestion is asynchronous, so this is not a failure yet: re-run \`golive verify --only posthog-ingest\` in a minute. If it stays invisible, check the project the app reports to (${project3.id}) and that the app initializes the ${adapter.title} SDK.`
+          `Ingestion is asynchronous, so this is not a failure yet: re-run \`golive verify --only posthog-ingest\` in a minute. If it stays invisible, check the project the app reports to (${project4.id}) and that the app initializes the ${adapter.title} SDK.`
         );
       }
       await sleep2(Math.max(0, Math.min(posthogTiming.pollMs, deadline - Date.now())));
@@ -22839,28 +23394,28 @@ var sentryIngestCheck = {
     if (notLoggedIn) return notLoggedIn;
     const linker = adapter.capabilities.project;
     if (!linker) return skip(`the ${adapter.title} adapter has no project surface, so golive cannot name the project to check`);
-    let project3;
+    let project4;
     try {
-      project3 = await linker.current(ctx);
+      project4 = await linker.current(ctx);
     } catch (e) {
       return result("fail", "medium", [`could not read the ${adapter.title} project this app reports to: ${errMsg(e)}`], `Re-run verify; if it persists, check the ${adapter.title} access with \`golive doctor\` and re-plan.`);
     }
-    if (!project3) return blocked("sentry:project", `no ${adapter.title} project is linked or selected for this app yet; run \`golive plan\` and apply it`);
+    if (!project4) return blocked("sentry:project", `no ${adapter.title} project is linked or selected for this app yet; run \`golive plan\` and apply it`);
     const marker2 = randomBytes8(4).toString("hex");
     const sentId = randomBytes8(16).toString("hex");
     let accepted;
     try {
-      accepted = await monitoring2.capture(ctx, project3.id, {
+      accepted = await monitoring2.capture(ctx, project4.id, {
         eventId: sentId,
         message: `${EVENT2} ${marker2}`,
         tags: { [MARKER_TAG]: marker2, golive_check: "sentry-ingest" }
       });
     } catch (e) {
-      return result("fail", "medium", [`sending one "${EVENT2}" event to ${adapter.title} project ${project3.name} (${project3.id}) failed: ${errMsg(e)}`], "Fix the DSN/network or the project, then re-run `golive verify --only sentry-ingest`.");
+      return result("fail", "medium", [`sending one "${EVENT2}" event to ${adapter.title} project ${project4.name} (${project4.id}) failed: ${errMsg(e)}`], "Fix the DSN/network or the project, then re-run `golive verify --only sentry-ingest`.");
     }
     const eventId = accepted.eventId ?? sentId;
     const evidence = [
-      `sent one "${EVENT2}" event (event id ${eventId}, marker ${marker2}) to ${adapter.title} project ${project3.name} (${project3.id}); the store endpoint answered HTTP ${accepted.status}`,
+      `sent one "${EVENT2}" event (event id ${eventId}, marker ${marker2}) to ${adapter.title} project ${project4.name} (${project4.id}); the store endpoint answered HTTP ${accepted.status}`,
       "the 2xx means accepted, not ingested: only Sentry's own event read proves it",
       ...accepted.eventId ? [] : ["the store endpoint returned no event id; the read-back asks for the id golive sent"]
     ];
@@ -22871,7 +23426,7 @@ var sentryIngestCheck = {
     for (; ; ) {
       let state = null;
       try {
-        state = await monitoring2.readEvent(ctx, project3.id, eventId, marker2);
+        state = await monitoring2.readEvent(ctx, project4.id, eventId, marker2);
       } catch (e) {
         const code = e.status;
         if (code === 401 || code === 403) {
@@ -22897,11 +23452,82 @@ var sentryIngestCheck = {
             ...evidence,
             state === null ? `the read-back could not be read within ${seconds}s: ${readError ?? "no answer"}` : seenWithoutMarker ? `Sentry returned event ${eventId} after ${seconds}s, but without the run marker ${marker2} in it` : `Sentry had not returned the event (marker ${marker2}) yet after ${seconds}s (error ingestion and issue indexing can lag)`
           ],
-          `Ingestion is asynchronous, so this is not a failure yet: re-run \`golive verify --only sentry-ingest\` in a minute. If it stays invisible, check the project the app reports to (${project3.id}) and that the app initializes the ${adapter.title} SDK with the DSN env name golive writes.`
+          `Ingestion is asynchronous, so this is not a failure yet: re-run \`golive verify --only sentry-ingest\` in a minute. If it stays invisible, check the project the app reports to (${project4.id}) and that the app initializes the ${adapter.title} SDK with the DSN env name golive writes.`
         );
       }
       await sleep3(Math.max(0, Math.min(sentryTiming.pollMs, deadline - Date.now())));
     }
+  }
+};
+
+// src/checks/uptime-monitor.ts
+function humanDuration(seconds) {
+  if (seconds < 60) return `${seconds} s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ${minutes % 60} min`;
+  return `${Math.floor(hours / 24)} d ${hours % 24} h`;
+}
+function logLine(log) {
+  if (!log) return void 0;
+  const kind = LOG_EVENT_TEXT[log.type] ?? `event ${log.type}`;
+  const at = new Date(log.datetime * 1e3).toISOString();
+  return `last log: ${kind} at ${at}${log.duration !== void 0 ? ` (duration ${humanDuration(log.duration)})` : ""}${log.reason ? ` \u2014 ${log.reason}` : ""}`;
+}
+var uptimeMonitorCheck = {
+  id: "uptime-monitor",
+  title: "UptimeRobot watches the production URL and reports it up",
+  severity: "medium",
+  applies: (ctx) => ctx.config.stack.monitoring === "uptimerobot",
+  async run(ctx) {
+    const adapter = adapterFor(ctx, "monitoring");
+    if (!adapter || !adapter.automated) return skip(`monitoring provider ${ctx.config.stack.monitoring} has no automated adapter (guided)`);
+    const uptime2 = uptimeOf(adapter);
+    if (!uptime2) return skip(`the ${adapter.title} adapter exposes no monitor read, so golive cannot check it`);
+    const notLoggedIn = await prereq(ctx, "monitoring");
+    if (notLoggedIn) return notLoggedIn;
+    const linker = adapter.capabilities.project;
+    if (!linker) return skip(`the ${adapter.title} adapter has no monitor surface, so golive cannot name the monitor to check`);
+    let linked;
+    try {
+      linked = await linker.current(ctx);
+    } catch (e) {
+      return skip(`could not read the ${adapter.title} monitor this app is linked to: ${errMsg(e)}; re-run \`golive plan\` if that monitor is gone`);
+    }
+    if (!linked) return blocked("uptimerobot:monitor", `no ${adapter.title} monitor is linked for this app yet; run \`golive plan\` and apply it`);
+    let monitor;
+    try {
+      monitor = await uptime2.monitor(ctx, linked.id);
+    } catch (e) {
+      return skip(`could not read ${adapter.title} monitor ${linked.id}: ${errMsg(e)}`);
+    }
+    if (!monitor) return blocked("uptimerobot:monitor", `the ${adapter.title} monitor ${linked.id} this app was linked to is gone from the account; run \`golive plan\` to select or create one`);
+    const status = monitorStatusText(monitor.status);
+    const evidence = [`${adapter.title} monitor ${monitor.name} (${monitor.id}) reports ${status}: watching ${monitor.url}${monitor.interval !== void 0 ? `, checked every ${monitor.interval} s` : ""}`];
+    const log = logLine(monitor.lastLog);
+    if (log) evidence.push(log);
+    const production = await productionUrl(ctx);
+    if (!production) {
+      return skip(
+        `cannot confirm the production URL this monitor should watch yet (blocked by: deploy:production; golive.yaml names no domain and golive has not deployed production, so the host's URL is not confirmed). Apply a production deploy or set \`domain\`, then re-run verify`
+      );
+    }
+    const otherUrl = !sameWatchedUrl(monitor.url, production);
+    if (otherUrl || monitor.status !== 2) {
+      const problems = [
+        ...otherUrl ? [`it watches ${monitor.url}, not this app's production URL ${production}`] : [],
+        ...monitor.status !== 2 ? [`its status is ${status}`] : []
+      ];
+      const fixes = [
+        ...otherUrl ? [`point the monitor at ${production} (or adopt the monitor that already watches it: set \`projects.monitoring\` to its id or name and re-run \`golive plan\`); golive never rewrites a monitor's URL on its own`] : [],
+        ...monitor.status === 0 ? [`resume it in the ${adapter.title} dashboard \u2014 golive never pauses or resumes a monitor`] : monitor.status === 1 ? [`a new monitor starts "not checked yet": re-run verify in a minute, and check the monitor's settings if it stays that way`] : monitor.status === 8 || monitor.status === 9 ? ["check the site now: the provider reports it unreachable (the dashboard has the check history and the reason)"] : [],
+        "re-run `golive verify --only uptime-monitor`"
+      ];
+      const down = monitor.status === 8 || monitor.status === 9;
+      return result("warn", down ? "high" : "medium", [...evidence, ...problems.map((p) => `\u2014 ${p}`)], fixes.join("; "));
+    }
+    return pass(evidence);
   }
 };
 
@@ -23180,6 +23806,7 @@ var ALL_CHECKS = [
   emailVerifiedCheck,
   posthogIngestCheck,
   sentryIngestCheck,
+  uptimeMonitorCheck,
   previewDeployCheck,
   previewBundleCheck,
   productionReleaseCheck
@@ -23200,7 +23827,7 @@ function linkList() {
 }
 
 // src/detect/index.ts
-import { resolve as resolve10 } from "node:path";
+import { resolve as resolve11 } from "node:path";
 
 // src/detect/fs.ts
 import { lstat, readdir, readFile } from "node:fs/promises";
@@ -23287,25 +23914,25 @@ var Repo = class {
     if (isRealEnvFile(rel)) throw new Error(`detect refused to open ${rel}: real env files hold secret values`);
     const hit = this.cache.get(rel);
     if (hit !== void 0) return hit;
-    let text3 = null;
+    let text4 = null;
     try {
       const abs = join19(this.root, rel);
       const st = await lstat(abs);
       if (st.isFile() && st.size <= MAX_FILE_BYTES2) {
         this.opts.onRead?.(rel);
-        text3 = await readFile(abs, "utf8");
+        text4 = await readFile(abs, "utf8");
       }
     } catch {
-      text3 = null;
+      text4 = null;
     }
-    this.cache.set(rel, text3);
-    return text3;
+    this.cache.set(rel, text4);
+    return text4;
   }
   async json(rel) {
-    const text3 = await this.read(rel);
-    if (text3 === null) return null;
+    const text4 = await this.read(rel);
+    if (text4 === null) return null;
     try {
-      return JSON.parse(text3);
+      return JSON.parse(text4);
     } catch {
       return null;
     }
@@ -23384,50 +24011,50 @@ function parseNamedImports(list4) {
     return { imported: imported.trim(), local: (local ?? imported).trim() };
   });
 }
-function scanSource(file, text3) {
+function scanSource(file, text4) {
   const occ = [];
   const add = (name3, exposed) => {
     occ.push({ name: name3, file, exposed });
   };
   const inEdgeFn = file.startsWith("supabase/functions/");
   for (const { re, group, kind } of PATTERNS2) {
-    for (const m of text3.matchAll(re)) {
+    for (const m of text4.matchAll(re)) {
       const name3 = m[group];
       if (kind === "meta" && META_BUILTINS.has(name3)) continue;
       if (kind === "deno" && inEdgeFn && name3.startsWith("SUPABASE_")) continue;
       add(name3, kind !== "deno" && clientPrefix(name3) !== null);
     }
   }
-  for (const m of text3.matchAll(/\{([^{}]*)\}\s*=\s*process\.env\b/g)) {
+  for (const m of text4.matchAll(/\{([^{}]*)\}\s*=\s*process\.env\b/g)) {
     for (const part of m[1].split(",")) {
       const key = part.split(/[:=]/)[0].trim();
       if (isName(key)) add(key, clientPrefix(key) !== null);
     }
   }
-  scanSvelteKit(text3, add);
-  scanAstroEnv(text3, add);
-  scanNuxtRuntimeConfig(text3, add);
-  const dynamic = /process\.env\[\s*[a-zA-Z_$]/.test(text3);
+  scanSvelteKit(text4, add);
+  scanAstroEnv(text4, add);
+  scanNuxtRuntimeConfig(text4, add);
+  const dynamic = /process\.env\[\s*[a-zA-Z_$]/.test(text4);
   return { occ, dynamic };
 }
-function scanSvelteKit(text3, add) {
-  for (const m of text3.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]\$env\/static\/(private|public)['"]/g)) {
+function scanSvelteKit(text4, add) {
+  for (const m of text4.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]\$env\/static\/(private|public)['"]/g)) {
     for (const { imported } of parseNamedImports(m[1])) if (isName(imported)) add(imported, m[2] === "public");
   }
-  for (const m of text3.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]\$env\/dynamic\/(private|public)['"]/g)) {
+  for (const m of text4.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]\$env\/dynamic\/(private|public)['"]/g)) {
     const binding = parseNamedImports(m[1]).find((i) => i.imported === "env")?.local;
     if (!binding || !/^[A-Za-z_$][\w$]*$/.test(binding)) continue;
-    for (const r of text3.matchAll(new RegExp(`\\b${binding.replace(/\$/g, "\\$")}\\.(${NAME})\\b`, "g"))) add(r[1], m[2] === "public");
+    for (const r of text4.matchAll(new RegExp(`\\b${binding.replace(/\$/g, "\\$")}\\.(${NAME})\\b`, "g"))) add(r[1], m[2] === "public");
   }
 }
-function scanAstroEnv(text3, add) {
-  for (const m of text3.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]astro:env\/(client|server)['"]/g)) {
+function scanAstroEnv(text4, add) {
+  for (const m of text4.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]astro:env\/(client|server)['"]/g)) {
     for (const { imported } of parseNamedImports(m[1])) if (isName(imported)) add(imported, m[2] === "client");
   }
-  for (const m of text3.matchAll(new RegExp(`\\bgetSecret\\(\\s*${Q}(${NAME})\\1\\s*\\)`, "g"))) add(m[2], false);
+  for (const m of text4.matchAll(new RegExp(`\\bgetSecret\\(\\s*${Q}(${NAME})\\1\\s*\\)`, "g"))) add(m[2], false);
 }
-function scanNuxtRuntimeConfig(text3, add) {
-  for (const m of text3.matchAll(/useRuntimeConfig\(\s*\)\s*\.\s*(public\s*\.\s*)?([A-Za-z_][A-Za-z0-9_]*)/g)) {
+function scanNuxtRuntimeConfig(text4, add) {
+  for (const m of text4.matchAll(/useRuntimeConfig\(\s*\)\s*\.\s*(public\s*\.\s*)?([A-Za-z_][A-Za-z0-9_]*)/g)) {
     const pub = Boolean(m[1]);
     const key = m[2];
     if (!pub && (key === "public" || key === "app")) continue;
@@ -23438,13 +24065,13 @@ function nuxtEnvName(key, pub) {
   const snake = key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/-/g, "_").toUpperCase();
   return `NUXT_${pub ? "PUBLIC_" : ""}${snake}`;
 }
-function nuxtConfigNames(text3) {
-  const m = /runtimeConfig\s*:\s*\{/.exec(text3);
+function nuxtConfigNames(text4) {
+  const m = /runtimeConfig\s*:\s*\{/.exec(text4);
   if (!m) return [];
   const out = [];
-  for (const { key, objectAt } of objectKeys(text3, m.index + m[0].length - 1)) {
+  for (const { key, objectAt } of objectKeys(text4, m.index + m[0].length - 1)) {
     if (key === "public" && objectAt !== null) {
-      for (const pk of objectKeys(text3, objectAt)) out.push({ name: nuxtEnvName(pk.key, true), exposed: true });
+      for (const pk of objectKeys(text4, objectAt)) out.push({ name: nuxtEnvName(pk.key, true), exposed: true });
     } else if (key !== "app") {
       out.push({ name: nuxtEnvName(key, false), exposed: false });
     }
@@ -23527,35 +24154,35 @@ function configExposure(sources) {
   const out = { names: [], prefixes: [], all: [], unresolved: [] };
   const files = [...sources.keys()].filter((f) => NEXT_CONFIG.test(f) || VITE_LIKE_CONFIG.test(f) || SVELTE_CONFIG.test(f) || WEBPACK_CONFIG.test(f)).sort();
   for (const file of files) {
-    const text3 = sources.get(file);
-    const ctx = { file, text: text3, loadEnvAll: loadEnvBindings(text3), out, seen: /* @__PURE__ */ new Set() };
+    const text4 = sources.get(file);
+    const ctx = { file, text: text4, loadEnvAll: loadEnvBindings(text4), out, seen: /* @__PURE__ */ new Set() };
     const blocks = [];
     const exprs = [];
     const addExpr = (kind, via, at) => {
-      const expr = readExpr(text3, at);
+      const expr = readExpr(text4, at);
       if (expr) exprs.push({ kind, at, via, expr });
     };
     if (NEXT_CONFIG.test(file)) {
-      for (const m of text3.matchAll(/(?<![.\w$])env\s*:\s*\{/g)) blocks.push({ kind: "env", open: m.index + m[0].length - 1, via: "env" });
-      for (const m of text3.matchAll(/(?<![.\w$])env\s*:\s*(?![\s{])/g)) addExpr("env", "env", m.index + m[0].length);
-      for (const m of text3.matchAll(/(?<=[{,]\s*)env(?=\s*[,}])/g)) addExpr("env", "env", m.index);
+      for (const m of text4.matchAll(/(?<![.\w$])env\s*:\s*\{/g)) blocks.push({ kind: "env", open: m.index + m[0].length - 1, via: "env" });
+      for (const m of text4.matchAll(/(?<![.\w$])env\s*:\s*(?![\s{])/g)) addExpr("env", "env", m.index + m[0].length);
+      for (const m of text4.matchAll(/(?<=[{,]\s*)env(?=\s*[,}])/g)) addExpr("env", "env", m.index);
     }
     if (!SVELTE_CONFIG.test(file)) {
-      for (const m of text3.matchAll(/(?<![.\w$])define\s*:\s*\{/g)) blocks.push({ kind: "define", open: m.index + m[0].length - 1, via: "define" });
-      for (const m of text3.matchAll(/(?<![.\w$])define\s*:\s*(?![\s{])/g)) addExpr("define", "define", m.index + m[0].length);
-      for (const m of text3.matchAll(/(?<=[{,]\s*)define(?=\s*[,}])/g)) addExpr("define", "define", m.index);
-      for (const m of text3.matchAll(/\bDefinePlugin\s*\(\s*\{/g)) blocks.push({ kind: "define", open: m.index + m[0].length - 1, via: "DefinePlugin" });
-      for (const m of text3.matchAll(/\bDefinePlugin\s*\(\s*(?![\s{)])/g)) addExpr("define", "DefinePlugin", m.index + m[0].length);
+      for (const m of text4.matchAll(/(?<![.\w$])define\s*:\s*\{/g)) blocks.push({ kind: "define", open: m.index + m[0].length - 1, via: "define" });
+      for (const m of text4.matchAll(/(?<![.\w$])define\s*:\s*(?![\s{])/g)) addExpr("define", "define", m.index + m[0].length);
+      for (const m of text4.matchAll(/(?<=[{,]\s*)define(?=\s*[,}])/g)) addExpr("define", "define", m.index);
+      for (const m of text4.matchAll(/\bDefinePlugin\s*\(\s*\{/g)) blocks.push({ kind: "define", open: m.index + m[0].length - 1, via: "DefinePlugin" });
+      for (const m of text4.matchAll(/\bDefinePlugin\s*\(\s*(?![\s{)])/g)) addExpr("define", "DefinePlugin", m.index + m[0].length);
     }
     for (const b of blocks) scanInlineBlock(ctx, b);
     for (const e of exprs) scanExpr(ctx, e, 0);
     if (VITE_LIKE_CONFIG.test(file)) {
-      for (const m of text3.matchAll(/\benvPrefix\s*:\s*(\[[^\]]*\]|(['"`])[^'"`]*\2)/g)) {
+      for (const m of text4.matchAll(/\benvPrefix\s*:\s*(\[[^\]]*\]|(['"`])[^'"`]*\2)/g)) {
         for (const s of m[1].matchAll(/(['"`])([^'"`]*)\1/g)) addPrefix(s[2], file, "envPrefix", out);
       }
     }
     if (SVELTE_CONFIG.test(file)) {
-      for (const m of text3.matchAll(/\bpublicPrefix\s*:\s*(['"`])([^'"`]*)\1/g)) addPrefix(m[2], file, "kit.env.publicPrefix", out);
+      for (const m of text4.matchAll(/\bpublicPrefix\s*:\s*(['"`])([^'"`]*)\1/g)) addPrefix(m[2], file, "kit.env.publicPrefix", out);
     }
   }
   return out;
@@ -23564,10 +24191,10 @@ function addPrefix(prefix, file, via, out) {
   if (prefix === "") out.all.push({ file, via: `${via} is '' (every env var is public)` });
   else out.prefixes.push({ prefix, file, via });
 }
-function loadEnvBindings(text3) {
+function loadEnvBindings(text4) {
   const out = /* @__PURE__ */ new Set();
-  for (const m of text3.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*loadEnv\s*\(/g)) {
-    const args = callArgs(text3, m.index + m[0].length - 1);
+  for (const m of text4.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*loadEnv\s*\(/g)) {
+    const args = callArgs(text4, m.index + m[0].length - 1);
     if (args.length >= 3 && !/^(['"`])VITE_\1$/.test(args[2])) out.add(m[1]);
   }
   return out;
@@ -23650,9 +24277,9 @@ function readExpr(src, start) {
   }
   return src.slice(start, i).trim();
 }
-function findDecl(text3, id2, at) {
+function findDecl(text4, id2, at) {
   let best = null;
-  for (const m of text3.matchAll(new RegExp(`(?:const|let|var)\\s+${escId(id2)}\\s*(?::[^=;]+?)?=(?![=>])\\s*`, "g"))) {
+  for (const m of text4.matchAll(new RegExp(`(?:const|let|var)\\s+${escId(id2)}\\s*(?::[^=;]+?)?=(?![=>])\\s*`, "g"))) {
     const init = m.index + m[0].length;
     if (m.index < at || best === null) best = init;
     if (m.index >= at) break;
@@ -23660,7 +24287,7 @@ function findDecl(text3, id2, at) {
   return best;
 }
 function scanExpr(ctx, e, depth) {
-  const { file, text: text3, out } = ctx;
+  const { file, text: text4, out } = ctx;
   const expr = e.expr.replace(/\s+(?:as\s+const|satisfies\s+[\w$.<>, ]+)$/, "");
   if (LITERAL_VALUE.test(expr)) return;
   const cause = wholeEnvCause(ctx, e.kind, expr);
@@ -23669,16 +24296,16 @@ function scanExpr(ctx, e, depth) {
     return;
   }
   if (IDENT.test(expr) && depth < 4) {
-    const init = findDecl(text3, expr, e.at);
+    const init = findDecl(text4, expr, e.at);
     if (init !== null) {
       const via = `${e.via} (${expr})`;
-      if (text3[init] === "{") {
+      if (text4[init] === "{") {
         if (!ctx.seen.has(init)) {
           ctx.seen.add(init);
           scanInlineBlock(ctx, { kind: e.kind, open: init, via });
         }
       } else {
-        const initExpr = readExpr(text3, init);
+        const initExpr = readExpr(text4, init);
         if (!/^loadEnv\s*\(/.test(initExpr)) scanExpr(ctx, { kind: e.kind, at: init, via, expr: initExpr }, depth + 1);
       }
       scanMutations(ctx, e.kind, expr, via);
@@ -23689,10 +24316,10 @@ function scanExpr(ctx, e, depth) {
   out.unresolved.push(`${file} ${e.via} is set from an expression golive cannot read; make sure it holds no server secrets`);
 }
 function scanMutations(ctx, kind, id2, via) {
-  const { file, text: text3, out } = ctx;
+  const { file, text: text4, out } = ctx;
   const re = new RegExp(`(?<![\\w$.])${escId(id2)}\\s*(?:\\[[^\\]\\n]*\\]|\\.[\\w$]+)\\s*=(?![=>])|\\bObject\\.assign\\s*\\(\\s*${escId(id2)}\\b`, "g");
-  for (const m of text3.matchAll(re)) {
-    const stmt = readExpr(text3, m.index);
+  for (const m of text4.matchAll(re)) {
+    const stmt = readExpr(text4, m.index);
     const cause = wholeEnvCause(ctx, kind, stmt);
     if (cause) {
       out.all.push({ file, via: `${via} ${cause}` });
@@ -23706,14 +24333,14 @@ function scanMutations(ctx, kind, id2, via) {
   }
 }
 function scanInlineBlock(ctx, b) {
-  const { file, text: text3, out } = ctx;
+  const { file, text: text4, out } = ctx;
   const addName = (name3, how) => {
     out.names.push({ name: name3, file, via: `${b.via} ${how}` });
   };
   const valueReads = (v) => {
     for (const n of envReads(ctx, v)) addName(n, "value");
   };
-  for (const e of objectEntries(text3, b.open)) {
+  for (const e of objectEntries(text4, b.open)) {
     if (WHOLE_ENV.test(e.value) || wholeBinding(ctx, e.value)) {
       const what = e.spread ? `spreads the whole env` : `${e.key ?? ""}: inlines the whole env object`;
       out.all.push({ file, via: `${b.via} ${what}`.replace(/\s+/g, " ") });
@@ -23730,7 +24357,7 @@ function scanInlineBlock(ctx, b) {
       if (isName(key)) addName(key, "key");
     } else if (key === "process.env" || key === "import.meta.env") {
       if (e.objectAt !== null) {
-        for (const k of objectEntries(text3, e.objectAt)) if (k.key && isName(k.key)) addName(k.key, `${key}.${k.key}`);
+        for (const k of objectEntries(text4, e.objectAt)) if (k.key && isName(k.key)) addName(k.key, `${key}.${k.key}`);
       } else if (!/^(?:\{\s*\}|(['"`])\{\s*\}\1|JSON\.stringify\(\s*\{\s*\}\s*\))$/.test(e.value)) {
         out.unresolved.push(`${file} ${b.via} sets '${key}' from an expression golive cannot read; make sure it holds no server secrets`);
       }
@@ -23756,19 +24383,19 @@ var DB_HINTS = [
 async function readEnvExamples(repo) {
   const out = { names: /* @__PURE__ */ new Map(), dbHints: /* @__PURE__ */ new Set(), files: [] };
   for (const file of EXAMPLE_ENV_FILES) {
-    const text3 = await repo.read(file);
-    if (text3 === null) continue;
+    const text4 = await repo.read(file);
+    if (text4 === null) continue;
     out.files.push(file);
-    for (const { name: name3, value } of parseDotenv(text3)) {
+    for (const { name: name3, value } of parseDotenv(text4)) {
       out.names.set(name3, [...out.names.get(name3) ?? [], file]);
       for (const [re, id2] of DB_HINTS) if (re.test(value)) out.dbHints.add(id2);
     }
   }
   return out;
 }
-function parseDotenv(text3) {
+function parseDotenv(text4) {
   const out = [];
-  const lines = text3.split(/\r?\n/);
+  const lines = text4.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(lines[i]);
     if (!m) continue;
@@ -23787,8 +24414,8 @@ function parseDotenv(text3) {
 function collectEnvRefs(sources, examples, notes, findings = []) {
   const occ = [];
   const dynamicFiles = [];
-  for (const [file, text3] of sources) {
-    const r = scanSource(file, text3);
+  for (const [file, text4] of sources) {
+    const r = scanSource(file, text4);
     occ.push(...r.occ);
     if (r.dynamic) dynamicFiles.push(file);
   }
@@ -24041,17 +24668,17 @@ async function ruleMatches(repo, r, deps2, sources) {
   if (matches2(deps2, r.deps)) return true;
   for (const f of r.files ?? []) if (await repo.exists(f)) return true;
   if (r.source && (!r.sourceNeedsDep || matches2(deps2, r.sourceNeedsDep))) {
-    for (const text3 of sources.values()) if (r.source.test(text3)) return true;
+    for (const text4 of sources.values()) if (r.source.test(text4)) return true;
   }
   return false;
 }
 async function urlImportedPackages(repo, sources) {
   const out = /* @__PURE__ */ new Set();
   const re = /(?:npm:|jsr:|https:\/\/esm\.sh\/|https:\/\/cdn\.skypack\.dev\/)(@[a-z0-9][\w.-]*\/[a-z0-9][\w.-]*|[a-z0-9][\w.-]*)/gi;
-  const scan = (text3) => {
-    for (const m of text3.matchAll(re)) out.add(m[1].toLowerCase());
+  const scan = (text4) => {
+    for (const m of text4.matchAll(re)) out.add(m[1].toLowerCase());
   };
-  for (const [file, text3] of sources) if (file.startsWith("supabase/functions/") || /from\s+['"](?:npm:|jsr:|https:)/.test(text3)) scan(text3);
+  for (const [file, text4] of sources) if (file.startsWith("supabase/functions/") || /from\s+['"](?:npm:|jsr:|https:)/.test(text4)) scan(text4);
   for (const fn of await repo.dirs("supabase/functions")) {
     for (const f of ["deno.json", "deno.jsonc", "import_map.json"]) {
       const t = await repo.read(`supabase/functions/${fn}/${f}`);
@@ -24180,8 +24807,8 @@ var STRIPE_EVENT_RESOURCES = [
 ];
 var STRIPE_EVENT_LITERAL = new RegExp(`(['"\`])((?:${STRIPE_EVENT_RESOURCES.join("|")})(?:\\.[a-z_]+){1,3})\\1`, "g");
 var STRIPE_EVENT_ACTION = /(?:^|_)(?:created|updated|deleted|completed|succeeded|failed|paid|canceled|cancelled|expired|expiring|finalized|voided|uncollectible|upcoming|sent|overdue|due|required|processing|requires_action|requires_input|captured|refunded|trial_will_end|paused|resumed|applied|attached|detached|reversed|available|released|closed|withdrawn|reinstated|opened|aborted|activated|deactivated|verified|redacted|funded|reported|ready|reached|rejected|approved|declined|submitted|won|lost|returned|posted|initiated|scheduled|disconnected|refreshed|reactivated|authorized|removed|added|changed|ended|renewed|signed|accepted|restored|disabled|enabled|triggered|resolved|reopened|pending|converted|succeeded|updated)$/;
-function stripeEventTypes(text3) {
-  const code = text3.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:'"`\\])\/\/[^\n]*/g, "$1");
+function stripeEventTypes(text4) {
+  const code = text4.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:'"`\\])\/\/[^\n]*/g, "$1");
   const out = /* @__PURE__ */ new Set();
   for (const m of code.matchAll(STRIPE_EVENT_LITERAL)) {
     const type = m[2];
@@ -24192,18 +24819,18 @@ function stripeEventTypes(text3) {
   }
   return [...out].sort();
 }
-function isStripeWebhookFile(text3) {
-  return /stripe/i.test(text3) && (STRIPE_VERIFY.test(text3) || /stripe-signature/i.test(text3) || STRIPE_EVENTS.test(text3));
+function isStripeWebhookFile(text4) {
+  return /stripe/i.test(text4) && (STRIPE_VERIFY.test(text4) || /stripe-signature/i.test(text4) || STRIPE_EVENTS.test(text4));
 }
-function stripeVerification(file, text3) {
-  if (!STRIPE_VERIFY.test(text3)) return { ok: false, reason: "no stripe.webhooks.constructEvent call" };
-  if (/constructEvent(?:Async)?\s*\(\s*JSON\.stringify/.test(text3)) return { ok: false, reason: "re-serialized JSON body passed to constructEvent (signature can never match)" };
-  if (!RAW_BODY.test(text3)) return { ok: false, reason: "raw request body not used (read it with request.text())" };
-  if (/^(?:src\/)?pages\/api\//.test(file) && !/bodyParser\s*:\s*false/.test(text3)) {
+function stripeVerification(file, text4) {
+  if (!STRIPE_VERIFY.test(text4)) return { ok: false, reason: "no stripe.webhooks.constructEvent call" };
+  if (/constructEvent(?:Async)?\s*\(\s*JSON\.stringify/.test(text4)) return { ok: false, reason: "re-serialized JSON body passed to constructEvent (signature can never match)" };
+  if (!RAW_BODY.test(text4)) return { ok: false, reason: "raw request body not used (read it with request.text())" };
+  if (/^(?:src\/)?pages\/api\//.test(file) && !/bodyParser\s*:\s*false/.test(text4)) {
     return { ok: false, reason: "Pages Router route without `export const config = { api: { bodyParser: false } }`" };
   }
-  const edge = file.startsWith("supabase/functions/") || /\bDeno\./.test(text3) || /runtime\s*=\s*['"]edge['"]/.test(text3);
-  if (edge && !/\.(?:constructEventAsync|parseEventNotificationAsync)\s*\(/.test(text3)) {
+  const edge = file.startsWith("supabase/functions/") || /\bDeno\./.test(text4) || /runtime\s*=\s*['"]edge['"]/.test(text4);
+  if (edge && !/\.(?:constructEventAsync|parseEventNotificationAsync)\s*\(/.test(text4)) {
     return { ok: false, reason: "edge/Deno runtime needs constructEventAsync (the sync form throws there)" };
   }
   return { ok: true };
@@ -24224,20 +24851,20 @@ function flatRoutePath(name3) {
   const segs = name3.replace(/\[\.\]/g, "\0").split(".").filter((s) => s !== "_index" && !s.startsWith("_")).map((s) => s.replace(/_$/, "").replace(/^\((.*)\)$/, "$1").replace(/^\$$/, "*").replace(/^\$/, ":").replace(/\u0000/g, "."));
   return join20(segs);
 }
-function reactRouterConfigRoutes(text3) {
+function reactRouterConfigRoutes(text4) {
   const ranges = [];
   const calls = [];
-  for (const m of text3.matchAll(/\bprefix\(\s*(['"`])([^'"`]*)\1\s*,\s*\[/g)) {
+  for (const m of text4.matchAll(/\bprefix\(\s*(['"`])([^'"`]*)\1\s*,\s*\[/g)) {
     const open = m.index + m[0].length - 1;
-    ranges.push({ start: open, end: matchBracket(text3, open), path: m[2] });
+    ranges.push({ start: open, end: matchBracket(text4, open), path: m[2] });
   }
-  for (const m of text3.matchAll(/\broute\(\s*(['"`])([^'"`]*)\1\s*,\s*(['"`])([^'"`]+)\3/g)) {
+  for (const m of text4.matchAll(/\broute\(\s*(['"`])([^'"`]*)\1\s*,\s*(['"`])([^'"`]+)\3/g)) {
     const after = m.index + m[0].length;
     calls.push({ at: m.index, path: m[2], file: m[4] });
-    const kids = /^\s*,\s*\[/.exec(text3.slice(after));
+    const kids = /^\s*,\s*\[/.exec(text4.slice(after));
     if (kids) {
       const open = after + kids[0].length - 1;
-      ranges.push({ start: open, end: matchBracket(text3, open), path: m[2] });
+      ranges.push({ start: open, end: matchBracket(text4, open), path: m[2] });
     }
   }
   const out = /* @__PURE__ */ new Map();
@@ -24248,30 +24875,30 @@ function reactRouterConfigRoutes(text3) {
   }
   return out;
 }
-function matchBracket(text3, open) {
+function matchBracket(text4, open) {
   let depth = 0;
-  for (let i = open; i < text3.length; i++) {
-    if (text3[i] === "[") depth++;
-    else if (text3[i] === "]" && --depth === 0) return i;
+  for (let i = open; i < text4.length; i++) {
+    if (text4[i] === "[") depth++;
+    else if (text4[i] === "]" && --depth === 0) return i;
   }
-  return text3.length;
+  return text4.length;
 }
-function serverRoutePath(text3) {
-  const paths = [...text3.matchAll(/\b(?:app|router|server|api|route[rs]?|r)\s*\.\s*post\s*\(\s*(['"`])(\/[^'"`]*)\1/g)].map((m) => m[2]);
+function serverRoutePath(text4) {
+  const paths = [...text4.matchAll(/\b(?:app|router|server|api|route[rs]?|r)\s*\.\s*post\s*\(\s*(['"`])(\/[^'"`]*)\1/g)].map((m) => m[2]);
   return paths.find((p) => /webhook|stripe/i.test(p)) ?? paths[0] ?? null;
 }
-function routePath(file, text3, fw, rrRoutes) {
+function routePath(file, text4, fw, rrRoutes) {
   const fn = /^supabase\/functions\/([^/]+)\/index\.[jt]sx?$/.exec(file);
   if (fn) return `/functions/v1/${fn[1]}`;
   const netlify = /^netlify\/functions\/([^/]+?)(?:\/index)?\.[cm]?[jt]s$/.exec(file);
   if (netlify) return `/.netlify/functions/${netlify[1]}`;
-  const byFramework = frameworkRoutePath(file, text3, fw, rrRoutes);
+  const byFramework = frameworkRoutePath(file, text4, fw, rrRoutes);
   if (byFramework) return byFramework;
   const api5 = /^api\/(.+)\.[cm]?[jt]s$/.exec(file);
   if (api5 && fw.framework !== "next") return join20(["api", ...api5[1].split("/")]).replace(/\/index$/, "");
-  return serverRoutePath(text3);
+  return serverRoutePath(text4);
 }
-function frameworkRoutePath(file, text3, fw, rrRoutes) {
+function frameworkRoutePath(file, text4, fw, rrRoutes) {
   switch (fw.framework) {
     case "next": {
       const app = /^(?:src\/)?app\/(?:(.*)\/)?route\.[cm]?[jt]sx?$/.exec(file);
@@ -24291,7 +24918,7 @@ function frameworkRoutePath(file, text3, fw, rrRoutes) {
       const configured = rrRoutes.get(file);
       if (configured) return configured;
       const m = /^app\/routes\/([^/]+?)(?:\/route)?\.[jt]sx?$/.exec(file);
-      return m && /export\s+(?:async\s+)?(?:function|const)\s+action\b/.test(text3) ? flatRoutePath(m[1]) : null;
+      return m && /export\s+(?:async\s+)?(?:function|const)\s+action\b/.test(text4) ? flatRoutePath(m[1]) : null;
     }
     case "astro": {
       const m = /^src\/pages\/(.+)\.[jt]s$/.exec(file);
@@ -24309,15 +24936,15 @@ function frameworkRoutePath(file, text3, fw, rrRoutes) {
 }
 function verifyJwtDisabled(toml) {
   const out = /* @__PURE__ */ new Set();
-  let current5 = null;
+  let current6 = null;
   for (const line of toml.split(/\r?\n/)) {
     const section = /^\s*\[\s*([^\]]+?)\s*\]\s*(?:#.*)?$/.exec(line);
     if (section) {
       const fn = /^functions\.(?:"([^"]+)"|'([^']+)'|([\w-]+))$/.exec(section[1]);
-      current5 = fn ? fn[1] ?? fn[2] ?? fn[3] : null;
+      current6 = fn ? fn[1] ?? fn[2] ?? fn[3] : null;
       continue;
     }
-    if (current5 && /^\s*verify_jwt\s*=\s*false\b/.test(line)) out.add(current5);
+    if (current6 && /^\s*verify_jwt\s*=\s*false\b/.test(line)) out.add(current6);
   }
   return out;
 }
@@ -24326,12 +24953,12 @@ async function findWebhooks(repo, sources, fw, notes) {
   const rrRoutes = routesTs && (fw.framework === "react-router" || fw.framework === "remix") ? reactRouterConfigRoutes(routesTs) : /* @__PURE__ */ new Map();
   const noJwt = verifyJwtDisabled(await repo.read("supabase/config.toml") ?? "");
   const out = [];
-  for (const [file, text3] of sources) {
-    if (!isStripeWebhookFile(text3)) continue;
-    const path = routePath(file, text3, fw, rrRoutes);
+  for (const [file, text4] of sources) {
+    if (!isStripeWebhookFile(text4)) continue;
+    const path = routePath(file, text4, fw, rrRoutes);
     if (!path) continue;
-    const v = stripeVerification(file, text3);
-    out.push({ provider: "stripe", path, file, verifiesSignature: v.ok, events: stripeEventTypes(text3) });
+    const v = stripeVerification(file, text4);
+    out.push({ provider: "stripe", path, file, verifiesSignature: v.ok, events: stripeEventTypes(text4) });
     if (!out[out.length - 1].events.length) {
       notes.push(`Stripe webhook ${path} (${file}) handles no event type golive could find as a string literal: pass --events a,b to init so the endpoint subscribes to what the handler needs.`);
     }
@@ -24350,7 +24977,7 @@ async function detect3(cwd) {
   return detectRepo(cwd);
 }
 async function detectRepo(cwd, opts = {}) {
-  const root = resolve10(cwd);
+  const root = resolve11(cwd);
   const repo = new Repo(root, opts);
   const notes = [];
   const findings = [];
@@ -24462,7 +25089,7 @@ var AXIS_CHECKS = {
   payments: ["webhook-registered", "webhook-unsigned", "stripe-live-ready", "stripe-live-payment"],
   email: ["email-dns", "email-verified"],
   dns: ["domain-live"],
-  monitoring: ["posthog-ingest", "sentry-ingest"]
+  monitoring: ["posthog-ingest", "sentry-ingest", "uptime-monitor"]
 };
 var BILLING = {
   vercel: "the Usage and Billing pages of your Vercel dashboard",
@@ -24473,6 +25100,7 @@ var BILLING = {
   resend: "your Resend account \u2192 Billing",
   posthog: "your PostHog organization settings \u2192 Billing (usage is priced per ingested event)",
   sentry: "your Sentry organization settings \u2192 Billing (usage is priced per event)",
+  uptimerobot: "your UptimeRobot account \u2192 Billing, and the published plans at uptimerobot.com/pricing (each plan includes a monitor count)",
   cloudflare: "your Cloudflare account \u2192 Billing",
   godaddy: "your GoDaddy account \u2192 Subscriptions and renewals",
   porkbun: "your Porkbun account \u2192 domain pricing and renewals"
@@ -24483,18 +25111,21 @@ var RECORDING_STEP = {
   database: ["project:db"],
   domain: ["email:domain"],
   dns: ["domain:dns", "email:dns"],
-  // Both monitoring links record the project under their own step id; a recorded project names the
-  // one that ran, so the row's timestamp is read from whichever exists.
-  analytics: ["analytics:project", "sentry:project"]
+  // The monitoring links each record their resource under their own step id; a recorded resource
+  // names the one that ran, so the row's timestamp is read from whichever exists.
+  analytics: ["analytics:project", "sentry:project"],
+  uptime: ["uptimerobot:monitor"]
 };
 function recordedSteps(kind) {
   if (kind === "database-project") return RECORDING_STEP.database;
   if (kind === "sending-domain") return RECORDING_STEP.domain;
+  if (kind === "uptime-monitor") return RECORDING_STEP.uptime;
   return RECORDING_STEP.analytics;
 }
 function recordedKind(kind) {
   if (kind === "database-project") return "database project";
   if (kind === "sending-domain") return "sending domain";
+  if (kind === "uptime-monitor") return "uptime monitor";
   return "analytics project";
 }
 async function buildHandover(ctx, input) {
@@ -24563,8 +25194,8 @@ async function accountRows(ctx, projects2) {
     if (!id2) continue;
     const adapter = adapterById(id2, ctx.adapters);
     const providerTitle = adapter?.title ?? GUIDED.find((g) => g.id === id2)?.title ?? id2;
-    const project3 = projects2.get(axis);
-    const account2 = project3?.scope?.name ?? project3?.scope?.id ?? NO_ACCOUNT;
+    const project4 = projects2.get(axis);
+    const account2 = project4?.scope?.name ?? project4?.scope?.id ?? NO_ACCOUNT;
     if (!adapter || !adapter.automated) {
       rows3.push({
         axis,
@@ -24648,15 +25279,15 @@ function resourceRows(ctx, inventory2, projects2, urls) {
     const keys3 = projectStateKeys(host.id);
     const id2 = ctx.state.resource(keys3.id);
     if (id2) {
-      const current5 = projects2.get("hosting");
+      const current6 = projects2.get("hosting");
       const created = ctx.state.resource(createdProjectKey(host.id)) === id2;
-      const live = current5?.id === id2;
+      const live = current6?.id === id2;
       rows3.push({
         axis: "hosting",
         provider: host.id,
         providerTitle: host.title,
         kind: "host project",
-        name: ctx.state.resource(keys3.name) ?? current5?.name ?? id2,
+        name: ctx.state.resource(keys3.name) ?? current6?.name ?? id2,
         id: id2,
         // A URL is only reported when the host itself confirmed this exact project in this run.
         ...live && urls.production ? { url: urls.production } : {},
@@ -24828,7 +25459,7 @@ function retirementRows(ctx, inventory2) {
     });
   }
   for (const r of inventory2.recorded.filter((x) => x.created)) {
-    const label3 = r.kind === "database-project" ? `${r.providerTitle} project ${r.id}` : r.kind === "sending-domain" ? `${r.providerTitle} sending domain ${r.name}` : `${r.providerTitle} project ${r.name} (${r.id})`;
+    const label3 = r.kind === "database-project" ? `${r.providerTitle} project ${r.id}` : r.kind === "sending-domain" ? `${r.providerTitle} sending domain ${r.name}` : r.kind === "uptime-monitor" ? `${r.providerTitle} monitor ${r.name} (${r.id})` : `${r.providerTitle} project ${r.name} (${r.id})`;
     rows3.push({
       resource: label3,
       how: r.removal ? "golive teardown \u2192 apply --plan <id> --yes --confirm-destroy, which re-reads the provider to prove the removal" : `by hand in ${r.where}: this provider exposes no delete capability to golive`,
@@ -24901,7 +25532,7 @@ function tag(p) {
   }
 }
 var tagKind = (kind) => tag(kind === "recorded" ? { kind: "recorded" } : { kind });
-var cell = (text3) => (text3 ?? "\u2014").replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
+var cell = (text4) => (text4 ?? "\u2014").replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
 function renderHandover(doc) {
   const lines = [];
   lines.push("# Ownership and handover", "");
@@ -24918,7 +25549,7 @@ function renderHandover(doc) {
   lines.push("## Accounts and login route", "");
   if (doc.accounts.length) {
     lines.push("| Axis | Provider | How golive reaches it | Account / team | If the login expires |", "| --- | --- | --- | --- | --- |");
-    for (const a of doc.accounts) lines.push(accountLine4(a));
+    for (const a of doc.accounts) lines.push(accountLine5(a));
   } else lines.push("_No providers are configured yet._");
   lines.push("");
   lines.push("## Resources created", "");
@@ -24970,7 +25601,7 @@ function renderHandover(doc) {
   lines.push(`${HANDOVER_MARKER}. This file contains no secrets: it is built from recorded metadata, ids, URLs and fingerprints only. Secret-free metadata can still identify private resources, so review it before sharing it.`, "");
   return redact(lines.join("\n") + "\n");
 }
-function accountLine4(a) {
+function accountLine5(a) {
   const via = a.via ?? (a.provenance.kind === "verified" ? "connected (the provider named no route)" : "not read");
   return `| ${cell(a.axis)} | ${cell(a.providerTitle)} | ${cell(via)} ${tag(a.provenance)} | ${cell(a.account)} | ${cell(a.login)} |`;
 }
@@ -25047,7 +25678,7 @@ Commands (add --json for machine output; --cwd <dir> to target another repo):
 async function main(argv) {
   const { cmd, flags } = parseArgs(argv);
   const json2 = flags.json === true;
-  const cwd = resolve11(typeof flags.cwd === "string" ? flags.cwd : process.cwd());
+  const cwd = resolve12(typeof flags.cwd === "string" ? flags.cwd : process.cwd());
   const release2 = loadRuntimeRelease(import.meta.url);
   if (cmd === "help" || flags.help) {
     process.stdout.write(HELP);
@@ -25059,7 +25690,7 @@ async function main(argv) {
   }
   if (cmd === "update-check") {
     const modulePath = fileURLToPath2(import.meta.url);
-    const bundleRoot = basename10(modulePath) === "cli.ts" ? resolve11(dirname9(modulePath), "../skills/golive") : resolve11(dirname9(modulePath), "..");
+    const bundleRoot = basename10(modulePath) === "cli.ts" ? resolve12(dirname9(modulePath), "../skills/golive") : resolve12(dirname9(modulePath), "..");
     const ownership = statusForBundle(bundleRoot);
     emit(await checkForUpdate(release2, { ownership, disabled: flags.offline === true || process.env.GOLIVE_UPDATE_CHECK === "0", ...flags["no-cache"] === true ? { cachePath: false } : {} }), { json: json2 });
     return 0;

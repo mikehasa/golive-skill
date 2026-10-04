@@ -8,10 +8,11 @@ import { godaddyAdapter } from './godaddy.js';
 import { porkbunAdapter } from './porkbun.js';
 import { posthogAdapter } from './posthog.js';
 import { sentryAdapter } from './sentry.js';
+import { uptimerobotAdapter } from './uptimerobot.js';
 import { netlifyAdapter } from './netlify.js';
 import { neonAdapter } from './neon.js';
 
 export { GUIDED } from './guided.js';
 
 /** Automated provider adapters. The menu sorts neutrally; this order carries no preference. */
-export const ADAPTERS: Adapter[] = [cloudflareAdapter, godaddyAdapter, neonAdapter, netlifyAdapter, porkbunAdapter, posthogAdapter, resendAdapter, sentryAdapter, stripeAdapter, supabaseAdapter, vercelAdapter];
+export const ADAPTERS: Adapter[] = [cloudflareAdapter, godaddyAdapter, neonAdapter, netlifyAdapter, porkbunAdapter, posthogAdapter, resendAdapter, sentryAdapter, stripeAdapter, supabaseAdapter, uptimerobotAdapter, vercelAdapter];

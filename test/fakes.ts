@@ -742,6 +742,18 @@ export function fakeWorld() {
     eventStates: ['seen'] as Array<'pending' | 'seen' | 'seen-without-marker'>,
     /** Every synthetic event the fake was asked to store. */
     stored: [] as Array<{ projectId: string; eventId: string; message: string; tags?: Record<string, string> }>,
+    /** When false, the fake exposes no uptime (monitor) surface. */
+    withUptime: false,
+    /** When false, the uptime surface has no createMonitor (a provider golive cannot create at). */
+    canCreateMonitor: true,
+    /** The account's monitors: the uptime surface reads and mutates these. */
+    monitors: [] as Array<{ id: string; name: string; url: string; type: number; status: number; interval?: number; lastLog?: { type: number; datetime: number; duration?: number; reason?: string } }>,
+    /** Monitor URLs createMonitor was asked for. */
+    monitored: [] as string[],
+    /** When set, the monitor list/read throws this (a provider that cannot answer). */
+    monitorError: null as string | null,
+    /** When set, createMonitor throws this (a provider-side refusal). */
+    createMonitorError: null as string | null,
   };
   const monCaps = {
     project: {
@@ -758,9 +770,14 @@ export function fakeWorld() {
         rec(mon.providerId, 'project.select', idOrName);
         const known = [...(mon.current ? [mon.current] : []), ...mon.candidates];
         mon.current = known.find((x) => x.id === idOrName || x.name === idOrName) ?? { id: idOrName, name: idOrName };
-        // Like the real adapters, selecting records the project in state (and no creation marker: an
-        // adopted project is never golive's to delete).
+        // Like the real adapters, selecting records the resource in state (and no creation marker: an
+        // adopted resource is never golive's to delete). The uptime surface records its own keys.
         c.state.save((s) => {
+          if (mon.withUptime) {
+            s.resources[`${mon.providerId}.monitorId`] = mon.current!.id;
+            s.resources[`${mon.providerId}.monitorName`] = mon.current!.name;
+            return;
+          }
           s.resources[`${mon.providerId}.projectId`] = mon.current!.id;
           s.resources[`${mon.providerId}.projectName`] = mon.current!.name;
         });
@@ -787,11 +804,16 @@ export function fakeWorld() {
           rec(mon.providerId, 'project.remove');
           mon.removed.push(mon.current?.id ?? '?');
           if (mon.removeResult) return mon.removeResult;
-          if (mon.projectState === 'present') return { removed: false, reason: 'the provider still reports the project as live' };
+          if (mon.projectState === 'present') return { removed: false, reason: mon.withUptime ? 'the provider still reports the monitor' : 'the provider still reports the project as live' };
           c.state.save((s) => {
             delete s.resources[`${mon.providerId}.projectId`];
             delete s.resources[`${mon.providerId}.createdProjectId`];
+            // The uptime surface records its monitor under its own keys, like the real adapter.
+            delete s.resources[`${mon.providerId}.monitorId`]; delete s.resources[`${mon.providerId}.monitorName`];
+            delete s.resources[`${mon.providerId}.createdMonitorId`];
           });
+          // Like UptimeRobot, a deleted monitor is gone from the provider's own read at once.
+          if (mon.withUptime && mon.current) mon.monitors = mon.monitors.filter((m) => m.id !== mon.current!.id);
           return { removed: true };
         };
       },
@@ -835,6 +857,41 @@ export function fakeWorld() {
               return mon.eventStates.length > 1 ? mon.eventStates.shift()! : mon.eventStates[0] ?? 'pending';
             },
             projectState: async () => mon.projectState,
+          }
+        : undefined;
+    },
+    get uptime() {
+      return mon.withUptime
+        ? {
+            list: async () => {
+              if (mon.monitorError) throw new Error(mon.monitorError);
+              return structuredClone(mon.monitors);
+            },
+            monitor: async (_c: unknown, id: string) => {
+              if (mon.monitorError) throw new Error(mon.monitorError);
+              const m = mon.monitors.find((x) => x.id === id);
+              return m ? structuredClone(m) : null;
+            },
+            get createMonitor() {
+              return mon.canCreateMonitor
+                ? async (c: Ctx, spec: { name: string; url: string }) => {
+                    rec(mon.providerId, 'uptime.createMonitor', spec);
+                    if (mon.createMonitorError) throw new Error(mon.createMonitorError);
+                    mon.monitored.push(spec.url);
+                    const made = { id: `mon_${mon.monitors.length + 1}`, name: spec.name, url: spec.url, type: 1, status: 1 };
+                    mon.monitors.push(made);
+                    mon.current = { id: made.id, name: made.name };
+                    // Like the real adapter, the create records the monitor and golive's creation marker.
+                    c.state.save((s) => {
+                      s.resources[`${mon.providerId}.monitorId`] = made.id;
+                      s.resources[`${mon.providerId}.monitorName`] = made.name;
+                      s.resources[`${mon.providerId}.createdMonitorId`] = made.id;
+                    });
+                    return structuredClone(made);
+                  }
+                : undefined;
+            },
+            monitorState: async (_c: unknown, id: string) => (mon.monitors.some((x) => x.id === id) ? 'present' : 'gone'),
           }
         : undefined;
     },

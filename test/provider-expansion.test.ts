@@ -195,3 +195,22 @@ describe('Sentry provider expansion', () => {
     await expect(http({ url: 'https://o4505.ingest.evil.example/api/1/store/' })).rejects.toThrow(/not allowed/);
   });
 });
+
+describe('UptimeRobot provider expansion', () => {
+  it('offers UptimeRobot as an automated monitoring adapter, never as a guided entry', () => {
+    expect(ADAPTERS.find((a) => a.id === 'uptimerobot')).toMatchObject({ automated: true, axes: ['monitoring'], title: 'UptimeRobot' });
+    expect(GUIDED.some((g) => g.id === 'uptimerobot')).toBe(false);
+    // It has no local SDK or config file to detect: the provider is chosen in the menu.
+    expect(ADAPTERS.find((a) => a.id === 'uptimerobot')!.detect).toBeUndefined();
+  });
+
+  it('allows the UptimeRobot v2 API host, nothing near it', async () => {
+    const http = createHttp((async () => new Response('{}')) as typeof fetch);
+    for (const url of ['https://api.uptimerobot.com/v2/getMonitors', 'https://api.uptimerobot.com/v2/getAccountDetails']) {
+      expect((await http({ url, method: 'POST' })).status).toBe(200);
+    }
+    await expect(http({ url: 'https://api.uptimerobot.com.evil.example/v2/getMonitors' })).rejects.toThrow(/not allowed/);
+    await expect(http({ url: 'https://evil.uptimerobot.com/v2/getMonitors' })).rejects.toThrow(/not allowed/);
+    await expect(http({ url: 'https://uptimerobot.com/v2/getMonitors' })).rejects.toThrow(/not allowed/);
+  });
+});

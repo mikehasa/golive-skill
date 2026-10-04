@@ -1108,3 +1108,79 @@ describe('teardown: the Sentry analytics project', () => {
     expect(h.action).toMatch(/it may belong to this account already and predate this app/);
   });
 });
+
+// ── The UptimeRobot monitor golive created (monitoring) ─────────────────────────────────────────
+
+describe('teardown: the UptimeRobot monitor', () => {
+  const MON_CONFIG: Partial<ShipConfig> = { stack: { ...CONFIG.stack, monitoring: 'uptimerobot' } };
+  const MON_STATE = (over: Record<string, string> = {}): ShipState =>
+    stateWith({ 'fakehost.projectId': 'prj_1', 'fakehost.createdProjectId': 'prj_1', 'uptimerobot.monitorId': '777712827', 'uptimerobot.monitorName': 'shop', 'uptimerobot.createdMonitorId': '777712827', ...over });
+
+  function mon(opts: { state?: ShipState; configure?: (w: FakeWorld) => void } = {}) {
+    return setup({
+      config: MON_CONFIG,
+      state: opts.state ?? MON_STATE(),
+      arrange: (w) => {
+        w.mon.providerId = 'uptimerobot';
+        w.mon.withUptime = true;
+        w.mon.monitors = [{ id: '777712827', name: 'shop', url: 'https://example.com', type: 1, status: 2 }];
+        w.mon.current = { id: '777712827', name: 'shop' };
+        // What the fake's provider read answers for the removal: 'gone' lets the delete apply, like
+        // UptimeRobot deleting a monitor at once.
+        w.mon.projectState = 'gone';
+        opts.configure?.(w);
+      },
+    });
+  }
+
+  it('plans a destroy step that the provider\'s own read confirms, and forgets the monitor', async () => {
+    const { w, ctx, build } = mon();
+    const plan = await build();
+    const step = byId(plan, 'teardown:monitoring:uptimerobot');
+    expect(step.kind).toBe('destroy');
+    expect(step.risk).toEqual({ writes: true, destroy: true });
+    expect(step.preview[0]).toBe('delete the UptimeRobot monitor shop (777712827) — golive created it (marker uptimerobot.createdMonitorId); UptimeRobot deletes a monitor at once, and the provider\'s own monitor read is what confirms the removal');
+    expect(step.verifyWith).toEqual([]);
+    // The monitor goes before the host project: smallest blast radius first.
+    expect(ids(plan).indexOf('teardown:monitoring:uptimerobot')).toBeLessThan(ids(plan).indexOf('teardown:project:hosting'));
+    expect(plan.handoffs.map((h) => h.id)).not.toContain('teardown:monitoring:uptimerobot');
+
+    const out = await apply(ctx, plan);
+    expect(out.find((o) => o.id === 'teardown:monitoring:uptimerobot')).toMatchObject({ status: 'done' });
+    expect(w.mon.removed).toEqual(['777712827']);
+    const check = out.find((o) => o.id === 'teardown:monitoring:uptimerobot')!.checks[0]!;
+    expect(check).toMatchObject({ id: 'teardown:monitoring:uptimerobot:removed', status: 'pass', severity: 'info' });
+    expect(check.evidence.join(' ')).toContain('no longer has');
+    expect(ctx.state.resource('uptimerobot.monitorId')).toBeUndefined();
+    expect(ctx.state.resource('uptimerobot.createdMonitorId')).toBeUndefined();
+  });
+
+  it('fails — and keeps the record — when the provider still reports the monitor after the delete', async () => {
+    const { ctx, build } = mon({ configure: (x) => void (x.mon.projectState = 'present') });
+    const out = await apply(ctx, await build());
+    const step = out.find((o) => o.id === 'teardown:monitoring:uptimerobot')!;
+    expect(step.status).toBe('failed');
+    expect(step.error).toMatch(/could not delete the UptimeRobot monitor shop \(777712827\): the provider still reports the monitor/);
+    expect(ctx.state.resource('uptimerobot.monitorId')).toBe('777712827');
+  });
+
+  it('hands the monitor back instead of skipping it when the provider is not usable', async () => {
+    const { ctx, build } = mon({ configure: (x) => void (x.mon.authed = false) });
+    const plan = await build();
+    expect(ids(plan)).not.toContain('teardown:monitoring:uptimerobot');
+    const h = plan.handoffs.find((x) => x.id === 'teardown:monitoring:uptimerobot')!;
+    expect(h).toMatchObject({ blocking: false, manual: true });
+    expect(h.why).toMatch(/was created by golive, and deleting it needs the UptimeRobot dashboard/);
+    expect(h.action).toMatch(/Delete the UptimeRobot monitor shop \(777712827\) in the UptimeRobot dashboard/);
+    expect(await apply(ctx, plan).catch(() => null)).not.toBeNull();
+  });
+
+  it('never claims an adopted monitor as golive\'s to delete', async () => {
+    const adopted = mon({ state: MON_STATE({ 'uptimerobot.createdMonitorId': '777700000' }) });
+    const plan = await adopted.build();
+    expect(ids(plan)).not.toContain('teardown:monitoring:uptimerobot');
+    const h = plan.handoffs.find((x) => x.id === 'teardown:monitoring:uptimerobot')!;
+    expect(h.why).toMatch(/no creation marker .* covers it, so golive cannot prove it created it: it was adopted/);
+    expect(h.action).toMatch(/it may belong to this account already and predate this app/);
+  });
+});

@@ -13,7 +13,7 @@
     "approval": 1
   },
   "files": {
-    "SKILL.md": "27f838c13061697cbd28c0b636374500b011642cbf6694801f27cb554adb98fa",
+    "SKILL.md": "b6a4920dd10817326ebdd7bf4392aa2b7f69158377f589935f2fbe12a06a63f5",
     "LICENSE": "b1546216882fd37b1602f3a004e8548b5f6c38ada73117308d4c3ac6968235e9",
     "THIRD_PARTY_NOTICES.md": "ad33f954a31c411cc667c07460859c77a014d6720e581a5ce5edd48c9c962781",
     "references/cloudflare-dns.md": "1e2c3143d714590486d181befa0237f18e077328ab7fcd2151adaa0f68b898ff",
@@ -30,10 +30,11 @@
     "references/supabase.md": "d7eb2179837a48da2d2202c2c22bc0453a86d78a698a7ea811f73d19dc65d87a",
     "references/troubleshooting.md": "8a9a8bd3a4c79e5fac00edbec3db0d6c47eaf36f4f6e7a5b92a46a92b21e50fd",
     "references/updates.md": "931f430d466b9e61b7c3118542449cbca281b48828b99df5ba08fc808c078043",
+    "references/uptimerobot.md": "4a0d79c3d4c333ca0ec1c9c104fc1681dabf71a71d69e430656082b3b6f1ec07",
     "references/vercel.md": "f3f915c763ce5bb623ce706021be43fa9a358be632b56d818b00063153532ad6",
-    "scripts/golive.mjs": "c1fe2d7423dca85ef0fa46d1892a6a0816d61faf1f21d630491618ec653f70a3",
+    "scripts/golive.mjs": "decd34a7b41e4b190b9d5590aa233d42c9ba41503e4462c2efb0d76a54613ae2",
     "scripts/install-cli.mjs": "ac9ee3f57b5fcbc54ef16b1ee0b22c967b846cc32512750046b13d5c1a7075bd",
     "scripts/install-lib.mjs": "43086f4d12380b6ce425d6188136b523f0cdda7bf168acc7c420f80bc3cff8f9"
   },
-  "bundleDigest": "1bb7e42426f0bf4ed7872d1d2e83ba7e173bf2358eb70115ae34802346aba54b"
+  "bundleDigest": "3b3eb45c01d5eb130cdf45e661ed1f9d745171b66dbd294d49f20a09611b061a"
 }
