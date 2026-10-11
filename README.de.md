@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=de; source=README.md; source-commit=169dacd; reviewed=false; updated=2026-10-03 -->
+<!-- golive-translation: lang=de; source=README.md; source-commit=169dacd; reviewed=false; updated=2026-10-11 -->
 # GoLive
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Português (Brasil)](README.pt-BR.md) · [Deutsch](README.de.md)
@@ -16,7 +16,7 @@ Automatisieren, was die Provider anbieten. Dich durch die Teile führen, die ein
 Prüfen, was sich beobachten lässt, und unfertige Arbeit sichtbar machen. Kein GoLive-Konto, kein
 gehostetes Backend, keine Produkt-Telemetrie.
 
-> **Frühe Alpha · 0.1.0-alpha.8**
+> **Frühe Alpha · 0.1.0-alpha.9**
 > Wegwerf-Livetests decken jetzt sechs Abläufe ab: **Hosting** (Vercel, Netlify), **Datenbank**
 > (Supabase, Neon), **DNS für eigene Domains** (Porkbun, GoDaddy), **Transaktions-E-Mail** (Resend),
 > **Zahlungen im Testmodus** (Stripe) und **Supabase-Authentifizierung**, dazu den
@@ -127,7 +127,7 @@ die nichtinteraktiven Agenten-Flags, die Prüfung der Runtime und den optionalen
 
 ### Installation aus npm
 
-Derselbe Skill wird als `golive@0.1.0-alpha.8` auf npm veröffentlicht (dist-tags `alpha` und
+Derselbe Skill wird als `golive@0.1.0-alpha.9` auf npm veröffentlicht (dist-tags `alpha` und
 `latest`) und lässt sich damit offline installieren, ohne Git und ohne Skills CLI:
 
 ```bash

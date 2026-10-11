@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "name": "golive",
-  "version": "0.1.0-alpha.8",
+  "version": "0.1.0-alpha.9",
   "source": {
     "repository": "https://github.com/mikehasa/golive-skill",
-    "ref": "v0.1.0-alpha.8"
+    "ref": "v0.1.0-alpha.9"
   },
   "node": ">=20",
   "schemas": {
@@ -32,9 +32,9 @@
     "references/updates.md": "931f430d466b9e61b7c3118542449cbca281b48828b99df5ba08fc808c078043",
     "references/uptimerobot.md": "4a0d79c3d4c333ca0ec1c9c104fc1681dabf71a71d69e430656082b3b6f1ec07",
     "references/vercel.md": "f3f915c763ce5bb623ce706021be43fa9a358be632b56d818b00063153532ad6",
-    "scripts/golive.mjs": "decd34a7b41e4b190b9d5590aa233d42c9ba41503e4462c2efb0d76a54613ae2",
+    "scripts/golive.mjs": "415c5f548cc7592a3afe5c78cd9f3d47140de4972741ae838c7d75cba0db19a6",
     "scripts/install-cli.mjs": "ac9ee3f57b5fcbc54ef16b1ee0b22c967b846cc32512750046b13d5c1a7075bd",
     "scripts/install-lib.mjs": "43086f4d12380b6ce425d6188136b523f0cdda7bf168acc7c420f80bc3cff8f9"
   },
-  "bundleDigest": "3b3eb45c01d5eb130cdf45e661ed1f9d745171b66dbd294d49f20a09611b061a"
+  "bundleDigest": "e7bc6549ea6f2f8c95728d6e5611159c876a1f38d6db0009f7aa053f12f7133b"
 }

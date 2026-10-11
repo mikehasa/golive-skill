@@ -1,4 +1,4 @@
-<!-- golive-translation: lang=es; source=README.md; source-commit=169dacd; reviewed=false; updated=2026-10-03 -->
+<!-- golive-translation: lang=es; source=README.md; source-commit=169dacd; reviewed=false; updated=2026-10-11 -->
 # GoLive
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Português (Brasil)](README.pt-BR.md) · [Deutsch](README.de.md)
@@ -16,7 +16,7 @@ Automatiza las partes que los proveedores exponen. Te guía en las que necesitan
 Verifica lo que se puede observar y deja claro lo que quedó sin terminar. Sin cuenta de GoLive, sin
 backend alojado y sin telemetría del producto.
 
-> **Alpha temprana · 0.1.0-alpha.8**
+> **Alpha temprana · 0.1.0-alpha.9**
 > Las pruebas desechables en vivo ya cubren seis recorridos: **hosting** (Vercel, Netlify),
 > **base de datos** (Supabase, Neon), **DNS de dominio personalizado** (Porkbun, GoDaddy),
 > **correo transaccional** (Resend), **pagos en modo de prueba** (Stripe) y **autenticación de
@@ -126,7 +126,7 @@ verificación del runtime y el instalador propio opcional.
 
 ### Instalar desde npm
 
-El mismo skill está publicado en npm como `golive@0.1.0-alpha.8` (dist-tags `alpha` y `latest`), lo
+El mismo skill está publicado en npm como `golive@0.1.0-alpha.9` (dist-tags `alpha` y `latest`), lo
 que lo instala sin conexión, sin Git ni Skills CLI de por medio:
 
 ```bash
